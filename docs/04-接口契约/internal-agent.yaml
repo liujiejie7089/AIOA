@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: AIOA 内部接口契约（Java aioa-server ⇄ Python aioa-agent）
+  version: "1.0"
+  description: |
+    仅容器内网可达（nginx 不暴露 /internal/**）。
+    鉴权：Authorization: Bearer <service JWT（RS256，5min，claim svc=server|agent）>。
+    M1 范围：/internal/v1/runs（回声模式 SSE）；M2+：tools/invoke、runs/{id}/resume、kb/search。
+servers:
+  - url: http://aioa-agent:8000
+    description: Python agent 服务
+  - url: http://aioa-server:8080
+    description: Java 业务后端（agent 回调用）
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "UP" }
+  /internal/v1/runs:
+    post:
+      summary: 发起一次 agent 运行（SSE 事件流）
+      description: |
+        Java 调用 Python。响应为 text/event-stream，事件协议见 x-sse-events。
+        M1 为回声模式：message.delta 逐字符回显输入文本。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunRequest"
+      responses:
+        "200":
+          description: SSE 事件流（event 名为事件类型，data 为 JSON，id 为 seq）
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /internal/v1/runs/{runId}/resume:
+    post:
+      summary: HITL 审批后恢复运行（M3）
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approval_id, decision]
+              properties:
+                approval_id: { type: string }
+                decision: { type: string, enum: [APPROVE, REJECT] }
+                args_override: { type: object, nullable: true }
+      responses:
+        "200":
+          description: SSE 事件流（继续执行）
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    RunRequest:
+      type: object
+      required: [run_id, conversation_id, text, user_context]
+      properties:
+        run_id: { type: string, example: "run_20260906_000001" }
+        conversation_id: { type: integer, format: int64, example: 10001 }
+        text: { type: string, description: "用户输入", example: "我今天待处理的工单有哪些" }
+        attachments:
+          type: array
+          items: { type: integer, format: int64 }
+          description: 附件 ID 列表（M4）
+        context:
+          $ref: "#/components/schemas/PageContext"
+        agent_code: { type: string, nullable: true, description: "指定子 agent，缺省由主 agent 路由" }
+        model_ref: { type: string, nullable: true, description: "指定模型，缺省走网关默认" }
+        user_context:
+          $ref: "#/components/schemas/UserContext"
+        history:
+          type: array
+          description: 最近 N 轮会话（短期记忆窗口，M2 起由 Java 注入）
+          items:
+            type: object
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string }
+    PageContext:
+      type: object
+      description: 提问时的页面上下文快照（子应用经 SDK 上报）
+      properties:
+        appCode: { type: string, example: "ticket" }
+        page: { type: string, example: "ticket-list" }
+        pageTitle: { type: string, example: "工单列表" }
+        entityType: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        filters: { type: object, nullable: true, example: { status: "OPEN" } }
+        selection: { type: array, items: { type: string }, nullable: true }
+    UserContext:
+      type: object
+      required: [user_id, tenant_id, roles]
+      properties:
+        user_id: { type: integer, format: int64, example: 1 }
+        tenant_id: { type: integer, format: int64, example: 0 }
+        username: { type: string, example: "admin" }
+        roles: { type: array, items: { type: string }, example: ["ROLE_ADMIN"] }
+        trace_id: { type: string, example: "trace-8f3a2c" }
+x-sse-events:
+  description: |
+    SSE 帧格式：`id: <seq>` / `event: <type>` / `data: <json>`，seq 单调递增；
+    每 15s 发送 `event: ping` 心跳；前端断线用 Last-Event-ID 续传。
+  events:
+    run.started: { run_id, conversation_id }
+    run.plan: { steps: [{ id, domain, intent }] }            # M2
+    run.step: { step_id, status, title }                     # M2
+    agent.switched: { domain, agent_name }                   # M2
+    tool.called: { tool_code, args_masked }                  # M2
+    tool.result: { tool_code, ok, duration_ms, summary }     # M2
+    approval.required: { approval_id, tool_code, risk_level, args_render, expires_at }  # M3
+    approval.resolved: { approval_id, decision, by }         # M3
+    message.delta: { text }                                  # 文本增量（注意 UTF-8 分片）
+    citation: { doc_id, chunk_id, title, score, snippet }    # M4
+    need_clarification: { question, suggested_options }      # M2
+    message.completed: { content, citations, tool_calls, usage }
+    run.completed: { status, usage }
+    run.failed: { reason, error_code }
+    error: { code, message, retryable }
+    ping: {}

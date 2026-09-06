@@ -1,0 +1,214 @@
+name: aioa
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aioa-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aioa}
+      POSTGRES_USER: ${POSTGRES_USER:-aioa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aioa_dev_pwd}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [aioa-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: aioa-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [aioa-net]
+
+  minio:
+    image: minio/minio:latest
+    container_name: aioa-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aioa}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aioa_dev_minio}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || curl -f http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [aioa-net]
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    container_name: aioa-server
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aioa}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-aioa}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-aioa_dev_pwd}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      AIOA_JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-bytes-long}
+      AIOA_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      AIOA_AGENT_BASE_URL: http://agent:8000
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aioa}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aioa_dev_minio}
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+    networks: [aioa-net]
+
+  agent:
+    build:
+      context: ../agent
+      dockerfile: ../deploy/Dockerfile.agent
+    container_name: aioa-agent
+    environment:
+      AIOA_SERVER_BASE_URL: http://server:8080
+      AIOA_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      MODEL_DEFAULT: ${MODEL_DEFAULT:-echo}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOCAL_VLLM_BASE_URL: ${LOCAL_VLLM_BASE_URL:-http://vllm:8000/v1}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      PG_DSN: postgresql://${POSTGRES_USER:-aioa}:${POSTGRES_PASSWORD:-aioa_dev_pwd}@postgres:5432/${POSTGRES_DB:-aioa}
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [aioa-net]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    container_name: aioa-web
+    ports:
+      - "8081:80"
+    depends_on:
+      - server
+    networks: [aioa-net]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: aioa-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      web:
+        condition: service_started
+      server:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    networks: [aioa-net]
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: aioa-vllm
+    profiles: ["model"]
+    command: ["--model", "${LOCAL_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}", "--served-model-name", "local-vllm"]
+    volumes:
+      - hfcache:/root/.cache/huggingface
+    ports:
+      - "8001:8000"
+    # GPU 环境取消注释：
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    networks: [aioa-net]
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aioa-ollama
+    profiles: ["model"]
+    volumes:
+      - ollamadata:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks: [aioa-net]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aioa-prometheus
+    profiles: ["ops"]
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks: [aioa-net]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aioa-grafana
+    profiles: ["ops"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "3000:3000"
+    networks: [aioa-net]
+
+  loki:
+    image: grafana/loki:latest
+    container_name: aioa-loki
+    profiles: ["ops"]
+    ports:
+      - "3100:3100"
+    networks: [aioa-net]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  hfcache:
+  ollamadata:
+
+networks:
+  aioa-net:
+    driver: bridge

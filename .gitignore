@@ -1,0 +1,43 @@
+# ---- OS / IDE ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# ---- Node / Web ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm/
+.pnpm-store/
+
+# ---- Java ----
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- Env / Secrets（密钥一律不入库）----
+.env
+.env.*
+!.env.example
+
+# ---- Local tools / data ----
+.tools/
+logs/
+*.log
+data/
+
+# ---- Docs temp ----
+*.tmp

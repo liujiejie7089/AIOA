@@ -1,0 +1,190 @@
+openapi: 3.0.3
+info:
+  title: AIOA 基座对外 API（前端 ⇄ Java aioa-server）
+  version: "1.0"
+  description: |
+    M1 范围：认证 / 应用注册表 / 会话与回声对话。
+    统一响应结构 {code, message, data, traceId}；code=0 成功；分页 ?page=1&size=20。
+    鉴权：Authorization: Bearer <accessToken>（/api/v1/auth/login、/internal 除外）。
+servers:
+  - url: /api/v1
+paths:
+  /auth/login:
+    post:
+      summary: 登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+  /auth/refresh:
+    post:
+      summary: 刷新令牌
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200": { description: OK }
+  /auth/me:
+    get:
+      summary: 当前用户信息（含角色、权限码）
+      responses:
+        "200": { description: OK }
+  /auth/menus:
+    get:
+      summary: 当前用户可见菜单（含已注册子应用）
+      responses:
+        "200": { description: OK }
+  /apps:
+    get:
+      summary: 微前端应用注册表（当前用户有权限的）
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer }
+                  message: { type: string }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/AppEntry" }
+  /conversations:
+    post:
+      summary: 创建会话
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                appCode: { type: string, nullable: true }
+      responses:
+        "200": { description: OK }
+    get:
+      summary: 会话列表（分页/搜索）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: size, in: query, schema: { type: integer, default: 20 } }
+        - { name: keyword, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+  /conversations/{id}:
+    get:
+      summary: 会话详情
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+    delete:
+      summary: 删除会话（逻辑删除，留痕）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+  /conversations/{id}/messages:
+    get:
+      summary: 会话消息（游标分页，beforeSeq 向前翻）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: beforeSeq, in: query, schema: { type: integer } }
+        - { name: size, in: query, schema: { type: integer, default: 30 } }
+      responses: { "200": { description: OK } }
+  /conversations/{id}/runs:
+    post:
+      summary: 发起一轮对话（返回 runId，随后用 SSE 订阅事件）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                context: { type: object, description: "页面上下文快照（SDK 上报格式）" }
+                attachments: { type: array, items: { type: integer } }
+      responses:
+        "200":
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer }
+                  data:
+                    type: object
+                    properties:
+                      runId: { type: string }
+  /runs/{runId}/events:
+    get:
+      summary: SSE 事件流（Java 中转 Python；支持 Last-Event-ID 续传）
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: text/event-stream；事件协议见 internal-agent.yaml 的 x-sse-events
+          content:
+            text/event-stream: { schema: { type: string } }
+  /runs/{runId}/cancel:
+    post:
+      summary: 中断运行
+      parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    LoginResponse:
+      type: object
+      properties:
+        code: { type: integer }
+        message: { type: string }
+        data:
+          type: object
+          properties:
+            accessToken: { type: string }
+            refreshToken: { type: string }
+            expiresIn: { type: integer, description: "access token 秒数" }
+            user:
+              type: object
+              properties:
+                id: { type: integer }
+                username: { type: string }
+                nickname: { type: string }
+                roles: { type: array, items: { type: string } }
+    AppEntry:
+      type: object
+      properties:
+        appCode: { type: string, example: "ticket" }
+        name: { type: string, example: "票务系统" }
+        entryUrl: { type: string, example: "http://localhost:5174/" }
+        routePrefix: { type: string, example: "/app/ticket" }
+        hostType: { type: string, enum: [wujie, iframe] }
+        icon: { type: string }
+        permissionCode: { type: string }
+        sort: { type: integer }
+security:
+  - bearerAuth: []

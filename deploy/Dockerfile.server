@@ -1,0 +1,22 @@
+# AIOA Java 后端（多模块，构建 aioa-boot 可执行 jar）
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /build
+COPY server/pom.xml ./
+COPY server/aioa-common/pom.xml aioa-common/
+COPY server/aioa-security/pom.xml aioa-security/
+COPY server/aioa-bridge/pom.xml aioa-bridge/
+COPY server/aioa-tool-sdk/pom.xml aioa-tool-sdk/
+COPY server/aioa-chat/pom.xml aioa-chat/
+COPY server/aioa-admin/pom.xml aioa-admin/
+COPY server/aioa-boot/pom.xml aioa-boot/
+RUN mvn -q -B dependency:go-offline -pl aioa-boot -am || true
+COPY server/ ./
+RUN mvn -q -B -DskipTests package -pl aioa-boot -am
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+COPY --from=build /build/aioa-boot/target/aioa-boot-*.jar /app/aioa-server.jar
+EXPOSE 8080
+ENV JAVA_OPTS="-Xms512m -Xmx2g"
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/aioa-server.jar"]
