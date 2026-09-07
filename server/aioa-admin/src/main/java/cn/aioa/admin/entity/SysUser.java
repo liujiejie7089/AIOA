@@ -27,7 +27,7 @@ public class SysUser {
 
     private String email;
 
-    private Integer status;
+    private String status;
 
     private LocalDateTime lastLoginAt;
 
@@ -100,11 +100,11 @@ public class SysUser {
         this.email = email;
     }
 
-    public Integer getStatus() {
+    public String getStatus() {
         return status;
     }
 
-    public void setStatus(Integer status) {
+    public void setStatus(String status) {
         this.status = status;
     }
 

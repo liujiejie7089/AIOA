@@ -15,7 +15,7 @@ public class SysTenant {
 
     private String code;
 
-    private Integer status;
+    private String status;
 
     public Long getId() {
         return id;
@@ -41,11 +41,11 @@ public class SysTenant {
         this.code = code;
     }
 
-    public Integer getStatus() {
+    public String getStatus() {
         return status;
     }
 
-    public void setStatus(Integer status) {
+    public void setStatus(String status) {
         this.status = status;
     }
 }

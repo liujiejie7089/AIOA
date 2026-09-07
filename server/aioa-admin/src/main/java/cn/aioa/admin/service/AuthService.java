@@ -70,7 +70,8 @@ public class AuthService {
             loginLog(null, ip, ua, false, "用户名或密码错误");
             throw new BizException(1001, "用户名或密码错误");
         }
-        if (user.getStatus() != null && user.getStatus() != 1) {
+        String st = user.getStatus();
+        if (st == null || (!"ENABLED".equals(st) && !"ACTIVE".equals(st))) {
             loginLog(user.getId(), ip, ua, false, "账号已禁用");
             throw new BizException(1002, "账号已禁用");
         }
