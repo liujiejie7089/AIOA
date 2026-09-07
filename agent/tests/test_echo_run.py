@@ -1,0 +1,98 @@
+"""回声模式端到端：流式读 /internal/v1/runs，校验事件序列与帧格式。"""
+from __future__ import annotations
+
+import json
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
+
+RUN_ID = "run_20260906_000001"
+USER_CONTEXT = {"user_id": 1, "tenant_id": 0, "username": "admin", "roles": ["ROLE_ADMIN"], "trace_id": "trace-8f3a2c"}
+
+
+def post_run(payload: dict) -> list[dict]:
+    """POST /internal/v1/runs，解析 SSE 帧为 [(seq, type, data)]。"""
+    with client.stream("POST", "/internal/v1/runs", json=payload) as resp:
+        assert resp.status_code == 200, resp.read()
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        events = parse_sse(resp.iter_text())
+    return events
+
+
+def parse_sse(chunks) -> list[dict]:
+    """把 `id/event/data` 帧文本解析为事件列表。"""
+    events: list[dict] = []
+    seq = None
+    etype = None
+    data = None
+    for chunk in chunks:
+        for line in chunk.split("\n"):
+            if line.startswith("id: "):
+                seq = int(line[4:])
+            elif line.startswith("event: "):
+                etype = line[7:]
+            elif line.startswith("data: "):
+                data = json.loads(line[6:])
+            elif line == "" and etype is not None:
+                events.append({"seq": seq, "type": etype, "data": data})
+                seq, etype, data = None, None, None
+    return events
+
+
+def test_health():
+    assert client.get("/health").json() == {"status": "UP"}
+
+
+def test_echo_run_with_context():
+    text = "我今天待处理的工单有哪些"
+    payload = {
+        "run_id": RUN_ID,
+        "conversation_id": 10001,
+        "text": text,
+        "context": {"appCode": "ticket", "page": "ticket-list", "pageTitle": "工单列表", "filters": {"status": "OPEN"}},
+        "user_context": USER_CONTEXT,
+    }
+    events = post_run(payload)
+
+    types = [e["type"] for e in events]
+    # 序列：run.started → message.delta×N → message.completed → run.completed
+    assert types[0] == "run.started"
+    assert types[-2] == "message.completed"
+    assert types[-1] == "run.completed"
+    deltas = [e for e in events if e["type"] == "message.delta"]
+    assert len(deltas) >= 1
+    assert set(types[1:-2]) == {"message.delta"}
+
+    # seq 从 1 单调递增
+    assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
+
+    # 首帧 delta 之前不插入其它事件，回显前缀合并在文本里
+    assert deltas[0]["data"]["text"] == "["
+
+    expected = f"[ticket/ticket-list] {text}"
+    assert "".join(d["data"]["text"] for d in deltas) == expected
+
+    started = events[0]["data"]
+    assert started == {"run_id": RUN_ID, "conversation_id": 10001}
+
+    completed = events[-2]["data"]
+    assert completed["content"] == expected
+    assert completed["citations"] == []
+    assert completed["tool_calls"] == []
+    assert completed["usage"]["prompt_tokens"] == 0
+    assert completed["usage"]["completion_tokens"] == len(expected)
+
+    assert events[-1]["data"]["status"] == "SUCCEEDED"
+    assert events[-1]["data"]["usage"] == completed["usage"]
+
+
+def test_echo_run_without_context():
+    text = "hi"
+    payload = {"run_id": RUN_ID, "conversation_id": 10002, "text": text, "user_context": USER_CONTEXT}
+    events = post_run(payload)
+    deltas = [e["data"]["text"] for e in events if e["type"] == "message.delta"]
+    assert "".join(deltas) == text
+    assert events[-2]["data"]["content"] == text

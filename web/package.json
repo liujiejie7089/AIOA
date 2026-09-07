@@ -1,0 +1,23 @@
+{
+  "name": "aioa-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AIOA 智能办公基座前端 monorepo（M1 骨架：工作台主应用 + 接入 SDK + 示例子应用）",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

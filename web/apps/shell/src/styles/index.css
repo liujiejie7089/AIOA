@@ -1,0 +1,128 @@
+:root {
+  --aioa-primary: #409eff;
+  --aioa-border: #e4e7ed;
+  --aioa-bg: #f5f7fa;
+  --aioa-text: #303133;
+  --aioa-text-sub: #909399;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  font-size: 14px;
+  color: var(--aioa-text);
+  background: var(--aioa-bg);
+}
+
+a {
+  color: var(--aioa-primary);
+  text-decoration: none;
+}
+
+/* ---------- 主布局 ---------- */
+.layout {
+  height: 100%;
+}
+
+.layout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--aioa-border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-icon {
+  font-size: 22px;
+  color: var(--aioa-primary);
+}
+
+.brand-text {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.user-name {
+  font-size: 13px;
+  color: var(--aioa-text);
+}
+
+.layout-aside {
+  background: #ffffff;
+  border-right: 1px solid var(--aioa-border);
+  transition: width 0.2s;
+  overflow: hidden;
+}
+
+.layout-menu {
+  border-right: none;
+  height: 100%;
+}
+
+.layout-main {
+  padding: 16px;
+  overflow: auto;
+  background: var(--aioa-bg);
+}
+
+/* ---------- 子应用宿主 ---------- */
+.app-host {
+  height: 100%;
+  min-height: 480px;
+  background: #ffffff;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.host-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* ---------- 页面通用 ---------- */
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>cn.aioa</groupId>
+        <artifactId>aioa-server</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>aioa-tool-sdk</artifactId>
+    <name>aioa-tool-sdk</name>
+    <description>子应用接入 SDK 契约（M1 占位，M2 实现）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.aioa</groupId>
+            <artifactId>aioa-common</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+</project>
