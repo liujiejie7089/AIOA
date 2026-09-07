@@ -66,7 +66,7 @@ docker compose --profile ops up -d     # 附加观测（prometheus / grafana / l
 | 前端主应用 | `cd web && pnpm install && pnpm --filter shell dev` | 5173 |
 | 示例：票务 | `pnpm --filter demo-ticket dev` | 5174 |
 | 示例：调度 | `pnpm --filter demo-dispatch dev` | 5175 |
-| Java 后端 | `cd server && ../.tools/apache-maven-3.9.9/bin/mvn spring-boot:run -pl aioa-boot`（需先起 PG/Redis） | 8080 |
+| Java 后端 | `cd server && ../.tools/mvnw.sh spring-boot:run -pl aioa-boot`（需先起 PG/Redis） | 8080 |
 | Python agent | `cd agent && uvicorn app.main:app --reload --port 8000` | 8000 |
 
 > 本机无 Docker 时，最小数据依赖为 PostgreSQL 16（+pgvector）与 Redis；也可用 `deploy/docker-compose.yml` 只起数据件：`docker compose up -d postgres redis minio`。
@@ -87,7 +87,7 @@ fix/*       # 修复分支
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M1 骨架 | 前端嵌入集成（wujie）、登录、回声对话全链路、Compose 一键部署 | **进行中** |
+| M1 骨架 | 前端嵌入集成（wujie）、登录、回声对话全链路、Compose 一键部署 | **已完成** |
 | M2 核心链路 | 工具注册表 + 主/子 agent 编排 + 真实模型 + mock 业务系统 | 待启动 |
 | M3 权限与 HITL | RBAC 完整 + 高风险操作人工审批 + 审计哈希链 | 待启动 |
 | M4 知识库与开放 | RAG 引用溯源 + 附件解析 + 模型双模式验证 + 开放 API | 待启动 |
