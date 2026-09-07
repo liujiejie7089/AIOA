@@ -1,6 +1,6 @@
 package cn.aioa.bridge.entity;
 
-import cn.aioa.common.mybatis.JsonbMapTypeHandler;
+import cn.aioa.common.mybatis.JsonMapTypeHandler;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -28,20 +28,20 @@ public class ToolDefinition {
     private String systemCode;
     private String endpoint;
     private String httpMethod;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> inputSchema;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> outputSchema;
     private String riskLevel;
     private Boolean requiresApproval;
     private Boolean idempotencyRequired;
     private Integer timeoutMs;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> retryPolicy;
     private String rateLimit;
     private String authType;
     private String authRef;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> paramMapping;
     private String responseJmespath;
     private Long maxBytes;

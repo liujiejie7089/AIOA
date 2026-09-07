@@ -6,9 +6,9 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * jsonb 数组列（List）TypeHandler。
+ * JSON 数组列（List）TypeHandler（兼容 MySQL 8 JSON 类型）。
  */
-public class JsonbListTypeHandler extends AbstractJsonbTypeHandler<List<Object>> {
+public class JsonListTypeHandler extends AbstractJsonTypeHandler<List<Object>> {
 
     private static final TypeReference<List<Object>> TYPE = new TypeReference<>() {
     };

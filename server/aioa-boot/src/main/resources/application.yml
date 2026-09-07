@@ -7,10 +7,10 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aioa}
-    username: ${SPRING_DATASOURCE_USERNAME:aioa}
-    password: ${SPRING_DATASOURCE_PASSWORD:aioa_dev_pwd}
-    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://192.168.31.129:3306/aioa?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:yjiud}
+    driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: aioa-hikari
       maximum-pool-size: 20
@@ -18,7 +18,7 @@ spring:
       connection-timeout: 30000
   data:
     redis:
-      host: ${SPRING_REDIS_HOST:localhost}
+      host: ${SPRING_REDIS_HOST:192.168.31.129}
       port: ${SPRING_REDIS_PORT:6379}
       # password: ${SPRING_REDIS_PASSWORD:}
       # database: ${SPRING_REDIS_DATABASE:0}

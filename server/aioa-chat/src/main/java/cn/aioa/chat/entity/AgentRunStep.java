@@ -1,6 +1,6 @@
 package cn.aioa.chat.entity;
 
-import cn.aioa.common.mybatis.JsonbMapTypeHandler;
+import cn.aioa.common.mybatis.JsonMapTypeHandler;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -22,7 +22,7 @@ public class AgentRunStep {
     private String stepType;
     private String agentCode;
     private String toolCode;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> inputMasked;
     private String outputDigest;
     private String status;

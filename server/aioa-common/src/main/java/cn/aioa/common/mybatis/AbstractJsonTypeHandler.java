@@ -9,12 +9,13 @@ import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Types;
 
 /**
- * jsonb 列通用 TypeHandler：以 Types.OTHER 写入，避免 pgjdbc 把 JSON 文本当 varchar 导致类型不匹配。
+ * JSON 列通用 TypeHandler（兼容 MySQL 8 JSON 类型）。
+ * MySQL Connector/J 接收 String 形式的 JSON 文本写入 JSON 列，读取时也以 String 取回，
+ * 故统一用 setString / getString 处理，避免 pgjdbc 的 Types.OTHER 语义。
  */
-public abstract class AbstractJsonbTypeHandler<T> extends BaseTypeHandler<T> {
+public abstract class AbstractJsonTypeHandler<T> extends BaseTypeHandler<T> {
 
     protected static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -23,9 +24,9 @@ public abstract class AbstractJsonbTypeHandler<T> extends BaseTypeHandler<T> {
     @Override
     public void setNonNullParameter(PreparedStatement ps, int i, T parameter, JdbcType jdbcType) throws SQLException {
         try {
-            ps.setObject(i, OBJECT_MAPPER.writeValueAsString(parameter), Types.OTHER);
+            ps.setString(i, OBJECT_MAPPER.writeValueAsString(parameter));
         } catch (IOException e) {
-            throw new SQLException("Failed to serialize jsonb parameter: " + e.getMessage(), e);
+            throw new SQLException("Failed to serialize json parameter: " + e.getMessage(), e);
         }
     }
 
@@ -51,7 +52,7 @@ public abstract class AbstractJsonbTypeHandler<T> extends BaseTypeHandler<T> {
         try {
             return fromJson(json);
         } catch (IOException e) {
-            throw new SQLException("Failed to deserialize jsonb column: " + e.getMessage(), e);
+            throw new SQLException("Failed to deserialize json column: " + e.getMessage(), e);
         }
     }
 }

@@ -6,9 +6,9 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * jsonb 对象列（Map）TypeHandler。
+ * JSON 对象列（Map）TypeHandler（兼容 MySQL 8 JSON 类型）。
  */
-public class JsonbMapTypeHandler extends AbstractJsonbTypeHandler<Map<String, Object>> {
+public class JsonMapTypeHandler extends AbstractJsonTypeHandler<Map<String, Object>> {
 
     private static final TypeReference<Map<String, Object>> TYPE = new TypeReference<>() {
     };

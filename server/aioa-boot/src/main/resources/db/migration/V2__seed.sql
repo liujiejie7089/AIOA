@@ -48,9 +48,9 @@ WHERE r.role_code = 'ROLE_ADMIN';
 INSERT INTO app_registry (tenant_id, app_code, name, entry_url, route_prefix, host_type, icon,
                           permission_code, enabled, props, sort)
 VALUES (0, 'ticket', '票务系统', 'http://localhost:5174/', '/app/ticket', 'wujie', 'ticket',
-        'aioa:app:ticket', true, '{}'::jsonb, 10),
+        'aioa:app:ticket', true, '{}', 10),
        (0, 'dispatch', '统一调度', 'http://localhost:5175/', '/app/dispatch', 'iframe', 'schedule',
-        'aioa:app:dispatch', true, '{}'::jsonb, 20);
+        'aioa:app:dispatch', true, '{}', 20);
 
 -- Agent 定义 ---------------------------------------------------------------
 INSERT INTO agent_definition (tenant_id, agent_code, name, type, domain, system_prompt, model_ref,
@@ -62,4 +62,4 @@ VALUES (0, 'main', '主智能体', 'main', NULL, NULL, 'echo', 10, 8, true, '主
 
 -- 模型供应商（M1 回声模型） -------------------------------------------------
 INSERT INTO model_provider (tenant_id, name, type, base_url, models, api_key_env, enabled)
-VALUES (0, 'echo', 'local', '', '[]'::jsonb, '', true);
+VALUES (0, 'echo', 'local', '', '[]', '', true);

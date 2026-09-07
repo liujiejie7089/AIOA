@@ -1,7 +1,7 @@
 package cn.aioa.chat.entity;
 
-import cn.aioa.common.mybatis.JsonbListTypeHandler;
-import cn.aioa.common.mybatis.JsonbMapTypeHandler;
+import cn.aioa.common.mybatis.JsonListTypeHandler;
+import cn.aioa.common.mybatis.JsonMapTypeHandler;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -31,11 +31,11 @@ public class ChatMessage {
     private String content;
     private String contentType;
     private Integer tokens;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> contextSnapshot;
-    @TableField(typeHandler = JsonbListTypeHandler.class)
+    @TableField(typeHandler = JsonListTypeHandler.class)
     private List<Object> citations;
-    @TableField(typeHandler = JsonbListTypeHandler.class)
+    @TableField(typeHandler = JsonListTypeHandler.class)
     private List<Object> toolCalls;
     private String status;
     private Long seq;

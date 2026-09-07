@@ -22,7 +22,7 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
     </dependency>
-    <!-- jsonb TypeHandler 依赖 mybatis 基础类型（org.apache.ibatis.type） -->
+    <!-- JSON TypeHandler 依赖 mybatis 基础类型（org.apache.ibatis.type） -->
     <dependency>
       <groupId>org.mybatis</groupId>
       <artifactId>mybatis</artifactId>

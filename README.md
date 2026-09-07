@@ -46,9 +46,13 @@ aioa/
 ```bash
 cd deploy
 cp .env.example .env        # 按需修改：模型 API Key、JWT 密钥等
-docker compose up -d        # 全部服务：postgres/redis/minio/server/agent/web/nginx
+docker compose up -d        # 全部服务：minio/server/agent/web/nginx（MySQL/Redis 已迁至远程 192.168.31.129，不在此托管）
 docker compose ps           # 健康检查应全绿
 ```
+
+> 数据库与 Redis 已迁至远程主机 **192.168.31.129**（MySQL 8 + Redis 7，账号 `root / yjiud`），
+> `server`/`agent` 通过 `SPRING_DATASOURCE_*` / `SPRING_DATA_REDIS_HOST` 直连，compose 不再起本地库。
+> 若需本地调试数据库，可取消 `deploy/docker-compose.yml` 中 `mysql` 服务的注释。
 
 访问 `http://localhost`（nginx 统一入口）。默认账号：`admin / Admin@123`（仅开发默认值，生产必须修改）。
 
@@ -66,10 +70,10 @@ docker compose --profile ops up -d     # 附加观测（prometheus / grafana / l
 | 前端主应用 | `cd web && pnpm install && pnpm --filter shell dev` | 5173 |
 | 示例：票务 | `pnpm --filter demo-ticket dev` | 5174 |
 | 示例：调度 | `pnpm --filter demo-dispatch dev` | 5175 |
-| Java 后端 | `cd server && ../.tools/mvnw.sh spring-boot:run -pl aioa-boot`（需先起 PG/Redis） | 8080 |
+| Java 后端 | `cd server && ../.tools/mvnw.sh spring-boot:run -pl aioa-boot`（需可达 192.168.31.129 的 MySQL/Redis） | 8080 |
 | Python agent | `cd agent && uvicorn app.main:app --reload --port 8000` | 8000 |
 
-> 本机无 Docker 时，最小数据依赖为 PostgreSQL 16（+pgvector）与 Redis；也可用 `deploy/docker-compose.yml` 只起数据件：`docker compose up -d postgres redis minio`。
+> 本机无 Docker 时，最小数据依赖为远程 **MySQL 8**（192.168.31.129:3306，库 `aioa`，账号 `root/yjiud`）与 **Redis 7**（192.168.31.129:6379）；应用通过 `application.yml` 默认连接，无需本地起库。
 
 ## 4. 分支与提交规范
 

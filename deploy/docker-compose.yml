@@ -1,40 +1,36 @@
 name: aioa
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: aioa-postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-aioa}
-      POSTGRES_USER: ${POSTGRES_USER:-aioa}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aioa_dev_pwd}
-      TZ: Asia/Shanghai
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks: [aioa-net]
+  # 数据库（MySQL 8）与 Redis 7 已迁至远程主机 192.168.31.129，由下方 server/agent 的
+  # SPRING_DATASOURCE_* / SPRING_DATA_REDIS_HOST 环境变量直连，compose 内不再托管。
+  # 如需本地临时起一个 MySQL 调试，可取消下方注释：
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: aioa-mysql
+  #   environment:
+  #     MYSQL_DATABASE: ${MYSQL_DB:-aioa}
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-yjiud}
+  #     TZ: Asia/Shanghai
+  #   command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+  #   ports: ["3306:3306"]
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 20
+  #   networks: [aioa-net]
 
-  redis:
-    image: redis:7-alpine
-    container_name: aioa-redis
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redisdata:/data
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks: [aioa-net]
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: aioa-redis
+  #   command: ["redis-server", "--appendonly", "yes"]
+  #   ports: ["6379:6379"]
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 20
+  #   networks: [aioa-net]
 
   minio:
     image: minio/minio:latest
@@ -61,10 +57,10 @@ services:
       dockerfile: deploy/Dockerfile.server
     container_name: aioa-server
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aioa}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-aioa}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-aioa_dev_pwd}
-      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-192.168.31.129}:${MYSQL_PORT:-3306}/${MYSQL_DB:-aioa}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-root}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-yjiud}
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-192.168.31.129}
       SPRING_DATA_REDIS_PORT: "6379"
       AIOA_JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-bytes-long}
       AIOA_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
@@ -76,10 +72,6 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       minio:
         condition: service_healthy
     healthcheck:
@@ -103,7 +95,9 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       LOCAL_VLLM_BASE_URL: ${LOCAL_VLLM_BASE_URL:-http://vllm:8000/v1}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
-      PG_DSN: postgresql://${POSTGRES_USER:-aioa}:${POSTGRES_PASSWORD:-aioa_dev_pwd}@postgres:5432/${POSTGRES_DB:-aioa}
+      # M1 骨架 agent 为回声模型，不直连数据库；后续如需持久化（如 LangGraph checkpointer）
+      # 复用统一 MySQL，DSN 形如：
+      # AIOA_MYSQL_DSN: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-yjiud}@${MYSQL_HOST:-192.168.31.129}:${MYSQL_PORT:-3306}/${MYSQL_DB:-aioa}
       TZ: Asia/Shanghai
     ports:
       - "8000:8000"
@@ -203,8 +197,6 @@ services:
     networks: [aioa-net]
 
 volumes:
-  pgdata:
-  redisdata:
   miniodata:
   hfcache:
   ollamadata:

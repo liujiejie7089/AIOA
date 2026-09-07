@@ -1,6 +1,6 @@
 package cn.aioa.bridge.entity;
 
-import cn.aioa.common.mybatis.JsonbMapTypeHandler;
+import cn.aioa.common.mybatis.JsonMapTypeHandler;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -27,7 +27,7 @@ public class ToolSystem {
     private String authType;
     private String authRef;
     private Integer timeoutMs;
-    @TableField(typeHandler = JsonbMapTypeHandler.class)
+    @TableField(typeHandler = JsonMapTypeHandler.class)
     private Map<String, Object> circuitBreaker;
     private String status;
     private LocalDateTime createdAt;
