@@ -25,6 +25,13 @@ public class KbService {
                 .orderByDesc(KbDocument::getCreatedAt));
     }
 
+    /** 管理端运营视角：租户内全部资料（不按归属人过滤），调用方需校验 ROLE_ADMIN。 */
+    public List<KbDocument> listTenant(Long tenantId) {
+        return kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                .eq(KbDocument::getTenantId, tenantId == null ? 0L : tenantId)
+                .orderByDesc(KbDocument::getCreatedAt));
+    }
+
     /** 登记一份资料，初始状态「解析中」，并写一条操作记录。 */
     public KbDocument register(Long tenantId, Long userId, String docName, String icon, Long sizeBytes) {
         KbDocument doc = new KbDocument();

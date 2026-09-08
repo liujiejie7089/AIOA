@@ -253,7 +253,7 @@ body{
   <div class="mp-header" data-page-node-id="5Csok2weYrxHdHGJGCte8R">
     <div class="back" id="backBtn" onclick="goBack()" title="返回" data-page-node-id="lWlnKYI3QxFczNQBMHpn2Y">‹</div>
     <span class="title" id="pageTitle" data-page-node-id="Naz60V5rrws5j4gFyr2uiq">AIOA 智能工作台</span>
-    <span class="link mock" id="linkChip" data-page-node-id="YC9E42KtkPhMFltrKI0wjw"><i data-page-node-id="081jK5WDzY7SoCMOcG5P4L"></i><span id="linkText" data-page-node-id="p1leAt8aZrKyTvK5jIR9Pl">离线演示</span></span>
+    <span class="link mock" id="linkChip" data-page-node-id="YC9E42KtkPhMFltrKI0wjw"><i data-page-node-id="081jK5WDzY7SoCMOcG5P4L"></i><span id="linkText" data-page-node-id="p1leAt8aZrKyTvK5jIR9Pl">未登录</span></span>
     <div class="capsule" data-page-node-id="rQxtJAwlRF6Mqd3WxDD1Op"><span data-page-node-id="9vRk5gNyNzT3QwF3Zdt6sZ">⋯</span><span data-page-node-id="0rAFFI03CyJpRSYKmC4E0w">◉</span></div>
   </div>
 
@@ -450,65 +450,22 @@ body{
 
 <script>
 /* ============================================================
-   1. 静态数据（一期 P0 演示口径，来源：交互原型 mock）
+   1. 业务数据（全部来自后端 aioa-resource，登录后 loadLiveData 拉取；
+      未登录/接口失败一律空态展示，不再内置任何静态演示数据）
    ============================================================ */
-const EXPERTS = [
-  {key:'policy', name:'政策咨询专家', icon:'🏛️', desc:'德阳/四川产业政策解读与申报指引', tags:['政策问答','申报指引'],
-   intro:'熟悉国省市三级产业扶持政策，可基于你上传的政策文件精准解答。',
-   recs:['我市对企业上云有什么补贴？','OPC 设备联网改造怎么申报？','算力券如何申领？']},
-  {key:'legal', name:'法律援助专家', icon:'⚖️', desc:'合同初审、劳动用工、常见法律咨询', tags:['合同','用工'],
-   intro:'可对上传合同做初审并标注风险条款，输出修改建议。',
-   recs:['帮我审查这份采购合同的风险','试用期辞退的合规要点？']},
-  {key:'startup', name:'企业开办顾问', icon:'🏢', desc:'开办流程、资质办理、惠企政策一站导引', tags:['开办','资质'],
-   intro:'从核名到税务登记的全流程指引，自动匹配适用惠企政策。',
-   recs:['注册一家科技公司需要哪些材料？']},
-  {key:'doc', name:'办文助手', icon:'📝', desc:'公文格式、行文规范、文稿润色', tags:['公文','润色'],
-   intro:'按党政机关公文格式国标辅助起草与排版。',
-   recs:['把这段话改成规范的请示语气']}
-];
+const EXPERTS = [];
 
-const SKILLS = {
-  '公文写作':{icon:'📄', est:1500, fields:[
-    {k:'docType',label:'文种',type:'select',options:['通知','请示','工作报告','函']},
-    {k:'topic',label:'主题与要点',type:'textarea',value:'关于组织企业参加全市人工智能应用供需对接会的通知'},
-    {k:'words',label:'字数要求',type:'input',value:'800 字左右'}]},
-  '合同初审':{icon:'⚖️', est:2200, fields:[
-    {k:'party',label:'合同相对方',type:'input',value:'XX科技有限公司'},
-    {k:'ctype',label:'合同类型',type:'select',options:['采购合同','服务合同','劳动合同','租赁合同']},
-    {k:'focus',label:'关注要点',type:'textarea',value:'付款条件、违约责任、知识产权归属'}]},
-  '数据分析':{icon:'📊', est:2600, fields:[
-    {k:'src',label:'数据来源',type:'select',options:['产品销售明细.xlsx','经营月报','手工录入']},
-    {k:'dim',label:'分析维度',type:'textarea',value:'按月度、区域、产品线对比销售额与同比增速'},
-    {k:'out',label:'输出形式',type:'select',options:['结论摘要','图表+解读','完整报告']}]},
-  '办事指引':{icon:'🏛️', est:900, fields:[
-    {k:'matter',label:'办理事项',type:'input',value:'企业开办一件事'},
-    {k:'subject',label:'办理主体',type:'select',options:['个人','企业','个体工商户']},
-    {k:'detail',label:'具体情况',type:'textarea',value:'首次注册科技公司，需了解材料清单与办理时限'}]}
-};
+const SKILLS = {};
 
-const KB_FILES = [
-  {name:'2026年产业扶持政策汇编.pdf', icon:'📄', state:'ok'},
-  {name:'产品销售明细.xlsx',          icon:'📊', state:'ok'},
-  {name:'会议纪要0905.docx',          icon:'📝', state:'wait'}
-];
+const KB_FILES = [];
 
 const state = {
-  quota:100000, used:13600, free:2000,
-  chatExpert:EXPERTS[0], kbOn:true, busy:false,
+  quota:0, used:0, free:0,
+  chatExpert:null, kbOn:true, busy:false,
   conversationId:null, es:null, history:[],
-  mode:'mock', token:null, user:null, roles:[], isAdmin:false, todoApprovals:[], notifs:[], unread:0,
-  bill:[
-    {t:'09-05 14:20 · 政策咨询专家', n:386},
-    {t:'09-05 10:12 · 公文写作技能', n:1542},
-    {t:'09-04 16:48 · 数据分析技能', n:2204},
-    {t:'09-03 09:30 · 办事指引专家', n:152}
-  ],
-  log:[
-    {t:'09-05 14:20 发起会话（政策咨询专家）', s:'ok',  l:'成功'},
-    {t:'09-05 10:15 上传资料（会议纪要0905.docx）', s:'ok', l:'成功'},
-    {t:'09-05 09:58 购买词元包（10万词元）', s:'ok', l:'已支付'},
-    {t:'09-04 17:02 删除会话（旧手机迁移）', s:'ok',  l:'逻辑删除'}
-  ],
+  mode:'guest', token:null, user:null, roles:[], isAdmin:false, todoApprovals:[], notifs:[], unread:0,
+  bill:[],
+  log:[],
   approvals:[], lastAnswer:''
 };
 
@@ -638,7 +595,15 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Number(n).toLocaleString('en-US');
 
+/* 未登录/无数据的统一空态行 */
+const emptyHint = msg => '<div class="muted" style="padding:10px 0">'+msg+'</div>';
+
 function renderExperts(){
+  if(!EXPERTS.length){
+    $('expertList').innerHTML = emptyHint(state.token ? '专家目录加载失败，请下拉刷新或重新登录' : '登录后展示平台专家目录');
+    $('homeExperts').innerHTML = emptyHint(state.token ? '专家目录加载失败' : '登录后精选专家将展示在这里');
+    return;
+  }
   const row = (e,i) => '<div class="expert-row" onclick="startChat('+i+')">'
     + '<div class="avatar">'+e.icon+'</div>'
     + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px">'+e.name+'</div>'
@@ -646,49 +611,53 @@ function renderExperts(){
     + '<div style="margin-top:4px">'+e.tags.map(t=>'<span class="tag">'+t+'</span>').join('')+'</div></div>'
     + '<span class="muted">›</span></div>';
   $('expertList').innerHTML = EXPERTS.map(row).join('');
-  $('homeExperts').innerHTML = [0,2].map(i=>row(EXPERTS[i],i)).join('');
+  $('homeExperts').innerHTML = [0,2].filter(i=>i<EXPERTS.length).map(i=>row(EXPERTS[i],i)).join('');
 }
 
 function renderSkills(){
-  $('skillGrid').innerHTML = Object.keys(SKILLS).map(name=>{
+  const keys = Object.keys(SKILLS);
+  $('skillGrid').innerHTML = keys.length ? keys.map(name=>{
     const s = SKILLS[name];
     return '<div class="grid-item" onclick="openSkill(\''+name+'\')" tabindex="0">'
       + '<div class="ico">'+s.icon+'</div><div class="name">'+name+'</div></div>';
-  }).join('');
+  }).join('') : emptyHint(state.token ? '技能目录加载失败，请重新进入' : '登录后展示可用技能');
 }
 
 function renderKB(){
-  $('kbList').innerHTML = KB_FILES.map(f=>{
+  $('kbList').innerHTML = KB_FILES.length ? KB_FILES.map(f=>{
     const b = f.state==='ok' ? '<span class="badge ok">已入库</span>' : '<span class="badge wait">解析中</span>';
     return '<div class="row"><span class="t">'+f.icon+' '+esc(f.name)+'</span>'+b+'</div>';
-  }).join('');
+  }).join('') : emptyHint(state.token ? '还没有登记资料，在下方「上传资料」登记' : '登录后展示你的知识库资料');
 }
 
 function renderBill(){
-  $('billList').innerHTML = state.bill.map(b=>{
+  $('billList').innerHTML = state.bill.length ? state.bill.map(b=>{
     const io = (b.prompt != null && b.completion != null)
       ? ' <span class="muted">（入 '+fmt(b.prompt)+' / 出 '+fmt(b.completion)+'）</span>' : '';
     return '<div class="row"><span class="t">'+esc(b.t)+'</span>'
          + '<span class="hl num">+'+fmt(b.n)+' 词元'+io+'</span></div>';
   }).join('')
-    + '<div class="muted" style="margin-top:9px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>';
+    + '<div class="muted" style="margin-top:9px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>'
+  : emptyHint(state.token ? '暂无消费流水，发起一次会话后即可看到真实计量账单' : '登录后展示真实用量账单');
 }
 
 function renderLog(){
-  $('logList').innerHTML = state.log.map(l=>
-    '<div class="row"><span class="t">'+esc(l.t)+'</span><span class="badge '+l.s+'">'+l.l+'</span></div>').join('');
+  $('logList').innerHTML = state.log.length ? state.log.map(l=>
+    '<div class="row"><span class="t">'+esc(l.t)+'</span><span class="badge '+l.s+'">'+l.l+'</span></div>').join('')
+  : emptyHint(state.token ? '暂无操作记录' : '登录后展示你的操作记录（全过程留痕）');
 }
 
 function syncQuota(){
+  const hasQuota = state.quota > 0;
   const left = Math.max(0, state.quota - state.used);
-  const pct  = Math.min(100, Math.round(state.used / state.quota * 100));
-  $('quotaNum').textContent = fmt(left);
+  const pct  = hasQuota ? Math.min(100, Math.round(state.used / state.quota * 100)) : 0;
+  $('quotaNum').textContent = fmt(hasQuota ? left : 0);
   $('meUsed').textContent   = fmt(state.used);
   $('freeNum').textContent  = fmt(state.free);
   const bar = $('quotaBar');
   bar.querySelector('i').style.width = pct + '%';
   bar.classList.toggle('low', pct > 80 && pct < 100);
-  bar.classList.toggle('out', pct >= 100);
+  bar.classList.toggle('out', hasQuota && pct >= 100);
 }
 
 function setLink(mode, text){
@@ -723,7 +692,10 @@ function switchTab(el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   go(el.dataset.page);
-  if(el.dataset.page === 'page-chat' && !$('msgs').children.length) startChat(EXPERTS.indexOf(state.chatExpert));
+  if(el.dataset.page === 'page-chat' && !$('msgs').children.length){
+    const idx = EXPERTS.indexOf(state.chatExpert);
+    if(idx >= 0) startChat(idx);
+  }
 }
 
 /* ---------- Toast ---------- */
@@ -739,6 +711,16 @@ function toast(msg){
    4. 会话：流式输出 + 词元计量 + 引用溯源 + 审批卡点
    ============================================================ */
 function startChat(i){
+  if(!state.token){
+    toast('请先登录后再与专家对话');
+    const ls = document.getElementById('loginScreen');
+    if(ls) ls.style.display = 'flex';
+    return;
+  }
+  if(!EXPERTS.length || !EXPERTS[i]){
+    toast('专家目录未加载，请稍后重试');
+    return;
+  }
   state.chatExpert = EXPERTS[i];
   state.conversationId = null;            // 换专家 = 新会话
   state.history = [];
@@ -820,7 +802,14 @@ async function send(){
 
   const paint = ()=>{ sb.txt.textContent = full; scrollMsgs(); };
 
-  if(state.mode === 'live'){
+  if(!state.token){
+    toast('请先登录后再发起会话');
+    sb.wrap.remove();
+    state.busy = false; btn.textContent = '发送'; btn.classList.remove('ghost');
+    return;
+  }
+
+  if(state.token){
     try{
       const convId = await API.ensureConversation();
       const ctx = {
@@ -842,18 +831,16 @@ async function send(){
     }
   }
 
-  // 离线演示：本地逐段输出（原型 30ms 分片的等价实现）
-  if(state.mode !== 'live' || failed){
-    if(failed){ setLink('mock','离线演示'); toast('后端未连通，已切回离线演示'); }
-    const answer = (state.kbOn ? '根据你知识库中《2026年产业扶持政策汇编》：\n\n' : '')
-      + '针对「'+q+'」：我市对开展人工智能应用改造的企业给予最高 30% 的算力使用补贴，单户企业年度补贴上限 50 万元。'
-      + '申报需通过市经信局线上平台提交，截止时间为每年 6 月与 12 月两批。'
-      + (state.kbOn ? '' : '\n\n（本回答基于模型通用知识，请注意甄别）');
-    for(let i=0; i<answer.length; i+=3){
-      if(!state.busy) break;                 // 离线模式同样支持中断
-      full += answer.slice(i, i+3); paint();
-      await new Promise(r=>setTimeout(r, 16));
-    }
+  // 后端不可用：明确报错，不再用本地假回答兜底；失败轮次不产生任何计量
+  if(failed){
+    sb.cursor.remove();
+    sb.txt.innerHTML = '<div class="exhaust"><div class="hd">⚠️ 后端连接失败，本轮未生成回答</div>'
+      + esc(failed || '当前未登录或后端不可用')
+      + '<div class="muted" style="margin-top:6px">未产生词元计量与账单。请确认后端已启动后重试。</div></div>';
+    scrollMsgs();
+    state.busy = false;
+    btn.textContent = '发送'; btn.classList.remove('ghost');
+    return;
   }
 
   sb.cursor.remove();
@@ -879,12 +866,12 @@ function settleTurn(question, answer, tokens, pIn, pOut){
   if(!last) return;
   const bubble = last.querySelector('.bubble');
 
-  // 来源可追溯（FR-D5 / 交互约束 2）
+  // 来源可追溯（FR-D5 / 交互约束 2）：M1 会话接真实模型/RAG 后由后端返回引用，
+  // 前端不再硬编码假来源；kbOn 仅展示「已启用知识库」状态
   let extra = '<div class="meta-line">本次消耗 <b>'+fmt(tokens)+'</b> 词元'
             + '（输入 <b>'+fmt(pIn)+'</b> / 输出 <b>'+fmt(pOut)+'</b>）· 模型：智能路由 · 已入账本并留痕</div>';
   if(state.kbOn){
-    extra += '<span class="cite" onclick="toast(\'打开原文：《2026年产业扶持政策汇编》第 3.2 节\')">'
-           + '📎 来源：《2026年产业扶持政策汇编》第 3.2 节 · 点击查看原文</span>';
+    extra += '<div class="meta-line">📚 已启用知识库辅助回答 · 引用溯源将在资料解析入库后由后端返回</div>';
   }else{
     extra += '<div class="meta-line">本回答基于模型通用知识，请注意甄别</div>';
   }
@@ -927,7 +914,7 @@ async function submitApprove(btn){
 
 /* 我的审批：拉取我发起的审批单，PENDING 可附 通过/驳回 操作 */
 async function loadApprovals(){
-  if(state.mode !== 'live') return;
+  if(!state.token) return;
   try{
     const list = await API.approvalList('mine');
     state.approvals = list || [];
@@ -972,7 +959,7 @@ function renderTodos(){
 
 /* ---- 站内通知（审批事件驱动）：提交→管理员；通过/驳回→发起人 ---- */
 async function loadNotifs(){
-  if(state.mode !== 'live') return;
+  if(!state.token) return;
   try{
     const d = await API.notificationList();
     state.notifs = (d && d.items) || [];
@@ -1070,7 +1057,7 @@ async function approveOrder(id, decision, note){
 /* 中断生成（FR-D1）：中止前端读取流 + 通知后端取消 run */
 function stopRun(){
   if(state.controller){ try{ state.controller.abort(); }catch(e){} state.controller = null; }
-  if(state.runId && state.mode === 'live'){ API.cancel(state.runId).catch(()=>{}); }
+  if(state.runId && state.token){ API.cancel(state.runId).catch(()=>{}); }
   const c = document.querySelector('.cursor'); if(c) c.remove();
   state.busy = false; state.runId = null;
   const btn = $('sendBtn');
@@ -1083,6 +1070,7 @@ function stopRun(){
    ============================================================ */
 function openSkill(name){
   const s = SKILLS[name];
+  if(!s){ toast('技能未加载'); return; }
   $('skillName').textContent = s.icon + ' ' + name;
   $('skillResult').style.display = 'none';
   $('skillForm').innerHTML = s.fields.map(f=>{
@@ -1102,26 +1090,27 @@ function openSkill(name){
   $('pageTitle').textContent = name;
 }
 
+/* 技能调用（FR-E1/E2/E3）：表单字段拼成结构化提示词，
+   跳转对应专家会话走真实模型链路——生成内容、词元计量、留痕、审批卡点全部真实。 */
 function genDoc(name){
   const s = SKILLS[name];
-  const topic = ($('sf_topic')||$('sf_focus')||$('sf_dim')||$('sf_detail')||{value:''}).value || '相关工作事项';
-  const r = $('skillResult');
-  r.style.display = 'block';
-  $('skillText').textContent =
-    '关于'+String(topic).replace(/^关于组织?/,'')+'的通知\n\n'
-    + '各有关企业：\n'
-    + '  为深入推进人工智能与实体经济融合，搭建供需对接平台，经研究，定于近期组织全市人工智能应用供需对接会。现将有关事项通知如下：\n'
-    + '  一、会议时间与地点（另行通知）。\n'
-    + '  二、参会范围：全市有智能化改造需求的企业及人工智能服务供应商。\n'
-    + '  三、报名方式：请于规定时间前通过线上平台报名。\n\n'
-    + '（以上为结构化生成示例，正式使用前请人工复核）';
-  state.used += s.est; syncQuota();
-  const stamp = stampOf(new Date());
-  state.bill.unshift({t:stamp+' · '+name+'技能', n:s.est});
-  state.log.unshift({t:stamp+' 调用技能（'+name+'）', s:'ok', l:'成功'});
-  renderBill(); renderLog();
-  toast('生成完成，消耗 '+fmt(s.est)+' 词元已入账');
-  r.scrollIntoView({behavior:'smooth', block:'nearest'});
+  if(!s){ toast('技能未加载'); return; }
+  if(!state.token){
+    toast('请先登录后再调用技能');
+    const ls = document.getElementById('loginScreen');
+    if(ls) ls.style.display = 'flex';
+    return;
+  }
+  const fields = (s.fields||[]).map(f=>{
+    const el = $('sf_'+f.k);
+    const v = (el && el.value && el.value.trim()) || f.value || '未填写';
+    return '· '+f.label+'：'+v;
+  }).join('\n');
+  const prompt = '请以「'+name+'」技能完成以下任务：\n'+fields;
+  const idx = s.expertKey ? EXPERTS.findIndex(e=>e.key===s.expertKey) : -1;
+  startChat(idx >= 0 ? idx : 0);
+  $('chatInput').value = prompt;
+  send();
 }
 
 /* ============================================================
@@ -1135,26 +1124,30 @@ function stampOf(d){
   return p(t.getMonth()+1)+'-'+p(t.getDate())+' '+p(t.getHours())+':'+p(t.getMinutes());
 }
 
-/* 登录成功后拉取真实业务数据，整体替换静态 mock。
-   任一接口失败都不抛错——保留内置静态数据，仍可作为离线演示运行。 */
+/* 登录成功后拉取全部业务数据（专家/技能/知识库/额度/账单/日志/审批/通知）。
+   接口失败按域降级：单个域失败只影响该域（空态），不再用假数据兜底；
+   全部失败时抛错由调用方提示。 */
 async function loadLiveData(){
-  const [experts, skills, docs, quota, ledger, logs, approvals, notifs] = await Promise.all([
-    API.experts(), API.skills(), API.kbDocs(), API.quota(), API.ledger(), API.logs(), API.approvalList('mine'),
-    API.notificationList()
+  const results = await Promise.allSettled([
+    API.experts(), API.skills(), API.kbDocs(), API.quota(),
+    API.ledger(), API.logs(), API.approvalList('mine'), API.notificationList()
   ]);
+  const ok = i => results[i].status === 'fulfilled' ? results[i].value : null;
+  const experts = ok(0), skills = ok(1), docs = ok(2), quota = ok(3),
+        ledger = ok(4), logs = ok(5), approvals = ok(6), notifs = ok(7);
 
-  if(experts && experts.length){
+  if(experts){
     EXPERTS.length = 0;                       // 原地替换，保住已有引用
     experts.forEach(e=>EXPERTS.push({
       key:e.key, name:e.name, icon:e.icon, desc:e.desc,
       tags:e.tags||[], intro:e.intro||'', recs:e.recs||[]
     }));
   }
-  if(skills && skills.length){
+  if(skills){
     Object.keys(SKILLS).forEach(k=>delete SKILLS[k]);
-    skills.forEach(s=>{ SKILLS[s.name] = {icon:s.icon, est:s.est||0, fields:s.fields||[]}; });
+    skills.forEach(s=>{ SKILLS[s.name] = {icon:s.icon, est:s.est||0, fields:s.fields||[], expertKey:s.expertKey}; });
   }
-  if(docs && docs.length){
+  if(docs){
     KB_FILES.length = 0;
     docs.forEach(f=>KB_FILES.push({name:f.name, icon:f.icon, state:f.state}));
   }
@@ -1168,6 +1161,8 @@ async function loadLiveData(){
   }
 
   renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); renderApprovals(); renderNotifs(); syncQuota();
+  const failedCount = results.filter(r=>r.status==='rejected').length;
+  if(failedCount) toast(failedCount + ' 项数据加载失败，其余功能正常');
 }
 
 /* 后端账本行 → 账单行（时间由 createdAt 格式化，杜绝前端后端两处时间打架） */
@@ -1178,7 +1173,7 @@ const toLogRow = x => ({t:stampOf(x.createdAt)+' '+x.action, s:x.status, l:x.lab
 
 /* 一轮结束后回拉额度/账本/台账，以服务端账本为准（前端只是乐观更新） */
 async function refreshBilling(){
-  if(state.mode !== 'live') return;
+  if(!state.token) return;
   try{
     const [quota, ledger, logs] = await Promise.all([API.quota(), API.ledger(), API.logs()]);
     if(quota){ state.quota = quota.quota; state.used = quota.used; state.free = quota.free; syncQuota(); }
@@ -1201,7 +1196,7 @@ async function bootstrap(){
       state.mode = 'live';
       renderMeHead();
       setLink('live','实时联调');
-      try{ await loadLiveData(); }catch(e){ setLink('mock','离线演示'); }
+      await loadLiveData();
       startChat(0); go('page-home');
       document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
       return;
@@ -1243,14 +1238,25 @@ async function doLogin(){
   }
 }
 
-/* 退出登录：清除会话，回到登录页 */
+/* 退出登录：清除会话与全部内存数据，回到登录页（空态展示，不留任何残影数据） */
 function doLogout(){
   try{ localStorage.removeItem('aioa_session'); }catch(e){}
+  if(state.controller){ try{ state.controller.abort(); }catch(e){} state.controller = null; }
   state.token=null; state.user=null; state.roles=[]; state.isAdmin=false;
-  state.approvals=[]; state.todoApprovals=[];
+  state.mode='guest'; state.conversationId=null; state.runId=null; state.history=[];
+  state.chatExpert=null; state.lastAnswer='';
+  state.quota=0; state.used=0; state.free=0;
+  state.bill=[]; state.log=[]; state.approvals=[]; state.todoApprovals=[];
+  state.notifs=[]; state.unread=0;
+  EXPERTS.length = 0;
+  Object.keys(SKILLS).forEach(k=>delete SKILLS[k]);
+  KB_FILES.length = 0;
+  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog();
+  renderApprovals(); renderNotifs(); syncQuota(); renderMeHead();
+  setLink('guest','未登录');
+  $('msgs').innerHTML = '';
   const ls = document.getElementById('loginScreen');
   if(ls) ls.style.display = 'flex';
-  renderApprovals(); renderMeHead();
   toast('已退出登录');
 }
 
