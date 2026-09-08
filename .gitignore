@@ -62,3 +62,13 @@ e2e_*.json
 e2e_*.py
 e2e_*.sh
 /extract_docx.py
+
+# ---- 本地后端启动 / 冒烟脚本产物（不入库）----
+boot-run*.log
+boot-run*.err
+start-backend.bat
+.proxy.pid
+.backend.pid
+.smoke_*.py
+.aioa_check.js
+proxy-run*.log
