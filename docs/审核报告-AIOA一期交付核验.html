@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIOA 一期交付审核报告 · 对照交接包文档核验</title>
+<style>
+  :root{
+    --blue:#2f6fed; --blue-deep:#1d4fc4; --amber:#e8890c;
+    --ink:#1a2333; --muted:#5b6b82; --line:#e3e9f2; --bg:#f4f7fb; --card:#ffffff;
+    --ok:#0f8a4d; --ok-bg:#e6f6ee; --part:#b96e00; --part-bg:#fdf3e0; --no:#c23a3a; --no-bg:#fdeaea;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"Noto Sans SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);line-height:1.65}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 64px}
+  header.hero{background:linear-gradient(135deg,var(--blue) 0%,var(--blue-deep) 100%);color:#fff;border-radius:16px;padding:36px 40px;margin-bottom:28px}
+  header.hero h1{font-size:26px;font-weight:900;letter-spacing:-.02em;margin-bottom:8px}
+  header.hero p{opacity:.92;font-size:14px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+  .kpi{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:12px;padding:14px 16px}
+  .kpi b{display:block;font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
+  .kpi span{font-size:12px;opacity:.9}
+  h2{font-size:19px;font-weight:900;margin:34px 0 12px;padding-left:12px;border-left:4px solid var(--blue)}
+  h3{font-size:15px;font-weight:800;margin:18px 0 8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#eef3fa;text-align:left;padding:8px 10px;font-weight:800;border-bottom:2px solid var(--line);white-space:nowrap}
+  td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .badge{display:inline-block;font-size:11.5px;font-weight:800;padding:2px 9px;border-radius:999px;white-space:nowrap}
+  .b-ok{color:var(--ok);background:var(--ok-bg)} .b-part{color:var(--part);background:var(--part-bg)} .b-no{color:var(--no);background:var(--no-bg)}
+  .b-m{color:var(--blue-deep);background:#e8effc} .b-o{color:var(--muted);background:#eef1f6}
+  .muted{color:var(--muted)} .num{font-variant-numeric:tabular-nums}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  ul.tight{padding-left:20px} ul.tight li{margin:5px 0}
+  .verdict{background:#fffdf5;border:1px solid #f0dfb2;border-radius:12px;padding:18px 22px;margin-bottom:6px}
+  .verdict b.hl{color:var(--amber)}
+  footer{margin-top:36px;color:var(--muted);font-size:12px;text-align:center}
+  @media print{ body{background:#fff} header.hero{border-radius:0} .card{break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>AIOA 一期交付审核报告</h1>
+  <p>对照《开发者交接包》四份文档逐条核验 · 涵盖 P0 需求规格 / 技术方案 / 产品架构概要 / 实体分级与 PoC 计划</p>
+  <p style="margin-top:4px">审核日期：2026-09-08 · 审核范围：aioa 仓库（server 四模块 + agent 运行时 + 管理端 shell + 用户端 H5）</p>
+  <div class="kpis">
+    <div class="kpi"><b class="num">20/20</b><span>全链路 e2e 回归通过</span></div>
+    <div class="kpi"><b class="num">21</b><span>Agent 运行时单测全绿</span></div>
+    <div class="kpi"><b class="num">22/30</b><span>M 级 FR 完全达成（73%）</span></div>
+    <div class="kpi"><b class="num">12/12</b><span>P0 核心实体全部落库</span></div>
+  </div>
+</header>
+
+<div class="verdict">
+  <b>总体结论：</b>一期「接入 → 会话 → 调用 → 计量 → 计费 → 审计」最小闭环<b>已全部跑通并经端到端实证</b>。
+  M 级 30 条中 22 条完全达成、6 条部分达成（入口/数据齐备，外部通道未接）、2 条未实现（手机号绑定、实名认证，均依赖外部资质）；
+  O 级含部分达成口径通过率 60%，恰好达到验收门禁。模型路由已用 <b class="hl">deepseek-chat 真实推理验证</b>（真实计量 1222/188 tokens）。
+  审核中发现并当场修复 5 个缺陷（含 2 个阶段 4 引入的真 bug），修复后全量回归 20/20 通过。
+</div>
+
+<h2>一、审核过程中发现并修复的问题（commit 5176c58 / 14213e7）</h2>
+<div class="card">
+<table>
+<tr><th style="width:220px">问题</th><th style="width:90px">严重度</th><th>说明与修复</th></tr>
+<tr><td>model_ref 静默失效</td><td><span class="badge b-no">高</span></td><td>CreateRunRequest.modelRef 缺 <code>@JsonProperty("model_ref")</code>，用户端发的蛇形键被 Jackson 丢弃 → 用户端模型切换完全无效。补注解修复，并以 deepseek 真实推理实证。</td></tr>
+<tr><td>run.failed 误标成功</td><td><span class="badge b-no">高</span></td><td>agent 上游报错（dashscope 欠费 400）后，Java 侧不消费 run.failed 帧，run 落库 SUCCEEDED/0 tokens。补 error/run.failed 追踪 + 失败收口 markFailed，真实错误落库。</td></tr>
+<tr><td>历史会话列表恒为空</td><td><span class="badge b-part">中</span></td><td>用户端 loadConversations 解包缺 PageResult.list 键 → 列表恒空。修复解包链。</td></tr>
+<tr><td>emoji 残留 13 处</td><td><span class="badge b-part">中</span></td><td>底部 Tab / 头像 / 警示前缀 / 知识库开关等残留，与「按钮纯色化」验收口径不符。全部清除（Tab 改单字，头像改昵称首字），复扫清零。</td></tr>
+<tr><td>FR-D3 / FR-G3 缺口</td><td><span class="badge b-part">中</span></td><td>会话重命名端点缺失（新增 PUT /conversations/{id}，越权 403 实证）；账单导出为 toast 模拟（改为真实 CSV 下载，含 BOM）。</td></tr>
+</table>
+</div>
+
+<h2>二、FR 达成表（对照 P0 需求规格说明书）</h2>
+<div class="card">
+<p class="muted" style="margin-bottom:10px">口径说明：P0 文档正文表格实际共 <b>35 条</b> FR（README 概述写 31 条，以正文表格为准）。
+判定口径：<span class="badge b-ok">达成</span>=端到端实证可用；<span class="badge b-part">部分</span>=核心可用但外部通道/细节未接；<span class="badge b-no">未实现</span>。</p>
+<table>
+<tr><th style="width:64px">编号</th><th style="width:120px">功能</th><th style="width:52px">级</th><th style="width:64px">状态</th><th>达成证据 / 差距说明</th></tr>
+<tr><td>FR-A1</td><td>微信授权登录</td><td><span class="badge b-m">M</span></td><td><span class="badge b-part">部分</span></td><td>登录态（JWT）、自动建账户、静默续期达成；微信授权需小程序 Appid 资质，当前为账号密码形态</td></tr>
+<tr><td>FR-A2</td><td>手机号绑定</td><td><span class="badge b-m">M</span></td><td><span class="badge b-no">未实现</span></td><td>需短信通道或微信手机号授权，依赖外部资质</td></tr>
+<tr><td>FR-A3</td><td>实名认证</td><td><span class="badge b-m">M</span></td><td><span class="badge b-no">未实现</span></td><td>身份证二要素需政务实名接口对接，依赖外部资质</td></tr>
+<tr><td>FR-A4</td><td>组织归属</td><td><span class="badge b-m">M</span></td><td><span class="badge b-part">部分</span></td><td>多租户数据模型+角色归属达成；邀请码加入与身份切换流程未做</td></tr>
+<tr><td>FR-A5</td><td>个人资料偏好</td><td><span class="badge b-o">O</span></td><td><span class="badge b-part">部分</span></td><td>个人信息页（资料/角色/租户）达成；偏好设置未做</td></tr>
+<tr><td>FR-B1</td><td>角色权限控制</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>RBAC 三级角色；审批待办越权 403 实证（T05/T15）</td></tr>
+<tr><td>FR-B2</td><td>额度准入前置</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>发起前校验余额，清零后 403 引导文案实证（T18），测后恢复</td></tr>
+<tr><td>FR-B3</td><td>知识库访问隔离</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>个人+本租户双域查询；工具网关同权限域</td></tr>
+<tr><td>FR-C1</td><td>专家列表与详情</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>4 位专家卡片（名称/简介/标签/开场白/intro）</td></tr>
+<tr><td>FR-C2</td><td>专家会话</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>一键进入会话，携带专家人设与 agentCode</td></tr>
+<tr><td>FR-C3</td><td>推荐问题</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>开场气泡内 recs 推荐问题 chips，点击即发送</td></tr>
+<tr><td>FR-C4</td><td>专家评价</td><td><span class="badge b-o">O</span></td><td><span class="badge b-no">未实现</span></td><td>点赞/点踩/一句话评价未实现（可扩展台账表低成本补齐）</td></tr>
+<tr><td>FR-D1</td><td>流式输出</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>SSE 逐字流式 + 生成中停止（cancel + AbortController）</td></tr>
+<tr><td>FR-D2</td><td>多轮上下文</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>近 10 轮历史注入 agent（agent 日志 history=10 turns 实证）</td></tr>
+<tr><td>FR-D3</td><td>会话管理</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>列表/重命名（本轮补齐）/逻辑删除留痕，越权 403 实证（T17）</td></tr>
+<tr><td>FR-D4</td><td>模型选择</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>模型下拉 + model_ref 全链路路由；deepseek 真实推理实证（T07）</td></tr>
+<tr><td>FR-D5</td><td>引用溯源</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>citations 落库+前端来源条渲染（T06）</td></tr>
+<tr><td>FR-D6</td><td>审批卡点演示</td><td><span class="badge b-o">O</span></td><td><span class="badge b-ok">达成</span></td><td>approval.required 卡片→审批单→管理员决策全闭环（T10/T16）</td></tr>
+<tr><td>FR-E1</td><td>技能列表</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>4 项技能首页快捷入口</td></tr>
+<tr><td>FR-E2</td><td>技能结构化输入</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>结构化表单提交后进入会话生成结果</td></tr>
+<tr><td>FR-E3</td><td>结果再加工</td><td><span class="badge b-m">M</span></td><td><span class="badge b-part">部分</span></td><td>复制/转入会话可用；「存为资料」为演示占位未接后端</td></tr>
+<tr><td>FR-F1</td><td>知识库上传</td><td><span class="badge b-m">M</span></td><td><span class="badge b-part">部分</span></td><td>资料登记+留痕达成；真实文件流上传/解析/50MB 限制未接解析管道</td></tr>
+<tr><td>FR-F2</td><td>入库状态管理</td><td><span class="badge b-m">M</span></td><td><span class="badge b-part">部分</span></td><td>状态三态展示（已入库/解析中）；失败重试未做</td></tr>
+<tr><td>FR-F3</td><td>知识库开关</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>会话页开关，kbEnabled 随 run 请求下发</td></tr>
+<tr><td>FR-F4</td><td>企业知识库管理</td><td><span class="badge b-o">O</span></td><td><span class="badge b-part">部分</span></td><td>后端租户域支持；管理端管理界面未做</td></tr>
+<tr><td>FR-G1</td><td>额度总览</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>首页额度卡+进度条+不足提醒</td></tr>
+<tr><td>FR-G2</td><td>实时计量展示</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>每轮输入/输出词元分列，写入账本（T11）</td></tr>
+<tr><td>FR-G3</td><td>用量账单</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>明细聚合 + 真实 CSV 导出（本轮补齐）</td></tr>
+<tr><td>FR-G4</td><td>词元包购买</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>套餐→下单→支付→实时到账→订单可查（T12）；微信支付为 MOCK 通道（适配器已预留 WECHAT 位）</td></tr>
+<tr><td>FR-G5</td><td>对公购买通道</td><td><span class="badge b-o">O</span></td><td><span class="badge b-no">未实现</span></td><td>对公转账+后台核销，规划二期</td></tr>
+<tr><td>FR-G6</td><td>额度用尽引导</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>403 引导文案+购买词元包页+明日免费额度三路径</td></tr>
+<tr><td>FR-H1</td><td>操作留痕</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>登录/会话/上传/购买/审批全量留痕，用户不可改</td></tr>
+<tr><td>FR-H2</td><td>我的留痕查询</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>操作记录页 50 条可查（T13）</td></tr>
+<tr><td>FR-H3</td><td>内容合规双审</td><td><span class="badge b-m">M</span></td><td><span class="badge b-ok">达成</span></td><td>输入侧 403 拦截（T09）；输出侧命中中止应答+合规提示落库</td></tr>
+<tr><td>FR-H4</td><td>投诉与纠错</td><td><span class="badge b-m">M</span></td><td><span class="badge b-part">部分</span></td><td>入口存在（错误/有害/侵权三类）；提交后处理流程未接后端</td></tr>
+</table>
+<p style="margin-top:12px"><b>M 级（30 条）：</b><span class="badge b-ok">达成 22</span> <span class="badge b-part">部分 6</span> <span class="badge b-no">未实现 2</span>
+　<b>O 级（5 条）：</b><span class="badge b-ok">达成 1</span> <span class="badge b-part">部分 2</span> <span class="badge b-no">未实现 2</span>（部分计入口径下通过率 60%，达验收门禁）</p>
+</div>
+
+<h2>三、架构符合度核对（六横两纵 · 技术方案/产品架构概要）</h2>
+<div class="grid2">
+<div class="card">
+<h3>分层架构落地情况</h3>
+<table>
+<tr><th>文档定义层级</th><th>落地</th></tr>
+<tr><td>① 接入层（四端）</td><td><span class="badge b-ok">部分</span> 用户端 H5 + 管理端 Web；运营端/开放端按分期规划未启</td></tr>
+<tr><td>② 协同应用层</td><td><span class="badge b-ok">核心</span> 会话/审批/通知/留痕；项目/任务/工作流属 P1 二期</td></tr>
+<tr><td>③ 智能体运行层</td><td><span class="badge b-ok">达成</span> Agent Runtime：感知-规划-执行-反思循环、工具沙箱（白名单+权限）、HITL 审批卡点、run_step 全程追踪</td></tr>
+<tr><td>④ AI 能力层</td><td><span class="badge b-ok">达成</span> 统一模型网关（5 provider 注册/显式路由/缺 key 降级/计量埋点）、RAG 检索+引用溯源、技能引擎；连接器/NL2SQL 二期</td></tr>
+<tr><td>⑤ 平台底座层</td><td><span class="badge b-ok">达成</span> 身份租户/RBAC/计量计费/支付结算/台账审计/消息中心</td></tr>
+<tr><td>⑥ 资源层</td><td><span class="badge b-ok">核心</span> 词元计量度量衡落地；GPU 算力池对接属三期</td></tr>
+<tr><td>纵1 安全合规</td><td><span class="badge b-ok">核心</span> 内容双审/全程留痕/JWT 鉴权；等保三级与信创为二期合规工程</td></tr>
+<tr><td>纵2 运营计费</td><td><span class="badge b-ok">达成</span> 计量→账本→订单→支付→套餐权益全链路</td></tr>
+</table>
+</div>
+<div class="card">
+<h3>P0 12 核心实体 → 数据库映射（30 表全覆盖）</h3>
+<table>
+<tr><th>实体</th><th>承载表</th></tr>
+<tr><td>租户 / 个人</td><td>sys_tenant / sys_user</td></tr>
+<tr><td>权限</td><td>sys_role · sys_permission · sys_user_role · sys_role_permission</td></tr>
+<tr><td>会话</td><td>chat_conversation · chat_message</td></tr>
+<tr><td>专家 / 技能</td><td>ai_expert / ai_skill</td></tr>
+<tr><td>知识库 / 模型</td><td>kb_document / model_provider</td></tr>
+<tr><td>词元 / 账本</td><td>tenant_quota / token_ledger</td></tr>
+<tr><td>订单 / 支付</td><td>payment_order · quota_package</td></tr>
+<tr><td>台账</td><td>audit_log · client_activity_log · sys_login_log · tool_invocation_log</td></tr>
+<tr><td>运行支撑</td><td>agent_definition · agent_run · agent_run_step · tool_system · tool_definition · tool_permission · app_registry · notification · approval_order</td></tr>
+</table>
+<p class="muted" style="margin-top:10px">README 约定一期只做 4 个最小服务：会话服务 ✓、Agent Runtime（含模型网关）✓、词元/账本记账服务 ✓、用户与租户服务 ✓ —— 结构一致，微服务拆分按约定渐进。</p>
+</div>
+</div>
+
+<h2>四、测试结果汇总</h2>
+<div class="grid2">
+<div class="card">
+<h3>全链路 e2e 回归（20/20 通过）</h3>
+<table>
+<tr><th>链路</th><th>关键实证</th></tr>
+<tr><td>认证与权限</td><td>双账号登录、错误密码拒绝、越权 403（T01/T05/T15）</td></tr>
+<tr><td>会话主链路</td><td>SSE 流式 49 事件、citations、消息落库（T06）</td></tr>
+<tr><td>模型路由</td><td>deepseek 真实推理 SUCCEEDED（1222/188 tokens 真实计量）；dashscope 正确路由且上游 400 欠费错误完整落库 FAILED（T07/T08）</td></tr>
+<tr><td>内容合规</td><td>敏感输入 403 拦截（T09）</td></tr>
+<tr><td>审批卡点</td><td>卡片→审批单→管理员批准状态流转（T10/T16）</td></tr>
+<tr><td>计量支付</td><td>下单 PENDING→支付 PAID→+100000 实时到账→重复通知幂等（T11/T12）</td></tr>
+<tr><td>留痕通知</td><td>操作留痕 50 条、通知已读（T13/T14）</td></tr>
+<tr><td>会话管理</td><td>列表/逻辑删除/重命名+越权 403（T17）</td></tr>
+<tr><td>额度准入</td><td>余额清零→403 引导→恢复（T18）</td></tr>
+</table>
+</div>
+<div class="card">
+<h3>工程质量</h3>
+<ul class="tight">
+<li><b>Agent 单测 21 项全绿</b>：运行时工具循环、citations 去重、history 构建、tools_client 契约（成功/网关拒绝/HTTP 401/异常收敛）、echo 引用回写</li>
+<li><b>管理端构建</b>：vue-tsc 类型检查 + vite build 通过</li>
+<li><b>编译治理</b>：全量 clean package 0 ERROR（三次增量构建根因均为陈旧字节码/依赖未 install）</li>
+<li><b>已知数据性失败</b>：dashscope 账户欠费（Arrearage）——路由与错误处理正确，充值后即用</li>
+</ul>
+<h3 style="margin-top:14px">技术栈偏差（均已在过程中确认口径）</h3>
+<table>
+<tr><th>README 约定</th><th>实际交付</th></tr>
+<tr><td>uni-app 三端</td><td>H5（移动端优先）+ 管理端 Vue3；小程序壳需 HBuilderX 工程，交互与接口契约不变</td></tr>
+<tr><td>AgentScope 2.0</td><td>自研 FastAPI Runtime（echo/openai_compatible 双驱动），保留循环与工具/审批契约；PoC 选型复审待产品方回填</td></tr>
+<tr><td>PostgreSQL + Redis</td><td>MySQL 8 单库（tenant_id 行级隔离）；Redis 缓存层待办</td></tr>
+<tr><td>Docker Compose</td><td>本机多进程交付（boot jar + uvicorn + 静态站），容器化清单待办</td></tr>
+</table>
+</div>
+</div>
+
+<h2>五、遗留缺口与建议（按优先级）</h2>
+<div class="card">
+<table>
+<tr><th style="width:60px">优先</th><th style="width:210px">事项</th><th>建议</th></tr>
+<tr><td><span class="badge b-no">P0</span></td><td>手机号绑定（A2）/ 实名认证（A3）</td><td>依赖微信小程序资质与短信/政务实名通道，建议二期接人中台统一解决；数据模型已预留</td></tr>
+<tr><td><span class="badge b-no">P0</span></td><td>微信支付真实通道（G4）</td><td>PaymentChannel 适配器已预留 WECHAT 位，接商户号即可切换；当前 MOCK 通道全流程可演示</td></tr>
+<tr><td><span class="badge b-part">P1</span></td><td>知识库真实文件解析（F1/F2）</td><td>接 Tika/OCR 解析管道与对象存储，当前为元数据登记+三态展示</td></tr>
+<tr><td><span class="badge b-part">P1</span></td><td>投诉纠错闭环（H4）</td><td>复用 notification 通道与台账即可低成本补齐</td></tr>
+<tr><td><span class="badge b-part">P1</span></td><td>专家评价（C4，O）</td><td>扩展台账表+会话结束点赞/点踩入口</td></tr>
+<tr><td><span class="badge b-part">P2</span></td><td>dashscope 账户充值</td><td>充值后即可完成 dashscope 真实推理 e2e（路由已验证）</td></tr>
+<tr><td><span class="badge b-part">P2</span></td><td>GitHub 推送</td><td>待用户提供 PAT 后推送（commit 链 68d757b→14213e7 共 8 个提交）</td></tr>
+<tr><td><span class="badge b-part">P2</span></td><td>容器化与部署清单</td><td>补 docker-compose.yml（boot/agent/mysql/静态站四服务）</td></tr>
+</table>
+</div>
+
+<footer>AIOA 一期交付审核报告 · 由开发代理于阶段 5 生成 · 依据交接包四份文档与 20 项全链路回归实证</footer>
+</div>
+</body>
+</html>
