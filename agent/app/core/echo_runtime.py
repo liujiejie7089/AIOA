@@ -28,7 +28,7 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     check_text_len(req.text)
     clock = WallClock()
 
-    yield SseEvent(seq=seq, type="run.started", data={"run_id": req.run_id, "conversation_id": req.conversation_id})
+    yield SseEvent(seq=seq, type="run.started", data={"run_id": req.run_id, "conversation_id": req.conversation_id, "model": "echo", "gateway_key": "echo"})
     seq += 1
 
     content = echo_text(req)

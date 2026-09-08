@@ -97,7 +97,8 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     yield SseEvent(
         seq=seq,
         type="run.started",
-        data={"run_id": req.run_id, "conversation_id": req.conversation_id},
+        data={"run_id": req.run_id, "conversation_id": req.conversation_id,
+              "model": provider.model, "gateway_key": provider.key},
     )
     seq += 1
 

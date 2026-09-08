@@ -541,7 +541,10 @@ const API = {
         buf = buf.slice(i + 2);
         const ev = parseSseFrame(frame);
         if(!ev) continue;
-        if(ev.event === 'message.delta'){
+        if(ev.event === 'run.started'){
+          const p = safeJson(ev.data);
+          if(p && p.model && h.onStarted) h.onStarted(p);  // 真实模型名透出（run.started 新增 model/gateway_key）
+        }else if(ev.event === 'message.delta'){
           const t = pickText(ev.data); if(t) h.onDelta(t);
         }else if(ev.event === 'message.completed'){
           // 该帧带最终 content 与 usage；正文已由 deltas 逐段追加完成，
@@ -822,6 +825,7 @@ async function send(){
       if(!runId) throw new Error('未取得 runId');
       $('chatModel').textContent = '模型：智能路由 · 已连接';
       await API.stream(runId, {
+        onStarted:(d)=>{ $('chatModel').textContent = '模型：' + (d.gateway_key === 'echo' ? '回声演示' : d.model); },
         onDelta:(t)=>{ if(t){ full += t; paint(); } },
         onUsage:(u)=>{ usage = u; },
         onError:(e)=>{ failed = e.message; }

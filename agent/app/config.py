@@ -1,10 +1,37 @@
-"""服务配置：全部从环境变量读取（不落盘、不入库）。"""
+"""服务配置：环境变量 + agent/.env（敏感凭据，不入库不入 git）。"""
 from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import BaseModel, Field
+
+
+def _load_dotenv() -> None:
+    """轻量 .env 加载：读 agent/.env 的 KEY=VALUE 注入环境变量。
+
+    规则：已存在的环境变量优先（不覆盖），支持 # 注释与引号值；
+    不引入 python-dotenv 依赖。
+    """
+    env_file = Path(__file__).resolve().parents[1] / ".env"
+    if not env_file.is_file():
+        return
+    try:
+        for raw in env_file.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass  # .env 不可读不算致命，继续用环境变量
+
+
+_load_dotenv()
 
 
 class Settings(BaseModel):

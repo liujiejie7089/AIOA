@@ -41,17 +41,26 @@ curl -N -X POST http://127.0.0.1:8000/internal/v1/runs \
 
 ## 环境变量
 
+敏感凭据推荐写在 `agent/.env`（模板见 `.env.example`，已被 gitignore；已有环境变量优先）。
+
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `SERVICE_JWT_SECRET` | 空 | 服务 JWT 密钥（M1 不校验，M2 启用） |
 | `AIOA_SERVER_BASE_URL` | `http://aioa-server:8080` | Java 后端回调地址 |
-| `MODEL_DEFAULT` | `echo` | 默认模型引用，覆盖 `providers.yaml` 的 `default_chat`（设 `deepseek`/`qwen-cloud`/`local-vllm`/`local-ollama` 启用真实推理） |
-| `DEEPSEEK_API_KEY` / `QWEN_API_KEY` | 空 | 云端 provider 的密钥（local 模式无需）；密钥只走环境变量，不入库 |
+| `MODEL_DEFAULT` | `echo` | 默认 provider：`echo` / `deepseek` / `dashscope` / `vllm` / `ollama` |
+| `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `VLLM_API_KEY` / `OLLAMA_API_KEY` | 空 | 对应 provider 的密钥（echo 无需）；只走环境变量或 `.env`，不入库不入 git |
+| `{KEY}_BASE_URL` / `{KEY}_MODEL` | 内置值 | 覆盖 provider 的端点与模型名（如 `DEEPSEEK_MODEL=deepseek-chat`） |
 | `PG_DSN` | 空 | 数据库（M2+ 使用，M1 不连接） |
 | `HOST` / `PORT` / `LOG_LEVEL` | `0.0.0.0` / `8000` / `INFO` | 监听与日志 |
+
+**解析与降级规则**（`app/model_gateway`）：
+- 显式指定 provider 但缺 key → 保留 provider，会话流内产出干净的 `MODEL_PROVIDER_NOT_CONFIGURED` 错误事件；
+- 未指定（走 `MODEL_DEFAULT`）且缺 key → 自动降级 echo，会话链路始终可用；
+- 未知 ref → 回退默认并记警告。
+- `run.started` 事件携带 `model` / `gateway_key`，前端据此显示真实模型名。
 
 ## 扩展点
 
 - `app/core/runtime.py`：运行时门面，M2 换成 langgraph 实现时接口不变。
-- `app/model_gateway/gateway.py` + `providers.yaml`：模型解析与云端/本地双模式切换。
+- `app/model_gateway/__init__.py`：provider 注册表与解析/降级（新增 provider 在 `_REGISTRY_SPEC` 加一行即可）。
 - `app/tools/gateway_client.py`：Java 工具回调（M1 抛 `NotImplementedError("M2")`）。

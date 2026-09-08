@@ -76,7 +76,9 @@ def test_echo_run_with_context():
     assert "".join(d["data"]["text"] for d in deltas) == expected
 
     started = events[0]["data"]
-    assert started == {"run_id": RUN_ID, "conversation_id": 10001}
+    # run.started 现携带真实模型名（前端据此显示「模型：xxx」）
+    assert started == {"run_id": RUN_ID, "conversation_id": 10001,
+                       "model": "echo", "gateway_key": "echo"}
 
     completed = events[-2]["data"]
     assert completed["content"] == expected
