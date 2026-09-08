@@ -1,4 +1,7 @@
-"""服务配置：环境变量 + agent/.env（敏感凭据，不入库不入 git）。"""
+"""服务配置：agent/.env（模块唯一配置入口，不入库）+ 环境变量。
+
+优先级：已存在的环境变量 > agent/.env > 代码默认值。
+"""
 from __future__ import annotations
 
 import os
@@ -44,7 +47,7 @@ class Settings(BaseModel):
     # Java 业务后端地址，agent 回调（tools/invoke、runs 上报）使用
     aioa_server_base_url: str = Field(default="http://aioa-server:8080", alias="AIOA_SERVER_BASE_URL")
 
-    # 默认模型引用，对应 model_gateway/providers.yaml 中的 key
+    # 默认模型引用，对应 model_gateway 注册表中的 key（echo/deepseek/dashscope/vllm/ollama）
     model_default: str = Field(default="echo", alias="MODEL_DEFAULT")
 
     # 数据库（M2+ 持久化会话/审批），M1 不连接

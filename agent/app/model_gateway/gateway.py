@@ -1,62 +1,17 @@
-"""模型网关（M1 桩）：解析 model_ref → provider 配置。
+"""兼容入口：历史代码 `from app.model_gateway import gateway` 的挂载点。
 
-M2 在此接入真实 chat/completions 调用（openai_compatible driver），
-对外接口 `resolve()` 保持不变。
+真正的实现在包 `__init__.py`（Provider 注册表 + 三级降级解析，
+配置来自 agent/.env / 环境变量的 {KEY}_API_KEY / {KEY}_BASE_URL / {KEY}_MODEL）。
+本模块仅 re-export 保持旧 import 路径可用；新代码请直接
+`from app.model_gateway import resolve`。
 """
 from __future__ import annotations
 
-import os
-from functools import lru_cache
-from pathlib import Path
+from app.model_gateway import (  # noqa: F401
+    GatewayError,
+    Provider,
+    configured_providers,
+    resolve,
+)
 
-import yaml
-from pydantic import BaseModel
-
-from app.config import settings
-
-CONFIG_PATH = Path(__file__).with_name("providers.yaml")
-
-
-class ProviderConfig(BaseModel):
-    """单个 provider 的配置项。"""
-
-    key: str
-    type: str = "cloud"
-    driver: str = "openai_compatible"
-    base_url: str = ""
-    model: str = ""
-    api_key_env: str = ""
-    enabled: bool = False
-    remark: str = ""
-
-    def api_key(self) -> str:
-        """从环境变量取密钥（密钥不入库）。"""
-        return os.getenv(self.api_key_env, "") if self.api_key_env else ""
-
-
-@lru_cache(maxsize=1)
-def _load_raw() -> dict:
-    with CONFIG_PATH.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def _default_ref() -> str:
-    """默认模型引用：env MODEL_DEFAULT 优先，其次 yaml 的 default_chat。"""
-    return settings.model_default or _load_raw().get("default_chat") or "echo"
-
-
-def resolve(model_ref: str | None = None) -> ProviderConfig:
-    """解析模型引用为 provider 配置；未知引用回退到默认。"""
-    raw = _load_raw()
-    providers: dict = raw.get("providers") or {}
-    ref = model_ref or _default_ref()
-    cfg = providers.get(ref)
-    if cfg is None:
-        ref = _default_ref()
-        cfg = providers.get(ref) or {}
-    return ProviderConfig(key=ref, **cfg)
-
-
-def default_ref() -> str:
-    """当前默认模型引用。"""
-    return _default_ref()
+__all__ = ["Provider", "GatewayError", "resolve", "configured_providers"]

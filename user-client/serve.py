@@ -8,7 +8,7 @@ AIOA 用户端 —— 统一联调服务器
   3. 支持 SSE 流式转发（/api/v1/runs/{runId}/events），事件到达即刷给浏览器
 
 用法：
-  python serve.py [port]      默认 5180
+  python serve.py [port]      命令行参数优先；端口等配置默认读同目录 .env（见 .env.example）
 """
 import http.client
 import http.server
@@ -17,10 +17,37 @@ import socketserver
 import sys
 from urllib.parse import parse_qs, urlencode, urlparse
 
-BACKEND_HOST = "127.0.0.1"
-BACKEND_PORT = 8080
 ROOT = os.path.dirname(os.path.abspath(__file__))
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5180
+
+
+def _load_env() -> None:
+    """轻量 .env 加载：读同目录 .env 的 KEY=VALUE 注入环境变量。
+
+    规则：已存在的环境变量优先（不覆盖），支持 # 注释与引号值，零依赖。
+    """
+    env_file = os.path.join(ROOT, ".env")
+    if not os.path.isfile(env_file):
+        return
+    try:
+        with open(env_file, encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass  # .env 不可读不算致命，继续用环境变量
+
+
+_load_env()
+
+BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8080"))
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.getenv("PORT", "5181"))
 
 HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "content-length", "upgrade"}
 

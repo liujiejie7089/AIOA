@@ -52,6 +52,8 @@ def test_echo_run_with_context():
         "run_id": RUN_ID,
         "conversation_id": 10001,
         "text": text,
+        # 显式指定 echo：单测不依赖 .env 的 MODEL_DEFAULT（本地可能配置为真实模型）
+        "model_ref": "echo",
         "context": {"appCode": "ticket", "page": "ticket-list", "pageTitle": "工单列表", "filters": {"status": "OPEN"}},
         "user_context": USER_CONTEXT,
     }
@@ -93,7 +95,7 @@ def test_echo_run_with_context():
 
 def test_echo_run_without_context():
     text = "hi"
-    payload = {"run_id": RUN_ID, "conversation_id": 10002, "text": text, "user_context": USER_CONTEXT}
+    payload = {"run_id": RUN_ID, "conversation_id": 10002, "text": text, "model_ref": "echo", "user_context": USER_CONTEXT}
     events = post_run(payload)
     deltas = [e["data"]["text"] for e in events if e["type"] == "message.delta"]
     assert "".join(deltas) == text
