@@ -47,7 +47,10 @@ data/
 .diag.txt
 .docx_extract/
 .workbuddy/_check.js
+.workbuddy/_uc.js
 .workbuddy/sse_*.txt
+.workbuddy/verify_*.py
+.workbuddy/verify_*.sh
 .workbuddy/*.log
 .workbuddy/proxy*.log
 

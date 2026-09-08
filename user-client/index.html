@@ -340,6 +340,10 @@ body{
         <div class="row" onclick="go('page-log')"><span class="t">🧾 我的操作记录</span><span class="muted">全程可查 ›</span></div>
         <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')"><span class="t">🛡️ 投诉与纠错</span><span class="muted">›</span></div>
       </div>
+      <div class="card">
+        <div class="sec-title">我的审批</div>
+        <div id="approvalList"></div>
+      </div>
     </section>
 
     <!-- 账单 -->
@@ -445,7 +449,8 @@ const state = {
     {t:'09-05 10:15 上传资料（会议纪要0905.docx）', s:'ok', l:'成功'},
     {t:'09-05 09:58 购买词元包（10万词元）', s:'ok', l:'已支付'},
     {t:'09-04 17:02 删除会话（旧手机迁移）', s:'ok',  l:'逻辑删除'}
-  ]
+  ],
+  approvals:[], lastAnswer:''
 };
 
 /* ============================================================
@@ -480,6 +485,11 @@ const API = {
   quota(){   return this.req('/v1/quota'); },
   ledger(){  return this.req('/v1/ledger?limit=50'); },
   logs(){    return this.req('/v1/logs?limit=50'); },
+  approvalSubmit(bizType, title, content, runId, conversationId){
+    return this.req('/v1/approvals',{method:'POST',body:JSON.stringify({bizType,title,content,runId,conversationId})});
+  },
+  approvalList(scope){ return this.req('/v1/approvals?scope='+(scope||'mine')); },
+  approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
   async ensureConversation(){
     if(state.conversationId) return state.conversationId;
     const c = await this.createConversation(state.chatExpert.name+' · 会话','aioa-client');
@@ -825,6 +835,7 @@ function settleTurn(question, answer, tokens, pIn, pOut){
   }
   bubble.insertAdjacentHTML('beforeend', extra);
   scrollMsgs();
+  state.lastAnswer = full;   // 供「提交审批」携带正文
 
   // 账单 + 台账（FR-G3 / FR-H1）：先本地乐观入账，再以服务端账本为准回拉
   const stamp = stampOf(new Date());
@@ -834,11 +845,63 @@ function settleTurn(question, answer, tokens, pIn, pOut){
   refreshBilling();
 }
 
-function submitApprove(btn){
-  btn.textContent = '已提交 ✓'; btn.disabled = true; btn.style.opacity = .6;
-  state.log.unshift({t:stampOf(new Date())+' 提交审批（对外发文）', s:'wait', l:'待审批'});
-  renderLog();
-  toast('已提交审批，进入工作流');
+/* 提交审批（FR-D6）：真实写入后端 approval_order，状态 PENDING。
+   单用户 demo 下审批人即本人，可在「我的审批」里通过/驳回走完闭环。 */
+async function submitApprove(btn){
+  const content = (state.lastAnswer || '').slice(0, 2000);
+  const title = (state.chatExpert ? state.chatExpert.name : '用户') + ' · 对外发文审批';
+  try{
+    const order = await API.approvalSubmit('对外发文', title, content, state.runId, state.conversationId);
+    btn.textContent = '已提交 ✓'; btn.disabled = true; btn.style.opacity = .6;
+    state.log.unshift({t:stampOf(new Date())+' 提交审批（对外发文）', s:'wait', l:'待审批'});
+    renderLog();
+    toast('已提交审批，进入工作流');
+    await loadApprovals();
+  }catch(e){
+    toast('提交失败：' + (e.message || '后端异常'));
+  }
+}
+
+/* 我的审批：拉取我发起的审批单，PENDING 可附 通过/驳回 操作 */
+async function loadApprovals(){
+  if(state.mode !== 'live') return;
+  try{
+    const list = await API.approvalList('mine');
+    state.approvals = list || [];
+    renderApprovals();
+  }catch(e){ /* 离线模式不渲染 */ }
+}
+
+function renderApprovals(){
+  const el = $('approvalList');
+  if(!el) return;
+  if(!state.approvals.length){
+    el.innerHTML = '<div class="muted">暂无审批单</div>';
+    return;
+  }
+  const label = {PENDING:'待审批', APPROVED:'已通过', REJECTED:'已驳回'};
+  el.innerHTML = state.approvals.map(o=>{
+    const cls = o.status === 'APPROVED' ? 'ok' : o.status === 'REJECTED' ? 'warn' : 'wait';
+    const act = o.status === 'PENDING'
+      ? '<div class="row"><button class="btn small" onclick="approveOrder('+o.id+',\'APPROVE\')">通过</button>'
+        + '<button class="btn ghost small" onclick="approveOrder('+o.id+',\'REJECT\')">驳回</button></div>'
+      : '';
+    const who = o.approver ? '<span class="muted"> · '+esc(o.approver)+'</span>' : '';
+    return '<div class="row" style="display:block"><div><b>'+esc(o.title||o.bizType)+'</b> '
+      + '<span class="badge '+cls+'">'+(label[o.status]||o.status)+'</span>'+who+'</div>'
+      + '<div class="muted" style="margin:3px 0 6px">'+stampOf(o.createdAt)+'</div>'+act+'</div>';
+  }).join('');
+}
+
+/* 审批决策（demo 中本人即审批人） */
+async function approveOrder(id, decision){
+  try{
+    await API.approvalDecide(id, decision, decision === 'APPROVE' ? '内容合规，准予发布' : '不符合发布规范');
+    toast(decision === 'APPROVE' ? '已通过' : '已驳回');
+    await loadApprovals();
+  }catch(e){
+    toast('操作失败：' + (e.message || '后端异常'));
+  }
 }
 
 /* 中断生成（FR-D1）：中止前端读取流 + 通知后端取消 run */
@@ -912,8 +975,8 @@ function stampOf(d){
 /* 登录成功后拉取真实业务数据，整体替换静态 mock。
    任一接口失败都不抛错——保留内置静态数据，仍可作为离线演示运行。 */
 async function loadLiveData(){
-  const [experts, skills, docs, quota, ledger, logs] = await Promise.all([
-    API.experts(), API.skills(), API.kbDocs(), API.quota(), API.ledger(), API.logs()
+  const [experts, skills, docs, quota, ledger, logs, approvals] = await Promise.all([
+    API.experts(), API.skills(), API.kbDocs(), API.quota(), API.ledger(), API.logs(), API.approvalList('mine')
   ]);
 
   if(experts && experts.length){
@@ -934,8 +997,9 @@ async function loadLiveData(){
   if(quota){ state.quota = quota.quota; state.used = quota.used; state.free = quota.free; }
   if(ledger && ledger.length) state.bill = ledger.map(toBillRow);
   if(logs && logs.length)     state.log  = logs.map(toLogRow);
+  if(approvals && approvals.length) state.approvals = approvals;
 
-  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); syncQuota();
+  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); renderApprovals(); syncQuota();
 }
 
 /* 后端账本行 → 账单行（时间由 createdAt 格式化，杜绝前端后端两处时间打架） */
