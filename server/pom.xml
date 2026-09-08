@@ -25,6 +25,7 @@
     <module>aioa-bridge</module>
     <module>aioa-chat</module>
     <module>aioa-tool-sdk</module>
+    <module>aioa-resource</module>
     <module>aioa-boot</module>
   </modules>
 
@@ -79,6 +80,11 @@
       <dependency>
         <groupId>cn.aioa</groupId>
         <artifactId>aioa-tool-sdk</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.aioa</groupId>
+        <artifactId>aioa-resource</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

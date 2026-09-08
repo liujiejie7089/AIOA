@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# AIOA 后端构建入口
+#
+# 背景：本机 `mvn` 包装脚本不可用（MAVEN_HOME/M2_HOME 未设置，
+# 导致 org.codehaus.plexus.classworlds.launcher.Launcher 找不到，报 ClassNotFoundException）。
+# Maven 安装本身是完好的，这里直接用 java 调用 Maven launcher，绕过损坏的包装脚本。
+#
+# 用法（在 server/ 目录下）：
+#   ./mvnw -v
+#   ./mvnw -DskipTests clean package
+#   ./mvnw -pl aioa-boot -am spring-boot:run
+set -euo pipefail
+
+M2="${MAVEN_HOME:-${M2_HOME:-D:/Program Files/develop/apache-maven-3.9.11}}"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+exec java \
+  -classpath "$M2/boot/plexus-classworlds-2.9.0.jar" \
+  -Dclassworlds.conf="$M2/bin/m2.conf" \
+  -Dmaven.home="$M2" \
+  -Dmaven.multiModuleProjectDirectory="$DIR" \
+  org.codehaus.plexus.classworlds.launcher.Launcher "$@"

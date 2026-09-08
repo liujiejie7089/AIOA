@@ -20,8 +20,9 @@ public class MybatisPlusConfig {
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        // 库是 MySQL 8，分页方言必须匹配（此前误配为 POSTGRE_SQL）
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(
-                com.baomidou.mybatisplus.annotation.DbType.POSTGRE_SQL));
+                com.baomidou.mybatisplus.annotation.DbType.MYSQL));
         return interceptor;
     }
 

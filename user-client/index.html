@@ -471,6 +471,15 @@ const API = {
   createConversation(title,appCode){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode})}); },
   createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context})}); },
   cancel(runId){ return this.req('/v1/runs/'+runId+'/cancel',{method:'POST'}); },
+
+  /* ---- 用户端业务域（原为前端 mock，现接后端 aioa-resource 模块） ---- */
+  experts(){ return this.req('/v1/experts'); },
+  skills(){  return this.req('/v1/skills'); },
+  kbDocs(){  return this.req('/v1/kb/documents'); },
+  kbUpload(name, icon, size){ return this.req('/v1/kb/documents',{method:'POST',body:JSON.stringify({name,icon,sizeBytes:size})}); },
+  quota(){   return this.req('/v1/quota'); },
+  ledger(){  return this.req('/v1/ledger?limit=50'); },
+  logs(){    return this.req('/v1/logs?limit=50'); },
   async ensureConversation(){
     if(state.conversationId) return state.conversationId;
     const c = await this.createConversation(state.chatExpert.name+' · 会话','aioa-client');
@@ -584,8 +593,12 @@ function renderKB(){
 }
 
 function renderBill(){
-  $('billList').innerHTML = state.bill.map(b=>
-    '<div class="row"><span class="t">'+esc(b.t)+'</span><span class="hl num">+'+fmt(b.n)+' 词元</span></div>').join('')
+  $('billList').innerHTML = state.bill.map(b=>{
+    const io = (b.prompt != null && b.completion != null)
+      ? ' <span class="muted">（入 '+fmt(b.prompt)+' / 出 '+fmt(b.completion)+'）</span>' : '';
+    return '<div class="row"><span class="t">'+esc(b.t)+'</span>'
+         + '<span class="hl num">+'+fmt(b.n)+' 词元'+io+'</span></div>';
+  }).join('')
     + '<div class="muted" style="margin-top:9px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>';
 }
 
@@ -813,21 +826,17 @@ function settleTurn(question, answer, tokens, pIn, pOut){
   bubble.insertAdjacentHTML('beforeend', extra);
   scrollMsgs();
 
-  // 账单 + 台账（FR-G3 / FR-H1）
-  const now = new Date();
-  const stamp = String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
-              + ' ' + String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  state.bill.unshift({t:stamp+' · '+state.chatExpert.name, n:tokens});
+  // 账单 + 台账（FR-G3 / FR-H1）：先本地乐观入账，再以服务端账本为准回拉
+  const stamp = stampOf(new Date());
+  state.bill.unshift({t:stamp+' · '+state.chatExpert.name, n:tokens, prompt:pIn, completion:pOut});
   state.log.unshift({t:stamp+' 发起会话（'+state.chatExpert.name+'）', s:'ok', l:'成功'});
   renderBill(); renderLog();
+  refreshBilling();
 }
 
 function submitApprove(btn){
   btn.textContent = '已提交 ✓'; btn.disabled = true; btn.style.opacity = .6;
-  const now = new Date();
-  const stamp = String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
-              + ' ' + String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  state.log.unshift({t:stamp+' 提交审批（对外发文）', s:'wait', l:'待审批'});
+  state.log.unshift({t:stampOf(new Date())+' 提交审批（对外发文）', s:'wait', l:'待审批'});
   renderLog();
   toast('已提交审批，进入工作流');
 }
@@ -881,9 +890,7 @@ function genDoc(name){
     + '  三、报名方式：请于规定时间前通过线上平台报名。\n\n'
     + '（以上为结构化生成示例，正式使用前请人工复核）';
   state.used += s.est; syncQuota();
-  const now = new Date();
-  const stamp = String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
-              + ' ' + String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  const stamp = stampOf(new Date());
   state.bill.unshift({t:stamp+' · '+name+'技能', n:s.est});
   state.log.unshift({t:stamp+' 调用技能（'+name+'）', s:'ok', l:'成功'});
   renderBill(); renderLog();
@@ -894,21 +901,78 @@ function genDoc(name){
 /* ============================================================
    6. 启动 + 自动联调握手
    ============================================================ */
+/* 'MM-DD HH:mm' 时间戳：接受 Date 或后端 ISO 字符串（createdAt） */
+function stampOf(d){
+  const t = (d instanceof Date) ? d : (d ? new Date(String(d).replace(' ','T')) : new Date());
+  if(isNaN(t.getTime())) return '';
+  const p = n => String(n).padStart(2,'0');
+  return p(t.getMonth()+1)+'-'+p(t.getDate())+' '+p(t.getHours())+':'+p(t.getMinutes());
+}
+
+/* 登录成功后拉取真实业务数据，整体替换静态 mock。
+   任一接口失败都不抛错——保留内置静态数据，仍可作为离线演示运行。 */
+async function loadLiveData(){
+  const [experts, skills, docs, quota, ledger, logs] = await Promise.all([
+    API.experts(), API.skills(), API.kbDocs(), API.quota(), API.ledger(), API.logs()
+  ]);
+
+  if(experts && experts.length){
+    EXPERTS.length = 0;                       // 原地替换，保住已有引用
+    experts.forEach(e=>EXPERTS.push({
+      key:e.key, name:e.name, icon:e.icon, desc:e.desc,
+      tags:e.tags||[], intro:e.intro||'', recs:e.recs||[]
+    }));
+  }
+  if(skills && skills.length){
+    Object.keys(SKILLS).forEach(k=>delete SKILLS[k]);
+    skills.forEach(s=>{ SKILLS[s.name] = {icon:s.icon, est:s.est||0, fields:s.fields||[]}; });
+  }
+  if(docs && docs.length){
+    KB_FILES.length = 0;
+    docs.forEach(f=>KB_FILES.push({name:f.name, icon:f.icon, state:f.state}));
+  }
+  if(quota){ state.quota = quota.quota; state.used = quota.used; state.free = quota.free; }
+  if(ledger && ledger.length) state.bill = ledger.map(toBillRow);
+  if(logs && logs.length)     state.log  = logs.map(toLogRow);
+
+  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); syncQuota();
+}
+
+/* 后端账本行 → 账单行（时间由 createdAt 格式化，杜绝前端后端两处时间打架） */
+const toBillRow = x => ({t:stampOf(x.createdAt)+' · '+(x.bizTitle||'会话'), n:x.totalTokens,
+                         prompt:x.promptTokens, completion:x.completionTokens});
+/* 后端操作记录 → 日志行 */
+const toLogRow = x => ({t:stampOf(x.createdAt)+' '+x.action, s:x.status, l:x.label});
+
+/* 一轮结束后回拉额度/账本/台账，以服务端账本为准（前端只是乐观更新） */
+async function refreshBilling(){
+  if(state.mode !== 'live') return;
+  try{
+    const [quota, ledger, logs] = await Promise.all([API.quota(), API.ledger(), API.logs()]);
+    if(quota){ state.quota = quota.quota; state.used = quota.used; state.free = quota.free; syncQuota(); }
+    if(ledger && ledger.length){ state.bill = ledger.map(toBillRow); renderBill(); }
+    if(logs && logs.length){     state.log  = logs.map(toLogRow);    renderLog(); }
+  }catch(e){ /* 回拉失败不打断会话，保留前端乐观值 */ }
+}
+
 async function bootstrap(){
   renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); syncQuota();
-  startChat(0);
-  go('page-home');
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
 
-  // 尝试与后端握手：成功 → 实时联调；失败 → 离线演示
+  // 尝试与后端握手：成功 → 实时联调并拉取真实数据；失败 → 离线演示
   try{
     const data = await API.login('admin','Admin@123');
     state.token = data && (data.accessToken || data.token);
     if(!state.token) throw new Error('未取得 accessToken');
     setLink('live','实时联调');
+    await loadLiveData();
   }catch(e){
     setLink('mock','离线演示');
   }
+
+  // 放在握手之后：确保会话用的是后端下发的专家数据
+  startChat(0);
+  go('page-home');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
 }
 bootstrap();
 </script>

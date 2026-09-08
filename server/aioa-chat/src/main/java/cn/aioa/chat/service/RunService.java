@@ -11,6 +11,9 @@ import cn.aioa.chat.mapper.ChatConversationMapper;
 import cn.aioa.chat.mapper.ChatMessageMapper;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.trace.TraceId;
+import cn.aioa.resource.entity.TokenLedger;
+import cn.aioa.resource.service.ActivityLogService;
+import cn.aioa.resource.service.BillingService;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import cn.aioa.security.ServiceTokenProvider;
@@ -52,6 +55,7 @@ public class RunService {
     private static final DateTimeFormatter RUN_ID_TS = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final String EVENT_MESSAGE_DELTA = "message.delta";
     private static final String EVENT_MESSAGE_COMPLETED = "message.completed";
+    private static final String EVENT_RUN_COMPLETED = "run.completed";
     private static final String EVENT_ERROR = "error";
     private static final String EVENT_PING = "ping";
     private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
@@ -66,6 +70,8 @@ public class RunService {
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService sseHeartbeatExecutor;
     private final AgentProperties agentProperties;
+    private final BillingService billingService;
+    private final ActivityLogService activityLogService;
 
     /**
      * 发起一轮对话：落 user 消息 + 创建 agent_run（RUNNING），返回 runId。
@@ -119,6 +125,9 @@ public class RunService {
                 .setSql("msg_count = COALESCE(msg_count, 0) + 1")
                 .set(ChatConversation::getLastMsgAt, LocalDateTime.now()));
 
+        activityLogService.record(run.getTenantId(), user.getUserId(),
+                "发起会话（" + displayTitle(conversation) + "）", "ok", "成功");
+
         return runId;
     }
 
@@ -141,6 +150,7 @@ public class RunService {
 
         SseEmitter emitter = new SseEmitter(0L);
         StringBuilder assistant = new StringBuilder();
+        AtomicReference<Usage> usageRef = new AtomicReference<>(Usage.ZERO);
         AtomicReference<String> lastId = new AtomicReference<>(lastEventId);
         long heartbeatSeconds = Math.max(1, agentProperties.getHeartbeatSeconds());
 
@@ -170,7 +180,7 @@ public class RunService {
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
                     .subscribe(
-                            event -> forward(emitter, event, assistant, lastId),
+                            event -> forward(emitter, event, assistant, lastId, usageRef),
                             error -> {
                                 log.warn("agent run {} failed: {}", runId, error.getMessage());
                                 markFailed(run, error.getMessage());
@@ -180,7 +190,7 @@ public class RunService {
                             },
                             () -> {
                                 try {
-                                    finish(run, assistant.toString());
+                                    finish(run, assistant.toString(), usageRef.get());
                                 } catch (Exception e) {
                                     log.error("finish run {} failed", runId, e);
                                 }
@@ -243,7 +253,8 @@ public class RunService {
     private void forward(SseEmitter emitter,
                          ServerSentEvent<String> event,
                          StringBuilder assistant,
-                         AtomicReference<String> lastId) {
+                         AtomicReference<String> lastId,
+                         AtomicReference<Usage> usageRef) {
         String name = event.event() == null ? "message" : event.event();
         String data = event.data() == null ? "" : event.data();
         if (event.id() != null) {
@@ -266,10 +277,14 @@ public class RunService {
                 assistant.setLength(0);
                 assistant.append(content);
             }
+            usageRef.set(readUsage(data));
+        } else if (EVENT_RUN_COMPLETED.equals(name)) {
+            // 尾帧同样带 usage，取后到的为准
+            usageRef.set(readUsage(data));
         }
     }
 
-    private void finish(AgentRun run, String content) {
+    private void finish(AgentRun run, String content, Usage usage) {
         LocalDateTime endedAt = LocalDateTime.now();
         if (content != null && !content.isBlank()) {
             ChatMessage message = new ChatMessage();
@@ -290,12 +305,38 @@ public class RunService {
                             .setSql("msg_count = COALESCE(msg_count, 0) + 1")
                             .set(ChatConversation::getLastMsgAt, endedAt));
         }
+        Usage u = usage == null ? Usage.ZERO : usage;
         AgentRun patch = new AgentRun();
         patch.setId(run.getId());
         patch.setStatus(AgentRun.STATUS_SUCCEEDED);
+        patch.setTokensIn(u.prompt());
+        patch.setTokensOut(u.completion());
         patch.setEndedAt(endedAt);
         patch.setDurationMs(elapsedMillis(run.getStartedAt()));
         agentRunMapper.updateById(patch);
+
+        // 词元计费：一次 run 只记一笔（run_id 唯一），失败不影响会话结果
+        try {
+            billingService.recordUsage(run.getRunId(), run.getTenantId(), run.getUserId(),
+                    TokenLedger.BIZ_CHAT, conversationTitle(run.getConversationId()),
+                    u.prompt(), u.completion());
+        } catch (Exception e) {
+            log.warn("record token usage failed for run {}: {}", run.getRunId(), e.getMessage());
+        }
+    }
+
+    /** 账单标题取会话标题（前端建会话时形如「政策咨询专家 · 会话」）。 */
+    private String conversationTitle(Long conversationId) {
+        ChatConversation conversation = conversationId == null ? null : conversationMapper.selectById(conversationId);
+        return conversation == null ? "会话" : displayTitle(conversation);
+    }
+
+    private static String displayTitle(ChatConversation conversation) {
+        String title = conversation.getTitle();
+        if (title == null || title.isBlank()) {
+            return "会话";
+        }
+        return title.replace(" · 会话", "").trim();
     }
 
     private void markFailed(AgentRun run, String message) {
@@ -354,6 +395,57 @@ public class RunService {
             log.debug("unable to parse sse data as json: {}", data);
             return null;
         }
+    }
+
+    /** 词元用量快照：SSE 帧中的 usage{prompt_tokens, completion_tokens}。 */
+    private record Usage(int prompt, int completion) {
+
+        static final Usage ZERO = new Usage(0, 0);
+    }
+
+    /** 从 SSE data 中读取用量，兼容 {usage:{}} 与 {data:{usage:{}}} 两种形态。 */
+    private Usage readUsage(String data) {
+        if (data == null || data.isBlank()) {
+            return Usage.ZERO;
+        }
+        try {
+            Map<?, ?> map = objectMapper.readValue(data, Map.class);
+            Map<?, ?> usage = firstUsage(map);
+            if (usage == null) {
+                return Usage.ZERO;
+            }
+            return new Usage(toInt(usage.get("prompt_tokens"), usage.get("input_tokens")),
+                    toInt(usage.get("completion_tokens"), usage.get("output_tokens")));
+        } catch (Exception e) {
+            log.debug("unable to read usage from sse data: {}", data);
+            return Usage.ZERO;
+        }
+    }
+
+    private Map<?, ?> firstUsage(Map<?, ?> map) {
+        if (map.get("usage") instanceof Map<?, ?> direct) {
+            return direct;
+        }
+        if (map.get("data") instanceof Map<?, ?> nested && nested.get("usage") instanceof Map<?, ?> inner) {
+            return inner;
+        }
+        return null;
+    }
+
+    private static int toInt(Object... candidates) {
+        for (Object value : candidates) {
+            if (value instanceof Number number) {
+                return Math.max(0, number.intValue());
+            }
+            if (value instanceof String text && !text.isBlank()) {
+                try {
+                    return Math.max(0, Integer.parseInt(text.trim()));
+                } catch (NumberFormatException ignored) {
+                    // 继续尝试下一个候选键
+                }
+            }
+        }
+        return 0;
     }
 
     private static String newRunId() {
