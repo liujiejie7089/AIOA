@@ -32,4 +32,11 @@ public class AgentRunRequest {
 
     @JsonProperty("user_context")
     private AgentUserContext userContext;
+
+    /**
+     * 发起 run 的用户 accessToken（M2 工具回调）：Agent 调用业务工具网关
+     * /api/v1/tools/* 时透传，工具权限 = 用户权限。
+     */
+    @JsonProperty("user_token")
+    private String userToken;
 }

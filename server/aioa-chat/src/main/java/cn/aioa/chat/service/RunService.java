@@ -133,8 +133,9 @@ public class RunService {
 
     /**
      * 订阅 run 事件流：WebClient 调 Python，逐帧转发；流结束落 assistant 消息并置 SUCCEEDED。
+     * authorization 为发起方用户 token，透传给 agent 供工具回调（工具权限 = 用户权限）。
      */
-    public SseEmitter subscribe(String runId, String lastEventId) {
+    public SseEmitter subscribe(String runId, String lastEventId, String authorization) {
         AuthUser user = AuthUserContext.require();
         AgentRun run = findRun(runId);
         if (!Objects.equals(run.getUserId(), user.getUserId())) {
@@ -169,6 +170,7 @@ public class RunService {
         emitter.onError(thrown -> cleanup.run());
 
         AgentRunRequest request = buildRequest(run, user, text, context);
+        request.setUserToken(stripBearer(authorization));
         try {
             subscription[0] = agentWebClient.post()
                     .uri("/internal/v1/runs")
@@ -248,6 +250,15 @@ public class RunService {
         request.setContext(context);
         request.setUserContext(userContext);
         return request;
+    }
+
+    /** "Bearer xxx" -> "xxx"；异常输入返回 null（agent 侧降级为无工具模式）。 */
+    private static String stripBearer(String authorization) {
+        if (authorization == null || authorization.isBlank()) {
+            return null;
+        }
+        String trimmed = authorization.trim();
+        return trimmed.regionMatches(true, 0, "Bearer ", 0, 7) ? trimmed.substring(7).trim() : trimmed;
     }
 
     private void forward(SseEmitter emitter,

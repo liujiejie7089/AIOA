@@ -2,12 +2,14 @@
 
 职责（对应架构第 3 层 · 智能体运行层）：
   - Agent Runtime：维护多轮对话上下文与页面上下文（记忆/状态机雏形）
-  - DeepSeek Harness：经 model_gateway 解析 openai_compatible provider（DeepSeek / 通义 /
-    本地 vLLM / Ollama），以 SSE 流式拉取推理结果，与主业务栈（Java）解耦
-  - 上报 token 用量（usage），作为「平台底座层 · 运营计费」的计量源头
+  - 工具调用循环（function-calling）：决策轮（非流式，带 tools）→ 命中工具则经
+    业务工具网关（用户 token 透传）执行 → 结果回注模型 → 直至产出正文
+    对应技术方案「感知—规划—执行—反思」循环的工具执行段，最多 MAX_TOOL_ROUNDS 轮
+  - 上报 token 用量（usage，多轮累加），作为「平台底座层 · 运营计费」的计量源头
 
-事件序列与 echo 完全一致（契约不变）：
-    run.started{run_id,conversation_id}
+事件序列（与 echo 完全一致，另加可选 tool 事件，契约向后兼容）：
+    run.started{run_id,conversation_id,model,gateway_key}
+    → [tool.call{name,arguments} → tool.result{name,ok,summary}]×N
     → message.delta{text} × N
     → message.completed{content,citations,tool_calls,usage}
     → run.completed{status:"SUCCEEDED",usage}
@@ -22,6 +24,7 @@ import httpx
 from app.core.guards import GuardError, WallClock, check_text_len
 from app.model_gateway import gateway
 from app.schemas import RunRequest, SseEvent
+from app.tools_client import MAX_TOOL_ROUNDS, ToolClient
 
 # OpenAI 兼容 /chat/completions 的 SSE 行前缀
 _DATA_PREFIX = "data: "
@@ -36,6 +39,7 @@ def _build_messages(req: RunRequest) -> list[dict]:
     sys_parts: list[str] = [
         "你是 AIOA 智能办公基座（AI Office Agent）的对话助手，服务于企业办公场景。",
         "请根据用户所在的业务页面与上下文，给出准确、简洁、可执行的回答。",
+        "需要查询用户的审批、知识库、额度等业务数据时，优先调用提供的工具，不要编造。",
     ]
     uc = req.user_context
     if uc.username or uc.roles:
@@ -68,8 +72,48 @@ def _build_messages(req: RunRequest) -> list[dict]:
     return messages
 
 
+def _parse_tool_calls(message: dict) -> list[dict]:
+    """从 assistant message 提取 tool_calls：[{id,name,arguments(dict)}]。"""
+    out: list[dict] = []
+    for call in message.get("tool_calls") or []:
+        fn = call.get("function") or {}
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        out.append({"id": call.get("id") or "", "name": fn.get("name") or "", "arguments": args})
+    return out
+
+
+class UpstreamError(RuntimeError):
+    """上游模型非 200：转 MODEL_UPSTREAM_ERROR（其余异常仍归 MODEL_STREAM_ERROR）。"""
+
+    def __init__(self, status: int, text: str):
+        super().__init__(f"status={status} {text[:200]}")
+        self.status = status
+
+
+async def _post_non_stream(client_http: httpx.AsyncClient, provider, api_key: str,
+                           messages: list[dict], tools: list[dict] | None) -> tuple[dict, dict]:
+    """非流式推理一轮，返回 (assistant_message, usage)。非 200 抛 UpstreamError。"""
+    body: dict = {"model": provider.model, "messages": messages, "stream": False, "temperature": 0.3}
+    if tools:
+        body["tools"] = tools
+    resp = await client_http.post(
+        provider.base_url.rstrip("/") + "/chat/completions",
+        json=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    if resp.status_code != 200:
+        raise UpstreamError(resp.status_code, resp.text or "")
+    data = resp.json()
+    message = (data.get("choices") or [{}])[0].get("message") or {}
+    usage = data.get("usage") or {}
+    return message, usage
+
+
 async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
-    """真实 LLM 推理事件流。"""
+    """真实 LLM 推理事件流（含工具调用循环）。"""
     seq = seq_start
     check_text_len(req.text)
     clock = WallClock()
@@ -103,72 +147,81 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     seq += 1
 
     messages = _build_messages(req)
-    body = {
-        "model": provider.model,
-        "messages": messages,
-        "stream": True,
-        "temperature": 0.3,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    endpoint = provider.base_url.rstrip("/") + "/chat/completions"
+    tool_client = ToolClient.from_request(req.user_token)
+    tools = await tool_client.list_tools()
 
-    content_parts: list[str] = []
     usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0}
+    tool_calls_log: list[dict] = []
+    content_parts: list[str] = []
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
-            async with client.stream("POST", endpoint, json=body, headers=headers) as resp:
-                if resp.status_code != 200:
-                    err = await resp.aread()
-                    yield SseEvent(
-                        seq=seq,
-                        type="error",
-                        data={
-                            "code": "MODEL_UPSTREAM_ERROR",
-                            "message": f"status={resp.status_code} {err.decode('utf-8', 'replace')[:200]}",
-                            "retryable": True,
-                        },
-                    )
-                    seq += 1
-                    yield SseEvent(
-                        seq=seq,
-                        type="run.failed",
-                        data={"reason": "upstream error", "error_code": "MODEL_UPSTREAM_ERROR"},
-                    )
-                    return
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as http:
+            # 感知—规划—执行—反思 循环（工具段）：非流式决策，命中工具则执行后回注
+            for _round in range(MAX_TOOL_ROUNDS + 1):
+                message, u = await _post_non_stream(http, provider, api_key, messages,
+                                                    tools if _round < MAX_TOOL_ROUNDS else None)
+                usage["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
+                usage["completion_tokens"] += int(u.get("completion_tokens") or 0)
 
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith(_DATA_PREFIX):
-                        continue
-                    payload = line[len(_DATA_PREFIX):].strip()
-                    if payload == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-
-                    # 用量统计（通常出现在最后一个 chunk，作为计费计量源头）
-                    if chunk.get("usage"):
-                        u = chunk["usage"]
-                        usage["prompt_tokens"] = u.get("prompt_tokens", 0)
-                        usage["completion_tokens"] = u.get("completion_tokens", 0)
-
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    text = delta.get("content")
-                    if text:
-                        content_parts.append(text)
-                        clock.check()  # 墙钟护栏：超时则抛 GuardError，由 main 统一收口
-                        yield SseEvent(seq=seq, type="message.delta", data={"text": text})
+                calls = _parse_tool_calls(message)
+                if not calls:
+                    # 无工具调用：该 message 即最终回答（本地切片为 delta，保持事件契约）
+                    content = str(message.get("content") or "")
+                    for ch in content:
+                        clock.check()
+                        yield SseEvent(seq=seq, type="message.delta", data={"text": ch})
                         seq += 1
+                    content_parts.append(content)
+                    break
+
+                messages.append({"role": "assistant", "content": message.get("content"),
+                                 "tool_calls": message.get("tool_calls")})
+                for call in calls:
+                    clock.check()
+                    yield SseEvent(seq=seq, type="tool.call",
+                                   data={"name": call["name"], "arguments": call["arguments"]})
+                    seq += 1
+                    outcome = await tool_client.invoke(call["name"], call["arguments"])
+                    tool_calls_log.append({"name": call["name"], "arguments": call["arguments"],
+                                           "ok": outcome.ok})
+                    yield SseEvent(seq=seq, type="tool.result",
+                                   data={"name": call["name"], "ok": outcome.ok,
+                                         "summary": outcome.summary()})
+                    seq += 1
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps({"ok": outcome.ok,
+                                               "data": None if outcome.data is None else outcome.data,
+                                               "error": outcome.error}, ensure_ascii=False),
+                    })
+            else:
+                # 工具轮数用尽仍未产出正文：汇总已获取的数据直接作答，不再调模型
+                content = "已完成的工具查询结果：\n" + "\n".join(
+                    f"· {c['name']}：{'成功' if c['ok'] else '失败'}" for c in tool_calls_log)
+                for ch in content:
+                    yield SseEvent(seq=seq, type="message.delta", data={"text": ch})
+                    seq += 1
+                content_parts.append(content)
     except GuardError:
         raise  # 交由 main.py 的 event_stream 统一转成 error + run.failed
+    except UpstreamError as exc:  # 上游非 200：可重试的上游错误
+        yield SseEvent(
+            seq=seq,
+            type="error",
+            data={
+                "code": "MODEL_UPSTREAM_ERROR",
+                "message": str(exc)[:200],
+                "retryable": True,
+            },
+        )
+        seq += 1
+        yield SseEvent(
+            seq=seq,
+            type="run.failed",
+            data={"reason": "upstream error", "error_code": "MODEL_UPSTREAM_ERROR"},
+        )
+        return
     except Exception as exc:  # 网络/解析等：流内异常按 error + run.failed 上报，不中断服务
         yield SseEvent(
             seq=seq,
@@ -187,7 +240,7 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     yield SseEvent(
         seq=seq,
         type="message.completed",
-        data={"content": final_content, "citations": [], "tool_calls": [], "usage": usage},
+        data={"content": final_content, "citations": [], "tool_calls": tool_calls_log, "usage": usage},
     )
     seq += 1
     yield SseEvent(seq=seq, type="run.completed", data={"status": "SUCCEEDED", "usage": usage})

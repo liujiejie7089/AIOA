@@ -32,6 +32,19 @@ public class KbService {
                 .orderByDesc(KbDocument::getCreatedAt));
     }
 
+    /**
+     * 关键词检索（智能体工具）：个人 + 本租户共享范围内按文档名模糊匹配。
+     * M1 资料只登记元数据，检索维度为文档名；M4 向量化后升级为语义检索。
+     */
+    public List<KbDocument> search(Long tenantId, List<Long> scopeUsers, String keyword, int limit) {
+        return kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                .eq(KbDocument::getTenantId, tenantId == null ? 0L : tenantId)
+                .in(KbDocument::getUserId, scopeUsers)
+                .like(KbDocument::getDocName, keyword)
+                .orderByDesc(KbDocument::getCreatedAt)
+                .last("limit " + Math.max(1, limit)));
+    }
+
     /** 登记一份资料，初始状态「解析中」，并写一条操作记录。 */
     public KbDocument register(Long tenantId, Long userId, String docName, String icon, Long sizeBytes) {
         KbDocument doc = new KbDocument();

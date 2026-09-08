@@ -23,8 +23,9 @@ public class RunController {
     @Operation(summary = "SSE 事件流（Java 中转 Python，支持 Last-Event-ID 续传）")
     @GetMapping(path = "/api/v1/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@PathVariable String runId,
-                             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
-        return runService.subscribe(runId, lastEventId);
+                             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+                             @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return runService.subscribe(runId, lastEventId, authorization);
     }
 
     @Operation(summary = "中断运行")

@@ -40,6 +40,8 @@ class RunRequest(BaseModel):
     model_ref: str | None = None
     user_context: UserContext
     history: list[dict[str, Any]] | None = None
+    # 发起方用户 accessToken（M2 工具回调）：调用业务工具网关时透传，工具权限 = 用户权限
+    user_token: str | None = None
 
 
 class Usage(BaseModel):
