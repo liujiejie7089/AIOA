@@ -163,6 +163,18 @@ public class BillingService {
         return created;
     }
 
+    /** 购买到账：给用户（或租户共享）额度行增加赠送词元（FR-G4 额度实时到账）。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void addFreeTokens(Long tenantId, Long userId, long tokens) {
+        if (tokens <= 0) {
+            return;
+        }
+        TenantQuota quota = getOrCreate(tenantId, userId);
+        quotaMapper.update(null, new LambdaUpdateWrapper<TenantQuota>()
+                .eq(TenantQuota::getId, quota.getId())
+                .setSql("free_tokens = COALESCE(free_tokens, 0) + " + tokens));
+    }
+
     /**
      * 可见用户范围：始终包含 user_id = 0 的租户共享数据（种子数据与共享额度都挂在这里），
      * 再加当前用户自己的数据。否则登录用户（id ≠ 0）会查不到任何预置内容。
