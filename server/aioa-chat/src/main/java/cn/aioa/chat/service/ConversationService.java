@@ -75,6 +75,21 @@ public class ConversationService {
                 .setSql("deleted_at = now()"));
     }
 
+    /** FR-D3 会话重命名（仅本人，标题非空，长度上限 60）。 */
+    public void rename(Long conversationId, String title) {
+        getOwned(conversationId);
+        if (title == null || title.isBlank()) {
+            throw BizException.badRequest("会话标题不能为空");
+        }
+        String trimmed = title.trim();
+        if (trimmed.length() > 60) {
+            trimmed = trimmed.substring(0, 60);
+        }
+        conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
+                .eq(ChatConversation::getId, conversationId)
+                .set(ChatConversation::getTitle, trimmed));
+    }
+
     /**
      * 消息游标分页：beforeSeq 向前翻，返回按 seq 升序。
      */

@@ -269,7 +269,7 @@ body{
       <div class="stagger" data-page-node-id="XLPQUzvMMgVXXW7nDTu5SN">
         <div data-page-node-id="GYI7YG0ajWKv02CTOyg7mz">
           <div class="kicker" data-page-node-id="qUv6fFAiqf1GptWhptM6RN">DeYang · AI 公共服务平台</div>
-          <div class="greet" data-page-node-id="I75iuzUhrayTU9xsNoOuhv">你好，左齐 👋</div>
+          <div class="greet" data-page-node-id="I75iuzUhrayTU9xsNoOuhv">你好，左齐</div>
           <div class="muted" style="margin-bottom:13px" data-page-node-id="l9uZf3schGEDGFuVmicbD9">今天想让我帮你做点什么？</div>
         </div>
 
@@ -334,7 +334,7 @@ body{
     <section class="page" id="page-chat" data-page-node-id="g4Y33wA5tCgIxnilt15vzj">
       <div class="chat" data-page-node-id="lmF1PlgNVKFvJ7QwSrlpzy">
         <div class="chat-head" data-page-node-id="cOEx64IWX3c5PAh1JDq7vF">
-          <span class="nm" data-page-node-id="VIOEj6K7YaBOZnVx7oP6Iq"><span id="chatIcon" data-page-node-id="idm2RYCrc1TR2eCPX3udB1">🏛️</span><span id="chatName" data-page-node-id="uZK4DxZwaWPY9TCgG75aVL">政策咨询专家</span></span>
+          <span class="nm" data-page-node-id="VIOEj6K7YaBOZnVx7oP6Iq"><span id="chatIcon" data-page-node-id="idm2RYCrc1TR2eCPX3udB1"></span><span id="chatName" data-page-node-id="uZK4DxZwaWPY9TCgG75aVL">政策咨询专家</span></span>
           <select class="model-sel" id="modelSel" onchange="onModelChange(this.value)" title="切换模型">
             <option value="echo">回声演示</option>
             <option value="deepseek">DeepSeek</option>
@@ -374,10 +374,10 @@ body{
       </div>
       <div class="card" data-page-node-id="q9D0pzYDYIlchH9dgWW8Td">
         <div class="sec-title" data-page-node-id="Zb8YI7HDkHBlQUNVZdGK90">账单与留痕</div>
-        <div class="row" onclick="openBuy()"><span class="t">💎 购买词元包</span><span class="muted">下单支付实时到账 ›</span></div>
+        <div class="row" onclick="openBuy()"><span class="t">购买词元包</span><span class="muted">下单支付实时到账 ›</span></div>
         <div class="row" onclick="go('page-bill')" data-page-node-id="rzF2ubGrXfVSJV1cNqhZaI"><span class="t" data-page-node-id="2DMMnycEZjgIf4rGvPE8oF">用量账单</span><span class="muted" data-page-node-id="A13xV6oEtaGDvae17h5TOV">本月 <b class="num" id="meUsed" data-page-node-id="G9SN8mzdtPQlFTT1WpVc8s">13,600</b> 词元 ›</span></div>
         <div class="row" onclick="go('page-log')" data-page-node-id="jyPRJxNrYV8WoGEqhz6c8S"><span class="t" data-page-node-id="GL2DPNyARXyYr0xLGrXNCz">我的操作记录</span><span class="muted" data-page-node-id="r1pqXaeYD6pZRCWw0pZXhI">全程可查 ›</span></div>
-        <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')" data-page-node-id="XPggI5cGIjWDzFDVjdOANN"><span class="t" data-page-node-id="MEVY0LX4aaBQEGx5HAD11E">🛡️ 投诉与纠错</span><span class="muted" data-page-node-id="cR3T6RVsZeqI5rRlKVqTFU">›</span></div>
+        <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')" data-page-node-id="XPggI5cGIjWDzFDVjdOANN"><span class="t" data-page-node-id="MEVY0LX4aaBQEGx5HAD11E">投诉与纠错</span><span class="muted" data-page-node-id="cR3T6RVsZeqI5rRlKVqTFU">›</span></div>
       </div>
       <!-- 待办/审批/通知 已迁移至底部独立「待办」Tab（page-todo） -->
     </section>
@@ -404,7 +404,7 @@ body{
       <div class="kicker" data-page-node-id="Vc94xj8KdCjgu8vmeKalDK">Ledger</div>
       <div class="sec-title" data-page-node-id="6QanHC6AQkn5IFRLR8b9Dp">用量账单（9 月）</div>
       <div class="card" id="billList" data-page-node-id="I4ildVmyAZp8s6xXUCTrSO"></div>
-      <button class="btn ghost small" onclick="toast('账单明细已导出（CSV）')" data-page-node-id="KCwCviXcR7rIRE8YB1QmzD">导出明细</button>
+      <button class="btn ghost small" onclick="exportBill()" data-page-node-id="KCwCviXcR7rIRE8YB1QmzD">导出明细</button>
     </section>
 
     <!-- 留痕 -->
@@ -432,11 +432,11 @@ body{
   </div>
 
   <nav class="tabbar" data-page-node-id="QcmEWNEe1Gg4Ys5YKYfMkt">
-    <div class="tab active" data-page="page-home"   onclick="switchTab(this)" data-page-node-id="8bbkhHiKhEcPqfPQGXtJhy"><span class="ico" data-page-node-id="ohM4mBCiKWnAvcwC9BcsBn">🏠</span>首页</div>
-    <div class="tab"         data-page="page-todo"  onclick="switchTab(this)" data-page-node-id="todoTabAIOA2"><span class="ico" data-page-node-id="todoTabIcoAIOA2">📋</span>待办<span class="tab-dot" id="todoDot" style="display:none">0</span></div>
-    <div class="tab"         data-page="page-expert" onclick="switchTab(this)" data-page-node-id="3EkL9OrCLwb5AufLJsjFFb"><span class="ico" data-page-node-id="9VXWTCUJSpSIAn0svXGNNS">🧑‍💼</span>专家</div>
-    <div class="tab"         data-page="page-chat"   onclick="switchTab(this)" data-page-node-id="oBf58ZWceJcYlS2TDk0idF"><span class="ico" data-page-node-id="eDFnFKPvBwwdEsC4CS7kzm">💬</span>会话</div>
-    <div class="tab"         data-page="page-me"     onclick="switchTab(this)" data-page-node-id="AajODNVUnKbvK902hKoFHU"><span class="ico" data-page-node-id="treeZuaRFwqWQ87Cgn3Jwo">👤</span>我的</div>
+    <div class="tab active" data-page="page-home"   onclick="switchTab(this)" data-page-node-id="8bbkhHiKhEcPqfPQGXtJhy"><span class="ico" data-page-node-id="ohM4mBCiKWnAvcwC9BcsBn">首</span>首页</div>
+    <div class="tab"         data-page="page-todo"  onclick="switchTab(this)" data-page-node-id="todoTabAIOA2"><span class="ico" data-page-node-id="todoTabIcoAIOA2">办</span>待办<span class="tab-dot" id="todoDot" style="display:none">0</span></div>
+    <div class="tab"         data-page="page-expert" onclick="switchTab(this)" data-page-node-id="3EkL9OrCLwb5AufLJsjFFb"><span class="ico" data-page-node-id="9VXWTCUJSpSIAn0svXGNNS">专</span>专家</div>
+    <div class="tab"         data-page="page-chat"   onclick="switchTab(this)" data-page-node-id="oBf58ZWceJcYlS2TDk0idF"><span class="ico" data-page-node-id="eDFnFKPvBwwdEsC4CS7kzm">话</span>会话</div>
+    <div class="tab"         data-page="page-me"     onclick="switchTab(this)" data-page-node-id="AajODNVUnKbvK902hKoFHU"><span class="ico" data-page-node-id="treeZuaRFwqWQ87Cgn3Jwo">我</span>我的</div>
   </nav>
 
   <div class="toast" id="toast" data-page-node-id="vHBt4pRiLqYhYUDcCfucFQ"></div>
@@ -525,6 +525,7 @@ const API = {
   createConversation(title,appCode){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode})}); },
   createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context,model_ref:state.model})}); },
   listConversations(){ return this.req('/v1/conversations'); },
+  renameConversation(id,title){ return this.req('/v1/conversations/'+id,{method:'PUT',body:JSON.stringify({title})}); },
   listMessages(convId){ return this.req('/v1/conversations/'+convId+'/messages'); },
   packages(){ return this.req('/v1/packages'); },
   createOrder(packageId){ return this.req('/v1/orders',{method:'POST',body:JSON.stringify({packageId})}); },
@@ -784,7 +785,7 @@ function quickAsk(el){ $('chatInput').value = el.textContent; send(); }
 function toggleKB(){
   state.kbOn = !state.kbOn;
   const c = $('kbChip');
-  c.textContent = state.kbOn ? '📚 知识库 开' : '📚 知识库 关';
+  c.textContent = state.kbOn ? '知识库 开' : '知识库 关';
   c.classList.toggle('off', !state.kbOn);
   toast(state.kbOn ? '将优先检索你的知识库' : '仅用模型通用知识回答');
 }
@@ -794,7 +795,7 @@ function addMsg(who, html){
   const m = $('msgs');
   const wrap = document.createElement('div');
   wrap.className = 'msg' + (who==='me' ? ' me' : '');
-  wrap.innerHTML = '<div class="avatar">'+(who==='me' ? '👤' : state.chatExpert.icon)+'</div>'
+  wrap.innerHTML = '<div class="avatar">'+(who==='me' ? (state.user && state.user.nickname ? state.user.nickname.slice(0,1) : '我') : state.chatExpert.icon)+'</div>'
                  + '<div class="bubble">'+html+'</div>';
   m.appendChild(wrap);
   scrollMsgs();
@@ -826,7 +827,7 @@ async function send(){
 
   // FR-B2 / FR-G6 额度准入前置
   if(state.used + ESTIMATE > state.quota){
-    addMsg('ai', '<div class="exhaust"><div class="hd">⚠️ 额度不足，无法发起本轮会话</div>'
+    addMsg('ai', '<div class="exhaust"><div class="hd">额度不足，无法发起本轮会话</div>'
       + '本月套餐 '+fmt(state.quota)+' 词元已用尽，你可以：<ol>'
       + '<li>等待明日免费额度发放（每日 2,000 词元）</li>'
       + '<li>购买词元包（首页「购买词元包」入口）</li>'
@@ -884,7 +885,7 @@ async function send(){
   // 后端不可用：明确报错，不再用本地假回答兜底；失败轮次不产生任何计量
   if(failed){
     sb.cursor.remove();
-    sb.txt.innerHTML = '<div class="exhaust"><div class="hd">⚠️ 后端连接失败，本轮未生成回答</div>'
+    sb.txt.innerHTML = '<div class="exhaust"><div class="hd">后端连接失败，本轮未生成回答</div>'
       + esc(failed || '当前未登录或后端不可用')
       + '<div class="muted" style="margin-top:6px">未产生词元计量与账单。请确认后端已启动后重试。</div></div>';
     scrollMsgs();
@@ -944,7 +945,7 @@ function settleTurn(question, answer, tokens, pIn, pOut, citations){
   }
   // 审批卡点（FR-D6）：命中对外发布类意图
   if(SENSITIVE.test(question) || SENSITIVE.test(answer)){
-    extra += '<div class="approve-card"><div class="hd">⚠️ 该内容拟对外发布，按平台规范需经审批</div>'
+    extra += '<div class="approve-card"><div class="hd">该内容拟对外发布，按平台规范需经审批</div>'
            + '<div class="muted">审批通过后自动进入发文流程，全过程留痕。</div>'
            + '<div class="row"><button class="btn small" onclick="submitApprove(this)">提交审批</button>'
            + '<button class="btn ghost small" onclick="toast(\'已取消提交\')">取消</button></div></div>';
@@ -968,7 +969,7 @@ async function submitApprove(btn){
   const title = (state.chatExpert ? state.chatExpert.name : '用户') + ' · 对外发文审批';
   try{
     const order = await API.approvalSubmit('对外发文', title, content, state.runId, state.conversationId);
-    btn.textContent = '已提交 ✓'; btn.disabled = true; btn.style.opacity = .6;
+    btn.textContent = '已提交'; btn.disabled = true; btn.style.opacity = .6;
     state.log.unshift({t:stampOf(new Date())+' 提交审批（对外发文）', s:'wait', l:'待审批'});
     renderLog();
     toast('已提交审批，进入工作流');
@@ -1206,7 +1207,7 @@ async function loadConversations(){
   if(!state.token) return;
   try{
     const list = await API.listConversations();
-    state.conversations = Array.isArray(list) ? list : (list && list.records) || [];
+    state.conversations = Array.isArray(list) ? list : ((list && (list.records || list.list)) || []);
     renderConversations();
   }catch(e){ /* 未登录或网络失败静默 */ }
 }
@@ -1219,8 +1220,38 @@ function renderConversations(){
     const cur = c.id === state.conversationId;
     return '<div class="row" onclick="switchConversation('+c.id+')">'
       + '<span class="t">'+esc(c.title||('会话 #'+c.id))+'</span>'
-      + '<span class="muted">'+(c.msgCount||0)+' 条'+(cur?' · 当前':'')+' ›</span></div>';
+      + '<span class="muted">'+(c.msgCount||0)+' 条'+(cur?' · 当前':'')+'</span>'
+      + '<button class="btn ghost small" onclick="event.stopPropagation();promptRename('+c.id+',this)">重命名</button></div>';
   }).join('');
+}
+/* FR-D3 会话重命名：仅本人可改，服务端校验归属 */
+async function promptRename(id, btn){
+  const cur = state.conversations.find(c=>c.id===id);
+  const title = prompt('重命名会话', (cur && cur.title) || '');
+  if(title === null) return;                       // 用户取消
+  const t = title.trim();
+  if(!t){ toast('标题不能为空'); return; }
+  try{
+    await API.renameConversation(id, t);
+    if(cur) cur.title = t;
+    renderConversations();
+    if(state.conversationId === id) $('chatName').textContent = t;
+    toast('已重命名');
+  }catch(e){ toast('重命名失败：'+(e.message||'')); }
+}
+/* FR-G3 用量账单导出：真实 CSV（含 BOM，Excel 直接打开） */
+function exportBill(){
+  if(!state.bill.length){ toast('暂无明细可导出'); return; }
+  const rows = [['时间/对象','词元合计','输入词元','输出词元']]
+    .concat(state.bill.map(b=>[b.t||'', b.n||0, b.prompt!=null?b.prompt:'', b.completion!=null?b.completion:'']));
+  const csv = '\uFEFF' + rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'aioa-账单明细-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 800);
+  toast('账单明细已导出（CSV）');
 }
 async function switchConversation(id){
   if(id === state.conversationId){ toast('已是当前会话'); go('page-chat'); return; }

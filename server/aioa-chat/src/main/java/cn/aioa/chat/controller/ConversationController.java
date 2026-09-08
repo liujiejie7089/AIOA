@@ -2,6 +2,7 @@ package cn.aioa.chat.controller;
 
 import cn.aioa.chat.dto.CreateConversationRequest;
 import cn.aioa.chat.dto.CreateRunRequest;
+import cn.aioa.chat.dto.RenameConversationRequest;
 import cn.aioa.chat.dto.RunCreatedResponse;
 import cn.aioa.chat.entity.ChatConversation;
 import cn.aioa.chat.entity.ChatMessage;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -59,6 +61,14 @@ public class ConversationController {
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id) {
         conversationService.delete(id);
+        return ApiResponse.ok();
+    }
+
+    @Operation(summary = "重命名会话（FR-D3）")
+    @PutMapping("/{id}")
+    public ApiResponse<Void> rename(@PathVariable Long id,
+                                    @RequestBody(required = false) RenameConversationRequest request) {
+        conversationService.rename(id, request == null ? null : request.getTitle());
         return ApiResponse.ok();
     }
 
