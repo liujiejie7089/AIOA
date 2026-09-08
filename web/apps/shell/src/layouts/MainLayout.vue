@@ -99,7 +99,7 @@ async function onCommand(command: string | number | object) {
     ElMessage.success('已退出登录')
     router.replace('/login')
   } else if (command === 'profile') {
-    ElMessage.info('M1 未实现个人信息页')
+    router.push('/profile')
   }
 }
 

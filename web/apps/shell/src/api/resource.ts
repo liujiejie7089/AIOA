@@ -90,3 +90,27 @@ export function listRoles(): Promise<SysRole[]> {
 export function listPermissions(): Promise<SysPermission[]> {
   return http.get('/admin/permissions').then((r) => unwrap<SysPermission[]>(r))
 }
+
+export interface QuotaView {
+  quota: number
+  used: number
+  free: number
+  left: number
+  percent: number
+  exhausted: boolean
+}
+
+export function myQuota(): Promise<QuotaView> {
+  return http.get('/quota').then((r) => unwrap<QuotaView>(r))
+}
+
+export interface HomeStats {
+  todoApprovals: number
+  myApprovals: number
+  aiConversations: number
+  aiRuns: number
+}
+
+export function homeStats(): Promise<HomeStats> {
+  return http.get('/stats/home').then((r) => unwrap<HomeStats>(r))
+}

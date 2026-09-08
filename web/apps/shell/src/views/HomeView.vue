@@ -4,12 +4,9 @@
       <div class="welcome-line">
         <div>
           <div class="welcome-title">你好，{{ auth.displayName }}</div>
-          <div class="welcome-sub">欢迎使用 AIOA 智能办公基座 · 当前里程碑 M1（骨架）</div>
+          <div class="welcome-sub">欢迎使用 AIOA 智能办公基座 · 企业智能办公一体化平台</div>
         </div>
-        <el-button type="primary" plain @click="assistant.openDrawer()">
-          <el-icon><ChatDotRound /></el-icon>
-          <span style="margin-left: 4px">唤起 AI 助手</span>
-        </el-button>
+        <el-button type="primary" @click="assistant.openDrawer()">唤起 AI 助手</el-button>
       </div>
     </el-card>
 
@@ -17,7 +14,7 @@
       <el-card v-for="item in stats" :key="item.label" shadow="never" class="stat-card">
         <div class="stat-label">{{ item.label }}</div>
         <div class="stat-value">{{ item.value }}</div>
-        <div class="stat-foot">M1 占位数据</div>
+        <div class="stat-foot">实时统计</div>
       </el-card>
     </div>
 
@@ -48,8 +45,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { homeStats } from '@/api/resource'
 import { useAuthStore } from '@/stores/auth'
 import { useAppsStore } from '@/stores/apps'
 import { useAssistantStore } from '@/stores/assistant'
@@ -61,10 +59,26 @@ const assistant = useAssistantStore()
 
 const stats = ref([
   { label: '待我审批', value: '—' },
-  { label: '今日工单', value: '—' },
   { label: 'AI 会话', value: '—' },
+  { label: 'AI 运行', value: '—' },
   { label: '已接入应用', value: '—' }
 ])
+
+onMounted(async () => {
+  // 真实统计：待审批/会话/运行来自后端，已接入应用取应用注册表实时数据
+  apps.list()
+  try {
+    const s = await homeStats()
+    stats.value = [
+      { label: '待我审批', value: String(s.todoApprovals) },
+      { label: 'AI 会话', value: String(s.aiConversations) },
+      { label: 'AI 运行', value: String(s.aiRuns) },
+      { label: '已接入应用', value: String(apps.enabled.length) }
+    ]
+  } catch {
+    /* 403 等场景保留占位符，不打断首页 */
+  }
+})
 
 function openApp(appCode: string) {
   void router.push(`/app/${appCode}`)

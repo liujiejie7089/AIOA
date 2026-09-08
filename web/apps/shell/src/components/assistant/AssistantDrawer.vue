@@ -36,16 +36,10 @@
           @keydown.enter.exact.prevent="onSend"
         />
         <div class="ad-actions">
-          <span class="ad-hint">M1 回声模式 · 全链路真实调用</span>
+          <span class="ad-hint">全链路真实调用 · 支持工具调用与计量</span>
           <div>
-            <el-button v-if="assistant.streaming" type="danger" size="small" @click="onStop">
-              <el-icon><VideoPause /></el-icon>
-              <span style="margin-left: 4px">停止</span>
-            </el-button>
-            <el-button v-else type="primary" size="small" :disabled="!draft.trim()" @click="onSend">
-              <el-icon><Promotion /></el-icon>
-              <span style="margin-left: 4px">发送</span>
-            </el-button>
+            <el-button v-if="assistant.streaming" type="danger" size="small" @click="onStop">停止</el-button>
+            <el-button v-else type="primary" size="small" :disabled="!draft.trim()" @click="onSend">发送</el-button>
           </div>
         </div>
       </div>

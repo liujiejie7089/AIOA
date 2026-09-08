@@ -23,7 +23,8 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '审批中心' }
       },
       { path: 'kb', name: 'kb', component: () => import('@/views/KbView.vue'), meta: { title: '知识库' } },
-      { path: 'admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { title: '系统管理' } }
+      { path: 'admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { title: '系统管理' } },
+      { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { title: '个人信息' } }
     ]
   },
   { path: '/:pathMatch(.*)*', redirect: '/home' }

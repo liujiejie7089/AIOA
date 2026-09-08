@@ -56,6 +56,7 @@ public class RunService {
     private static final String EVENT_MESSAGE_DELTA = "message.delta";
     private static final String EVENT_MESSAGE_COMPLETED = "message.completed";
     private static final String EVENT_RUN_COMPLETED = "run.completed";
+    private static final String EVENT_RUN_FAILED = "run.failed";
     private static final String EVENT_ERROR = "error";
     private static final String EVENT_PING = "ping";
     private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
@@ -81,7 +82,8 @@ public class RunService {
      * 发起一轮对话：额度准入（FR-B2）→ 输入内容审核（FR-H3）→ 落 user 消息 +
      * 创建 agent_run（RUNNING），返回 runId。
      */
-    public String start(Long conversationId, String text, Map<String, Object> context, List<Long> attachments) {
+    public String start(Long conversationId, String text, Map<String, Object> context,
+                        List<Long> attachments, String modelRef) {
         AuthUser user = AuthUserContext.require();
         if (text == null || text.isBlank()) {
             throw BizException.badRequest("text 不能为空");
@@ -103,6 +105,13 @@ public class RunService {
         }
         if (!Objects.equals(conversation.getUserId(), user.getUserId())) {
             throw BizException.forbidden("无权访问该会话");
+        }
+        // FR-C4 模型切换：run 级 modelRef 写回会话，subscribe 时透传给 Agent
+        if (modelRef != null && !modelRef.isBlank() && !modelRef.equals(conversation.getModelRef())) {
+            conversationMapper.update(null,
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChatConversation>()
+                            .eq(ChatConversation::getId, conversationId)
+                            .set(ChatConversation::getModelRef, modelRef));
         }
 
         String runId = newRunId();
@@ -171,6 +180,7 @@ public class RunService {
         AtomicReference<String> lastId = new AtomicReference<>(lastEventId);
         AtomicReference<List<Object>> citationsRef = new AtomicReference<>(List.of());
         AtomicReference<List<Object>> toolCallsRef = new AtomicReference<>(List.of());
+        AtomicReference<String> failureRef = new AtomicReference<>(null);
         long heartbeatSeconds = Math.max(1, agentProperties.getHeartbeatSeconds());
 
         ScheduledFuture<?> heartbeat = sseHeartbeatExecutor.scheduleAtFixedRate(
@@ -207,7 +217,7 @@ public class RunService {
                     .bodyToFlux(SSE_TYPE)
                     .subscribe(
                             event -> forward(emitter, event, assistant, lastId, usageRef,
-                                    citationsRef, toolCallsRef),
+                                    citationsRef, toolCallsRef, failureRef),
                             error -> {
                                 log.warn("agent run {} failed: {}", runId, error.getMessage());
                                 markFailed(run, error.getMessage());
@@ -218,7 +228,7 @@ public class RunService {
                             () -> {
                                 try {
                                     completeRun(run, emitter, lastId, assistant, usageRef,
-                                            citationsRef, toolCallsRef);
+                                            citationsRef, toolCallsRef, failureRef);
                                 } catch (Exception e) {
                                     log.error("finish run {} failed", runId, e);
                                 }
@@ -317,7 +327,8 @@ public class RunService {
                          AtomicReference<String> lastId,
                          AtomicReference<Usage> usageRef,
                          AtomicReference<List<Object>> citationsRef,
-                         AtomicReference<List<Object>> toolCallsRef) {
+                         AtomicReference<List<Object>> toolCallsRef,
+                         AtomicReference<String> failureRef) {
         String name = event.event() == null ? "message" : event.event();
         String data = event.data() == null ? "" : event.data();
         if (event.id() != null) {
@@ -352,6 +363,22 @@ public class RunService {
         } else if (EVENT_RUN_COMPLETED.equals(name)) {
             // 尾帧同样带 usage，取后到的为准
             usageRef.set(readUsage(data));
+        } else if (EVENT_ERROR.equals(name)) {
+            // Agent 流内错误帧（模型未配置/上游报错/流异常）：记录原因供流结束收口
+            String code = readField(data, "code");
+            String msg = readField(data, "message");
+            String reason = (code == null ? "" : code) + (msg == null ? "" : (code == null ? "" : ": ") + msg);
+            failureRef.set(reason.isBlank() ? "agent error" : reason);
+        } else if (EVENT_RUN_FAILED.equals(name)) {
+            // Agent 明确失败收口：优先取 error 帧的具体 message，否则用 run.failed 的 reason
+            if (failureRef.get() == null) {
+                String reason = readField(data, "reason");
+                if (reason == null || reason.isBlank()) {
+                    String errorCode = readField(data, "error_code");
+                    reason = errorCode == null ? null : errorCode;
+                }
+                failureRef.set(reason == null || reason.isBlank() ? "agent run failed" : reason);
+            }
         }
     }
 
@@ -363,7 +390,15 @@ public class RunService {
     private void completeRun(AgentRun run, SseEmitter emitter, AtomicReference<String> lastId,
                              StringBuilder assistant, AtomicReference<Usage> usageRef,
                              AtomicReference<List<Object>> citationsRef,
-                             AtomicReference<List<Object>> toolCallsRef) {
+                             AtomicReference<List<Object>> toolCallsRef,
+                             AtomicReference<String> failureRef) {
+        // Agent 侧已宣告失败（模型未配置/上游报错等）：按 FAILED 收口，不落正文不计费
+        String failure = failureRef.get();
+        if (failure != null && !failure.isBlank()) {
+            log.warn("run {} ended with agent failure: {}", run.getRunId(), failure);
+            markFailed(run, failure);
+            return;
+        }
         String content = assistant.toString();
         String hit = contentGuard.findHit(content);
         if (hit != null) {

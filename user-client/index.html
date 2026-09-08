@@ -89,6 +89,12 @@ body{
 .page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px 92px;display:none;scroll-behavior:smooth}
 .page.active{display:block}
 .page.active.chat-active{padding:0 0 78px;display:flex;flex-direction:column}
+.model-sel{border:1px solid rgba(15,23,42,.15);background:#fff;border-radius:8px;padding:3px 6px;font-size:11px;color:var(--ink);max-width:110px}
+.cite-list{margin-top:8px;border:1px solid rgba(15,23,42,.1);border-radius:10px;padding:8px 10px;background:rgba(15,23,42,.03)}
+.cite-hd{font-size:10.5px;font-weight:700;color:var(--ink);opacity:.75;margin-bottom:4px}
+.cite-item{font-size:11.5px;line-height:1.7;color:var(--ink);cursor:pointer}
+.cite-item:hover{color:var(--brand,#2563eb)}
+.cite-idx{font-weight:700;margin-right:4px}
 /* 会话页底部必须让出 78px tabbar 高度，否则 .input-bar 被 tabbar（z-index:10，近不透明）盖住，无法点击输入 */
 
 .tabbar{position:absolute;bottom:0;left:0;right:0;height:78px;background:rgba(255,255,255,.94);
@@ -329,11 +335,15 @@ body{
       <div class="chat" data-page-node-id="lmF1PlgNVKFvJ7QwSrlpzy">
         <div class="chat-head" data-page-node-id="cOEx64IWX3c5PAh1JDq7vF">
           <span class="nm" data-page-node-id="VIOEj6K7YaBOZnVx7oP6Iq"><span id="chatIcon" data-page-node-id="idm2RYCrc1TR2eCPX3udB1">🏛️</span><span id="chatName" data-page-node-id="uZK4DxZwaWPY9TCgG75aVL">政策咨询专家</span></span>
-          <span class="muted" id="chatModel" data-page-node-id="8H7tD4yeslIv8IfMPXNpov">模型：智能路由</span>
+          <select class="model-sel" id="modelSel" onchange="onModelChange(this.value)" title="切换模型">
+            <option value="echo">回声演示</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="dashscope">通义千问</option>
+          </select>
         </div>
         <div class="msgs" id="msgs" data-page-node-id="I1IXsMSZPjb3CxJkbtoUZh"></div>
         <div class="input-bar" data-page-node-id="J5hU1z7wsASpF9bvY7wnxM">
-          <span class="kb-chip" id="kbChip" onclick="toggleKB()" data-page-node-id="GWBZQKnqfc4pvRX94PeSnb">📚 知识库 开</span>
+          <span class="kb-chip" id="kbChip" onclick="toggleKB()" data-page-node-id="GWBZQKnqfc4pvRX94PeSnb">知识库 开</span>
           <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()" data-page-node-id="lbA5Eu9KuK5SF5IDF8HH5t">
           <button class="btn small" id="sendBtn" onclick="send()" data-page-node-id="J0KL6aC0FqJqUzhCxL76rX">发送</button>
         </div>
@@ -343,7 +353,7 @@ body{
     <!-- 我的 -->
     <section class="page" id="page-me" data-page-node-id="QyMI35TYd8i2zHFnnDltnc">
       <div class="card me-head" data-page-node-id="DjwhP2McSOB42EVZmMAn39">
-        <div class="avatar" data-page-node-id="091xLb22wvmaRfxgLEcNXI">👤</div>
+        <div class="avatar" id="meAvatar" data-page-node-id="091xLb22wvmaRfxgLEcNXI">A</div>
         <div data-page-node-id="Pyw0KNG2OA8AudUCcVmWfo">
           <div style="font-weight:800;font-size:16px" data-page-node-id="7eHC7B2Is5xfDZwbcDwknl"><span id="meName" data-page-node-id="CQDXRkqd1lRAA6EoyLFLRg">—</span> <span class="tag" id="meRole" data-page-node-id="oc1CujDqC2UAHqla6CLl5X">—</span></div>
           <div class="muted" data-page-node-id="uisCGzLazCXVR5qaAQurgG">AIOA 企业智能工作台
@@ -358,16 +368,38 @@ body{
           <button class="btn ghost small" onclick="toast('已打开文件上传（支持 PDF/Word/Excel/图片）')" data-page-node-id="FpDSFsh37vsdupki3hdDDA">＋ 上传资料入知识库</button>
         </div>
       </div>
+      <div class="card">
+        <div class="sec-title">历史会话 <span class="switch" onclick="newConversation()">＋ 新会话</span></div>
+        <div id="convList"><div class="muted">暂无历史会话</div></div>
+      </div>
       <div class="card" data-page-node-id="q9D0pzYDYIlchH9dgWW8Td">
         <div class="sec-title" data-page-node-id="Zb8YI7HDkHBlQUNVZdGK90">账单与留痕</div>
-        <div class="row" onclick="go('page-bill')" data-page-node-id="rzF2ubGrXfVSJV1cNqhZaI"><span class="t" data-page-node-id="2DMMnycEZjgIf4rGvPE8oF">📒 用量账单</span><span class="muted" data-page-node-id="A13xV6oEtaGDvae17h5TOV">本月 <b class="num" id="meUsed" data-page-node-id="G9SN8mzdtPQlFTT1WpVc8s">13,600</b> 词元 ›</span></div>
-        <div class="row" onclick="go('page-log')" data-page-node-id="jyPRJxNrYV8WoGEqhz6c8S"><span class="t" data-page-node-id="GL2DPNyARXyYr0xLGrXNCz">🧾 我的操作记录</span><span class="muted" data-page-node-id="r1pqXaeYD6pZRCWw0pZXhI">全程可查 ›</span></div>
+        <div class="row" onclick="openBuy()"><span class="t">💎 购买词元包</span><span class="muted">下单支付实时到账 ›</span></div>
+        <div class="row" onclick="go('page-bill')" data-page-node-id="rzF2ubGrXfVSJV1cNqhZaI"><span class="t" data-page-node-id="2DMMnycEZjgIf4rGvPE8oF">用量账单</span><span class="muted" data-page-node-id="A13xV6oEtaGDvae17h5TOV">本月 <b class="num" id="meUsed" data-page-node-id="G9SN8mzdtPQlFTT1WpVc8s">13,600</b> 词元 ›</span></div>
+        <div class="row" onclick="go('page-log')" data-page-node-id="jyPRJxNrYV8WoGEqhz6c8S"><span class="t" data-page-node-id="GL2DPNyARXyYr0xLGrXNCz">我的操作记录</span><span class="muted" data-page-node-id="r1pqXaeYD6pZRCWw0pZXhI">全程可查 ›</span></div>
         <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')" data-page-node-id="XPggI5cGIjWDzFDVjdOANN"><span class="t" data-page-node-id="MEVY0LX4aaBQEGx5HAD11E">🛡️ 投诉与纠错</span><span class="muted" data-page-node-id="cR3T6RVsZeqI5rRlKVqTFU">›</span></div>
       </div>
       <!-- 待办/审批/通知 已迁移至底部独立「待办」Tab（page-todo） -->
     </section>
 
     <!-- 账单 -->
+    <!-- 购买词元包（FR-G4/G6）：商品列表 → 下单 → 模拟支付 → 额度实时到账 -->
+    <section class="page" id="page-buy">
+      <div class="kicker">Purchase</div>
+      <div class="sec-title">购买词元包</div>
+      <div class="muted" style="margin-bottom:11px">下单后支付成功，词元实时到账 · 订单全程留痕可查</div>
+      <div class="card" id="pkgList"><div class="muted">加载中…</div></div>
+      <div class="card" id="payCard" style="display:none">
+        <div class="sec-title">订单确认</div>
+        <div id="payInfo" class="muted"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn small" id="payBtn" onclick="mockPay()">模拟支付（微信支付二期接入）</button>
+          <button class="btn ghost small" onclick="cancelPay()">取消</button>
+        </div>
+      </div>
+      <div class="muted" style="font-size:10.5px">企业对公转账购买通道（FR-G5）二期开放 · 支持政务专户结算</div>
+    </section>
+
     <section class="page" id="page-bill" data-page-node-id="2opCtpqHkACrlqDtAVsx8n">
       <div class="kicker" data-page-node-id="Vc94xj8KdCjgu8vmeKalDK">Ledger</div>
       <div class="sec-title" data-page-node-id="6QanHC6AQkn5IFRLR8b9Dp">用量账单（9 月）</div>
@@ -466,7 +498,8 @@ const state = {
   mode:'guest', token:null, user:null, roles:[], isAdmin:false, todoApprovals:[], notifs:[], unread:0,
   bill:[],
   log:[],
-  approvals:[], lastAnswer:''
+  approvals:[], lastAnswer:'',
+  model:'echo', conversations:[]
 };
 
 /* ============================================================
@@ -490,7 +523,12 @@ const API = {
   },
   login(u,p){ return this.req('/v1/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})}); },
   createConversation(title,appCode){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode})}); },
-  createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context})}); },
+  createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context,model_ref:state.model})}); },
+  listConversations(){ return this.req('/v1/conversations'); },
+  listMessages(convId){ return this.req('/v1/conversations/'+convId+'/messages'); },
+  packages(){ return this.req('/v1/packages'); },
+  createOrder(packageId){ return this.req('/v1/orders',{method:'POST',body:JSON.stringify({packageId})}); },
+  mockPay(orderNo){ return this.req('/v1/payments/notify/mock/'+orderNo,{method:'POST',body:'{}'}); },
   cancel(runId){ return this.req('/v1/runs/'+runId+'/cancel',{method:'POST'}); },
 
   /* ---- 用户端业务域（原为前端 mock，现接后端 aioa-resource 模块） ---- */
@@ -548,9 +586,12 @@ const API = {
           const t = pickText(ev.data); if(t) h.onDelta(t);
         }else if(ev.event === 'message.completed'){
           // 该帧带最终 content 与 usage；正文已由 deltas 逐段追加完成，
-          // 此处只取用量，切勿再追加一次（否则文本重复）
+          // 此处只取用量与引用溯源/工具调用，切勿再追加一次（否则文本重复）
           const p = safeJson(ev.data);
           const u = pickUsage(p); if(u) h.onUsage(u);
+          if(h.onCompleted) h.onCompleted(p);
+        }else if(ev.event === 'approval.required'){
+          const p = safeJson(ev.data); if(p && h.onApproval) h.onApproval(p);
         }else if(ev.event === 'run.completed'){
           h.onUsage(pickUsage(safeJson(ev.data))); return;
         }else if(ev.event === 'run.failed'){
@@ -790,7 +831,7 @@ async function send(){
       + '<li>等待明日免费额度发放（每日 2,000 词元）</li>'
       + '<li>购买词元包（首页「购买词元包」入口）</li>'
       + '<li>联系管理员开通企业套餐</li></ol>'
-      + '<button class="btn small" onclick="toast(\'已跳转词元包购买页\')">立即购买</button></div>');
+      + '<button class="btn small" onclick="openBuy()">立即购买</button></div>');
     return;
   }
 
@@ -802,6 +843,8 @@ async function send(){
   let full = '';
   let usage = null;
   let failed = null;
+  let citations = [];
+  pendingApprovalCard = null;
 
   const paint = ()=>{ sb.txt.textContent = full; scrollMsgs(); };
 
@@ -824,10 +867,13 @@ async function send(){
       const runId = run && (run.runId || run.id);
       if(!runId) throw new Error('未取得 runId');
       $('chatModel').textContent = '模型：智能路由 · 已连接';
+      let citations = [];
       await API.stream(runId, {
-        onStarted:(d)=>{ $('chatModel').textContent = '模型：' + (d.gateway_key === 'echo' ? '回声演示' : d.model); },
+        onStarted:(d)=>{ const label = d.gateway_key === 'echo' ? '回声演示' : d.model; $('chatModel').textContent = '模型：' + label; },
         onDelta:(t)=>{ if(t){ full += t; paint(); } },
         onUsage:(u)=>{ usage = u; },
+        onCompleted:(p)=>{ if(p && Array.isArray(p.citations)) citations = p.citations; },
+        onApproval:(card)=>{ pendingApprovalCard = card; },
         onError:(e)=>{ failed = e.message; }
       });
     }catch(e){
@@ -856,12 +902,13 @@ async function send(){
                : (28 + Math.max(1, Math.round(full.length * 1.6)));
   const pIn  = usage ? usage.prompt : 28;
   const pOut = usage ? usage.completion : Math.max(1, tokens - 28);
-  settleTurn(q, full, tokens, pIn, pOut);
+  settleTurn(q, full, tokens, pIn, pOut, citations);
   state.history.push({role:'assistant', content:full});
 }
 
 /* 一轮结束：计量入账 + 引用溯源 + 审批卡点 + 留痕 */
-function settleTurn(question, answer, tokens, pIn, pOut){
+let pendingApprovalCard = null;
+function settleTurn(question, answer, tokens, pIn, pOut, citations){
   state.used += tokens;
   syncQuota();
 
@@ -873,11 +920,27 @@ function settleTurn(question, answer, tokens, pIn, pOut){
   // 来源可追溯（FR-D5 / 交互约束 2）：M1 会话接真实模型/RAG 后由后端返回引用，
   // 前端不再硬编码假来源；kbOn 仅展示「已启用知识库」状态
   let extra = '<div class="meta-line">本次消耗 <b>'+fmt(tokens)+'</b> 词元'
-            + '（输入 <b>'+fmt(pIn)+'</b> / 输出 <b>'+fmt(pOut)+'</b>）· 模型：智能路由 · 已入账本并留痕</div>';
-  if(state.kbOn){
-    extra += '<div class="meta-line">📚 已启用知识库辅助回答 · 引用溯源将在资料解析入库后由后端返回</div>';
+            + '（输入 <b>'+fmt(pIn)+'</b> / 输出 <b>'+fmt(pOut)+'</b>）· 模型：'+(state.model==='echo'?'回声演示':state.model)+' · 已入账本并留痕</div>';
+  // 引用溯源（FR-D5）：后端返回的真实知识库来源
+  if(Array.isArray(citations) && citations.length){
+    extra += '<div class="cite-list"><div class="cite-hd">来源（知识库引用溯源）</div>';
+    citations.forEach((c,idx)=>{
+      extra += '<div class="cite-item" onclick="toast(\'查看原文：'+esc(c.title||'')+'\')">'
+             + '<span class="cite-idx">['+(idx+1)+']</span> '+esc(c.title||('文档 #'+c.docId))+'</div>';
+    });
+    extra += '</div>';
+  }else if(state.kbOn){
+    extra += '<div class="meta-line">已启用知识库辅助回答 · 本回答未引用库内文档</div>';
   }else{
     extra += '<div class="meta-line">本回答基于模型通用知识，请注意甄别</div>';
+  }
+  // 审批卡点（FR-D6）：优先使用后端 approval.required 事件下发的卡片
+  if(pendingApprovalCard){
+    extra += '<div class="approve-card"><div class="hd">'+esc(pendingApprovalCard.title||'对外发布审批')+'</div>'
+           + '<div class="muted">'+esc(pendingApprovalCard.reason||'回答内容涉及对外发布场景，需按合规流程提交审批')+'</div>'
+           + '<div class="row"><button class="btn small" onclick="submitApprove(this)">提交审批</button>'
+           + '<button class="btn ghost small" onclick="toast(\'已取消提交\')">取消</button></div></div>';
+    pendingApprovalCard = null;
   }
   // 审批卡点（FR-D6）：命中对外发布类意图
   if(SENSITIVE.test(question) || SENSITIVE.test(answer)){
@@ -1131,6 +1194,109 @@ function stampOf(d){
 /* 登录成功后拉取全部业务数据（专家/技能/知识库/额度/账单/日志/审批/通知）。
    接口失败按域降级：单个域失败只影响该域（空态），不再用假数据兜底；
    全部失败时抛错由调用方提示。 */
+/* ---------- 模型切换（FR-C4）：写入会话 model_ref，下一次 run 生效 ---------- */
+function onModelChange(v){
+  state.model = v;
+  const label = v === 'echo' ? '回声演示' : v;
+  toast('模型已切换：' + label + '（下一轮生效）');
+}
+
+/* ---------- 历史会话（FR-C1）---------- */
+async function loadConversations(){
+  if(!state.token) return;
+  try{
+    const list = await API.listConversations();
+    state.conversations = Array.isArray(list) ? list : (list && list.records) || [];
+    renderConversations();
+  }catch(e){ /* 未登录或网络失败静默 */ }
+}
+function renderConversations(){
+  const el = $('convList'); if(!el) return;
+  if(!state.conversations.length){
+    el.innerHTML = '<div class="muted">暂无历史会话</div>'; return;
+  }
+  el.innerHTML = state.conversations.slice(0, 10).map(c=>{
+    const cur = c.id === state.conversationId;
+    return '<div class="row" onclick="switchConversation('+c.id+')">'
+      + '<span class="t">'+esc(c.title||('会话 #'+c.id))+'</span>'
+      + '<span class="muted">'+(c.msgCount||0)+' 条'+(cur?' · 当前':'')+' ›</span></div>';
+  }).join('');
+}
+async function switchConversation(id){
+  if(id === state.conversationId){ toast('已是当前会话'); go('page-chat'); return; }
+  try{
+    const msgs = await API.listMessages(id);
+    state.conversationId = id;
+    state.history = [];
+    $('msgs').innerHTML = '';
+    (Array.isArray(msgs) ? msgs : []).forEach(m=>{
+      const who = m.role === 'user' ? 'me' : 'ai';
+      addMsg(who, esc(m.content || ''));
+      state.history.push({role:m.role, content:m.content});
+    });
+    renderConversations();
+    toast('已切换会话');
+    go('page-chat');
+  }catch(e){ toast('切换失败：'+(e.message||'')); }
+}
+function newConversation(){
+  state.conversationId = null;
+  state.history = [];
+  $('msgs').innerHTML = '';
+  renderConversations();
+  toast('已新建会话');
+  go('page-chat');
+}
+
+/* ---------- 购买词元包（FR-G4/G6）：下单 → 模拟支付 → 实时到账 ---------- */
+let buyOrder = null;
+async function openBuy(){
+  if(!state.token){ toast('请先登录后再购买'); return; }
+  go('page-buy');
+  await loadPackages();
+}
+async function loadPackages(){
+  const el = $('pkgList');
+  try{
+    const pkgs = await API.packages();
+    el.innerHTML = (pkgs||[]).map(p=>
+      '<div class="row" onclick="buyPkg('+p.id+')">'
+      + '<span class="t">'+esc(p.packageName)+'</span>'
+      + '<span class="muted"><b class="num">'+(p.priceCents/100).toFixed(0)+'</b> 元 · '+(p.tokens/10000)+'万词元 ›</span></div>'
+    ).join('') || '<div class="muted">暂无在售商品</div>';
+  }catch(e){ el.innerHTML = '<div class="muted">商品加载失败：'+esc(e.message||'')+'</div>'; }
+}
+async function buyPkg(id){
+  try{
+    const pay = await API.createOrder(id);
+    buyOrder = pay;
+    $('payInfo').innerHTML = '订单号 <b>'+esc(pay.orderNo||'')+'</b> · 金额 <b>'+((pay.amountCents||0)/100).toFixed(2)+'</b> 元<br>'
+      + '<span class="muted">当前为模拟支付通道，微信支付二期接入后自动拉起收银台</span>';
+    $('payCard').style.display = 'block';
+    toast('下单成功，请确认支付');
+  }catch(e){ toast('下单失败：'+(e.message||'')); }
+}
+async function mockPay(){
+  if(!buyOrder || !buyOrder.orderNo) return;
+  const btn = $('payBtn');
+  btn.disabled = true; btn.textContent = '支付中…';
+  try{
+    const r = await API.mockPay(buyOrder.orderNo);
+    const credited = r && r.tokensCredited || 0;
+    toast('支付成功，'+credited.toLocaleString()+' 词元已实时到账');
+    $('payCard').style.display = 'none';
+    buyOrder = null;
+    refreshBilling(); syncQuota();
+    go('page-me');
+  }catch(e){ toast('支付失败：'+(e.message||'')); }
+  btn.disabled = false; btn.textContent = '模拟支付（微信支付二期接入）';
+}
+function cancelPay(){
+  buyOrder = null;
+  $('payCard').style.display = 'none';
+  toast('已取消订单（未支付订单不影响额度）');
+}
+
 async function loadLiveData(){
   const results = await Promise.allSettled([
     API.experts(), API.skills(), API.kbDocs(), API.quota(),
@@ -1201,6 +1367,7 @@ async function bootstrap(){
       renderMeHead();
       setLink('live','实时联调');
       await loadLiveData();
+      await loadConversations();
       startChat(0); go('page-home');
       document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
       return;
@@ -1235,6 +1402,7 @@ async function doLogin(){
     renderMeHead();
     setLink('live','实时联调');
     await loadLiveData();
+    await loadConversations();
     startChat(0); go('page-home');
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
   }catch(e){
