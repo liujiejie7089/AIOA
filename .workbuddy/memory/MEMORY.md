@@ -12,11 +12,27 @@
 - 平台底座层：server `aioa-admin` 计费/RBAC/租户（#57）
 
 ## 本地运行方式
-- 后端：`cd server && .tools/mvnw.sh -pl aioa-boot -am clean package -DskipTests` → `java -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar`（启动加 `-Dspring.flyway.validate-on-migrate=false`，因 V1 checksum 已变）。监听 :8080。
-- 前端：根 `web/` 下 `pnpm -r --parallel dev`；shell :5173 / demo-ticket :5174 / demo-dispatch :5175。需 `NO_PROXY=localhost,127.0.0.1` 绕过环境 HTTP 代理。
-- 登录：admin / Admin@123（Flyway V2 seed）。统一响应 `{code,message,data}`，JWT 鉴权。
+- 后端：`cd server && bash mvnw -DskipTests -q package`（绕开系统 `mvn` 损坏）→ 用真实 JDK 路径
+  `C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar`（**禁止把 python 路径当 java 用**）。
+  监听 :8080。Flyway V1~V6 已落库。
+- 联调代理（用户端 H5）：`C:/Users/刘尖尖/.workbuddy/binaries/python/versions/3.13.12/python.exe user-client/serve.py 5181`。
+  同源静态托管 + `/api/*` 反代 :8080；SSE 走 `resp.read(1)` 逐字节。
+- 登录：admin / Admin@123（ROLE_ADMIN，V2 seed）、zhangsan / User@123（ROLE_USER，V6 seed）。
+  统一响应 `{code,message,data}`，JWT 鉴权；登出清 localStorage.aioa_session。
 
 ## 关键坑（已修）
 - 前端 `web/apps/shell/src/api/index.ts` 的 `unwrap` 只剥 axios 信封、返回 ApiResponse 包装；store 按内层读 `result.accessToken` 得 undefined → token 存成 `"undefined"` → `/apps` 401 → 登录后卡 `/login?redirect=/home`。修复：unwrap 在 body 含 code+data 时再剥一层取 body.data。影响 login/me/apps/conversations/runs 所有 unwrapped 接口。
-- 系统 `mvn` 损坏，必须用 `server/.tools/mvnw.sh`（bundled maven 3.9.9）。
+- 系统 `mvn` 损坏，必须用 `server/mvnw`（bundled maven 3.9.11，通过 java + plexus-classworlds 启动 launcher）。
 - PG→MySQL 迁移后 `SysUser/SysTenant.status` 由 Integer 改 String（ENABLED/ACTIVE 字符串枚举）。
+- **repackage 期间后端必须先停**：跑着的 JVM 占用 fat-jar 时 `mvnw package` 半路会成功 rename 出 20KB stripped-jar，
+  原 fat-jar 消失，JVM 立刻 NoClassDefFoundError 崩。流程：先 `Stop-Process <pid>`（按 `netstat -ano | grep :8080`）→
+  删 target → rebuild → 后台启动。
+- **`@RestControllerAdvice(Exception.class)` 兜底会吞 AccessDeniedException** 成 HTTP 500：
+  HandlerExceptionResolver 比 ExceptionTranslationFilter 先匹配，导致 @PreAuthorize / controller 内抛的
+  AccessDeniedException 走不到 SecurityConfig 的 accessDeniedHandler。本项目 `aioa-common` 明确不引入
+  spring-security 依赖，故统一改 `BizException.forbidden(...)` 由 `GlobalExceptionHandler.handleBiz` 映射为 403。
+  若 common 允许 spring-security，加 `@ExceptionHandler(AccessDeniedException.class)` 是更直接的解。
+- **GCM 在 headless 沙箱静默挂死**：Git Credential Manager 无缓存 GitHub 凭证时卡在 Schannel 吊销检查
+  `CRYPT_E_NO_REVOCATION_CHECK`。解决：用户给 classic PAT(repo)，一次性内联 URL 推：
+  `git -c http.sslVerify=false -c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 push "https://<user>:<PAT>@github.com/<repo>.git" main`
+  验证远端 `ls-remote` 必须带 `sslVerify=false`，否则报错信息里 URL 会被 git 自动抹凭证。PAT 用完即弃，不持久化。

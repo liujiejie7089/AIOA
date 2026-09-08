@@ -1,5 +1,6 @@
 package cn.aioa.resource.controller;
 
+import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.resource.entity.ApprovalOrder;
 import cn.aioa.resource.service.ApprovalService;
@@ -63,7 +64,12 @@ public class ApprovalController {
     @GetMapping
     public ApiResponse<List<ApprovalView>> list(@RequestParam(name = "scope", defaultValue = "mine") String scope) {
         AuthUser user = AuthUserContext.require();
-        List<ApprovalOrder> orders = "todo".equalsIgnoreCase(scope)
+        boolean todo = "todo".equalsIgnoreCase(scope);
+        // 审批中心（待我审批）仅租户管理员可见；我的审批对所有登录用户开放
+        if (todo && !user.getRoles().contains("ROLE_ADMIN")) {
+            throw BizException.forbidden("审批中心仅租户管理员可访问");
+        }
+        List<ApprovalOrder> orders = todo
                 ? approvalService.listTodo(user.getTenantId())
                 : approvalService.listMine(user.getTenantId(), user.getUserId());
         return ApiResponse.ok(orders.stream().map(o -> ApprovalView.from(o, user.getUserId())).toList());
@@ -73,6 +79,11 @@ public class ApprovalController {
     public ApiResponse<ApprovalView> decide(@PathVariable Long id,
                                             @RequestBody(required = false) DecisionBody body) {
         AuthUser user = AuthUserContext.require();
+        // 通过/驳回：仅租户管理员可操作（不使用 @PreAuthorize，避免 AOP 抛 AccessDeniedException
+        // 被 GlobalExceptionHandler 兜底为 500；BizException(403) 由 handleBiz 映射为 HTTP 403）。
+        if (!user.getRoles().contains("ROLE_ADMIN")) {
+            throw BizException.forbidden("仅租户管理员可通过/驳回审批");
+        }
         String decision = body == null || body.decision() == null ? "APPROVE" : body.decision();
         String note = body == null ? null : body.note();
         // 审批人显示名：nickname 优先，缺失回退 username，保证一定有值
