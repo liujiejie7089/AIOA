@@ -40,7 +40,7 @@
             <el-icon><HomeFilled /></el-icon>
             <template #title>首页</template>
           </el-menu-item>
-          <el-sub-menu index="apps">
+          <el-sub-menu v-if="apps.menuItems.length" index="apps">
             <template #title>
               <el-icon><Grid /></el-icon>
               <span>我的应用</span>
@@ -48,7 +48,6 @@
             <el-menu-item v-for="item in apps.menuItems" :key="item.appCode" :index="`/app/${item.appCode}`">
               <template #title>{{ item.appName }}</template>
             </el-menu-item>
-            <el-menu-item v-if="!apps.menuItems.length" index="__empty_app" disabled>暂无应用</el-menu-item>
           </el-sub-menu>
           <el-menu-item index="/approvals">
             <el-icon><Tickets /></el-icon>

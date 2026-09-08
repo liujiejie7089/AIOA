@@ -13,7 +13,7 @@ export interface CreateRunResult {
 }
 
 export function create(conversationId: string, payload: CreateRunPayload): Promise<CreateRunResult> {
-  return http.post(`/conversations/${conversationId}/runs`, payload).then(unwrap)
+  return http.post(`/conversations/${conversationId}/runs`, payload).then(unwrap<CreateRunResult>)
 }
 
 export function cancel(runId: string): Promise<void> {

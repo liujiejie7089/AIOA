@@ -19,7 +19,7 @@ public class AppController {
         this.appService = appService;
     }
 
-    public record AppItem(String appCode, String name, String entryUrl, String routePrefix,
+    public record AppItem(String appCode, String appName, String entryUrl, String routePrefix,
                           String hostType, String icon, String permissionCode, Integer sort) {
 
         static AppItem from(AppRegistry a) {

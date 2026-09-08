@@ -21,14 +21,15 @@
       </el-card>
     </div>
 
-    <el-card shadow="never">
+    <!-- 未接入任何业务应用时不展示该区块 -->
+    <el-card v-if="!apps.loading && apps.enabled.length" shadow="never">
       <template #header>
         <div class="card-header">
           <span>我的应用</span>
           <el-button text type="primary" size="small" :loading="apps.loading" @click="apps.list(true)">刷新</el-button>
         </div>
       </template>
-      <div v-if="apps.enabled.length" class="card-grid">
+      <div class="card-grid">
         <div v-for="item in apps.enabled" :key="item.appCode" class="app-card" @click="openApp(item.appCode)">
           <div class="app-icon">
             <el-icon><Grid /></el-icon>
@@ -42,7 +43,6 @@
           </el-tag>
         </div>
       </div>
-      <el-empty v-else description="暂无可用应用（后端未启动或应用注册表为空）" :image-size="80" />
     </el-card>
   </div>
 </template>
