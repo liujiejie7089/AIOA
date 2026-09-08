@@ -15,6 +15,7 @@ VALUES (0, 'default', '默认租户', 'ENABLED');
 -- 角色 ---------------------------------------------------------------------
 INSERT INTO sys_role (tenant_id, role_code, name, type, data_scope)
 VALUES (0, 'ROLE_ADMIN', '系统管理员', 'SYSTEM', 'ALL');
+
 INSERT INTO sys_role (tenant_id, role_code, name, type, data_scope)
 VALUES (0, 'ROLE_USER', '普通用户', 'BUSINESS', 'SELF');
 
@@ -25,12 +26,13 @@ VALUES (0, 'admin', '$2a$10$t1puZo3ANZlsQpD57aSOiOVDTev.FKR6hV.348.xUpmIU4bfOpfS
 
 -- 权限样例 -----------------------------------------------------------------
 INSERT INTO sys_permission (tenant_id, perm_code, name, type, sort)
-VALUES (0, 'aioa:app:ticket', '票务系统', 'APP', 10),
-       (0, 'aioa:app:dispatch', '统一调度', 'APP', 20),
-       (0, 'aioa:chat:use', '对话助手', 'API', 30),
-       (0, 'aioa:kb:view', '知识库查看', 'API', 40),
-       (0, 'aioa:approval:*', '审批中心', 'APP', 50),
-       (0, 'aioa:admin:*', '系统管理', 'ADMIN', 60);
+VALUES
+    (0, 'aioa:app:ticket', '票务系统', 'APP', 10),
+    (0, 'aioa:app:dispatch', '统一调度', 'APP', 20),
+    (0, 'aioa:chat:use', '对话助手', 'API', 30),
+    (0, 'aioa:kb:view', '知识库查看', 'API', 40),
+    (0, 'aioa:approval:*', '审批中心', 'APP', 50),
+    (0, 'aioa:admin:*', '系统管理', 'ADMIN', 60);
 
 -- admin → ROLE_ADMIN -------------------------------------------------------
 INSERT INTO sys_user_role (tenant_id, user_id, role_id, created_by)
@@ -47,19 +49,21 @@ WHERE r.role_code = 'ROLE_ADMIN';
 -- 应用注册表 ---------------------------------------------------------------
 INSERT INTO app_registry (tenant_id, app_code, name, entry_url, route_prefix, host_type, icon,
                           permission_code, enabled, props, sort)
-VALUES (0, 'ticket', '票务系统', 'http://localhost:5174/', '/app/ticket', 'wujie', 'ticket',
-        'aioa:app:ticket', true, '{}', 10),
-       (0, 'dispatch', '统一调度', 'http://localhost:5175/', '/app/dispatch', 'iframe', 'schedule',
-        'aioa:app:dispatch', true, '{}', 20);
+VALUES
+    (0, 'ticket', '票务系统', 'http://localhost:5174/', '/app/ticket', 'wujie', 'ticket',
+     'aioa:app:ticket', 1, JSON_OBJECT(), 10),
+    (0, 'dispatch', '统一调度', 'http://localhost:5175/', '/app/dispatch', 'iframe', 'schedule',
+     'aioa:app:dispatch', 1, JSON_OBJECT(), 20);
 
 -- Agent 定义 ---------------------------------------------------------------
 INSERT INTO agent_definition (tenant_id, agent_code, name, type, domain, system_prompt, model_ref,
                               context_turns, max_steps, enabled, description)
-VALUES (0, 'main', '主智能体', 'main', NULL, NULL, 'echo', 10, 8, true, '主智能体：负责意图识别与任务路由'),
-       (0, 'ticket_agent', '票务助手', 'sub', 'ticket', NULL, 'echo', 10, 8, true, '票务领域子智能体'),
-       (0, 'dispatch_agent', '调度助手', 'sub', 'dispatch', NULL, 'echo', 10, 8, true, '调度领域子智能体'),
-       (0, 'kb_agent', '知识库助手', 'sub', 'kb', NULL, 'echo', 10, 8, true, '知识库问答子智能体');
+VALUES
+    (0, 'main', '主智能体', 'main', NULL, NULL, 'echo', 10, 8, 1, '主智能体：负责意图识别与任务路由'),
+    (0, 'ticket_agent', '票务助手', 'sub', 'ticket', NULL, 'echo', 10, 8, 1, '票务领域子智能体'),
+    (0, 'dispatch_agent', '调度助手', 'sub', 'dispatch', NULL, 'echo', 10, 8, 1, '调度领域子智能体'),
+    (0, 'kb_agent', '知识库助手', 'sub', 'kb', NULL, 'echo', 10, 8, 1, '知识库问答子智能体');
 
 -- 模型供应商（M1 回声模型） -------------------------------------------------
 INSERT INTO model_provider (tenant_id, name, type, base_url, models, api_key_env, enabled)
-VALUES (0, 'echo', 'local', '', '[]', '', true);
+VALUES (0, 'echo', 'local', '', JSON_ARRAY(), '', 1);

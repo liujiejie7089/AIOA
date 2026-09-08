@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AIOA 智能工作台 · 用户端</title>
+
+<!-- 字体：Bricolage Grotesque（拉丁展示字）+ Noto Sans SC（中文正文）+ IBM Plex Mono（词元数字） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Noto+Sans+SC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   DESIGN TOKENS — 视觉方向：Refined Civic-Tech（克制政务科技）
+   主色：可信蓝（60%）| 单一强调色：词元琥珀（仅用于计量）
+   ============================================================ */
+:root{
+  /* 色彩 */
+  --blue:#2f6fed; --blue-deep:#1e4fc0; --blue-soft:#eaf1ff; --blue-line:#c9d9fb;
+  --ink:#0d1220; --ink-2:#3d4757; --muted:#6b7486;
+  --bg:#f4f6fa; --card:#ffffff; --border:#e6eaf2;
+  --accent:#e8890c; --accent-soft:#fdf1e3;          /* 词元/额度 唯一强调色 */
+  --green:#12a56b; --green-soft:#e7f7f0;
+  --orange:#f59e0b; --orange-soft:#fef4e6;
+  --red:#e5484d;   --red-soft:#fdecec;
+
+  /* 字体 */
+  --font-display:"Bricolage Grotesque","Noto Sans SC",sans-serif;
+  --font-body:"Noto Sans SC",-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-num:"IBM Plex Mono",ui-monospace,monospace;
+
+  /* 圆角 / 阴影 / 动效 */
+  --r-lg:20px; --r-md:14px; --r-sm:10px; --r-pill:999px;
+  --sh-1:0 1px 2px rgba(13,18,32,.05);
+  --sh-2:0 8px 24px rgba(13,18,32,.07);
+  --sh-3:0 24px 64px rgba(13,18,32,.18);
+  --t-fast:160ms; --t:320ms; --t-slow:640ms;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--font-body); color:var(--ink);
+  background:#dfe4ee; min-height:100vh;
+  display:flex; align-items:center; justify-content:center; padding:28px 16px;
+}
+
+/* 氛围层：柔和径向渐变网格 + 细颗粒，避免纯色平板感 */
+.ambient{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(1100px 620px at 18% 8%, rgba(47,111,237,.16), transparent 60%),
+    radial-gradient(860px 520px at 88% 92%, rgba(232,137,12,.10), transparent 62%),
+    radial-gradient(700px 700px at 60% 40%, rgba(255,255,255,.55), transparent 70%);
+}
+.ambient::after{content:"";position:absolute;inset:0;opacity:.35;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .55 0 0 0 0 .65 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------- 手机外框 ---------- */
+.stage{position:relative;z-index:1}
+.phone{
+  width:404px; height:828px; background:var(--bg);
+  border-radius:44px; border:11px solid #16181d; overflow:hidden;
+  display:flex; flex-direction:column; position:relative;
+  box-shadow:var(--sh-3), 0 0 0 1px rgba(255,255,255,.6) inset;
+}
+.statusbar{height:36px;background:var(--card);display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;font-size:12px;font-weight:700;flex-shrink:0;font-family:var(--font-num)}
+.mp-header{background:var(--card);padding:9px 14px 12px;display:flex;align-items:center;gap:8px;
+  border-bottom:1px solid var(--border);flex-shrink:0}
+.mp-header .title{font-size:16px;font-weight:800;letter-spacing:-.02em;font-family:var(--font-display);flex:1}
+.back{width:28px;height:28px;border-radius:9px;border:1px solid var(--border);background:#fafbfd;
+  display:none;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--ink-2)}
+.back.show{display:flex}
+.capsule{width:84px;height:30px;border:1px solid var(--border);border-radius:var(--r-pill);
+  display:flex;align-items:center;justify-content:space-around;font-size:13px;color:var(--muted);background:#fafbfd}
+/* 联调状态灯 */
+.link{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;
+  padding:3px 8px;border-radius:var(--r-pill);font-family:var(--font-num)}
+.link.live{color:var(--green);background:var(--green-soft)}
+.link.mock{color:var(--orange);background:var(--orange-soft)}
+.link i{width:6px;height:6px;border-radius:50%;background:currentColor;display:block}
+.link.live i{animation:pulse 1.8s var(--ease) infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+.pages{flex:1;overflow:hidden;position:relative}
+.page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px 92px;display:none;scroll-behavior:smooth}
+.page.active{display:block}
+.page.active.chat-active{padding:0;display:flex;flex-direction:column}
+
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:78px;background:rgba(255,255,255,.94);
+  backdrop-filter:blur(12px);border-top:1px solid var(--border);display:flex;padding-bottom:14px;z-index:10}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:11px;color:var(--muted);cursor:pointer;user-select:none;transition:color var(--t-fast)}
+.tab .ico{font-size:21px;line-height:1;transition:transform var(--t) var(--ease)}
+.tab.active{color:var(--blue);font-weight:700}
+.tab.active .ico{transform:translateY(-2px) scale(1.08)}
+
+/* ---------- 通用组件 ---------- */
+.card{background:var(--card);border-radius:var(--r-md);padding:14px;margin-bottom:12px;
+  border:1px solid var(--border);box-shadow:var(--sh-1)}
+.sec-title{font-size:14px;font-weight:800;margin:4px 0 10px;letter-spacing:-.01em}
+.tag{display:inline-block;font-size:10px;color:var(--blue-deep);background:var(--blue-soft);
+  border-radius:5px;padding:2px 6px;margin-right:4px;font-weight:700}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--blue);color:#fff;
+  border:none;border-radius:var(--r-pill);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;
+  font-family:var(--font-body);transition:transform var(--t-fast) var(--ease),box-shadow var(--t-fast),background var(--t-fast)}
+.btn:hover{background:var(--blue-deep);box-shadow:0 6px 18px rgba(47,111,237,.3)}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--blue-line)}
+.btn.ghost:hover{background:var(--blue-soft)}
+.btn.small{padding:6px 13px;font-size:12px}
+.btn:focus-visible,.tab:focus-visible,.grid-item:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.muted{color:var(--muted);font-size:12px;line-height:1.6}
+.hl{color:var(--blue-deep);font-weight:800}
+.num{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+
+/* 额度进度 */
+.progress{height:9px;border-radius:var(--r-pill);background:#e9edf5;overflow:hidden;margin:9px 0 5px}
+.progress i{display:block;height:100%;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--blue),#5b8cff);transition:width var(--t-slow) var(--ease)}
+.progress.low i{background:linear-gradient(90deg,var(--orange),#fbbf24)}
+.progress.out i{background:linear-gradient(90deg,var(--red),#f4787c)}
+
+/* 首页 */
+.greet{font-size:19px;font-weight:900;margin-bottom:3px;letter-spacing:-.03em;font-family:var(--font-display)}
+.quota-num{font-size:30px;font-weight:600;color:var(--blue-deep);font-family:var(--font-num);letter-spacing:-.02em}
+.quota-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--accent);
+  background:var(--accent-soft);border-radius:var(--r-pill);padding:3px 8px;font-family:var(--font-num)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.grid-item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 4px;text-align:center;
+  cursor:pointer;transition:transform var(--t) var(--ease),box-shadow var(--t),border-color var(--t)}
+.grid-item:hover{transform:translateY(-3px);box-shadow:var(--sh-2);border-color:var(--blue-line)}
+.grid-item .ico{font-size:23px}
+.grid-item .name{font-size:11px;margin-top:5px;font-weight:600}
+.expert-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.expert-row:last-child{border-bottom:none}
+.expert-row:hover .avatar{transform:scale(1.05)}
+.avatar{width:42px;height:42px;border-radius:13px;
+  background:linear-gradient(135deg,#eaf1ff,#d8e6ff);display:flex;align-items:center;justify-content:center;
+  font-size:21px;flex-shrink:0;transition:transform var(--t) var(--ease)}
+.kicker{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+
+/* 会话 */
+.chat{display:flex;flex-direction:column;height:100%;min-height:0}
+.chat-head{background:var(--card);padding:10px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}
+.chat-head .nm{font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px}
+.msgs{flex:1;overflow-y:auto;padding:14px 12px;min-height:0}
+.msg{display:flex;margin-bottom:14px;gap:8px;animation:rise var(--t) var(--ease) both}
+.msg .avatar{width:32px;height:32px;font-size:16px;border-radius:11px}
+.bubble{background:var(--card);border:1px solid var(--border);border-radius:4px 16px 16px 16px;
+  padding:11px 13px;font-size:13.5px;line-height:1.75;max-width:82%;box-shadow:var(--sh-1);word-break:break-word}
+.msg.me{flex-direction:row-reverse}
+.msg.me .bubble{background:var(--blue);color:#fff;border:none;border-radius:16px 4px 16px 16px;
+  box-shadow:0 6px 16px rgba(47,111,237,.22)}
+.bubble .cursor{display:inline-block;width:2px;height:14px;background:var(--blue);vertical-align:-2px;
+  margin-left:2px;animation:blink .9s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.meta-line{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.7;border-top:1px dashed var(--border);padding-top:6px}
+.meta-line b{color:var(--ink-2);font-family:var(--font-num)}
+.cite{display:block;margin-top:7px;font-size:11.5px;color:var(--blue-deep);background:var(--blue-soft);
+  border-radius:9px;padding:6px 9px;cursor:pointer;font-weight:600;transition:background var(--t-fast)}
+.cite:hover{background:#dbe8ff}
+.approve-card{border:1px solid var(--blue-line);background:linear-gradient(180deg,#f7faff,#eef4ff);
+  border-radius:13px;padding:11px;margin-top:9px;font-size:12.5px;max-width:82%}
+.approve-card .hd{font-weight:800;color:var(--blue-deep);margin-bottom:3px}
+.approve-card .row{display:flex;gap:8px;margin-top:9px}
+.input-bar{background:var(--card);border-top:1px solid var(--border);padding:9px 10px;display:flex;gap:8px;
+  align-items:center;flex-shrink:0}
+.input-bar input{flex:1;min-width:0;border:1px solid var(--border);border-radius:var(--r-pill);padding:10px 14px;
+  font-size:13px;outline:none;background:#f6f8fc;font-family:var(--font-body);transition:border-color var(--t-fast),background var(--t-fast)}
+.input-bar input:focus{border-color:var(--blue);background:#fff}
+.kb-chip{font-size:11px;font-weight:700;color:var(--blue-deep);background:var(--blue-soft);border-radius:var(--r-pill);
+  padding:6px 11px;cursor:pointer;white-space:nowrap;border:1px solid transparent;transition:all var(--t-fast)}
+.kb-chip.off{color:var(--muted);background:#eef0f5;border-color:var(--border)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.chip{font-size:11.5px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-pill);
+  padding:6px 11px;color:var(--ink-2);cursor:pointer;transition:all var(--t-fast)}
+.chip:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+
+/* 列表行 */
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 2px;
+  border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
+.row:last-child{border-bottom:none}
+.row:hover .t{color:var(--blue)}
+.row .t{flex:1;transition:color var(--t-fast)}
+.badge{font-size:10px;border-radius:5px;padding:2px 7px;font-weight:700;white-space:nowrap}
+.badge.ok{color:var(--green);background:var(--green-soft)}
+.badge.wait{color:var(--orange);background:var(--orange-soft)}
+.badge.err{color:var(--red);background:var(--red-soft)}
+
+/* 我的 */
+.me-head{display:flex;align-items:center;gap:13px}
+.me-head .avatar{width:56px;height:56px;font-size:28px;border-radius:17px}
+.switch{color:var(--blue);cursor:pointer;font-weight:700}
+
+/* 表单 */
+.form-item{margin-bottom:11px}
+.form-item label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:600}
+.form-item textarea,.form-item input,.form-item select{width:100%;border:1px solid var(--border);border-radius:11px;
+  padding:10px;font-size:13px;font-family:var(--font-body);background:#f6f8fc;outline:none;color:var(--ink);
+  transition:border-color var(--t-fast),background var(--t-fast)}
+.form-item textarea:focus,.form-item input:focus,.form-item select:focus{border-color:var(--blue);background:#fff}
+.form-item textarea{resize:vertical;line-height:1.7}
+
+/* Toast */
+.toast{position:absolute;left:50%;bottom:112px;transform:translateX(-50%) translateY(8px);
+  background:rgba(13,18,32,.9);color:#fff;font-size:12px;border-radius:10px;padding:9px 17px;
+  opacity:0;transition:all var(--t) var(--ease);pointer-events:none;z-index:99;white-space:nowrap;max-width:90%}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 额度用尽引导 */
+.exhaust{border:1px solid var(--orange);background:linear-gradient(180deg,#fffaf0,#fff5e4);
+  border-radius:14px;padding:13px;margin-top:9px;max-width:82%;font-size:13px;line-height:1.8}
+.exhaust .hd{font-weight:800;color:#b45309;margin-bottom:5px}
+.exhaust ol{margin:6px 0 9px 16px;font-size:12.5px;color:var(--ink-2)}
+
+/* 入场编排 */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.stagger>*{animation:rise var(--t-slow) var(--ease) both}
+.stagger>*:nth-child(1){animation-delay:40ms}
+.stagger>*:nth-child(2){animation-delay:130ms}
+.stagger>*:nth-child(3){animation-delay:220ms}
+.stagger>*:nth-child(4){animation-delay:310ms}
+.stagger>*:nth-child(5){animation-delay:400ms}
+.stagger>*:nth-child(6){animation-delay:490ms}
+
+/* 响应式：窄屏铺满 */
+@media (max-width:460px){
+  body{padding:0}
+  .phone{width:100vw;height:100vh;border-radius:0;border:none;box-shadow:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<div class="ambient"></div>
+
+<div class="stage">
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>中国移动 5G ▮▮▮</span></div>
+
+  <div class="mp-header">
+    <div class="back" id="backBtn" onclick="goBack()" title="返回">‹</div>
+    <span class="title" id="pageTitle">AIOA 智能工作台</span>
+    <span class="link mock" id="linkChip"><i></i><span id="linkText">离线演示</span></span>
+    <div class="capsule"><span>⋯</span><span>◉</span></div>
+  </div>
+
+  <div class="pages">
+    <!-- 首页 -->
+    <section class="page active" id="page-home">
+      <div class="stagger">
+        <div>
+          <div class="kicker">DeYang · AI 公共服务平台</div>
+          <div class="greet">你好，左齐 👋</div>
+          <div class="muted" style="margin-bottom:13px">今天想让我帮你做点什么？</div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span class="sec-title" style="margin:0">我的额度</span>
+            <span class="muted">企业套餐 · 银牌会员</span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:8px;margin-top:7px;flex-wrap:wrap">
+            <span class="quota-num" id="quotaNum">86,400</span>
+            <span class="muted">/ 100,000 词元（本月套餐）</span>
+            <span class="quota-chip">◆ 词元</span>
+          </div>
+          <div class="progress" id="quotaBar"><i style="width:86%"></i></div>
+          <div class="muted">今日免费额度剩 <b class="num" id="freeNum">2,000</b> · 额度变化实时留痕</div>
+          <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn small" onclick="go('page-bill')">用量账单</button>
+            <button class="btn ghost small" onclick="toast('已打开词元包商品列表')">购买词元包</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="sec-title">快捷技能</div>
+          <div class="grid" style="margin-bottom:14px" id="skillGrid"></div>
+        </div>
+
+        <div>
+          <div class="sec-title">推荐专家</div>
+          <div class="card" id="homeExperts"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 专家 -->
+    <section class="page" id="page-expert">
+      <div class="kicker">Expert Network</div>
+      <div class="sec-title">专家服务</div>
+      <div class="muted" style="margin-bottom:11px">每位专家 = 人设 + 技能组合 + 专属知识库</div>
+      <div class="card" id="expertList"></div>
+    </section>
+
+    <!-- 会话 -->
+    <section class="page" id="page-chat">
+      <div class="chat">
+        <div class="chat-head">
+          <span class="nm"><span id="chatIcon">🏛️</span><span id="chatName">政策咨询专家</span></span>
+          <span class="muted" id="chatModel">模型：智能路由</span>
+        </div>
+        <div class="msgs" id="msgs"></div>
+        <div class="input-bar">
+          <span class="kb-chip" id="kbChip" onclick="toggleKB()">📚 知识库 开</span>
+          <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()">
+          <button class="btn small" id="sendBtn" onclick="send()">发送</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 我的 -->
+    <section class="page" id="page-me">
+      <div class="card me-head">
+        <div class="avatar">👤</div>
+        <div>
+          <div style="font-weight:800;font-size:16px">左齐 <span class="tag">已实名</span></div>
+          <div class="muted">企业成员身份 · 德阳云创科技有限公司
+            <span class="switch" onclick="toast('已打开身份切换：个人身份 / 企业成员')">切换</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sec-title">我的知识库</div>
+        <div id="kbList"></div>
+        <div style="margin-top:11px">
+          <button class="btn ghost small" onclick="toast('已打开文件上传（支持 PDF/Word/Excel/图片）')">＋ 上传资料入知识库</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sec-title">账单与留痕</div>
+        <div class="row" onclick="go('page-bill')"><span class="t">📒 用量账单</span><span class="muted">本月 <b class="num" id="meUsed">13,600</b> 词元 ›</span></div>
+        <div class="row" onclick="go('page-log')"><span class="t">🧾 我的操作记录</span><span class="muted">全程可查 ›</span></div>
+        <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')"><span class="t">🛡️ 投诉与纠错</span><span class="muted">›</span></div>
+      </div>
+    </section>
+
+    <!-- 账单 -->
+    <section class="page" id="page-bill">
+      <div class="kicker">Ledger</div>
+      <div class="sec-title">用量账单（9 月）</div>
+      <div class="card" id="billList"></div>
+      <button class="btn ghost small" onclick="toast('账单明细已导出（CSV）')">导出明细</button>
+    </section>
+
+    <!-- 留痕 -->
+    <section class="page" id="page-log">
+      <div class="kicker">Audit Trail</div>
+      <div class="sec-title">我的操作记录</div>
+      <div class="card" id="logList"></div>
+      <div class="muted" style="padding:0 2px">记录不可篡改，保存 ≥ 3 年</div>
+    </section>
+
+    <!-- 技能表单 -->
+    <section class="page" id="page-skill">
+      <div class="kicker">Skill</div>
+      <div class="sec-title" id="skillName">公文写作</div>
+      <div class="card" id="skillForm"></div>
+      <div class="card" id="skillResult" style="display:none">
+        <div class="sec-title">生成结果</div>
+        <div class="muted" id="skillText" style="line-height:1.85;white-space:pre-wrap"></div>
+        <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn ghost small" onclick="toast('已存入个人资料')">存为资料</button>
+          <button class="btn small" onclick="go('page-chat');toast('已转入会话，可继续修改')">转会话修改</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <nav class="tabbar">
+    <div class="tab active" data-page="page-home"   onclick="switchTab(this)"><span class="ico">🏠</span>首页</div>
+    <div class="tab"         data-page="page-expert" onclick="switchTab(this)"><span class="ico">🧑‍💼</span>专家</div>
+    <div class="tab"         data-page="page-chat"   onclick="switchTab(this)"><span class="ico">💬</span>会话</div>
+    <div class="tab"         data-page="page-me"     onclick="switchTab(this)"><span class="ico">👤</span>我的</div>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+</div>
+</div>
+
+<script>
+/* ============================================================
+   1. 静态数据（一期 P0 演示口径，来源：交互原型 mock）
+   ============================================================ */
+const EXPERTS = [
+  {key:'policy', name:'政策咨询专家', icon:'🏛️', desc:'德阳/四川产业政策解读与申报指引', tags:['政策问答','申报指引'],
+   intro:'熟悉国省市三级产业扶持政策，可基于你上传的政策文件精准解答。',
+   recs:['我市对企业上云有什么补贴？','OPC 设备联网改造怎么申报？','算力券如何申领？']},
+  {key:'legal', name:'法律援助专家', icon:'⚖️', desc:'合同初审、劳动用工、常见法律咨询', tags:['合同','用工'],
+   intro:'可对上传合同做初审并标注风险条款，输出修改建议。',
+   recs:['帮我审查这份采购合同的风险','试用期辞退的合规要点？']},
+  {key:'startup', name:'企业开办顾问', icon:'🏢', desc:'开办流程、资质办理、惠企政策一站导引', tags:['开办','资质'],
+   intro:'从核名到税务登记的全流程指引，自动匹配适用惠企政策。',
+   recs:['注册一家科技公司需要哪些材料？']},
+  {key:'doc', name:'办文助手', icon:'📝', desc:'公文格式、行文规范、文稿润色', tags:['公文','润色'],
+   intro:'按党政机关公文格式国标辅助起草与排版。',
+   recs:['把这段话改成规范的请示语气']}
+];
+
+const SKILLS = {
+  '公文写作':{icon:'📄', est:1500, fields:[
+    {k:'docType',label:'文种',type:'select',options:['通知','请示','工作报告','函']},
+    {k:'topic',label:'主题与要点',type:'textarea',value:'关于组织企业参加全市人工智能应用供需对接会的通知'},
+    {k:'words',label:'字数要求',type:'input',value:'800 字左右'}]},
+  '合同初审':{icon:'⚖️', est:2200, fields:[
+    {k:'party',label:'合同相对方',type:'input',value:'XX科技有限公司'},
+    {k:'ctype',label:'合同类型',type:'select',options:['采购合同','服务合同','劳动合同','租赁合同']},
+    {k:'focus',label:'关注要点',type:'textarea',value:'付款条件、违约责任、知识产权归属'}]},
+  '数据分析':{icon:'📊', est:2600, fields:[
+    {k:'src',label:'数据来源',type:'select',options:['产品销售明细.xlsx','经营月报','手工录入']},
+    {k:'dim',label:'分析维度',type:'textarea',value:'按月度、区域、产品线对比销售额与同比增速'},
+    {k:'out',label:'输出形式',type:'select',options:['结论摘要','图表+解读','完整报告']}]},
+  '办事指引':{icon:'🏛️', est:900, fields:[
+    {k:'matter',label:'办理事项',type:'input',value:'企业开办一件事'},
+    {k:'subject',label:'办理主体',type:'select',options:['个人','企业','个体工商户']},
+    {k:'detail',label:'具体情况',type:'textarea',value:'首次注册科技公司，需了解材料清单与办理时限'}]}
+};
+
+const KB_FILES = [
+  {name:'2026年产业扶持政策汇编.pdf', icon:'📄', state:'ok'},
+  {name:'产品销售明细.xlsx',          icon:'📊', state:'ok'},
+  {name:'会议纪要0905.docx',          icon:'📝', state:'wait'}
+];
+
+const state = {
+  quota:100000, used:13600, free:2000,
+  chatExpert:EXPERTS[0], kbOn:true, busy:false,
+  conversationId:null, es:null, history:[],
+  mode:'mock', token:null,
+  bill:[
+    {t:'09-05 14:20 · 政策咨询专家', n:386},
+    {t:'09-05 10:12 · 公文写作技能', n:1542},
+    {t:'09-04 16:48 · 数据分析技能', n:2204},
+    {t:'09-03 09:30 · 办事指引专家', n:152}
+  ],
+  log:[
+    {t:'09-05 14:20 发起会话（政策咨询专家）', s:'ok',  l:'成功'},
+    {t:'09-05 10:15 上传资料（会议纪要0905.docx）', s:'ok', l:'成功'},
+    {t:'09-05 09:58 购买词元包（10万词元）', s:'ok', l:'已支付'},
+    {t:'09-04 17:02 删除会话（旧手机迁移）', s:'ok',  l:'逻辑删除'}
+  ]
+};
+
+/* ============================================================
+   2. API 适配层 —— 统一联调入口（ApiResponse{code,message,data}，code=0 成功）
+      经 serve.py 同域代理到后端 :8080，规避 CORS
+   ============================================================ */
+const API = {
+  base:'/api',
+  async req(path, opts={}){
+    const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+    if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
+    const res = await fetch(this.base+path, Object.assign({}, opts, {headers}));
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const body = await res.json();
+    // 剥壳：统一响应体 {code,message,data}，code===0 为成功
+    if(body && typeof body==='object' && 'code' in body){
+      if(body.code !== 0) throw new Error(body.message || ('业务错误 '+body.code));
+      return body.data;
+    }
+    return body;
+  },
+  login(u,p){ return this.req('/v1/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})}); },
+  createConversation(title,appCode){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode})}); },
+  createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context})}); },
+  cancel(runId){ return this.req('/v1/runs/'+runId+'/cancel',{method:'POST'}); },
+  async ensureConversation(){
+    if(state.conversationId) return state.conversationId;
+    const c = await this.createConversation(state.chatExpert.name+' · 会话','aioa-client');
+    state.conversationId = c && (c.id || c.conversationId);
+    if(!state.conversationId) throw new Error('会话创建失败');
+    return state.conversationId;
+  },
+  /* SSE 订阅：run.started → message.delta×N → message.completed → run.completed
+     用 fetch + ReadableStream 而非 EventSource：
+       · EventSource 无法携带 Authorization 头（后端 SSE 需鉴权）
+       · fetch 可配合 AbortController 实现真正的「中断生成」（FR-D1） */
+  async stream(runId, h){
+    const ctrl = new AbortController();
+    state.controller = ctrl;
+    state.runId = runId;
+    const headers = {Accept:'text/event-stream'};
+    if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
+    const res = await fetch(this.base+'/v1/runs/'+runId+'/events', {headers, signal:ctrl.signal});
+    if(!res.ok) throw new Error('SSE HTTP ' + res.status);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder('utf-8');
+    let buf = '';
+    for(;;){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      let i;
+      while((i = buf.indexOf('\n\n')) !== -1){       // SSE 帧以空行分隔
+        const frame = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const ev = parseSseFrame(frame);
+        if(!ev) continue;
+        if(ev.event === 'message.delta'){
+          const t = pickText(ev.data); if(t) h.onDelta(t);
+        }else if(ev.event === 'message.completed'){
+          // 该帧带最终 content 与 usage；正文已由 deltas 逐段追加完成，
+          // 此处只取用量，切勿再追加一次（否则文本重复）
+          const p = safeJson(ev.data);
+          const u = pickUsage(p); if(u) h.onUsage(u);
+        }else if(ev.event === 'run.completed'){
+          h.onUsage(pickUsage(safeJson(ev.data))); return;
+        }else if(ev.event === 'run.failed'){
+          h.onError(new Error(ev.data || '运行失败')); return;
+        }
+      }
+    }
+  }
+};
+
+/* 解析单个 SSE 帧：event: <name>\ndata: <payload> */
+function parseSseFrame(block){
+  let event = null, data = '';
+  for(const line of block.split('\n')){
+    if(line.startsWith('event:'))       event = line.slice(6).trim();
+    else if(line.startsWith('data:'))   data += line.slice(5).trim();
+  }
+  return event ? {event, data} : null;
+}
+function safeJson(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
+/* 防御式取文本：兼容 {data:{text}} / {text} / {delta} / 纯字符串 多种形态 */
+function pickText(raw){
+  const p = safeJson(raw);
+  if(p === null) return typeof raw==='string' ? raw : '';
+  if(typeof p === 'string') return p;
+  const d = (p && p.data !== undefined) ? p.data : p;
+  if(typeof d === 'string') return d;
+  if(d && typeof d === 'object') return d.text || d.delta || d.content || '';
+  return '';
+}
+/* 防御式取用量：usage.total_tokens / prompt+completion */
+function pickUsage(p){
+  if(!p) return null;
+  const u = (p.data && p.data.usage) || p.usage || (p.data && p.data.data && p.data.data.usage);
+  if(!u) return null;
+  const pt = u.prompt_tokens ?? u.input_tokens ?? 0;
+  const ct = u.completion_tokens ?? u.output_tokens ?? 0;
+  return {prompt:pt, completion:ct, total:u.total_tokens ?? (pt+ct)};
+}
+
+/* ============================================================
+   3. 渲染
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => Number(n).toLocaleString('en-US');
+
+function renderExperts(){
+  const row = (e,i) => '<div class="expert-row" onclick="startChat('+i+')">'
+    + '<div class="avatar">'+e.icon+'</div>'
+    + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px">'+e.name+'</div>'
+    + '<div class="muted">'+esc(e.desc)+'</div>'
+    + '<div style="margin-top:4px">'+e.tags.map(t=>'<span class="tag">'+t+'</span>').join('')+'</div></div>'
+    + '<span class="muted">›</span></div>';
+  $('expertList').innerHTML = EXPERTS.map(row).join('');
+  $('homeExperts').innerHTML = [0,2].map(i=>row(EXPERTS[i],i)).join('');
+}
+
+function renderSkills(){
+  $('skillGrid').innerHTML = Object.keys(SKILLS).map(name=>{
+    const s = SKILLS[name];
+    return '<div class="grid-item" onclick="openSkill(\''+name+'\')" tabindex="0">'
+      + '<div class="ico">'+s.icon+'</div><div class="name">'+name+'</div></div>';
+  }).join('');
+}
+
+function renderKB(){
+  $('kbList').innerHTML = KB_FILES.map(f=>{
+    const b = f.state==='ok' ? '<span class="badge ok">已入库</span>' : '<span class="badge wait">解析中</span>';
+    return '<div class="row"><span class="t">'+f.icon+' '+esc(f.name)+'</span>'+b+'</div>';
+  }).join('');
+}
+
+function renderBill(){
+  $('billList').innerHTML = state.bill.map(b=>
+    '<div class="row"><span class="t">'+esc(b.t)+'</span><span class="hl num">+'+fmt(b.n)+' 词元</span></div>').join('')
+    + '<div class="muted" style="margin-top:9px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>';
+}
+
+function renderLog(){
+  $('logList').innerHTML = state.log.map(l=>
+    '<div class="row"><span class="t">'+esc(l.t)+'</span><span class="badge '+l.s+'">'+l.l+'</span></div>').join('');
+}
+
+function syncQuota(){
+  const left = Math.max(0, state.quota - state.used);
+  const pct  = Math.min(100, Math.round(state.used / state.quota * 100));
+  $('quotaNum').textContent = fmt(left);
+  $('meUsed').textContent   = fmt(state.used);
+  $('freeNum').textContent  = fmt(state.free);
+  const bar = $('quotaBar');
+  bar.querySelector('i').style.width = pct + '%';
+  bar.classList.toggle('low', pct > 80 && pct < 100);
+  bar.classList.toggle('out', pct >= 100);
+}
+
+function setLink(mode, text){
+  state.mode = mode;
+  const chip = $('linkChip');
+  chip.className = 'link ' + (mode==='live' ? 'live' : 'mock');
+  $('linkText').textContent = text;
+}
+
+/* ---------- 导航 ---------- */
+const TITLES = {'page-home':'AIOA 智能工作台','page-expert':'专家服务','page-chat':'会话',
+                'page-me':'我的','page-bill':'用量账单','page-log':'我的操作记录','page-skill':'技能调用'};
+const SUBPAGES = ['page-bill','page-log','page-skill'];
+
+function go(id){
+  // 离开页面时必须一并移除 chat-active：否则该类的 display:flex 会盖在其他页之上
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active','chat-active'));
+  const el = $(id);
+  el.classList.add('active');
+  if(id === 'page-chat') el.classList.add('chat-active');
+  $('pageTitle').textContent = TITLES[id] || 'AIOA 智能工作台';
+  $('backBtn').classList.toggle('show', SUBPAGES.includes(id));
+  el.scrollTop = 0;
+  if(id === 'page-chat') scrollMsgs();
+}
+function goBack(){
+  const cur = state.chatExpert ? 'page-me' : 'page-home';
+  go(cur);
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-me'));
+}
+function switchTab(el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  go(el.dataset.page);
+  if(el.dataset.page === 'page-chat' && !$('msgs').children.length) startChat(EXPERTS.indexOf(state.chatExpert));
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 1900);
+}
+
+/* ============================================================
+   4. 会话：流式输出 + 词元计量 + 引用溯源 + 审批卡点
+   ============================================================ */
+function startChat(i){
+  state.chatExpert = EXPERTS[i];
+  state.conversationId = null;            // 换专家 = 新会话
+  state.history = [];
+  $('chatName').textContent = state.chatExpert.name;
+  $('chatIcon').textContent = state.chatExpert.icon;
+  $('chatModel').textContent = '模型：智能路由';
+  const m = $('msgs');
+  m.innerHTML = '<div class="msg"><div class="avatar">'+state.chatExpert.icon+'</div>'
+    + '<div class="bubble">你好，我是'+state.chatExpert.name+'。'+esc(state.chatExpert.intro)
+    + '<div class="chips">'+state.chatExpert.recs.map(q=>'<span class="chip" onclick="quickAsk(this)">'+esc(q)+'</span>').join('')+'</div>'
+    + '</div></div>';
+  go('page-chat');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-chat'));
+  $('pageTitle').textContent = state.chatExpert.name;
+}
+function quickAsk(el){ $('chatInput').value = el.textContent; send(); }
+function toggleKB(){
+  state.kbOn = !state.kbOn;
+  const c = $('kbChip');
+  c.textContent = state.kbOn ? '📚 知识库 开' : '📚 知识库 关';
+  c.classList.toggle('off', !state.kbOn);
+  toast(state.kbOn ? '将优先检索你的知识库' : '仅用模型通用知识回答');
+}
+function scrollMsgs(){ const m = $('msgs'); m.scrollTop = m.scrollHeight; }
+
+function addMsg(who, html){
+  const m = $('msgs');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg' + (who==='me' ? ' me' : '');
+  wrap.innerHTML = '<div class="avatar">'+(who==='me' ? '👤' : state.chatExpert.icon)+'</div>'
+                 + '<div class="bubble">'+html+'</div>';
+  m.appendChild(wrap);
+  scrollMsgs();
+  return wrap.querySelector('.bubble');
+}
+/* 流式气泡：正文 + 光标分离，避免光标被当作正文 */
+function addStreamBubble(){
+  const m = $('msgs');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+  wrap.innerHTML = '<div class="avatar">'+state.chatExpert.icon+'</div>'
+                 + '<div class="bubble"><span class="txt"></span><span class="cursor"></span></div>';
+  m.appendChild(wrap); scrollMsgs();
+  return {wrap, txt:wrap.querySelector('.txt'), cursor:wrap.querySelector('.cursor'), bubble:wrap.querySelector('.bubble')};
+}
+
+const SENSITIVE = /发文|通知|对外|报送|公告/;
+const ESTIMATE = 400;   // 发起前预估消耗（FR-B2 额度准入前置）
+
+async function send(){
+  if(state.busy){ stopRun(); return; }   // 生成中再次点击 = 中断（FR-D1）
+  const input = $('chatInput');
+  const q = input.value.trim();
+  if(!q){ toast('请输入问题'); return; }
+  input.value = '';
+
+  addMsg('me', esc(q));
+  state.history.push({role:'user', content:q});
+
+  // FR-B2 / FR-G6 额度准入前置
+  if(state.used + ESTIMATE > state.quota){
+    addMsg('ai', '<div class="exhaust"><div class="hd">⚠️ 额度不足，无法发起本轮会话</div>'
+      + '本月套餐 '+fmt(state.quota)+' 词元已用尽，你可以：<ol>'
+      + '<li>等待明日免费额度发放（每日 2,000 词元）</li>'
+      + '<li>购买词元包（首页「购买词元包」入口）</li>'
+      + '<li>联系管理员开通企业套餐</li></ol>'
+      + '<button class="btn small" onclick="toast(\'已跳转词元包购买页\')">立即购买</button></div>');
+    return;
+  }
+
+  state.busy = true;
+  const btn = $('sendBtn');
+  btn.textContent = '停止'; btn.classList.add('ghost');
+
+  const sb = addStreamBubble();
+  let full = '';
+  let usage = null;
+  let failed = null;
+
+  const paint = ()=>{ sb.txt.textContent = full; scrollMsgs(); };
+
+  if(state.mode === 'live'){
+    try{
+      const convId = await API.ensureConversation();
+      const ctx = {
+        appCode:'aioa-client', page:'chat',
+        expertCode:state.chatExpert.key, expertName:state.chatExpert.name,
+        kbEnabled:state.kbOn
+      };
+      const run = await API.createRun(convId, q, ctx);
+      const runId = run && (run.runId || run.id);
+      if(!runId) throw new Error('未取得 runId');
+      $('chatModel').textContent = '模型：智能路由 · 已连接';
+      await API.stream(runId, {
+        onDelta:(t)=>{ if(t){ full += t; paint(); } },
+        onUsage:(u)=>{ usage = u; },
+        onError:(e)=>{ failed = e.message; }
+      });
+    }catch(e){
+      failed = e.message || '后端连接失败';
+    }
+  }
+
+  // 离线演示：本地逐段输出（原型 30ms 分片的等价实现）
+  if(state.mode !== 'live' || failed){
+    if(failed){ setLink('mock','离线演示'); toast('后端未连通，已切回离线演示'); }
+    const answer = (state.kbOn ? '根据你知识库中《2026年产业扶持政策汇编》：\n\n' : '')
+      + '针对「'+q+'」：我市对开展人工智能应用改造的企业给予最高 30% 的算力使用补贴，单户企业年度补贴上限 50 万元。'
+      + '申报需通过市经信局线上平台提交，截止时间为每年 6 月与 12 月两批。'
+      + (state.kbOn ? '' : '\n\n（本回答基于模型通用知识，请注意甄别）');
+    for(let i=0; i<answer.length; i+=3){
+      if(!state.busy) break;                 // 离线模式同样支持中断
+      full += answer.slice(i, i+3); paint();
+      await new Promise(r=>setTimeout(r, 16));
+    }
+  }
+
+  sb.cursor.remove();
+  state.busy = false;
+  btn.textContent = '发送'; btn.classList.remove('ghost');
+
+  // 词元结算（FR-G2）：优先用后端 usage，否则按字符估算
+  const tokens = usage && usage.total ? usage.total
+               : (28 + Math.max(1, Math.round(full.length * 1.6)));
+  const pIn  = usage ? usage.prompt : 28;
+  const pOut = usage ? usage.completion : Math.max(1, tokens - 28);
+  settleTurn(q, full, tokens, pIn, pOut);
+  state.history.push({role:'assistant', content:full});
+}
+
+/* 一轮结束：计量入账 + 引用溯源 + 审批卡点 + 留痕 */
+function settleTurn(question, answer, tokens, pIn, pOut){
+  state.used += tokens;
+  syncQuota();
+
+  const m = $('msgs');
+  const last = m.lastElementChild;
+  if(!last) return;
+  const bubble = last.querySelector('.bubble');
+
+  // 来源可追溯（FR-D5 / 交互约束 2）
+  let extra = '<div class="meta-line">本次消耗 <b>'+fmt(tokens)+'</b> 词元'
+            + '（输入 <b>'+fmt(pIn)+'</b> / 输出 <b>'+fmt(pOut)+'</b>）· 模型：智能路由 · 已入账本并留痕</div>';
+  if(state.kbOn){
+    extra += '<span class="cite" onclick="toast(\'打开原文：《2026年产业扶持政策汇编》第 3.2 节\')">'
+           + '📎 来源：《2026年产业扶持政策汇编》第 3.2 节 · 点击查看原文</span>';
+  }else{
+    extra += '<div class="meta-line">本回答基于模型通用知识，请注意甄别</div>';
+  }
+  // 审批卡点（FR-D6）：命中对外发布类意图
+  if(SENSITIVE.test(question) || SENSITIVE.test(answer)){
+    extra += '<div class="approve-card"><div class="hd">⚠️ 该内容拟对外发布，按平台规范需经审批</div>'
+           + '<div class="muted">审批通过后自动进入发文流程，全过程留痕。</div>'
+           + '<div class="row"><button class="btn small" onclick="submitApprove(this)">提交审批</button>'
+           + '<button class="btn ghost small" onclick="toast(\'已取消提交\')">取消</button></div></div>';
+  }
+  bubble.insertAdjacentHTML('beforeend', extra);
+  scrollMsgs();
+
+  // 账单 + 台账（FR-G3 / FR-H1）
+  const now = new Date();
+  const stamp = String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
+              + ' ' + String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  state.bill.unshift({t:stamp+' · '+state.chatExpert.name, n:tokens});
+  state.log.unshift({t:stamp+' 发起会话（'+state.chatExpert.name+'）', s:'ok', l:'成功'});
+  renderBill(); renderLog();
+}
+
+function submitApprove(btn){
+  btn.textContent = '已提交 ✓'; btn.disabled = true; btn.style.opacity = .6;
+  const now = new Date();
+  const stamp = String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
+              + ' ' + String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  state.log.unshift({t:stamp+' 提交审批（对外发文）', s:'wait', l:'待审批'});
+  renderLog();
+  toast('已提交审批，进入工作流');
+}
+
+/* 中断生成（FR-D1）：中止前端读取流 + 通知后端取消 run */
+function stopRun(){
+  if(state.controller){ try{ state.controller.abort(); }catch(e){} state.controller = null; }
+  if(state.runId && state.mode === 'live'){ API.cancel(state.runId).catch(()=>{}); }
+  const c = document.querySelector('.cursor'); if(c) c.remove();
+  state.busy = false; state.runId = null;
+  const btn = $('sendBtn');
+  btn.textContent = '发送'; btn.classList.remove('ghost');
+  toast('已停止生成');
+}
+
+/* ============================================================
+   5. 技能表单（FR-E1/E2/E3 动态渲染）
+   ============================================================ */
+function openSkill(name){
+  const s = SKILLS[name];
+  $('skillName').textContent = s.icon + ' ' + name;
+  $('skillResult').style.display = 'none';
+  $('skillForm').innerHTML = s.fields.map(f=>{
+    let ctl;
+    if(f.type === 'select'){
+      ctl = '<select id="sf_'+f.k+'">'+f.options.map(o=>'<option>'+o+'</option>').join('')+'</select>';
+    }else if(f.type === 'textarea'){
+      ctl = '<textarea id="sf_'+f.k+'" rows="4">'+esc(f.value||'')+'</textarea>';
+    }else{
+      ctl = '<input id="sf_'+f.k+'" value="'+esc(f.value||'')+'">';
+    }
+    return '<div class="form-item"><label>'+f.label+'</label>'+ctl+'</div>';
+  }).join('')
+  + '<button class="btn" onclick="genDoc(\''+name+'\')">生成结果</button>'
+  + '<span class="muted" style="margin-left:9px">预计消耗约 <b class="num">'+fmt(s.est)+'</b> 词元</span>';
+  go('page-skill');
+  $('pageTitle').textContent = name;
+}
+
+function genDoc(name){
+  const s = SKILLS[name];
+  const topic = ($('sf_topic')||$('sf_focus')||$('sf_dim')||$('sf_detail')||{value:''}).value || '相关工作事项';
+  const r = $('skillResult');
+  r.style.display = 'block';
+  $('skillText').textContent =
+    '关于'+String(topic).replace(/^关于组织?/,'')+'的通知\n\n'
+    + '各有关企业：\n'
+    + '  为深入推进人工智能与实体经济融合，搭建供需对接平台，经研究，定于近期组织全市人工智能应用供需对接会。现将有关事项通知如下：\n'
+    + '  一、会议时间与地点（另行通知）。\n'
+    + '  二、参会范围：全市有智能化改造需求的企业及人工智能服务供应商。\n'
+    + '  三、报名方式：请于规定时间前通过线上平台报名。\n\n'
+    + '（以上为结构化生成示例，正式使用前请人工复核）';
+  state.used += s.est; syncQuota();
+  const now = new Date();
+  const stamp = String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
+              + ' ' + String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  state.bill.unshift({t:stamp+' · '+name+'技能', n:s.est});
+  state.log.unshift({t:stamp+' 调用技能（'+name+'）', s:'ok', l:'成功'});
+  renderBill(); renderLog();
+  toast('生成完成，消耗 '+fmt(s.est)+' 词元已入账');
+  r.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+/* ============================================================
+   6. 启动 + 自动联调握手
+   ============================================================ */
+async function bootstrap(){
+  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); syncQuota();
+  startChat(0);
+  go('page-home');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
+
+  // 尝试与后端握手：成功 → 实时联调；失败 → 离线演示
+  try{
+    const data = await API.login('admin','Admin@123');
+    state.token = data && (data.accessToken || data.token);
+    if(!state.token) throw new Error('未取得 accessToken');
+    setLink('live','实时联调');
+  }catch(e){
+    setLink('mock','离线演示');
+  }
+}
+bootstrap();
+</script>
+</body>
+</html>

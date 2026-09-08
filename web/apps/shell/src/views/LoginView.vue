@@ -49,7 +49,12 @@ async function onSubmit() {
     await auth.login({ username: form.username, password: form.password })
     ElMessage.success(`欢迎回来，${auth.displayName}`)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
-    await router.replace(redirect)
+    try {
+      await router.replace(redirect)
+    } catch {
+      // 若 Vue Router 导航失败（如 SSR/自动化环境），降级为整页跳转
+      window.location.href = redirect
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '登录失败')
   }

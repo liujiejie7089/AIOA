@@ -13,6 +13,7 @@ export default defineConfig({
   },
   server: {
     port: 5174,
+    host: true,
     strictPort: true,
     // wujie 通过 fetch 拉取子应用资源，必须允许跨域
     cors: true,

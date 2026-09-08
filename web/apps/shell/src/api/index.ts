@@ -39,7 +39,11 @@ http.interceptors.response.use(
   }
 )
 
-/** 统一取后端响应体（兼容 { data } 与裸对象） */
-export function unwrap<T>(res: { data: T }): T {
-  return res.data
+/** 统一取后端响应体：后端返回 ApiResponse<T> = { code, message, data }，这里再剥一层取到真正的业务数据 */
+export function unwrap<T>(res: { data: unknown }): T {
+  const body = res.data
+  if (body && typeof body === 'object' && 'code' in body && 'data' in body) {
+    return (body as { data: T }).data
+  }
+  return body as T
 }

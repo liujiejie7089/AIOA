@@ -41,3 +41,21 @@ data/
 
 # ---- Docs temp ----
 *.tmp
+
+# ---- AIOA 本地临时产物 / 密钥（一律不入库）----
+.aioa_login.json
+.diag.txt
+.docx_extract/
+.workbuddy/_check.js
+.workbuddy/sse_*.txt
+.workbuddy/*.log
+.workbuddy/proxy*.log
+
+# ---- E2E / 浏览器调试产物 ----
+ab_*.png
+ab_*.txt
+ab_*.html
+e2e_*.json
+e2e_*.py
+e2e_*.sh
+/extract_docx.py

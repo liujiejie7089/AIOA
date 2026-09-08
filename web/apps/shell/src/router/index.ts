@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { TOKEN_KEY } from '@/api'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -35,11 +36,13 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  // 以 localStorage 中的 token 为最终登录态来源，避免 Pinia 初始化/响应式延迟导致误判
+  const hasToken = !!(auth.token || localStorage.getItem(TOKEN_KEY))
   if (to.meta.public) {
     // 已登录访问 /login 直接回首页
-    return auth.isLogin ? { path: '/home' } : true
+    return hasToken ? { path: '/home' } : true
   }
-  if (!auth.isLogin) {
+  if (!hasToken) {
     return { path: '/login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
   }
   return true

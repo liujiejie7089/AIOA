@@ -1,6 +1,7 @@
-# aioa-agent（M1 骨架，回声模式）
+# aioa-agent（M1 骨架；M2 真实推理 · DeepSeek Harness 已就绪）
 
-Python agent 服务。M1 只打通链路：`POST /internal/v1/runs` 接收 `RunRequest`，以 SSE 逐字符回显输入文本。
+Python agent 服务（智能体运行层 / AI 大脑）。M1 打通链路：`POST /internal/v1/runs` 接收 `RunRequest`，以 SSE 逐字符回显输入文本。
+M2 已接入真实 LLM（DeepSeek / 通义 / 本地 vLLM / Ollama，均 OpenAI 兼容）：配置对应 `DEEPSEEK_API_KEY` 等密钥并把 `MODEL_DEFAULT` 指向该 provider，即切换为流式推理；事件序列与 M1 完全一致，无需前端改动。
 
 ## 环境
 
@@ -44,7 +45,8 @@ curl -N -X POST http://127.0.0.1:8000/internal/v1/runs \
 | --- | --- | --- |
 | `SERVICE_JWT_SECRET` | 空 | 服务 JWT 密钥（M1 不校验，M2 启用） |
 | `AIOA_SERVER_BASE_URL` | `http://aioa-server:8080` | Java 后端回调地址 |
-| `MODEL_DEFAULT` | `echo` | 默认模型引用，覆盖 `providers.yaml` 的 `default_chat` |
+| `MODEL_DEFAULT` | `echo` | 默认模型引用，覆盖 `providers.yaml` 的 `default_chat`（设 `deepseek`/`qwen-cloud`/`local-vllm`/`local-ollama` 启用真实推理） |
+| `DEEPSEEK_API_KEY` / `QWEN_API_KEY` | 空 | 云端 provider 的密钥（local 模式无需）；密钥只走环境变量，不入库 |
 | `PG_DSN` | 空 | 数据库（M2+ 使用，M1 不连接） |
 | `HOST` / `PORT` / `LOG_LEVEL` | `0.0.0.0` / `8000` / `INFO` | 监听与日志 |
 
