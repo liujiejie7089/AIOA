@@ -14,10 +14,10 @@ import java.util.List;
 
 /**
  * 审批工作流（FR-D6）：
- *   · submit   —— 用户端「提交审批」落 PENDING 单
+ *   · submit   —— 用户端「提交审批」落 PENDING 单，并通知租户管理员
  *   · listMine —— 「我的审批」：我发起的
  *   · listTodo —— 审批中心待办：同租户下 PENDING（M1 租户内可见可审）
- *   · decide  —— 通过 / 驳回，幂等（已决单据不可重复处理）
+ *   · decide  —— 通过 / 驳回，幂等（已决单据不可重复处理），并把结果通知发起人
  */
 @Slf4j
 @Service
@@ -26,6 +26,7 @@ public class ApprovalService {
 
     private final ApprovalOrderMapper approvalMapper;
     private final ActivityLogService activityLogService;
+    private final NotificationService notificationService;
 
     public record SubmitReq(String bizType, String title, String content, String runId, Long conversationId) {
     }
@@ -45,6 +46,13 @@ public class ApprovalService {
         order.setCreatedBy(userId);
         approvalMapper.insert(order);
         activityLogService.record(tenantId, userId, "提交审批（" + order.getBizType() + "）", "wait", "待审批");
+        // 站内通知：租户全部管理员（排除提交人自己）
+        notificationService.notifyAdmins(order.getTenantId(), order.getUserId(),
+                "新审批待处理",
+                (nickname == null || nickname.isBlank() ? "有用户" : nickname)
+                        + " 提交了审批单《" + (order.getTitle() == null ? order.getBizType() : order.getTitle())
+                        + "》，待你审批",
+                order.getId());
         return order;
     }
 
@@ -86,6 +94,14 @@ public class ApprovalService {
         String logLabel = approve ? "已通过" : "已驳回";
         activityLogService.record(tenantId, userId, "审批" + order.getBizType() + "（" + order.getTitle() + "）",
                 approve ? "ok" : "fail", logLabel);
+        // 站内通知：结果 + 审批意见 发给审批单发起人（管理员审自己的单则不通知）
+        notificationService.notifyUser(order.getTenantId(), order.getUserId(), userId,
+                cn.aioa.resource.entity.Notification.TYPE_APPROVAL,
+                approve ? "审批已通过" : "审批被驳回",
+                "你的审批单《" + (order.getTitle() == null ? order.getBizType() : order.getTitle())
+                        + "》" + logLabel
+                        + (note == null || note.isBlank() ? "" : "，意见：" + note),
+                order.getId());
         return order;
     }
 }
