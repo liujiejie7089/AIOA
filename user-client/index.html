@@ -93,8 +93,12 @@ body{
 
 .tabbar{position:absolute;bottom:0;left:0;right:0;height:78px;background:rgba(255,255,255,.94);
   backdrop-filter:blur(12px);border-top:1px solid var(--border);display:flex;padding-bottom:14px;z-index:10}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+.tab{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
   font-size:11px;color:var(--muted);cursor:pointer;user-select:none;transition:color var(--t-fast)}
+/* 待办 Tab 红点计数（右上角小圆点，白描边） */
+.tab-dot{position:absolute;top:5px;left:calc(50% + 8px);min-width:16px;height:16px;border-radius:9px;
+  background:#e5484d;color:#fff;font-size:10px;font-weight:800;line-height:16px;padding:0 4px;
+  box-sizing:border-box;text-align:center;box-shadow:0 0 0 2px #fff}
 .tab .ico{font-size:21px;line-height:1;transition:transform var(--t) var(--ease)}
 .tab.active{color:var(--blue);font-weight:700}
 .tab.active .ico{transform:translateY(-2px) scale(1.08)}
@@ -293,6 +297,25 @@ body{
       </div>
     </section>
 
+    <!-- 待办（底部独立 Tab）：待我处理 / 我的申请 / 消息通知 -->
+    <section class="page" id="page-todo" data-page-node-id="todoPageAIOA2">
+      <div class="kicker" data-page-node-id="todoKickAIOA2">To-Do</div>
+      <div class="sec-title" data-page-node-id="todoHeadAIOA2">待办</div>
+      <div class="muted" style="margin-bottom:11px" data-page-node-id="todoSubAIOA2">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
+
+      <div class="sec-title" data-page-node-id="todoMineTitleAIOA2">待我处理 <span class="tag" id="todoCount">0</span></div>
+      <div class="card" id="todoList" data-page-node-id="todoListAIOA2"><div class="muted">登录后实时同步</div></div>
+
+      <div class="sec-title" data-page-node-id="mineAppTitleAIOA2">我的申请</div>
+      <div class="card" id="approvalList" data-page-node-id="GLFP50rWNDhpMu2MPqHNr6"><div class="muted">登录后实时同步</div></div>
+
+      <div class="card" data-page-node-id="notifCardAIOA2">
+        <div class="sec-title" data-page-node-id="notifTitleAIOA2">消息通知 <span class="tag" id="notifCount">0</span><span class="switch" style="float:right" onclick="readAllNotifs()" data-page-node-id="notifReadAllAIOA2">全部已读</span></div>
+        <div id="notifList" data-page-node-id="notifListAIOA2"><div class="muted">登录后实时同步</div></div>
+      </div>
+      <div class="muted" style="font-size:10.5px" data-page-node-id="todoFootAIOA2">待办与消息通知实时联动，处理记录全程留痕可查</div>
+    </section>
+
     <!-- 专家 -->
     <section class="page" id="page-expert" data-page-node-id="fvcL3BvSbCZdCBX2ZThJ6M">
       <div class="kicker" data-page-node-id="hYALF1WcBu5rmQahGIxvas">Expert Network</div>
@@ -341,20 +364,7 @@ body{
         <div class="row" onclick="go('page-log')" data-page-node-id="jyPRJxNrYV8WoGEqhz6c8S"><span class="t" data-page-node-id="GL2DPNyARXyYr0xLGrXNCz">🧾 我的操作记录</span><span class="muted" data-page-node-id="r1pqXaeYD6pZRCWw0pZXhI">全程可查 ›</span></div>
         <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')" data-page-node-id="XPggI5cGIjWDzFDVjdOANN"><span class="t" data-page-node-id="MEVY0LX4aaBQEGx5HAD11E">🛡️ 投诉与纠错</span><span class="muted" data-page-node-id="cR3T6RVsZeqI5rRlKVqTFU">›</span></div>
       </div>
-      <div class="card" id="todoCard" data-page-node-id="todoCardAIOA1">
-        <div class="sec-title" data-page-node-id="todoTitleAIOA1">待办 <span class="tag" id="todoCount">0</span></div>
-        <div id="todoList" data-page-node-id="todoListAIOA1"></div>
-        <div class="sec-title" style="margin-top:14px" data-page-node-id="notifTitleAIOA1">通知 <span class="tag" id="notifCount">0</span><span class="switch" style="float:right" onclick="readAllNotifs()" data-page-node-id="notifReadAllAIOA1">全部已读</span></div>
-        <div id="notifList" data-page-node-id="notifListAIOA1"></div>
-      </div>
-      <div class="card" data-page-node-id="CEbxeDBAatpABWou14Ueah">
-        <div class="sec-title" data-page-node-id="ESN48Ulpi9ZSDZiJCBID2G">我的审批</div>
-        <div id="approvalList" data-page-node-id="GLFP50rWNDhpMu2MPqHNr6"></div>
-      </div>
-      <div class="card" id="approvalCenterCard" style="display:none" data-page-node-id="ElmQNkCc3apvfACRycqtpZ">
-        <div class="sec-title" data-page-node-id="l7qO5DTbpzmbIrUXtd1FZo">审批中心（待我审批）</div>
-        <div id="approvalCenter" data-page-node-id="PdVEWtzT9IcWKxpz5M8AUP"></div>
-      </div>
+      <!-- 待办/审批/通知 已迁移至底部独立「待办」Tab（page-todo） -->
     </section>
 
     <!-- 账单 -->
@@ -391,6 +401,7 @@ body{
 
   <nav class="tabbar" data-page-node-id="QcmEWNEe1Gg4Ys5YKYfMkt">
     <div class="tab active" data-page="page-home"   onclick="switchTab(this)" data-page-node-id="8bbkhHiKhEcPqfPQGXtJhy"><span class="ico" data-page-node-id="ohM4mBCiKWnAvcwC9BcsBn">🏠</span>首页</div>
+    <div class="tab"         data-page="page-todo"  onclick="switchTab(this)" data-page-node-id="todoTabAIOA2"><span class="ico" data-page-node-id="todoTabIcoAIOA2">📋</span>待办<span class="tab-dot" id="todoDot" style="display:none">0</span></div>
     <div class="tab"         data-page="page-expert" onclick="switchTab(this)" data-page-node-id="3EkL9OrCLwb5AufLJsjFFb"><span class="ico" data-page-node-id="9VXWTCUJSpSIAn0svXGNNS">🧑‍💼</span>专家</div>
     <div class="tab"         data-page="page-chat"   onclick="switchTab(this)" data-page-node-id="oBf58ZWceJcYlS2TDk0idF"><span class="ico" data-page-node-id="eDFnFKPvBwwdEsC4CS7kzm">💬</span>会话</div>
     <div class="tab"         data-page="page-me"     onclick="switchTab(this)" data-page-node-id="AajODNVUnKbvK902hKoFHU"><span class="ico" data-page-node-id="treeZuaRFwqWQ87Cgn3Jwo">👤</span>我的</div>
@@ -422,15 +433,17 @@ body{
   </div>
 </div>
 
-<!-- 审批意见弹层（通过/驳回前填写意见，默认文案预填，可改可清空） -->
+<!-- 审批意见弹层（通过/驳回前填写意见，默认文案预填，可改可清空；从待办点入为中性模式，两键同弹） -->
 <div id="decisionModal" class="login-screen">
   <div class="login-card">
     <div class="kicker">审批意见</div>
-    <div class="sec-title" id="decisionTitle">通过审批</div>
+    <div class="sec-title" id="decisionTitle">处理审批</div>
+    <div class="muted" id="decisionWhat" style="margin:-4px 0 8px;font-size:11px;word-break:break-all"></div>
     <textarea id="decisionNote" class="login-input" rows="3" style="height:auto;min-height:74px;padding:10px 12px;line-height:1.6;resize:vertical" placeholder="填写审批意见（可清空留空）"></textarea>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn ghost" style="flex:1" onclick="cancelDecision()">取消</button>
-      <button class="btn" style="flex:1" id="decisionOk" onclick="confirmDecision()">确认通过</button>
+      <button class="btn ghost" style="flex:1" id="decisionReject" onclick="confirmDecision('REJECT')">驳回</button>
+      <button class="btn" style="flex:1" id="decisionOk" onclick="confirmDecision('APPROVE')">通过</button>
     </div>
   </div>
 </div>
@@ -686,7 +699,7 @@ function setLink(mode, text){
 }
 
 /* ---------- 导航 ---------- */
-const TITLES = {'page-home':'AIOA 智能工作台','page-expert':'专家服务','page-chat':'会话',
+const TITLES = {'page-home':'AIOA 智能工作台','page-todo':'待办','page-expert':'专家服务','page-chat':'会话',
                 'page-me':'我的','page-bill':'用量账单','page-log':'我的操作记录','page-skill':'技能调用'};
 const SUBPAGES = ['page-bill','page-log','page-skill'];
 
@@ -926,39 +939,34 @@ async function loadApprovals(){
 }
 
 function renderApprovals(){
-  const card = $('approvalCenterCard');
-  if(card) card.style.display = state.isAdmin ? 'block' : 'none';
   const mine = $('approvalList');
   if(mine) renderApprovalList(mine, state.approvals, false);
-  const center = $('approvalCenter');
-  if(center) renderApprovalList(center, state.isAdmin ? state.todoApprovals : null, true);
   renderTodos();
 }
 
-/* 待办：管理员 = 租户内待我审批的单；普通用户 = 我提交的、仍在审批中的单（去重合并） */
+/* 待办页 · 待我处理：管理员=租户内待审单（点击行弹出处理层）；红点=待处理数（管理员）或我的审批中数（用户） */
 function renderTodos(){
-  const el = $('todoList'), cnt = $('todoCount');
-  if(!el) return;
-  const seen = {};
-  const items = [];
-  if(state.isAdmin){
-    (state.todoApprovals||[]).forEach(o=>{
-      if(o.status!=='PENDING' || seen[o.id]) return;
-      seen[o.id] = 1;
-      items.push({t:o.title||o.bizType, s:'待你审批 · '+stampOf(o.createdAt)});
-    });
+  const el = $('todoList'), cnt = $('todoCount'), dot = $('todoDot');
+  const todoPending = (state.todoApprovals||[]).filter(o=>o.status==='PENDING');
+  const minePending = (state.approvals||[]).filter(o=>o.status==='PENDING' && o.mine).length;
+  if(dot){
+    const n = state.isAdmin ? todoPending.length : minePending;
+    dot.textContent = n > 99 ? '99+' : n;
+    dot.style.display = n > 0 ? 'block' : 'none';
   }
-  (state.approvals||[]).forEach(o=>{
-    if(o.status!=='PENDING' || !o.mine || seen[o.id]) return;
-    seen[o.id] = 1;
-    items.push({t:o.title||o.bizType, s:'等待管理员审批 · '+stampOf(o.createdAt)});
-  });
-  if(cnt) cnt.textContent = items.length;
-  if(!items.length){ el.innerHTML = '<div class="muted">暂无待办，一切就绪</div>'; return; }
-  el.innerHTML = items.map(i=>
-    '<div class="row" style="display:block"><div><b>'+esc(i.t)+'</b> '
-    + '<span class="badge wait">待办</span></div>'
-    + '<div class="muted" style="margin:3px 0 0">'+esc(i.s)+'</div></div>'
+  if(cnt) cnt.textContent = todoPending.length;
+  if(!el) return;
+  if(!todoPending.length){
+    el.innerHTML = '<div class="muted">' + (state.isAdmin
+      ? '暂无待你处理的事项'
+      : '暂无待你处理的事项（你提交的审批由租户管理员处理，进度见下方「我的申请」）') + '</div>';
+    return;
+  }
+  el.innerHTML = todoPending.map(o=>
+    '<div class="row" style="display:block;cursor:pointer" onclick="askDecision('+o.id+')">'
+    + '<div><b>'+esc(o.title||o.bizType)+'</b> <span class="badge wait">待审批</span></div>'
+    + '<div class="muted" style="margin:3px 0 0;font-size:10.5px">申请时间 '+stampOf(o.createdAt)
+    + ' │ 类型：'+esc(o.bizType||'审批')+' │ 点击处理 ›</div></div>'
   ).join('');
 }
 
@@ -995,27 +1003,37 @@ async function readAllNotifs(){
   toast('已全部标记为已读');
 }
 
-/* ---- 审批意见弹层：通过/驳回先填意见（默认文案预填），确认后提交 ---- */
+/* ---- 审批意见弹层：decision 为空=中性打开（通过/驳回两键同弹，用于待办页点击处理） ---- */
 let pendingDecision = null;
+function findApproval(id){
+  return (state.todoApprovals||[]).concat(state.approvals||[]).find(o=>o.id === id);
+}
 function askDecision(id, decision){
-  pendingDecision = {id:id, decision:decision};
-  const t = $('decisionTitle'), ok = $('decisionOk'), note = $('decisionNote');
-  if(t) t.textContent = decision==='APPROVE' ? '通过审批' : '驳回审批';
-  if(ok) ok.textContent = decision==='APPROVE' ? '确认通过' : '确认驳回';
-  if(note) note.value = decision==='APPROVE' ? '内容合规，准予发布' : '不符合发布规范';
+  pendingDecision = {id:id, decision:decision||null};
+  const o = findApproval(id);
+  const t = $('decisionTitle'), ok = $('decisionOk'), rj = $('decisionReject'),
+        note = $('decisionNote'), what = $('decisionWhat');
+  if(what) what.textContent = o ? (o.title || o.bizType || '') : '';
+  if(t) t.textContent = decision==='APPROVE' ? '通过审批' : decision==='REJECT' ? '驳回审批' : '处理审批';
+  if(note) note.value = decision==='APPROVE' ? '内容合规，准予发布'
+                       : decision==='REJECT' ? '不符合发布规范' : '';
+  if(ok) ok.style.display = decision==='REJECT' ? 'none' : 'flex';
+  if(rj) rj.style.display = decision==='APPROVE' ? 'none' : 'flex';
   const m = $('decisionModal'); if(m) m.style.display = 'flex';
 }
 function cancelDecision(){
   pendingDecision = null;
   const m = $('decisionModal'); if(m) m.style.display = 'none';
 }
-async function confirmDecision(){
-  if(!pendingDecision) return;
-  const d = pendingDecision; pendingDecision = null;
+async function confirmDecision(decision){
+  const d = pendingDecision; if(!d) return;
+  const dir = decision || d.decision;
+  if(!dir) return;
+  pendingDecision = null;
   const m = $('decisionModal'); if(m) m.style.display = 'none';
   const noteEl = $('decisionNote');
   const note = (noteEl && noteEl.value.trim()) || '';
-  await approveOrder(d.id, d.decision, note);
+  await approveOrder(d.id, dir, note);
 }
 
 /* 渲染一组审批单；withActions=true 时（仅审批中心/管理员）PENDING 显示 通过/驳回 */
