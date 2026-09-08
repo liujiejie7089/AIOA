@@ -88,7 +88,8 @@ body{
 .pages{flex:1;overflow:hidden;position:relative}
 .page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px 92px;display:none;scroll-behavior:smooth}
 .page.active{display:block}
-.page.active.chat-active{padding:0;display:flex;flex-direction:column}
+.page.active.chat-active{padding:0 0 78px;display:flex;flex-direction:column}
+/* 会话页底部必须让出 78px tabbar 高度，否则 .input-bar 被 tabbar（z-index:10，近不透明）盖住，无法点击输入 */
 
 .tabbar{position:absolute;bottom:0;left:0;right:0;height:78px;background:rgba(255,255,255,.94);
   backdrop-filter:blur(12px);border-top:1px solid var(--border);display:flex;padding-bottom:14px;z-index:10}
@@ -339,6 +340,10 @@ body{
         <div class="row" onclick="go('page-bill')" data-page-node-id="rzF2ubGrXfVSJV1cNqhZaI"><span class="t" data-page-node-id="2DMMnycEZjgIf4rGvPE8oF">📒 用量账单</span><span class="muted" data-page-node-id="A13xV6oEtaGDvae17h5TOV">本月 <b class="num" id="meUsed" data-page-node-id="G9SN8mzdtPQlFTT1WpVc8s">13,600</b> 词元 ›</span></div>
         <div class="row" onclick="go('page-log')" data-page-node-id="jyPRJxNrYV8WoGEqhz6c8S"><span class="t" data-page-node-id="GL2DPNyARXyYr0xLGrXNCz">🧾 我的操作记录</span><span class="muted" data-page-node-id="r1pqXaeYD6pZRCWw0pZXhI">全程可查 ›</span></div>
         <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')" data-page-node-id="XPggI5cGIjWDzFDVjdOANN"><span class="t" data-page-node-id="MEVY0LX4aaBQEGx5HAD11E">🛡️ 投诉与纠错</span><span class="muted" data-page-node-id="cR3T6RVsZeqI5rRlKVqTFU">›</span></div>
+      </div>
+      <div class="card" id="todoCard" data-page-node-id="todoCardAIOA1">
+        <div class="sec-title" data-page-node-id="todoTitleAIOA1">待办 <span class="tag" id="todoCount">0</span></div>
+        <div id="todoList" data-page-node-id="todoListAIOA1"></div>
       </div>
       <div class="card" data-page-node-id="CEbxeDBAatpABWou14Ueah">
         <div class="sec-title" data-page-node-id="ESN48Ulpi9ZSDZiJCBID2G">我的审批</div>
@@ -908,6 +913,34 @@ function renderApprovals(){
   if(mine) renderApprovalList(mine, state.approvals, false);
   const center = $('approvalCenter');
   if(center) renderApprovalList(center, state.isAdmin ? state.todoApprovals : null, true);
+  renderTodos();
+}
+
+/* 待办：管理员 = 租户内待我审批的单；普通用户 = 我提交的、仍在审批中的单（去重合并） */
+function renderTodos(){
+  const el = $('todoList'), cnt = $('todoCount');
+  if(!el) return;
+  const seen = {};
+  const items = [];
+  if(state.isAdmin){
+    (state.todoApprovals||[]).forEach(o=>{
+      if(o.status!=='PENDING' || seen[o.id]) return;
+      seen[o.id] = 1;
+      items.push({t:o.title||o.bizType, s:'待你审批 · '+stampOf(o.createdAt)});
+    });
+  }
+  (state.approvals||[]).forEach(o=>{
+    if(o.status!=='PENDING' || !o.mine || seen[o.id]) return;
+    seen[o.id] = 1;
+    items.push({t:o.title||o.bizType, s:'等待管理员审批 · '+stampOf(o.createdAt)});
+  });
+  if(cnt) cnt.textContent = items.length;
+  if(!items.length){ el.innerHTML = '<div class="muted">暂无待办，一切就绪</div>'; return; }
+  el.innerHTML = items.map(i=>
+    '<div class="row" style="display:block"><div><b>'+esc(i.t)+'</b> '
+    + '<span class="badge wait">待办</span></div>'
+    + '<div class="muted" style="margin:3px 0 0">'+esc(i.s)+'</div></div>'
+  ).join('');
 }
 
 /* 渲染一组审批单；withActions=true 时（仅审批中心/管理员）PENDING 显示 通过/驳回 */
