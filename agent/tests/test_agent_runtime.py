@@ -133,6 +133,50 @@ def test_agent_runtime_tool_loop():
     assert completed.data["usage"]["completion_tokens"] == 14
 
 
+def test_agent_runtime_kb_citations():
+    """知识库检索工具的结果回写 citations（FR-D5 引用溯源），同文档去重。"""
+    calls = [{"id": "call_1", "name": "search_kb_documents",
+              "arguments": {"keyword": "差旅"}}]
+    first = _chat(_tool_call_message(calls), {"prompt_tokens": 20, "completion_tokens": 5})
+    second = _chat(_text_message("相关制度见知识库"), {"prompt_tokens": 40, "completion_tokens": 4})
+    http = _mock_http()
+    http.post = AsyncMock(side_effect=[_resp(first), _resp(second)])
+
+    tools = [{"type": "function", "function": {"name": "search_kb_documents",
+                                               "description": "x", "parameters": {}}}]
+    kb_rows = [{"id": 7, "docName": "差旅费管理办法"}, {"id": 3, "docName": "发文审批流程"},
+               {"id": 7, "docName": "差旅费管理办法"}]  # 重复 id 应去重
+    with patch("app.core.agent_runtime.httpx.AsyncClient", return_value=http), \
+         patch.object(ToolClient, "list_tools", AsyncMock(return_value=tools)), \
+         patch.object(ToolClient, "invoke",
+                      AsyncMock(return_value=ToolOutcome(name="search_kb_documents",
+                                                         arguments={"keyword": "差旅"},
+                                                         ok=True, data=kb_rows))):
+        events = asyncio.run(_drain(_make_req(user_token="tok")))
+
+    completed = next(e for e in events if e.type == "message.completed")
+    assert completed.data["citations"] == [
+        {"docId": 7, "title": "差旅费管理办法", "source": "knowledge_base"},
+        {"docId": 3, "title": "发文审批流程", "source": "knowledge_base"},
+    ], completed.data["citations"]
+    assert completed.data["tool_calls"][0]["name"] == "search_kb_documents"
+
+
+def test_build_messages_history():
+    """history 中的 user/assistant/system 消息按序进入上下文（FR-C2 多轮会话）。"""
+    req = _make_req()
+    req.history = [
+        {"role": "user", "content": "上一问"},
+        {"role": "assistant", "content": "上一答"},
+        {"role": "tool", "content": "应被过滤"},
+        {"role": "user", "content": ""},  # 空内容过滤
+    ]
+    msgs = agent_runtime._build_messages(req)
+    roles = [m["role"] for m in msgs]
+    assert roles == ["system", "user", "assistant", "user"], roles
+    assert msgs[-1]["content"] == "hi"
+
+
 def test_agent_runtime_upstream_error_is_caught():
     resp = MagicMock()
     resp.status_code = 401

@@ -39,4 +39,15 @@ public class AgentRunRequest {
      */
     @JsonProperty("user_token")
     private String userToken;
+
+    /**
+     * 多轮会话历史（FR-C2）：近 N 轮 user/assistant 消息，按时间正序，
+     * 不含本轮提问。Agent 侧拼入模型上下文，实现跨轮记忆。
+     */
+    @JsonProperty("history")
+    private List<ChatTurn> history;
+
+    /** 一条历史消息（role ∈ user/assistant）。 */
+    public record ChatTurn(String role, String content) {
+    }
 }

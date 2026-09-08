@@ -72,14 +72,30 @@ public class RunService {
     private final AgentProperties agentProperties;
     private final BillingService billingService;
     private final ActivityLogService activityLogService;
+    private final ContentGuardService contentGuard;
+
+    /** 传给 Agent 的最大历史轮数（FR-C2 多轮会话）。 */
+    private static final int HISTORY_TURNS = 10;
 
     /**
-     * 发起一轮对话：落 user 消息 + 创建 agent_run（RUNNING），返回 runId。
+     * 发起一轮对话：额度准入（FR-B2）→ 输入内容审核（FR-H3）→ 落 user 消息 +
+     * 创建 agent_run（RUNNING），返回 runId。
      */
     public String start(Long conversationId, String text, Map<String, Object> context, List<Long> attachments) {
         AuthUser user = AuthUserContext.require();
         if (text == null || text.isBlank()) {
             throw BizException.badRequest("text 不能为空");
+        }
+        // FR-B2 额度准入前置：余额耗尽则拒绝发起（前端引导购买/次日再试）
+        BillingService.QuotaView quota = billingService.current(
+                user.getTenantId() == null ? 0L : user.getTenantId(), user.getUserId());
+        if (quota.exhausted()) {
+            throw BizException.forbidden("今日免费额度已用完，请购买词元套餐或明日再试");
+        }
+        // FR-H3 输入侧内容审核：命中即中止
+        String inputHit = contentGuard.findHit(text);
+        if (inputHit != null) {
+            throw BizException.forbidden(contentGuard.inputBlockMessage(inputHit));
         }
         ChatConversation conversation = conversationMapper.selectById(conversationId);
         if (conversation == null) {
@@ -153,6 +169,8 @@ public class RunService {
         StringBuilder assistant = new StringBuilder();
         AtomicReference<Usage> usageRef = new AtomicReference<>(Usage.ZERO);
         AtomicReference<String> lastId = new AtomicReference<>(lastEventId);
+        AtomicReference<List<Object>> citationsRef = new AtomicReference<>(List.of());
+        AtomicReference<List<Object>> toolCallsRef = new AtomicReference<>(List.of());
         long heartbeatSeconds = Math.max(1, agentProperties.getHeartbeatSeconds());
 
         ScheduledFuture<?> heartbeat = sseHeartbeatExecutor.scheduleAtFixedRate(
@@ -171,6 +189,12 @@ public class RunService {
 
         AgentRunRequest request = buildRequest(run, user, text, context);
         request.setUserToken(stripBearer(authorization));
+        request.setHistory(loadHistory(run.getConversationId(), userMessage));
+        // 会话级模型路由：Agent 按 model_ref 选择 provider（默认走 MODEL_DEFAULT）
+        ChatConversation conversation = conversationMapper.selectById(run.getConversationId());
+        if (conversation != null && conversation.getModelRef() != null && !conversation.getModelRef().isBlank()) {
+            request.setModelRef(conversation.getModelRef());
+        }
         try {
             subscription[0] = agentWebClient.post()
                     .uri("/internal/v1/runs")
@@ -182,7 +206,8 @@ public class RunService {
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
                     .subscribe(
-                            event -> forward(emitter, event, assistant, lastId, usageRef),
+                            event -> forward(emitter, event, assistant, lastId, usageRef,
+                                    citationsRef, toolCallsRef),
                             error -> {
                                 log.warn("agent run {} failed: {}", runId, error.getMessage());
                                 markFailed(run, error.getMessage());
@@ -192,7 +217,8 @@ public class RunService {
                             },
                             () -> {
                                 try {
-                                    finish(run, assistant.toString(), usageRef.get());
+                                    completeRun(run, emitter, lastId, assistant, usageRef,
+                                            citationsRef, toolCallsRef);
                                 } catch (Exception e) {
                                     log.error("finish run {} failed", runId, e);
                                 }
@@ -235,6 +261,30 @@ public class RunService {
         return run;
     }
 
+    /**
+     * 取本轮 user 消息之前的近 N 条 user/assistant 消息（时间正序）作为多轮历史。
+     * 查询不到或异常时返回 null（Agent 侧按无历史处理，不影响本次 run）。
+     */
+    private List<AgentRunRequest.ChatTurn> loadHistory(Long conversationId, ChatMessage currentUserMessage) {
+        try {
+            long beforeSeq = currentUserMessage == null || currentUserMessage.getSeq() == null
+                    ? Long.MAX_VALUE : currentUserMessage.getSeq();
+            List<ChatMessage> recent = messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                    .eq(ChatMessage::getConversationId, conversationId)
+                    .in(ChatMessage::getRole, List.of(ChatMessage.ROLE_USER, ChatMessage.ROLE_ASSISTANT))
+                    .lt(ChatMessage::getSeq, beforeSeq)
+                    .orderByDesc(ChatMessage::getSeq)
+                    .last("limit " + HISTORY_TURNS));
+            java.util.Collections.reverse(recent);
+            return recent.stream()
+                    .map(m -> new AgentRunRequest.ChatTurn(m.getRole(), m.getContent()))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("load history failed for conversation {}: {}", conversationId, e.getMessage());
+            return null;
+        }
+    }
+
     private AgentRunRequest buildRequest(AgentRun run, AuthUser user, String text, Map<String, Object> context) {
         AgentUserContext userContext = new AgentUserContext();
         userContext.setUserId(user.getUserId());
@@ -265,7 +315,9 @@ public class RunService {
                          ServerSentEvent<String> event,
                          StringBuilder assistant,
                          AtomicReference<String> lastId,
-                         AtomicReference<Usage> usageRef) {
+                         AtomicReference<Usage> usageRef,
+                         AtomicReference<List<Object>> citationsRef,
+                         AtomicReference<List<Object>> toolCallsRef) {
         String name = event.event() == null ? "message" : event.event();
         String data = event.data() == null ? "" : event.data();
         if (event.id() != null) {
@@ -288,14 +340,62 @@ public class RunService {
                 assistant.setLength(0);
                 assistant.append(content);
             }
+            citationsRef.set(readListField(data, "citations"));
+            toolCallsRef.set(readListField(data, "tool_calls"));
             usageRef.set(readUsage(data));
+            // FR-D6 审批卡点演示：输出涉及对外发布场景时注入"提交审批"卡片事件。
+            // 一期为演示链路：前端展示卡片，点击走预留工作流通道。
+            if (content != null && contentGuard.findPublishScenario(content) != null) {
+                safeSend(emitter, "approval.required", lastId.get(),
+                        approvalCardJson(contentGuard.findPublishScenario(content)));
+            }
         } else if (EVENT_RUN_COMPLETED.equals(name)) {
             // 尾帧同样带 usage，取后到的为准
             usageRef.set(readUsage(data));
         }
     }
 
-    private void finish(AgentRun run, String content, Usage usage) {
+    /**
+     * 流结束收口（FR-H3 输出侧内容审核）：
+     *   · 回答全文未命中 → 正常落库（含 citations/tool_calls）
+     *   · 命中违规词 → 中止应答：不落正文，落合规提示消息，run 置 FAILED，并向前端发 error 帧
+     */
+    private void completeRun(AgentRun run, SseEmitter emitter, AtomicReference<String> lastId,
+                             StringBuilder assistant, AtomicReference<Usage> usageRef,
+                             AtomicReference<List<Object>> citationsRef,
+                             AtomicReference<List<Object>> toolCallsRef) {
+        String content = assistant.toString();
+        String hit = contentGuard.findHit(content);
+        if (hit != null) {
+            String tip = contentGuard.outputBlockMessage(hit);
+            log.warn("run {} output blocked by content guard (hit={})", run.getRunId(), hit);
+            safeSend(emitter, EVENT_ERROR, lastId.get(), blockedJson(tip));
+            finishBlocked(run, tip);
+            return;
+        }
+        finish(run, content, citationsRef.get(), toolCallsRef.get(), usageRef.get());
+    }
+
+    /** 输出命中：落合规提示 assistant 消息 + run 置 FAILED。 */
+    private void finishBlocked(AgentRun run, String tip) {
+        LocalDateTime endedAt = LocalDateTime.now();
+        ChatMessage message = new ChatMessage();
+        message.setTenantId(run.getTenantId());
+        message.setConversationId(run.getConversationId());
+        message.setRunId(run.getRunId());
+        message.setRole(ChatMessage.ROLE_ASSISTANT);
+        message.setContent(tip);
+        message.setContentType("text");
+        message.setStatus(ChatMessage.STATUS_FAILED);
+        message.setSeq(nextSeq(run.getConversationId()));
+        message.setCreatedAt(endedAt);
+        message.setCreatedBy(run.getUserId());
+        messageMapper.insert(message);
+        markFailed(run, "输出命中内容安全策略");
+    }
+
+    private void finish(AgentRun run, String content, List<Object> citations, List<Object> toolCalls,
+                        Usage usage) {
         LocalDateTime endedAt = LocalDateTime.now();
         if (content != null && !content.isBlank()) {
             ChatMessage message = new ChatMessage();
@@ -305,6 +405,8 @@ public class RunService {
             message.setRole(ChatMessage.ROLE_ASSISTANT);
             message.setContent(content);
             message.setContentType("text");
+            message.setCitations(citations == null ? List.of() : citations);
+            message.setToolCalls(toolCalls == null ? List.of() : toolCalls);
             message.setStatus(ChatMessage.STATUS_OK);
             message.setSeq(nextSeq(run.getConversationId()));
             message.setCreatedAt(endedAt);
@@ -391,6 +493,49 @@ public class RunService {
                     "retryable", true));
         } catch (Exception e) {
             return "{\"code\":\"AGENT_STREAM_ERROR\",\"message\":\"agent stream error\",\"retryable\":true}";
+        }
+    }
+
+    /** 输出内容被内容安全策略拦截时下发的 error 帧。 */
+    private String blockedJson(String tip) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "code", "CONTENT_BLOCKED",
+                    "message", tip,
+                    "retryable", false));
+        } catch (Exception e) {
+            return "{\"code\":\"CONTENT_BLOCKED\",\"message\":\"content blocked\",\"retryable\":false}";
+        }
+    }
+
+    /** FR-D6 审批卡点演示：输出涉及对外发布场景时下发的卡片事件。 */
+    private String approvalCardJson(String scenario) {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "title", "对外发布审批",
+                    "bizType", "doc_publish",
+                    "scenario", scenario,
+                    "reason", "回答内容涉及对外发布场景，需按合规流程提交审批"));
+        } catch (Exception e) {
+            return "{\"title\":\"对外发布审批\",\"bizType\":\"doc_publish\"}";
+        }
+    }
+
+    /** 从 SSE data 中读取数组字段（citations / tool_calls），异常返回空列表。 */
+    private List<Object> readListField(String data, String field) {
+        if (data == null || data.isBlank()) {
+            return List.of();
+        }
+        try {
+            Map<?, ?> map = objectMapper.readValue(data, Map.class);
+            Object value = map.get(field);
+            if (value instanceof List<?> list) {
+                return new java.util.ArrayList<>(list);
+            }
+            return List.of();
+        } catch (Exception e) {
+            log.debug("unable to read list field {} from sse data", field);
+            return List.of();
         }
     }
 

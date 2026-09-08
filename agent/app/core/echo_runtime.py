@@ -10,11 +10,15 @@
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 
+from app.core.agent_runtime import _citations_from_tool
 from app.core.guards import ECHO_DELTA_INTERVAL, WallClock, check_text_len
 from app.schemas import RunRequest, SseEvent
 from app.tools_client import ToolClient, ToolOutcome
+
+logger = logging.getLogger("aioa.agent.runtime")
 
 # 关键词 → 工具路由（按序匹配，先特指后泛化）
 _TOOL_ROUTES: list[tuple[tuple[str, ...], str]] = [
@@ -76,12 +80,14 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     seq = seq_start
     check_text_len(req.text)
     clock = WallClock()
+    logger.info("run %s (echo): history=%d turns", req.run_id, len(req.history or []))
 
     yield SseEvent(seq=seq, type="run.started", data={"run_id": req.run_id, "conversation_id": req.conversation_id, "model": "echo", "gateway_key": "echo"})
     seq += 1
 
     client = ToolClient.from_request(req.user_token)
     tool_calls: list[dict] = []
+    citations: list[dict] = []
 
     if client.enabled:
         tools = await client.list_tools()
@@ -92,6 +98,7 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
             seq += 1
             outcome = await client.invoke(name, args)
             tool_calls.append({"name": name, "arguments": args, "ok": outcome.ok})
+            citations.extend(_citations_from_tool(name, outcome))
             yield SseEvent(seq=seq, type="tool.result",
                            data={"name": name, "ok": outcome.ok, "summary": outcome.summary()})
             seq += 1
@@ -110,7 +117,7 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     yield SseEvent(
         seq=seq,
         type="message.completed",
-        data={"content": content, "citations": [], "tool_calls": tool_calls, "usage": usage},
+        data={"content": content, "citations": citations, "tool_calls": tool_calls, "usage": usage},
     )
     seq += 1
 

@@ -100,3 +100,36 @@ def test_echo_run_without_context():
     deltas = [e["data"]["text"] for e in events if e["type"] == "message.delta"]
     assert "".join(deltas) == text
     assert events[-2]["data"]["content"] == text
+
+
+def test_echo_run_kb_citations():
+    """echo 工具链路回写 citations（FR-D5）：知识库检索结果出现在 message.completed。"""
+    from unittest.mock import AsyncMock, patch
+
+    from app.tools_client import ToolClient, ToolOutcome
+
+    kb_rows = [{"id": 17, "docName": "差旅费管理办法（2026版）", "state": "ENABLED"}]
+    payload = {
+        "run_id": RUN_ID,
+        "conversation_id": 10003,
+        "text": "知识库 差旅费",
+        "model_ref": "echo",
+        "user_token": "tok",
+        "user_context": USER_CONTEXT,
+    }
+    with patch.object(ToolClient, "list_tools",
+                      AsyncMock(return_value=[{"type": "function", "function": {
+                          "name": "search_kb_documents", "description": "x", "parameters": {}}}])):
+        with patch.object(ToolClient, "invoke",
+                          AsyncMock(return_value=ToolOutcome(name="search_kb_documents",
+                                                             arguments={"keyword": "差旅费"},
+                                                             ok=True, data=kb_rows))):
+            events = post_run(payload)
+
+    types = [e["type"] for e in events]
+    assert "tool.call" in types and "tool.result" in types
+    completed = next(e for e in events if e["type"] == "message.completed")["data"]
+    assert completed["citations"] == [
+        {"docId": 17, "title": "差旅费管理办法（2026版）", "source": "knowledge_base"}]
+    assert completed["tool_calls"][0]["name"] == "search_kb_documents"
+    assert "差旅费管理办法" in completed["content"]

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 
 import httpx
@@ -26,8 +27,27 @@ from app.model_gateway import gateway
 from app.schemas import RunRequest, SseEvent
 from app.tools_client import MAX_TOOL_ROUNDS, ToolClient
 
+logger = logging.getLogger("aioa.agent.runtime")
+
 # OpenAI 兼容 /chat/completions 的 SSE 行前缀
 _DATA_PREFIX = "data: "
+
+# 知识库检索工具名：其结果回写 message.completed.citations（FR-D5 引用溯源）
+KB_TOOL = "search_kb_documents"
+
+
+def _citations_from_tool(name: str, outcome) -> list[dict]:
+    """知识库检索结果 → 引用溯源条目 [{docId, title, source}]（同文档去重）。"""
+    if name != KB_TOOL or not outcome.ok or not isinstance(outcome.data, list):
+        return []
+    out: list[dict] = []
+    seen: set = set()
+    for doc in outcome.data:
+        if isinstance(doc, dict) and doc.get("id") is not None and doc["id"] not in seen:
+            seen.add(doc["id"])
+            out.append({"docId": doc["id"], "title": str(doc.get("docName") or ""),
+                        "source": "knowledge_base"})
+    return out
 
 
 def _build_messages(req: RunRequest) -> list[dict]:
@@ -149,9 +169,12 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     messages = _build_messages(req)
     tool_client = ToolClient.from_request(req.user_token)
     tools = await tool_client.list_tools()
+    logger.info("run %s: history=%d turns, tools=%d",
+                req.run_id, len(req.history or []), len(tools))
 
     usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0}
     tool_calls_log: list[dict] = []
+    citations: list[dict] = []
     content_parts: list[str] = []
 
     try:
@@ -184,6 +207,8 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
                     outcome = await tool_client.invoke(call["name"], call["arguments"])
                     tool_calls_log.append({"name": call["name"], "arguments": call["arguments"],
                                            "ok": outcome.ok})
+                    citations.extend(c for c in _citations_from_tool(call["name"], outcome)
+                                     if c["docId"] not in {x["docId"] for x in citations})
                     yield SseEvent(seq=seq, type="tool.result",
                                    data={"name": call["name"], "ok": outcome.ok,
                                          "summary": outcome.summary()})
@@ -240,7 +265,7 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     yield SseEvent(
         seq=seq,
         type="message.completed",
-        data={"content": final_content, "citations": [], "tool_calls": tool_calls_log, "usage": usage},
+        data={"content": final_content, "citations": citations, "tool_calls": tool_calls_log, "usage": usage},
     )
     seq += 1
     yield SseEvent(seq=seq, type="run.completed", data={"status": "SUCCEEDED", "usage": usage})
