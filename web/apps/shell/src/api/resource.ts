@@ -55,6 +55,7 @@ export interface SysUser {
   status: string
   tenantId: number
   createdAt?: string
+  roles?: string[]
   [key: string]: unknown
 }
 
@@ -89,6 +90,73 @@ export function listRoles(): Promise<SysRole[]> {
 
 export function listPermissions(): Promise<SysPermission[]> {
   return http.get('/admin/permissions').then((r) => unwrap<SysPermission[]>(r))
+}
+
+export function assignUserRoles(userId: number, roleIds: number[]): Promise<{ userId: number; roles: string[] }> {
+  return http.put(`/admin/users/${userId}/roles`, { roleIds }).then((r) => unwrap<{ userId: number; roles: string[] }>(r))
+}
+
+export function changeUserStatus(userId: number, status: 'ENABLED' | 'DISABLED'): Promise<{ userId: number; status: string }> {
+  return http.put(`/admin/users/${userId}/status`, { status }).then((r) => unwrap<{ userId: number; status: string }>(r))
+}
+
+// ---------- 功能管理（应用/模块） ----------
+
+export interface AppItem {
+  id: number
+  appCode: string
+  name: string
+  entryUrl: string
+  hostType: string
+  enabled: boolean
+  visibleScope: string
+  sort: number
+  [key: string]: unknown
+}
+
+export function listAllApps(): Promise<AppItem[]> {
+  return http.get('/admin/apps').then((r) => unwrap<AppItem[]>(r))
+}
+
+export function updateApp(
+  code: string,
+  body: { enabled?: boolean; visibleScope?: 'ALL' | 'ADMIN'; name?: string; sort?: number },
+): Promise<AppItem> {
+  return http.put(`/admin/apps/${code}`, body).then((r) => unwrap<AppItem>(r))
+}
+
+// ---------- 模型管理 ----------
+
+export interface ModelItem {
+  id: number
+  providerKey: string
+  name: string
+  baseUrl: string
+  modelName: string
+  apiKeyEnv: string
+  enabled: boolean
+  isDefault: boolean
+  sort: number
+  [key: string]: unknown
+}
+
+export function listModels(): Promise<ModelItem[]> {
+  return http.get('/admin/models').then((r) => unwrap<ModelItem[]>(r))
+}
+
+export function saveModel(body: Partial<ModelItem>): Promise<ModelItem> {
+  if (body.id) {
+    return http.put(`/admin/models/${body.providerKey}`, body).then((r) => unwrap<ModelItem>(r))
+  }
+  return http.post('/admin/models', body).then((r) => unwrap<ModelItem>(r))
+}
+
+export function deleteModel(key: string): Promise<unknown> {
+  return http.delete(`/admin/models/${key}`).then((r) => unwrap(r))
+}
+
+export function setDefaultModel(key: string): Promise<unknown> {
+  return http.put(`/admin/models/${key}/default`, {}).then((r) => unwrap(r))
 }
 
 export interface QuotaView {

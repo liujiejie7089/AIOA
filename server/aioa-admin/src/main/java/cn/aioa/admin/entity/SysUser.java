@@ -36,6 +36,18 @@ public class SysUser {
     @TableLogic
     private LocalDateTime deletedAt;
 
+    /** 当前角色码（非表字段，管理端用户列表展示用） */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private java.util.List<String> roles;
+
+    public java.util.List<String> getRoles() {
+        return roles;
+    }
+
+    public void setRoles(java.util.List<String> roles) {
+        this.roles = roles;
+    }
+
     public Long getId() {
         return id;
     }

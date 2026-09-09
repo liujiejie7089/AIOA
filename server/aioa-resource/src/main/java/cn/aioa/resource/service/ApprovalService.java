@@ -2,7 +2,9 @@ package cn.aioa.resource.service;
 
 import cn.aioa.common.exception.BizException;
 import cn.aioa.resource.entity.ApprovalOrder;
+import cn.aioa.resource.entity.UserResult;
 import cn.aioa.resource.mapper.ApprovalOrderMapper;
+import cn.aioa.resource.mapper.UserResultMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,14 +27,17 @@ import java.util.List;
 public class ApprovalService {
 
     private final ApprovalOrderMapper approvalMapper;
+    private final UserResultMapper resultMapper;
     private final ActivityLogService activityLogService;
     private final NotificationService notificationService;
 
-    public record SubmitReq(String bizType, String title, String content, String runId, Long conversationId) {
+    public record SubmitReq(String bizType, String title, String content, String runId,
+                            Long conversationId, Long resultId) {
     }
 
     public ApprovalOrder submit(Long tenantId, Long userId, String nickname,
-                                 String bizType, String title, String content, String runId, Long conversationId) {
+                                 String bizType, String title, String content, String runId, Long conversationId,
+                                 Long resultId) {
         ApprovalOrder order = new ApprovalOrder();
         order.setTenantId(tenantId == null ? 0L : tenantId);
         order.setUserId(userId == null ? 0L : userId);
@@ -41,6 +46,7 @@ public class ApprovalService {
         order.setContent(content);
         order.setRunId(runId);
         order.setConversationId(conversationId);
+        order.setResultId(resultId);
         order.setStatus(ApprovalOrder.STATUS_PENDING);
         order.setCreatedAt(LocalDateTime.now());
         order.setCreatedBy(userId);
@@ -91,6 +97,9 @@ public class ApprovalService {
         order.setUpdatedAt(LocalDateTime.now());
         approvalMapper.updateById(order);
 
+        // 成果类审批：状态回写——通过→APPROVED；驳回→退回 DRAFT（可修改后重新发起）
+        syncResultStatus(order, approve);
+
         String logLabel = approve ? "已通过" : "已驳回";
         activityLogService.record(tenantId, userId, "审批" + order.getBizType() + "（" + order.getTitle() + "）",
                 approve ? "ok" : "fail", logLabel);
@@ -103,5 +112,26 @@ public class ApprovalService {
                         + (note == null || note.isBlank() ? "" : "，意见：" + note),
                 order.getId());
         return order;
+    }
+
+    /** bizType=RESULT 时按 result_id 回写成果状态（缺失或类型不符则静默跳过，不影响审批主流程）。 */
+    private void syncResultStatus(ApprovalOrder order, boolean approve) {
+        try {
+            if (!"RESULT".equalsIgnoreCase(order.getBizType()) || order.getResultId() == null) {
+                return;
+            }
+            UserResult result = resultMapper.selectById(order.getResultId());
+            if (result == null) {
+                log.warn("approval {} links missing result {}", order.getId(), order.getResultId());
+                return;
+            }
+            UserResult patch = new UserResult();
+            patch.setId(result.getId());
+            patch.setStatus(approve ? UserResult.STATUS_APPROVED : UserResult.STATUS_DRAFT);
+            patch.setUpdatedAt(LocalDateTime.now());
+            resultMapper.updateById(patch);
+        } catch (Exception e) {
+            log.warn("sync result status failed for approval {}: {}", order.getId(), e.getMessage());
+        }
     }
 }

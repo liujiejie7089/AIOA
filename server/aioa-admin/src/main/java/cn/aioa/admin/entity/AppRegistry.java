@@ -35,6 +35,9 @@ public class AppRegistry {
 
     private Boolean enabled;
 
+    /** 可见范围：ALL 所有人 / ADMIN 仅租户管理员 */
+    private String visibleScope;
+
     private Integer sort;
 
     @TableLogic
@@ -118,6 +121,14 @@ public class AppRegistry {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getVisibleScope() {
+        return visibleScope;
+    }
+
+    public void setVisibleScope(String visibleScope) {
+        this.visibleScope = visibleScope;
     }
 
     public Integer getSort() {

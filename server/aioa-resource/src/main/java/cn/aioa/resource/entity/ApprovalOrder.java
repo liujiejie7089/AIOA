@@ -32,6 +32,9 @@ public class ApprovalOrder {
 
     private Long conversationId;
 
+    /** 关联成果ID（bizType=RESULT 时审批结果回写成果状态） */
+    private Long resultId;
+
     private String bizType;
 
     private String title;

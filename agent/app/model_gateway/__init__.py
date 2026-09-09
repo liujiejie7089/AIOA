@@ -87,20 +87,58 @@ class GatewayError(RuntimeError):
     """网关解析失败（未知且无法回退）。"""
 
 
+# 管理端下发的运行期覆盖：禁用集合与默认模型（V13 模型管理热加载）
+_DISABLED_KEYS: set[str] = set()
+_DEFAULT_OVERRIDE: str | None = None
+
+
+def apply_overrides(entries: list[dict], default_key: str | None = None) -> int:
+    """应用管理端「模型管理」下发的配置：更新/新增/禁用 provider，调整默认模型。
+
+    entries: [{key, baseUrl, model, apiKeyEnv, enabled, isDefault}]
+    返回应用的条数。管理端保存后调用，变更即时生效（无需重启 agent）。
+    """
+    global _DEFAULT_OVERRIDE
+    applied = 0
+    for entry in entries or []:
+        key = str(entry.get("key") or "").strip().lower()
+        if not key:
+            continue
+        if entry.get("enabled") is False:
+            _DISABLED_KEYS.add(key)
+            applied += 1
+            continue
+        _DISABLED_KEYS.discard(key)
+        base_url = str(entry.get("baseUrl") or "").strip()
+        if base_url and base_url != "internal://echo" or key == "echo":
+            _REGISTRY_SPEC[key] = {
+                "base_url": base_url or _REGISTRY_SPEC.get(key, {}).get("base_url", "internal://echo"),
+                "model": str(entry.get("model") or _REGISTRY_SPEC.get(key, {}).get("model", key)),
+                "api_key_env": str(entry.get("apiKeyEnv") or _REGISTRY_SPEC.get(key, {}).get("api_key_env", f"{key.upper()}_API_KEY")),
+            }
+        if entry.get("isDefault"):
+            _DEFAULT_OVERRIDE = key
+        applied += 1
+    if default_key:
+        _DEFAULT_OVERRIDE = str(default_key).strip().lower()
+    logger.info("model overrides applied: %d entries, default=%s", applied, _DEFAULT_OVERRIDE or "unset")
+    return applied
+
+
 def resolve(model_ref: str | None = None) -> Provider:
-    """按 model_ref 解析 provider；未指定时走 MODEL_DEFAULT，必要时降级 echo。"""
-    default_key = (settings.model_default or "echo").strip().lower()
+    """按 model_ref 解析 provider；未指定时走默认，必要时降级 echo。"""
+    default_key = (_DEFAULT_OVERRIDE or settings.model_default or "echo").strip().lower()
     ref = (model_ref or "").strip().lower()
     explicit = bool(ref)
 
-    if ref and ref not in _REGISTRY_SPEC:
-        logger.warning("unknown model_ref '%s', fallback to default '%s'", ref, default_key)
+    if ref and (ref not in _REGISTRY_SPEC or ref in _DISABLED_KEYS):
+        logger.warning("unknown/disabled model_ref '%s', fallback to default '%s'", ref, default_key)
         ref = default_key
         explicit = False
-    if not ref:
+    if not ref or ref in _DISABLED_KEYS:
         ref = default_key
-    if ref not in _REGISTRY_SPEC:
-        logger.warning("MODEL_DEFAULT '%s' is not a registered provider, fallback to echo", ref)
+    if ref not in _REGISTRY_SPEC or ref in _DISABLED_KEYS:
+        logger.warning("default '%s' unavailable, fallback to echo", ref)
         ref = "echo"
 
     provider = _build_provider(ref)

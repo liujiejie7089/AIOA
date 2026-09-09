@@ -60,6 +60,19 @@ async def create_run(req: RunRequest, request: Request) -> StreamingResponse:
     )
 
 
+@app.post("/internal/v1/models/apply")
+async def apply_models(payload: dict, request: Request) -> dict:
+    """管理端「模型管理」配置热加载：{models:[{key,baseUrl,model,apiKeyEnv,enabled,isDefault}], default}。
+
+    与 /internal/v1/runs 同为内网直信端点（M1）；管理端保存模型配置后调用，变更即时生效。
+    """
+    from app.model_gateway import apply_overrides, configured_providers
+
+    applied = apply_overrides(payload.get("models") or [], payload.get("default"))
+    logger.info("model config applied via admin push (%d entries)", applied)
+    return {"applied": applied, "providers": configured_providers()}
+
+
 @app.exception_handler(RequestValidationError)
 async def on_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.warning("bad request %s: %s", request.url.path, json.dumps(exc.errors(), ensure_ascii=False, default=str))

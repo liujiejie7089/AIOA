@@ -49,8 +49,9 @@ public class SecurityConfig {
                                            ServiceTokenProvider serviceTokenProvider,
                                            ObjectMapper objectMapper,
                                            AuthenticationEntryPoint authenticationEntryPoint,
-                                           AccessDeniedHandler accessDeniedHandler) throws Exception {
-        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtTokenProvider);
+                                           AccessDeniedHandler accessDeniedHandler,
+                                           org.springframework.beans.factory.ObjectProvider<RoleResolver> roleResolver) throws Exception {
+        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtTokenProvider, roleResolver.getIfAvailable());
         ServiceTokenFilter serviceTokenFilter = new ServiceTokenFilter(serviceTokenProvider, objectMapper);
 
         return http

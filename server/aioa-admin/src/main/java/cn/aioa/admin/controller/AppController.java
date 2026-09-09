@@ -30,6 +30,9 @@ public class AppController {
 
     @GetMapping
     public ApiResponse<List<AppItem>> list() {
-        return ApiResponse.ok(appService.enabledApps().stream().map(AppItem::from).toList());
+        // 可见范围过滤：ADMIN-only 的功能模块对普通用户隐藏（角色取当前登录态）
+        List<String> roles = java.util.Optional.ofNullable(cn.aioa.security.AuthUserContext.get())
+                .map(cn.aioa.security.AuthUser::getRoles).orElse(java.util.List.of());
+        return ApiResponse.ok(appService.enabledAppsFor(roles).stream().map(AppItem::from).toList());
     }
 }

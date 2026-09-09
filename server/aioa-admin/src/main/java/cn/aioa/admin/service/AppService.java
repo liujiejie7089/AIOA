@@ -25,6 +25,19 @@ public class AppService {
                 .orderByAsc(AppRegistry::getSort));
     }
 
+    /** 按用户角色过滤的可见应用：ADMIN-only 应用仅对持有 ROLE_ADMIN 的用户可见。 */
+    public List<AppRegistry> enabledAppsFor(List<String> roles) {
+        boolean isAdmin = roles != null && roles.contains("ROLE_ADMIN");
+        return enabledApps().stream()
+                .filter(a -> isAdmin || !"ADMIN".equals(a.getVisibleScope()))
+                .toList();
+    }
+
+    public List<AppRegistry> allApps() {
+        return appRegistryMapper.selectList(new LambdaQueryWrapper<AppRegistry>()
+                .orderByAsc(AppRegistry::getSort));
+    }
+
     public AppRegistry byCode(String appCode) {
         return appRegistryMapper.selectOne(new LambdaQueryWrapper<AppRegistry>()
                 .eq(AppRegistry::getAppCode, appCode));

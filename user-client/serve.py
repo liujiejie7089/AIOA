@@ -69,6 +69,18 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def do_PUT(self):
+        if self.path.startswith("/api/"):
+            self._proxy("PUT")
+        else:
+            self.send_error(404)
+
+    def do_PATCH(self):
+        if self.path.startswith("/api/"):
+            self._proxy("PATCH")
+        else:
+            self.send_error(404)
+
     def do_DELETE(self):
         if self.path.startswith("/api/"):
             self._proxy("DELETE")
@@ -143,7 +155,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Authorization,Content-Type,Last-Event-ID")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 
     # ---------- 静态资源 ----------
     def end_headers(self):

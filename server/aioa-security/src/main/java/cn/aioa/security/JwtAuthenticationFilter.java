@@ -28,6 +28,12 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
+    /** 可选：实时角色解析（角色变更即时生效）；为 null 时退回 JWT 内快照角色。 */
+    private final RoleResolver roleResolver;
+
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
+        this(tokenProvider, null);
+    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -46,6 +52,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String type = claims.get(JwtTokenProvider.CLAIM_TYPE, String.class);
                 if (JwtTokenProvider.TYPE_ACCESS.equals(type)) {
                     AuthUser user = tokenProvider.toAuthUser(claims);
+                    // 角色即时生效：优先取数据库实时角色，异常时退回 JWT 快照
+                    if (roleResolver != null && user.getUserId() != null) {
+                        try {
+                            List<String> live = roleResolver.rolesOf(user.getUserId());
+                            if (live == null) {
+                                // 用户不存在/已停用：拒绝本次认证
+                                SecurityContextHolder.clearContext();
+                                chain.doFilter(request, response);
+                                return;
+                            }
+                            user.setRoles(live);
+                        } catch (Exception ignore) {
+                            // 角色解析失败不影响认证（保持 JWT 快照角色）
+                        }
+                    }
                     List<GrantedAuthority> authorities = new ArrayList<>();
                     for (String role : user.getRoles()) {
                         authorities.add(new SimpleGrantedAuthority(role));

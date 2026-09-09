@@ -46,3 +46,21 @@
   ② token 字段是 `accessToken`，按 `token` 取会得空串，同样误判为认证失败。
 - 探测端口不要接 `| head -20`：MySQL 的 ESTABLISHED 行会占满前 20 行，把目标端口行挤掉（曾据此误判 5181 未启动）。
   用 `netstat -ano | grep LISTENING | grep ":<port> "` 精确过滤。
+
+## V1.2 原型改造（2026-09-09）
+- 依据 `AIOA客户端小程序交互原型_V1.2.html`，用户端 H5 完全重做；演示数据全部下沉到后端实体 + 管理端配置页。
+- 新增数据域（V10 迁移）：`biz_kpi`(指标卡) / `biz_kpi_trend`(趋势柱) / `biz_kpi_insight`(AI解读) / `agent_worker`(数字员工) / `user_result`(成果沉淀)。
+  接口：用户端 `KpiController(/api/v1/kpi/board?period=month|quarter)`、`WorkerController`、`ResultController`；
+  管理端 `/api/v1/admin/kpi/**`、`/api/v1/admin/workers`、`/api/v1/admin/results`。
+- 管理端三页：`web/apps/shell/src/views/{KpiView,WorkersView,ResultsView}.vue`，路由 `/kpi` `/workers` `/results`，菜单在 `MainLayout.vue`。
+
+## 关键坑（V1.2 新增）
+- **Flyway 版本号必须先看目录最大版本**：已有 V8/V9 时新建 V8 会 `Found more than one migration with version 8`，后端直接起不来。新增前先 `ls db/migration`。
+- **接口返回结构不统一，前端必须防御式解包**：`notifications` 返回 `{items,unread}` 不是数组，直接 `.slice()` 抛 TypeError 会**中断整个 renderAll，导致后续所有区块空白**（曾致 U09–U14 全 FAIL）。
+  统一用 `asArray(v)` 兼容 数组 / `{list}` / `{items}` / `{records}` / `{data}` / `{rows}`；`renderAll` 每块 try/catch 隔离。
+- **沙箱会回收子进程**：`nohup ... &` / `start-all.sh &` 起的后端在 tool call 结束后被杀（表现为后续 8080 ConnectError）。
+  长驻服务必须用 `run_in_background=true` 的常驻任务启动。
+- **httpx 必须 `trust_env=False`**，否则走系统代理 → ConnectError / 非预期 HTML 导致 JSON 解析失败。
+- **手机壳 Tab 栏遮挡**：Tab 绝对定位高 76px，普通页靠 `.page{padding-bottom:96px}` 避让，但 flush 页（如 `#page-chat` padding:0）需单独加 `padding-bottom:76px`，否则输入框被遮、Playwright 报 `intercepts pointer events`。
+- 成果列表接口**不含 body**（防大字段），详情走 `GET /api/v1/results/{id}`；e2e 要 `wait_for_function` 等正文落地。
+- 管理端鉴权统一 `requireAdmin()` + `BizException.forbidden` → 403；跨租户校验 `tenantId` 不等 → `BizException.notFound`。

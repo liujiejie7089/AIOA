@@ -30,7 +30,8 @@ public class ApprovalController {
 
     private final ApprovalService approvalService;
 
-    public record SubmitBody(String bizType, String title, String content, String runId, Long conversationId) {
+    public record SubmitBody(String bizType, String title, String content, String runId,
+                             Long conversationId, Long resultId) {
     }
 
     public record DecisionBody(String decision, String note) {
@@ -56,8 +57,9 @@ public class ApprovalController {
         String content = body == null ? null : body.content();
         String runId = body == null ? null : body.runId();
         Long convId = body == null ? null : body.conversationId();
+        Long resultId = body == null ? null : body.resultId();
         ApprovalOrder order = approvalService.submit(user.getTenantId(), user.getUserId(),
-                user.getNickname(), bizType, title, content, runId, convId);
+                user.getNickname(), bizType, title, content, runId, convId, resultId);
         return ApiResponse.ok(ApprovalView.from(order, user.getUserId()));
     }
 

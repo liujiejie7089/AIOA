@@ -166,6 +166,13 @@ public class RunService {
         if (!Objects.equals(run.getUserId(), user.getUserId())) {
             throw BizException.forbidden("无权访问该运行");
         }
+        // 幂等恢复：run 已终结时直接回放缓存帧，不再次触发 Agent 推理，
+        // 避免刷新/重进会话后重复回答、重复落库与重复计费
+        if (AgentRun.STATUS_SUCCEEDED.equals(run.getStatus())
+                || AgentRun.STATUS_FAILED.equals(run.getStatus())
+                || AgentRun.STATUS_CANCELLED.equals(run.getStatus())) {
+            return replay(run, lastEventId);
+        }
         ChatMessage userMessage = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getRunId, runId)
                 .eq(ChatMessage::getRole, ChatMessage.ROLE_USER)
@@ -240,6 +247,45 @@ public class RunService {
             markFailed(run, e.getMessage());
             safeSend(emitter, EVENT_ERROR, lastId.get(), errorJson(e));
             cleanup.run();
+            emitter.completeWithError(e);
+        }
+        return emitter;
+    }
+
+    /**
+     * 已终结 run 的事件回放：SUCCEEDED 回放已落库回答 + run.completed；
+     * FAILED/CANCELLED 回放失败原因。供刷新/重进会话时的断线恢复，不触发新推理。
+     */
+    private SseEmitter replay(AgentRun run, String lastEventId) {
+        SseEmitter emitter = new SseEmitter(0L);
+        try {
+            if (AgentRun.STATUS_SUCCEEDED.equals(run.getStatus())) {
+                ChatMessage answer = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                        .eq(ChatMessage::getRunId, run.getRunId())
+                        .eq(ChatMessage::getRole, ChatMessage.ROLE_ASSISTANT)
+                        .eq(ChatMessage::getStatus, ChatMessage.STATUS_OK)
+                        .orderByAsc(ChatMessage::getId)
+                        .last("limit 1"));
+                if (answer != null) {
+                    Map<String, Object> payload = new java.util.LinkedHashMap<>();
+                    payload.put("content", answer.getContent());
+                    payload.put("citations", answer.getCitations() == null ? List.of() : answer.getCitations());
+                    payload.put("tool_calls", answer.getToolCalls() == null ? List.of() : answer.getToolCalls());
+                    payload.put("usage", Map.of(
+                            "prompt_tokens", run.getTokensIn() == null ? 0 : run.getTokensIn(),
+                            "completion_tokens", run.getTokensOut() == null ? 0 : run.getTokensOut()));
+                    emitter.send(SseEmitter.event().id(lastEventId)
+                            .name(EVENT_MESSAGE_COMPLETED).data(objectMapper.writeValueAsString(payload)));
+                }
+                emitter.send(SseEmitter.event().id(lastEventId).name(EVENT_RUN_COMPLETED)
+                        .data(objectMapper.writeValueAsString(Map.of("status", "SUCCEEDED"))));
+            } else {
+                emitter.send(SseEmitter.event().id(lastEventId).name(EVENT_RUN_FAILED)
+                        .data(objectMapper.writeValueAsString(Map.of(
+                                "reason", run.getError() == null ? "run " + run.getStatus() : run.getError()))));
+            }
+            emitter.complete();
+        } catch (Exception e) {
             emitter.completeWithError(e);
         }
         return emitter;
@@ -433,6 +479,15 @@ public class RunService {
                         Usage usage) {
         LocalDateTime endedAt = LocalDateTime.now();
         if (content != null && !content.isBlank()) {
+            // 幂等：同一 run 只落一条回答（并发双订阅时后到者跳过，避免重复消息与重复计数）
+            Long existing = messageMapper.selectCount(new LambdaQueryWrapper<ChatMessage>()
+                    .eq(ChatMessage::getRunId, run.getRunId())
+                    .eq(ChatMessage::getRole, ChatMessage.ROLE_ASSISTANT)
+                    .eq(ChatMessage::getStatus, ChatMessage.STATUS_OK));
+            if (existing != null && existing > 0) {
+                log.info("run {} already has assistant message, skip duplicate persist", run.getRunId());
+                return;
+            }
             ChatMessage message = new ChatMessage();
             message.setTenantId(run.getTenantId());
             message.setConversationId(run.getConversationId());
