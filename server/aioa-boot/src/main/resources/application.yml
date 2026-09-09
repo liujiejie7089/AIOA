@@ -33,8 +33,9 @@ spring:
     time-zone: Asia/Shanghai
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      # 知识库上传上限 50MB（FR-F1）
+      max-file-size: 50MB
+      max-request-size: 50MB
   mvc:
     async:
       # SSE 长连接，超时由心跳保活（SseEmitter(0) 不超时）

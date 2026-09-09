@@ -35,6 +35,21 @@ public class KbDocument {
 
     private Long sizeBytes;
 
+    /** 资料正文：上传时携带，切片后入库，供检索与引用溯源使用。 */
+    private String content;
+
+    /** 可见范围：PERSONAL 个人 / TENANT 租户共享。 */
+    private String scope;
+
+    /** 切片数量（入库成功后回填）。 */
+    private Integer chunkCount;
+
+    /** 入库失败原因（state=FAILED 时有值，前端可展示并支持重试）。 */
+    private String errorMsg;
+
+    /** 入库完成时间。 */
+    private LocalDateTime indexedAt;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

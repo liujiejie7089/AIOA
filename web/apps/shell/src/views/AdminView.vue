@@ -121,7 +121,7 @@
               <el-select
                 :model-value="row.visibleScope || 'ALL'"
                 size="small"
-                @change="(v: string) => saveApp(row, { visibleScope: v })"
+                @change="(v: 'ALL' | 'ADMIN') => saveApp(row, { visibleScope: v })"
               >
                 <el-option label="所有人" value="ALL" />
                 <el-option label="仅管理员" value="ADMIN" />

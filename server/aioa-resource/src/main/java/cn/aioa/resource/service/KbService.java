@@ -1,28 +1,66 @@
 package cn.aioa.resource.service;
 
+import cn.aioa.common.exception.BizException;
+import cn.aioa.resource.entity.KbChunk;
 import cn.aioa.resource.entity.KbDocument;
+import cn.aioa.resource.mapper.KbChunkMapper;
 import cn.aioa.resource.mapper.KbDocumentMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 知识库资料。M1 只做登记与状态流转（WAIT → OK），真正的解析入库由 agent 侧异步完成。
+ * 知识库资料（FR-F）：上传入库 → 切片 → 检索 → 引用溯源。
+ * state 三态：WAIT 解析中 / OK 已入库 / FAILED 失败（可重试）。
+ * 检索命中返回原文片段，经工具网关回传 agent，落 message.completed.citations（FR-D5）。
  */
 @Service
 @RequiredArgsConstructor
 public class KbService {
 
-    private final KbDocumentMapper kbDocumentMapper;
+    /** 单个切片的最大字符数，超长按此长度二次切分。 */
+    private static final int CHUNK_SIZE = 500;
 
+    /** 可见范围：个人（仅本人可见）。 */
+    public static final String SCOPE_PERSONAL = "PERSONAL";
+    /** 可见范围：租户共享（同租户全员可见、可被全员检索）。 */
+    public static final String SCOPE_TENANT = "TENANT";
+
+    private final KbDocumentMapper kbDocumentMapper;
+    private final KbChunkMapper kbChunkMapper;
+
+    /** 检索命中：文档 + 原文片段，供引用溯源展示。 */
+    public record KbHit(Long docId, String docName, String snippet, Integer chunkIndex) {
+    }
+
+    /**
+     * 当前用户可见的资料：本人资料 + 公共资源（user_id=0）+ 本租户共享（scope=TENANT）。
+     * 跨租户数据零泄露（FR-B3）。
+     */
     public List<KbDocument> list(Long tenantId, Long userId) {
+        long tid = tenantId == null ? 0L : tenantId;
+        long uid = userId == null ? 0L : userId;
         return kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
-                .eq(KbDocument::getTenantId, tenantId == null ? 0L : tenantId)
-                .in(KbDocument::getUserId, BillingService.scopeUsers(userId))
+                .eq(KbDocument::getTenantId, tid)
+                .and(w -> w.eq(KbDocument::getUserId, uid)
+                        .or().eq(KbDocument::getUserId, 0L)
+                        .or().eq(KbDocument::getScope, SCOPE_TENANT))
                 .orderByDesc(KbDocument::getCreatedAt));
+    }
+
+    /** 当前用户可见的资料 ID 集合（检索与切片过滤共用）。 */
+    private List<Long> visibleDocIds(Long tenantId, Long userId) {
+        return list(tenantId, userId).stream().map(KbDocument::getId).toList();
+    }
+
+    /** 按主键读取一条资料（控制器做权限校验前先拿到实体）。 */
+    public KbDocument findOne(Long docId) {
+        if (docId == null) return null;
+        return kbDocumentMapper.selectById(docId);
     }
 
     /** 管理端运营视角：租户内全部资料（不按归属人过滤），调用方需校验 ROLE_ADMIN。 */
@@ -32,49 +70,189 @@ public class KbService {
                 .orderByDesc(KbDocument::getCreatedAt));
     }
 
-    /**
-     * 关键词检索（智能体工具）：个人 + 本租户共享范围内按文档名模糊匹配。
-     * M1 资料只登记元数据，检索维度为文档名；M4 向量化后升级为语义检索。
-     */
-    public List<KbDocument> search(Long tenantId, List<Long> scopeUsers, String keyword, int limit) {
-        return kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
-                .eq(KbDocument::getTenantId, tenantId == null ? 0L : tenantId)
-                .in(KbDocument::getUserId, scopeUsers)
-                .like(KbDocument::getDocName, keyword)
-                .orderByDesc(KbDocument::getCreatedAt)
-                .last("limit " + Math.max(1, limit)));
+    /** 带原文片段的检索结果，供工具网关 citations 与用户端检索测试使用。 */
+    public List<KbHit> searchHits(Long tenantId, Long userId, String keyword, int limit) {
+        long tid = tenantId == null ? 0L : tenantId;
+        int max = Math.max(1, limit);
+        List<KbHit> hits = new ArrayList<>();
+        List<Long> docIds = visibleDocIds(tid, userId);
+        if (docIds.isEmpty()) {
+            return hits;
+        }
+        List<KbChunk> chunks = kbChunkMapper.selectList(new LambdaQueryWrapper<KbChunk>()
+                .eq(KbChunk::getTenantId, tid)
+                .in(KbChunk::getDocId, docIds)
+                .like(KbChunk::getContent, keyword)
+                .orderByAsc(KbChunk::getId)
+                .last("limit " + max));
+        for (KbChunk c : chunks) {
+            KbDocument doc = kbDocumentMapper.selectById(c.getDocId());
+            if (doc == null) {
+                continue;
+            }
+            hits.add(new KbHit(doc.getId(), doc.getDocName(), c.getContent(), c.getChunkIndex()));
+        }
+        if (hits.isEmpty()) {
+            // 无正文切片（如只登记元信息的旧数据）时退回按文档名匹配
+            for (KbDocument d : kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                    .eq(KbDocument::getTenantId, tid)
+                    .in(KbDocument::getId, docIds)
+                    .like(KbDocument::getDocName, keyword)
+                    .last("limit " + max))) {
+                hits.add(new KbHit(d.getId(), d.getDocName(), null, null));
+            }
+        }
+        return hits;
     }
 
-    /** 登记一份资料，初始状态「解析中」，并写一条操作记录。 */
-    public KbDocument register(Long tenantId, Long userId, String docName, String icon, Long sizeBytes) {
+    /**
+     * 登记并入库一份资料：携带正文则同步切片入库并置 OK；无正文置 WAIT 等待异步解析。
+     * 切片异常置 FAILED 并记录原因，用户端可重试。
+     */
+    public KbDocument register(Long tenantId, Long userId, String docName, String icon,
+                               Long sizeBytes, String content, String scope) {
         KbDocument doc = new KbDocument();
         doc.setTenantId(tenantId == null ? 0L : tenantId);
         doc.setUserId(userId == null ? 0L : userId);
         doc.setDocName(docName);
         doc.setIcon(icon == null || icon.isBlank() ? guessIcon(docName) : icon);
         doc.setState(KbDocument.STATE_WAIT);
-        doc.setSizeBytes(sizeBytes);
+        doc.setSizeBytes(sizeBytes == null
+                ? (long) (content == null ? 0 : content.getBytes().length) : sizeBytes);
+        doc.setContent(content);
+        doc.setScope(normalizeScope(scope));
         doc.setCreatedAt(LocalDateTime.now());
         doc.setCreatedBy(userId);
         kbDocumentMapper.insert(doc);
+        if (content != null && !content.isBlank()) {
+            index(doc);
+        }
         return doc;
+    }
+
+    /** 兼容旧签名（仅登记元信息）。 */
+    public KbDocument register(Long tenantId, Long userId, String docName, String icon, Long sizeBytes) {
+        return register(tenantId, userId, docName, icon, sizeBytes, null, null);
+    }
+
+    /** 切片入库：成功置 OK 并回填切片数，失败置 FAILED 并记录原因。 */
+    public KbDocument index(KbDocument doc) {
+        try {
+            List<String> chunks = split(doc.getContent());
+            if (chunks.isEmpty()) {
+                throw new IllegalArgumentException("正文为空，无法入库");
+            }
+            // 重跑入库先清旧切片，避免重复命中
+            kbChunkMapper.delete(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, doc.getId()));
+            int i = 0;
+            for (String c : chunks) {
+                KbChunk chunk = new KbChunk();
+                chunk.setTenantId(doc.getTenantId());
+                chunk.setDocId(doc.getId());
+                chunk.setUserId(doc.getUserId());
+                chunk.setChunkIndex(i++);
+                chunk.setContent(c);
+                chunk.setCreatedAt(LocalDateTime.now());
+                kbChunkMapper.insert(chunk);
+            }
+            doc.setState(KbDocument.STATE_OK);
+            doc.setChunkCount(i);
+            doc.setErrorMsg(null);
+            doc.setIndexedAt(LocalDateTime.now());
+        } catch (Exception e) {
+            doc.setState(KbDocument.STATE_FAILED);
+            doc.setErrorMsg(e.getMessage() == null ? "入库失败" : e.getMessage());
+        }
+        doc.setUpdatedAt(LocalDateTime.now());
+        kbDocumentMapper.updateById(doc);
+        return doc;
+    }
+
+    /** 失败重试：重新切片入库。 */
+    public KbDocument retry(Long docId) {
+        KbDocument doc = kbDocumentMapper.selectById(docId);
+        if (doc == null) {
+            throw BizException.notFound("资料不存在：" + docId);
+        }
+        if (doc.getContent() == null || doc.getContent().isBlank()) {
+            doc.setState(KbDocument.STATE_FAILED);
+            doc.setErrorMsg("资料无正文内容，请重新上传");
+            doc.setUpdatedAt(LocalDateTime.now());
+            kbDocumentMapper.updateById(doc);
+            return doc;
+        }
+        return index(doc);
+    }
+
+    /** 修改资料元信息：重命名与可见范围（PERSONAL / TENANT）。 */
+    public KbDocument update(Long docId, String name, String scope) {
+        KbDocument doc = kbDocumentMapper.selectById(docId);
+        if (doc == null) {
+            throw BizException.notFound("资料不存在：" + docId);
+        }
+        if (name != null && !name.isBlank()) {
+            doc.setDocName(name.trim());
+        }
+        if (scope != null && !scope.isBlank()) {
+            doc.setScope(normalizeScope(scope));
+        }
+        doc.setUpdatedAt(LocalDateTime.now());
+        kbDocumentMapper.updateById(doc);
+        return doc;
+    }
+
+    /** 删除资料（逻辑删除文档与切片）。 */
+    public void remove(Long docId) {
+        kbChunkMapper.delete(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, docId));
+        kbDocumentMapper.deleteById(docId);
+    }
+
+    /** 用户端自助检索测试（FR-F3 配套）：返回原文片段。 */
+    public List<KbHit> searchMine(Long tenantId, Long userId, String keyword, int limit) {
+        return searchHits(tenantId, userId, keyword, limit);
+    }
+
+    /** 按段落切分：先按换行分段，超长段按 CHUNK_SIZE 二次切分。 */
+    static List<String> split(String content) {
+        List<String> out = new ArrayList<>();
+        if (content == null) {
+            return out;
+        }
+        for (String para : content.split("\\r?\\n")) {
+            String p = para.trim();
+            if (p.isEmpty()) {
+                continue;
+            }
+            if (p.length() <= CHUNK_SIZE) {
+                out.add(p);
+            } else {
+                for (int s = 0; s < p.length(); s += CHUNK_SIZE) {
+                    out.add(p.substring(s, Math.min(p.length(), s + CHUNK_SIZE)));
+                }
+            }
+        }
+        return out;
+    }
+
+    private static String normalizeScope(String scope) {
+        return SCOPE_TENANT.equalsIgnoreCase(scope) ? SCOPE_TENANT : SCOPE_PERSONAL;
     }
 
     /** 按文件名后缀猜一个图标，前端可覆盖。 */
     private static String guessIcon(String name) {
         if (name == null) {
-            return "📄";
+            return "doc";
         }
         String lower = name.toLowerCase();
         if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".csv")) {
-            return "📊";
+            return "sheet";
         }
         if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".txt")) {
-            return "📝";
+            return "doc";
         }
         if (lower.endsWith(".pdf")) {
-            return "📄";
+            return "pdf";
         }
-        return "📎";
+        return "file";
     }
 }

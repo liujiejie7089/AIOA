@@ -1,5 +1,6 @@
 package cn.aioa.resource.service;
 
+import cn.aioa.common.exception.BizException;
 import cn.aioa.resource.entity.ApprovalOrder;
 import cn.aioa.resource.entity.KbDocument;
 import cn.aioa.resource.entity.TenantQuota;
@@ -136,21 +137,25 @@ public class ToolGatewayService {
         return row;
     }
 
+    /**
+     * 知识库检索工具：按切片正文匹配，返回命中文档 + 原文片段。
+     * 片段经 agent 回写 message.completed.citations，用户端据此展示引用来源（FR-D5）。
+     */
     private List<Map<String, Object>> searchKb(AuthUser user, Map<String, Object> args) {
         String keyword = String.valueOf(args == null ? null : args.get("keyword"));
         if (keyword == null || keyword.isBlank() || "null".equals(keyword)) {
-            throw new IllegalArgumentException("keyword 不能为空");
+            throw BizException.badRequest("keyword 不能为空");
         }
-        List<Long> scopeUsers = BillingService.scopeUsers(user.getUserId());
-        List<KbDocument> docs = kbService.search(user.getTenantId() == null ? 0L : user.getTenantId(),
-                scopeUsers, keyword, MAX_ROWS);
-        return docs.stream().map(d -> {
+        Long uid = user.getUserId() == null ? 0L : user.getUserId();
+        List<KbService.KbHit> hits = kbService.searchHits(
+                user.getTenantId() == null ? 0L : user.getTenantId(), uid, keyword.trim(), MAX_ROWS);
+        return hits.stream().map(h -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", d.getId());
-            row.put("docName", d.getDocName());
-            row.put("state", d.getState());
-            row.put("sizeBytes", d.getSizeBytes());
-            row.put("createdAt", d.getCreatedAt() == null ? null : d.getCreatedAt().toString());
+            row.put("id", h.docId());
+            row.put("docName", h.docName());
+            row.put("snippet", h.snippet());
+            row.put("chunkIndex", h.chunkIndex());
+            row.put("source", "knowledge_base");
             return row;
         }).toList();
     }

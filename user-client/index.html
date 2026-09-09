@@ -622,7 +622,11 @@
           我的知识库
         </div>
         <div id="kbList"></div>
-        <div style="margin-top:11px"><button class="btn ghost small" onclick="uploadKb()">＋ 上传资料入知识库</button></div>
+        <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn ghost small" onclick="pickKbFile()">＋ 上传文件（PDF/Word/Excel）</button>
+          <button class="btn ghost small" onclick="testKbSearch()">检索测试</button>
+        </div>
+        <input type="file" id="kbFileInput" style="display:none" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv" onchange="onKbFile(event)">
       </div>
 
       <div class="card reveal">
@@ -776,6 +780,16 @@ const API = {
   skills(){  return this.req('/v1/skills'); },
   kbDocs(){  return this.req('/v1/kb/documents'); },
   kbUpload(name, icon, size){ return this.req('/v1/kb/documents',{method:'POST',body:JSON.stringify({name,icon,sizeBytes:size})}); },
+  /* 文件上传（FR-F1）：multipart 直传，由后端解析 PDF/Word/Excel/文本并切片入库 */
+  kbUploadFile(file, scope){
+    const fd = new FormData(); fd.append('file', file);
+    const q = scope ? ('?scope='+encodeURIComponent(scope)) : '';
+    return fetch(this.base+'/v1/kb/documents/upload'+q, {method:'POST', headers:{Authorization:'Bearer '+state.token}, body:fd})
+      .then(r=>r.json().then(d=>{ if(!r.ok || d.code) throw new Error(d.message||('HTTP '+r.status)); return d.data; }));
+  },
+  kbRetry(id){ return this.req('/v1/kb/documents/'+id+'/retry',{method:'POST'}); },
+  kbDelete(id){ return this.req('/v1/kb/documents/'+id,{method:'DELETE'}); },
+  kbSearch(q){ return this.req('/v1/kb/search?q='+encodeURIComponent(q)); },
   quota(){   return this.req('/v1/quota'); },
   ledger(){  return this.req('/v1/ledger?limit=50'); },
   logs(){    return this.req('/v1/logs?limit=50'); },
@@ -1147,14 +1161,54 @@ function renderExperts(){
 function renderKb(){
   const box = $('kbList');
   const list = state.kbDocs||[];
-  if(!list.length){ box.innerHTML = emptyBox('还没有资料，上传后可在会话中被引用'); return; }
-  box.innerHTML = list.slice(0,5).map(d=>{
+  if(!list.length){ box.innerHTML = emptyBox('还没有资料，上传 PDF/Word/Excel 后可在会话中被引用'); return; }
+  box.innerHTML = list.slice(0,6).map(d=>{
     const st = d.state === 'ok' ? ['ok','已入库'] : (d.state === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
-    return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'</span><span class="badge '+st[0]+'">'+st[1]+'</span></div>';
+    const meta = d.chunkCount ? ' · '+d.chunkCount+' 段' : '';
+    const acts = d.state === 'failed'
+      ? '<button class="btn ghost small" onclick="retryKb('+d.id+')">重试</button>'
+      : '';
+    return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'<span class="muted" style="font-size:11px">'+meta+'</span></span>'+
+      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+acts+
+      '<button class="btn ghost small" onclick="delKb('+d.id+')">删除</button></span></div>';
   }).join('');
 }
+/* 文件上传入库（FR-F1/F2）：选择本地 pdf/docx/doc/xlsx/xls/txt，后端解析后切片入库 */
+function pickKbFile(){ const el = $('kbFileInput'); if(el) el.click(); }
+async function onKbFile(e){
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!f) return;
+  try{
+    toast('正在上传并解析…');
+    const d = await API.kbUploadFile(f, 'PERSONAL');
+    state.kbDocs = await API.kbDocs() || []; renderKb();
+    toast(d && d.state === 'ok' ? ('已入库：'+f.name) : ('已上传，状态：'+(d && d.state || 'wait')));
+  }catch(err){ toast('上传失败：'+err.message); }
+}
+async function retryKb(id){
+  try{ await API.kbRetry(id); state.kbDocs = await API.kbDocs() || []; renderKb(); toast('已重新入库'); }
+  catch(e){ toast('重试失败：'+e.message); }
+}
+async function delKb(id){
+  if(!confirm('确定删除该资料？删除后不再参与会话引用。')) return;
+  try{ await API.kbDelete(id); state.kbDocs = await API.kbDocs() || []; renderKb(); toast('已删除并留痕'); }
+  catch(e){ toast('删除失败：'+e.message); }
+}
+/* 检索测试（FR-F3）：验证入库内容可被检索命中并查看原文片段 */
+async function testKbSearch(){
+  const q = prompt('输入检索关键词：');
+  if(!q) return;
+  try{
+    const hits = await API.kbSearch(q) || [];
+    if(!hits.length){ toast('未命中任何资料'); return; }
+    const first = hits[0].snippet ? ('\n\n首条片段：'+hits[0].snippet.slice(0,120)) : '';
+    alert('命中 '+hits.length+' 条：\n'+hits.map(h=>'· '+h.docName).join('\n')+first);
+  }catch(e){ toast('检索失败：'+e.message); }
+}
 async function uploadKb(){
-  const name = prompt('资料名称（支持 PDF/Word/Excel/图片）：');
+  // 兼容旧入口：无文件选择时走名称登记
+  const name = prompt('资料名称（也可点「上传文件」直接选择本地文件）：');
   if(!name) return;
   try{ await API.kbUpload(name, 'doc', 0); toast('已登记，进入解析队列'); state.kbDocs = await API.kbDocs() || []; renderKb(); }
   catch(e){ toast('登记失败：'+e.message); }

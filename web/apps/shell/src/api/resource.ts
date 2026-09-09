@@ -35,6 +35,12 @@ export interface KbDoc {
   sizeBytes: number
   ownerUserId: number
   createdAt: string
+  /** PERSONAL 个人可见 / TENANT 租户共享 */
+  scope?: 'PERSONAL' | 'TENANT' | string
+  /** 切片数量，>0 表示已可被检索 */
+  chunkCount?: number
+  /** 解析失败原因 */
+  errorMsg?: string
 }
 
 /** 不传 scope=我的资料；scope=tenant=租户全部（仅租户管理员） */
@@ -44,6 +50,58 @@ export function listKbDocs(scope?: 'tenant'): Promise<KbDoc[]> {
 
 export function registerKbDoc(name: string, icon?: string, sizeBytes?: number): Promise<KbDoc> {
   return http.post('/kb/documents', { name, icon, sizeBytes }).then((r) => unwrap<KbDoc>(r))
+}
+
+/* ---------- 文件上传入库（pdf/docx/doc/xlsx/xls/txt/md/csv） ---------- */
+
+export const KB_ACCEPT = '.pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv'
+export const KB_MAX_MB = 50
+
+/** 上传文件，后端解析正文后切片入库；scope=PERSONAL（默认）| TENANT */
+export function uploadKbFile(
+  file: File,
+  scope?: 'PERSONAL' | 'TENANT',
+  onProgress?: (percent: number) => void,
+): Promise<KbDoc> {
+  const fd = new FormData()
+  fd.append('file', file)
+  return http
+    .post('/kb/documents/upload', fd, {
+      params: scope ? { scope } : {},
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total))
+      },
+    })
+    .then((r) => unwrap<KbDoc>(r))
+}
+
+/** 解析失败后重试入库 */
+export function retryKbDoc(id: number): Promise<KbDoc> {
+  return http.post(`/kb/documents/${id}/retry`, {}).then((r) => unwrap<KbDoc>(r))
+}
+
+/** 删除资料（连带删除切片） */
+export function deleteKbDoc(id: number): Promise<{ id: number; deleted: boolean }> {
+  return http.delete(`/kb/documents/${id}`).then((r) => unwrap<{ id: number; deleted: boolean }>(r))
+}
+
+/** 重命名 / 切换可见范围 */
+export function updateKbDoc(id: number, body: { name?: string; scope?: 'PERSONAL' | 'TENANT' }): Promise<KbDoc> {
+  return http.put(`/kb/documents/${id}`, body).then((r) => unwrap<KbDoc>(r))
+}
+
+export interface KbHit {
+  docId: number
+  docName: string
+  snippet: string
+  chunkIndex: number
+}
+
+/** 检索测试：返回命中的原文片段 */
+export function searchKb(q: string, limit = 5): Promise<KbHit[]> {
+  return http.get('/kb/search', { params: { q, limit } }).then((r) => unwrap<KbHit[]>(r))
 }
 
 /* ============ 系统管理（aioa-admin AdminController，仅租户管理员） ============ */
