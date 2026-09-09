@@ -23,6 +23,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '审批中心' }
       },
       { path: 'kb', name: 'kb', component: () => import('@/views/KbView.vue'), meta: { title: '知识库' } },
+      {
+        path: 'kpi',
+        name: 'kpi',
+        component: () => import('@/views/KpiView.vue'),
+        meta: { title: '经营数据' }
+      },
+      {
+        path: 'workers',
+        name: 'workers',
+        component: () => import('@/views/WorkersView.vue'),
+        meta: { title: '数字员工' }
+      },
+      {
+        path: 'results',
+        name: 'results',
+        component: () => import('@/views/ResultsView.vue'),
+        meta: { title: '成果沉淀' }
+      },
       { path: 'admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { title: '系统管理' } },
       { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { title: '个人信息' } }
     ]

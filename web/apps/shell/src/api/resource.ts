@@ -114,3 +114,114 @@ export interface HomeStats {
 export function homeStats(): Promise<HomeStats> {
   return http.get('/stats/home').then((r) => unwrap<HomeStats>(r))
 }
+
+/* ============ 经营数据看板（V1.2 · 管理端维护，用户端 /kpi/board 只读） ============ */
+
+export interface KpiMetric {
+  id: number
+  period: string
+  label: string
+  valueText: string
+  deltaText: string
+  up: number
+  compareLabel: string
+  sortNo: number
+}
+
+export function adminListKpiMetrics(period: string): Promise<KpiMetric[]> {
+  return http.get('/admin/kpi/metrics', { params: { period } }).then((r) => unwrap<KpiMetric[]>(r))
+}
+export function adminCreateKpiMetric(body: Partial<KpiMetric>): Promise<KpiMetric> {
+  return http.post('/admin/kpi/metrics', body).then((r) => unwrap<KpiMetric>(r))
+}
+export function adminUpdateKpiMetric(id: number, body: Partial<KpiMetric>): Promise<KpiMetric> {
+  return http.put(`/admin/kpi/metrics/${id}`, body).then((r) => unwrap<KpiMetric>(r))
+}
+export function adminDeleteKpiMetric(id: number): Promise<boolean> {
+  return http.delete(`/admin/kpi/metrics/${id}`).then((r) => unwrap<boolean>(r))
+}
+
+export interface KpiTrendPoint {
+  id: number
+  period: string
+  pointLabel: string
+  numValue: number
+  hot: number
+  sortNo: number
+}
+
+export function adminListKpiTrend(period: string): Promise<KpiTrendPoint[]> {
+  return http.get('/admin/kpi/trend', { params: { period } }).then((r) => unwrap<KpiTrendPoint[]>(r))
+}
+export function adminCreateKpiTrend(body: Partial<KpiTrendPoint>): Promise<KpiTrendPoint> {
+  return http.post('/admin/kpi/trend', body).then((r) => unwrap<KpiTrendPoint>(r))
+}
+export function adminUpdateKpiTrend(id: number, body: Partial<KpiTrendPoint>): Promise<KpiTrendPoint> {
+  return http.put(`/admin/kpi/trend/${id}`, body).then((r) => unwrap<KpiTrendPoint>(r))
+}
+export function adminDeleteKpiTrend(id: number): Promise<boolean> {
+  return http.delete(`/admin/kpi/trend/${id}`).then((r) => unwrap<boolean>(r))
+}
+
+export interface KpiInsight {
+  id?: number
+  period: string
+  content: string
+  sourceText: string
+}
+
+export function adminGetKpiInsight(period: string): Promise<KpiInsight> {
+  return http.get('/admin/kpi/insight', { params: { period } }).then((r) => unwrap<KpiInsight>(r))
+}
+export function adminUpsertKpiInsight(period: string, body: Partial<KpiInsight>): Promise<KpiInsight> {
+  return http.put('/admin/kpi/insight', body, { params: { period } }).then((r) => unwrap<KpiInsight>(r))
+}
+
+/* ============ 数字员工（V1.2 · 管理端维护） ============ */
+
+export interface AgentWorker {
+  id: number
+  name: string
+  icon: string
+  description: string
+  status: string
+  lastOutput: string
+  scheduleText: string
+  enabled: number
+}
+
+export function adminListWorkers(): Promise<AgentWorker[]> {
+  return http.get('/admin/workers').then((r) => unwrap<AgentWorker[]>(r))
+}
+export function adminCreateWorker(body: Partial<AgentWorker>): Promise<AgentWorker> {
+  return http.post('/admin/workers', body).then((r) => unwrap<AgentWorker>(r))
+}
+export function adminUpdateWorker(id: number, body: Partial<AgentWorker>): Promise<AgentWorker> {
+  return http.put(`/admin/workers/${id}`, body).then((r) => unwrap<AgentWorker>(r))
+}
+export function adminToggleWorker(id: number): Promise<AgentWorker> {
+  return http.post(`/admin/workers/${id}/toggle`).then((r) => unwrap<AgentWorker>(r))
+}
+export function adminDeleteWorker(id: number): Promise<boolean> {
+  return http.delete(`/admin/workers/${id}`).then((r) => unwrap<boolean>(r))
+}
+
+/* ============ 成果沉淀（V1.2 · 管理端查看） ============ */
+
+export interface UserResultItem {
+  id: number
+  userId: number
+  title: string
+  icon: string
+  meta: string
+  body: string
+  status: string
+  createdAt: string
+}
+
+export function adminListResults(): Promise<UserResultItem[]> {
+  return http.get('/admin/results').then((r) => unwrap<UserResultItem[]>(r))
+}
+export function adminDeleteResult(id: number): Promise<boolean> {
+  return http.delete(`/admin/results/${id}`).then((r) => unwrap<boolean>(r))
+}

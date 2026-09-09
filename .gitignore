@@ -72,3 +72,14 @@ start-backend.bat
 .smoke_*.py
 .aioa_check.js
 proxy-run*.log
+
+# ---- WorkBuddy 工作区临时产物（截图/调试/文档抽取，不入库）----
+.workbuddy/*.png
+.workbuddy/*.txt
+.workbuddy/doc_*.json
+.workbuddy/p0_*.json
+.workbuddy/p0_*.txt
+.workbuddy/debug_*.py
+.workbuddy/probe_*.py
+.workbuddy/restore_*.py
+.workbuddy/_*.js

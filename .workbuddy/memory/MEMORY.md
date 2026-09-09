@@ -36,3 +36,13 @@
   `CRYPT_E_NO_REVOCATION_CHECK`。解决：用户给 classic PAT(repo)，一次性内联 URL 推：
   `git -c http.sslVerify=false -c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 push "https://<user>:<PAT>@github.com/<repo>.git" main`
   验证远端 `ls-remote` 必须带 `sslVerify=false`，否则报错信息里 URL 会被 git 自动抹凭证。PAT 用完即弃，不持久化。
+
+## 启动与冒烟约定（2026-09-09 复核）
+- 一键启动：`bash start-all.sh`（幂等，按端口探测自动 skip，日志落 `logs/`）。六端端口：
+  后端 :8080 / agent :8000 / 用户端 H5 :5181（**只绑 127.0.0.1**，用 localhost 可能因解析到 ::1 不通，探活用 127.0.0.1）/
+  管理端 shell :5173、工单 :5174、调度 :5175。健康：`/actuator/health`、`/health`。
+- **后端 API 基址是 `/api/v1`**（不是 `/api`）。登录 `POST /api/v1/auth/login` → `data.accessToken`。
+  两个易误诊点：① 少写 `v1` 段时 Security 直接返回 401 "未认证或令牌无效"，看着像密码错，实为路径/未放行；
+  ② token 字段是 `accessToken`，按 `token` 取会得空串，同样误判为认证失败。
+- 探测端口不要接 `| head -20`：MySQL 的 ESTABLISHED 行会占满前 20 行，把目标端口行挤掉（曾据此误判 5181 未启动）。
+  用 `netstat -ano | grep LISTENING | grep ":<port> "` 精确过滤。

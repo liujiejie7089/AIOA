@@ -57,6 +57,18 @@
             <el-icon><Collection /></el-icon>
             <template #title>知识库</template>
           </el-menu-item>
+          <el-menu-item index="/kpi">
+            <el-icon><DataAnalysis /></el-icon>
+            <template #title>经营数据</template>
+          </el-menu-item>
+          <el-menu-item index="/workers">
+            <el-icon><Cpu /></el-icon>
+            <template #title>数字员工</template>
+          </el-menu-item>
+          <el-menu-item index="/results">
+            <el-icon><FolderOpened /></el-icon>
+            <template #title>成果沉淀</template>
+          </el-menu-item>
           <el-menu-item index="/admin">
             <el-icon><Setting /></el-icon>
             <template #title>系统管理</template>

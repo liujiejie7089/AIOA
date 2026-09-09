@@ -1,538 +1,756 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-page-node-id="fey3eD9gsHzUgVgXsaRMjc">
-<head data-page-node-id="XVsgZ3C7FrHHpFx8QrPJi9">
-<meta charset="UTF-8" data-page-node-id="x3bTFtHMgJMg6HU2nXKUP0">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" data-page-node-id="fz8MG2mObbjBZAIvhkypcd">
-<title>AIOA 智能工作台 · 用户端</title>
-
-<!-- 字体：Bricolage Grotesque（拉丁展示字）+ Noto Sans SC（中文正文）+ IBM Plex Mono（词元数字） -->
-<link rel="preconnect" href="https://fonts.googleapis.com" data-page-node-id="iu4Y3pORfTyZO4XNPAV7gR">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-page-node-id="zDGVpRVWRil3wHtzwrq2sM">
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Noto+Sans+SC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" data-page-node-id="uQo5E3U9PbCQ3tuIxAaHf7">
-
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AIOA 智能工作台 · 客户端 V1.2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<!--
+  ============================================================================
+  设计定调（Design Direction）
+    受众：企业内普通员工，移动端 H5（小程序形态，400×820 手机壳）
+    方向：工业实用 Industrial —— 仪表盘密度、等宽数字、发丝边框、状态色体系。
+          放弃 emoji，全部图标为描边 SVG（currentColor），靠信息层级建立专业感。
+    字体：IBM Plex Sans（展示/正文）+ IBM Plex Mono（数值与计量），中文回退
+          PingFang SC / Microsoft YaHei；数值统一 tabular-nums 对齐。
+    配色：品牌蓝 #2f6fed 主导（60%），琥珀 #f59e0b 作唯一强调色（10%），
+          语义绿/红仅作状态；底色冷灰 #f4f6fa，卡片纯白 + 发丝边框。
+    记忆点：① 底部凸起的会话 FAB（主入口）② 首页经营数据看板（等宽数字 + 趋势柱）
+    动效：页面级错峰入场（60ms 递进），仅动 transform/opacity，
+          prefers-reduced-motion 下全部关闭。
+  ============================================================================
+-->
 <style>
-/* ============================================================
-   DESIGN TOKENS — 视觉方向：Refined Civic-Tech（克制政务科技）
-   主色：可信蓝（60%）| 单一强调色：词元琥珀（仅用于计量）
-   ============================================================ */
-:root{
-  /* 色彩 */
-  --blue:#2f6fed; --blue-deep:#1e4fc0; --blue-soft:#eaf1ff; --blue-line:#c9d9fb;
-  --ink:#0d1220; --ink-2:#3d4757; --muted:#6b7486;
-  --bg:#f4f6fa; --card:#ffffff; --border:#e6eaf2;
-  --accent:#e8890c; --accent-soft:#fdf1e3;          /* 词元/额度 唯一强调色 */
-  --green:#12a56b; --green-soft:#e7f7f0;
-  --orange:#f59e0b; --orange-soft:#fef4e6;
-  --red:#e5484d;   --red-soft:#fdecec;
+  /* ---------- 1. 设计令牌 ---------- */
+  :root{
+    --blue:#2f6fed; --blue-dark:#1e4fc0; --blue-soft:#eaf1ff; --blue-line:#c9dcff;
+    --accent:#f59e0b; --accent-soft:#fef4e6; --accent-line:#f7dcae;
+    --green:#0f9d63; --green-soft:#e7f7f0;
+    --red:#d93a3f; --red-soft:#fdecec;
+    --bg:#f4f6fa; --surface:#ffffff; --surface-2:#f8fafd; --surface-3:#eef1f7;
+    --text:#141a26; --text-2:#626c80; --text-3:#98a1b3;
+    --border:#e6eaf2; --border-strong:#d3dbea;
+    --r-sm:8px; --r:12px; --r-lg:18px; --r-full:999px;
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:40px;
+    --sh-1:0 1px 2px rgba(20,26,38,.05);
+    --sh-2:0 8px 24px rgba(20,26,38,.10);
+    --sh-3:0 24px 56px rgba(20,26,38,.18);
+    --ease:cubic-bezier(.16,1,.3,1);
+    --dur-fast:160ms; --dur:320ms; --dur-slow:640ms;
+    --font-display:'IBM Plex Sans','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-body:'IBM Plex Sans','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace;
+  }
 
-  /* 字体 */
-  --font-display:"Bricolage Grotesque","Noto Sans SC",sans-serif;
-  --font-body:"Noto Sans SC",-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-  --font-num:"IBM Plex Mono",ui-monospace,monospace;
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font-body); background:#dde2ec; color:var(--text);
+    display:flex; align-items:center; justify-content:center; padding:20px 0;
+    min-height:100vh; -webkit-font-smoothing:antialiased;
+    font-size:13px; line-height:1.6;
+  }
+  /* 氛围层：极淡径向渐变 + 噪点，替代纯色平铺 */
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(52rem 34rem at 10% -8%, rgba(47,111,237,.20), transparent 60%),
+      radial-gradient(44rem 30rem at 100% 4%, rgba(245,158,11,.12), transparent 58%);
+  }
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:1; opacity:.035;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
 
-  /* 圆角 / 阴影 / 动效 */
-  --r-lg:20px; --r-md:14px; --r-sm:10px; --r-pill:999px;
-  --sh-1:0 1px 2px rgba(13,18,32,.05);
-  --sh-2:0 8px 24px rgba(13,18,32,.07);
-  --sh-3:0 24px 64px rgba(13,18,32,.18);
-  --t-fast:160ms; --t:320ms; --t-slow:640ms;
-  --ease:cubic-bezier(.16,1,.3,1);
-}
+  /* ---------- 2. 手机壳与骨架 ---------- */
+  .phone{
+    position:relative; z-index:2; width:400px; height:820px; background:var(--bg);
+    border-radius:42px; border:10px solid #14181f; overflow:hidden;
+    display:flex; flex-direction:column; box-shadow:var(--sh-3);
+  }
+  .statusbar{
+    height:34px; background:var(--surface); display:flex; align-items:center;
+    justify-content:space-between; padding:0 22px; font-size:11.5px; font-weight:600;
+    font-family:var(--font-mono); flex-shrink:0; color:var(--text);
+  }
+  .statusbar .sig{display:flex;align-items:center;gap:4px}
+  .statusbar .bars{display:flex;align-items:flex-end;gap:1.5px;height:9px}
+  .statusbar .bars i{width:2.5px;background:var(--text);border-radius:.5px}
+  .statusbar .bars i:nth-child(1){height:3px}.statusbar .bars i:nth-child(2){height:5px}
+  .statusbar .bars i:nth-child(3){height:7px}.statusbar .bars i:nth-child(4){height:9px}
+  .mp-header{
+    background:var(--surface); padding:8px 16px 11px; display:flex; align-items:center;
+    justify-content:space-between; border-bottom:1px solid var(--border); flex-shrink:0;
+  }
+  .mp-title{font-size:15.5px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:6px}
+  .ver{
+    font-family:var(--font-mono); font-size:9.5px; color:var(--blue);
+    background:var(--blue-soft); border-radius:4px; padding:1.5px 5px; font-weight:600;
+  }
+  .capsule{
+    width:82px;height:29px;border:1px solid var(--border-strong);border-radius:var(--r-full);
+    display:flex;align-items:center;justify-content:space-around;color:var(--text-2);background:var(--surface-2);
+  }
+  .capsule .dot{width:7px;height:7px;border-radius:50%;background:var(--text-3)}
+  .capsule .dots{display:flex;gap:2.5px}
+  .capsule .dots i{width:3.5px;height:3.5px;border-radius:50%;background:var(--text-3)}
 
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%}
-body{
-  font-family:var(--font-body); color:var(--ink);
-  background:#dfe4ee; min-height:100vh;
-  display:flex; align-items:center; justify-content:center; padding:28px 16px;
-}
+  .pages{flex:1;overflow:hidden;position:relative}
+  .page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px 96px;display:none;scrollbar-width:thin}
+  .page.active{display:block}
+  .page.flush{padding:0}
+  /* 会话页为满屏布局（flush），需自行避让绝对定位的 Tab 栏（76px），
+     否则输入框被 Tab 栏盖住 —— 其余页面由 .page 的 96px 下内边距避让 */
+  #page-chat{padding-bottom:76px}
 
-/* 氛围层：柔和径向渐变网格 + 细颗粒，避免纯色平板感 */
-.ambient{position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:
-    radial-gradient(1100px 620px at 18% 8%, rgba(47,111,237,.16), transparent 60%),
-    radial-gradient(860px 520px at 88% 92%, rgba(232,137,12,.10), transparent 62%),
-    radial-gradient(700px 700px at 60% 40%, rgba(255,255,255,.55), transparent 70%);
-}
-.ambient::after{content:"";position:absolute;inset:0;opacity:.35;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .55 0 0 0 0 .65 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
-}
+  /* ---------- 3. 底部 Tab（会话为凸起 FAB 主入口） ---------- */
+  .tabbar{
+    position:absolute;bottom:0;left:0;right:0;height:76px;background:var(--surface);
+    border-top:1px solid var(--border);display:none;padding-bottom:12px;z-index:20;
+    box-shadow:0 -2px 12px rgba(20,26,38,.04);
+  }
+  body.auth .tabbar{display:flex}
+  .tab{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    font-size:10.5px;color:var(--text-3);cursor:pointer;user-select:none;
+    transition:color var(--dur-fast) var(--ease);position:relative;
+  }
+  .tab:hover{color:var(--text-2)}
+  .tab .ic{width:22px;height:22px}
+  .tab.active{color:var(--blue);font-weight:600}
+  .tab .cnt{
+    position:absolute;top:2px;left:50%;margin-left:4px;background:var(--red);color:#fff;
+    font-family:var(--font-mono);font-size:9px;font-weight:600;line-height:1.6;
+    border-radius:var(--r-full);padding:0 4px;min-width:15px;text-align:center;
+  }
+  .tab.fab .ic{
+    width:50px;height:50px;background:var(--blue);border-radius:50%;display:flex;
+    align-items:center;justify-content:center;color:#fff;margin-top:-24px;
+    box-shadow:0 8px 18px rgba(47,111,237,.38);border:4px solid var(--surface);
+    transition:transform var(--dur) var(--ease),background var(--dur-fast) var(--ease);
+  }
+  .tab.fab .ic svg{width:23px;height:23px;stroke-width:1.9}
+  .tab.fab span:last-child{margin-top:-2px}
+  .tab.fab:active .ic{transform:scale(.93)}
+  .tab.fab.active .ic{background:var(--blue-dark)}
+  .tab.fab.active{color:var(--blue-dark);font-weight:700}
 
-/* ---------- 手机外框 ---------- */
-.stage{position:relative;z-index:1}
-.phone{
-  width:404px; height:828px; background:var(--bg);
-  border-radius:44px; border:11px solid #16181d; overflow:hidden;
-  display:flex; flex-direction:column; position:relative;
-  box-shadow:var(--sh-3), 0 0 0 1px rgba(255,255,255,.6) inset;
-}
-.statusbar{height:36px;background:var(--card);display:flex;align-items:center;justify-content:space-between;
-  padding:0 22px;font-size:12px;font-weight:700;flex-shrink:0;font-family:var(--font-num)}
-.mp-header{background:var(--card);padding:9px 14px 12px;display:flex;align-items:center;gap:8px;
-  border-bottom:1px solid var(--border);flex-shrink:0}
-.mp-header .title{font-size:16px;font-weight:800;letter-spacing:-.02em;font-family:var(--font-display);flex:1}
-.back{width:28px;height:28px;border-radius:9px;border:1px solid var(--border);background:#fafbfd;
-  display:none;align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:var(--ink-2)}
-.back.show{display:flex}
-.capsule{width:84px;height:30px;border:1px solid var(--border);border-radius:var(--r-pill);
-  display:flex;align-items:center;justify-content:space-around;font-size:13px;color:var(--muted);background:#fafbfd}
-/* 联调状态灯 */
-.link{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;
-  padding:3px 8px;border-radius:var(--r-pill);font-family:var(--font-num)}
-.link.live{color:var(--green);background:var(--green-soft)}
-.link.mock{color:var(--orange);background:var(--orange-soft)}
-.link i{width:6px;height:6px;border-radius:50%;background:currentColor;display:block}
-.link.live i{animation:pulse 1.8s var(--ease) infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  /* ---------- 4. 图标 ---------- */
+  .ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 
-.pages{flex:1;overflow:hidden;position:relative}
-.page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px 92px;display:none;scroll-behavior:smooth}
-.page.active{display:block}
-.page.active.chat-active{padding:0 0 78px;display:flex;flex-direction:column}
-.model-sel{border:1px solid rgba(15,23,42,.15);background:#fff;border-radius:8px;padding:3px 6px;font-size:11px;color:var(--ink);max-width:110px}
-.cite-list{margin-top:8px;border:1px solid rgba(15,23,42,.1);border-radius:10px;padding:8px 10px;background:rgba(15,23,42,.03)}
-.cite-hd{font-size:10.5px;font-weight:700;color:var(--ink);opacity:.75;margin-bottom:4px}
-.cite-item{font-size:11.5px;line-height:1.7;color:var(--ink);cursor:pointer}
-.cite-item:hover{color:var(--brand,#2563eb)}
-.cite-idx{font-weight:700;margin-right:4px}
-/* 会话页底部必须让出 78px tabbar 高度，否则 .input-bar 被 tabbar（z-index:10，近不透明）盖住，无法点击输入 */
+  /* ---------- 5. 基础组件 ---------- */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:var(--sh-1)}
+  .sec-title{font-size:13.5px;font-weight:700;margin:4px 0 10px;display:flex;align-items:center;gap:6px}
+  .sec-title .sub{font-weight:400;font-size:11px;color:var(--text-3)}
+  .muted{color:var(--text-2);font-size:11.5px}
+  .num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .hl{color:var(--blue-dark);font-weight:700}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 2px;border-bottom:1px solid var(--border);font-size:12.5px}
+  .row:last-child{border-bottom:none}
+  .row.click{cursor:pointer}
+  .row.click:active{background:var(--surface-2)}
 
-.tabbar{position:absolute;bottom:0;left:0;right:0;height:78px;background:rgba(255,255,255,.94);
-  backdrop-filter:blur(12px);border-top:1px solid var(--border);display:flex;padding-bottom:14px;z-index:10}
-.tab{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  font-size:11px;color:var(--muted);cursor:pointer;user-select:none;transition:color var(--t-fast)}
-/* 待办 Tab 红点计数（右上角小圆点，白描边） */
-.tab-dot{position:absolute;top:5px;left:calc(50% + 8px);min-width:16px;height:16px;border-radius:9px;
-  background:#e5484d;color:#fff;font-size:10px;font-weight:800;line-height:16px;padding:0 4px;
-  box-sizing:border-box;text-align:center;box-shadow:0 0 0 2px #fff}
-.tab .ico{font-size:21px;line-height:1;transition:transform var(--t) var(--ease)}
-.tab.active{color:var(--blue);font-weight:700}
-.tab.active .ico{transform:translateY(-2px) scale(1.08)}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;
+    background:var(--blue);color:#fff;border:none;border-radius:var(--r-full);
+    padding:8px 16px;font-size:12.5px;font-weight:500;font-family:inherit;cursor:pointer;
+    min-height:34px;transition:transform var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease);
+  }
+  .btn:hover{background:var(--blue-dark)}
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{background:var(--surface);color:var(--blue);border:1px solid var(--blue-line)}
+  .btn.ghost:hover{background:var(--blue-soft)}
+  .btn.small{padding:5px 12px;font-size:11.5px;min-height:28px}
+  .btn.done{background:var(--green-soft);color:var(--green);border:1px solid #bfe6d4}
+  .btn.done:hover{background:var(--green-soft)}
+  .btn:disabled{opacity:.6;cursor:default;transform:none}
+  .btn.block{width:100%}
 
-/* ---------- 通用组件 ---------- */
-.card{background:var(--card);border-radius:var(--r-md);padding:14px;margin-bottom:12px;
-  border:1px solid var(--border);box-shadow:var(--sh-1)}
-.sec-title{font-size:14px;font-weight:800;margin:4px 0 10px;letter-spacing:-.01em}
-.tag{display:inline-block;font-size:10px;color:var(--blue-deep);background:var(--blue-soft);
-  border-radius:5px;padding:2px 6px;margin-right:4px;font-weight:700}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--blue);color:#fff;
-  border:none;border-radius:var(--r-pill);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;
-  font-family:var(--font-body);transition:transform var(--t-fast) var(--ease),box-shadow var(--t-fast),background var(--t-fast)}
-.btn:hover{background:var(--blue-deep);box-shadow:0 6px 18px rgba(47,111,237,.3)}
-.btn:active{transform:scale(.97)}
-.btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--blue-line)}
-.btn.ghost:hover{background:var(--blue-soft)}
-.btn.small{padding:6px 13px;font-size:12px}
-.btn:focus-visible,.tab:focus-visible,.grid-item:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.muted{color:var(--muted);font-size:12px;line-height:1.6}
-.hl{color:var(--blue-deep);font-weight:800}
-.num{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+  .badge{font-size:10px;border-radius:4px;padding:2px 6px;font-weight:600;white-space:nowrap}
+  .badge.ok{color:var(--green);background:var(--green-soft)}
+  .badge.wait{color:#a86a08;background:var(--accent-soft)}
+  .badge.go{color:var(--blue);background:var(--blue-soft)}
+  .badge.off{color:var(--text-2);background:var(--surface-3)}
+  .badge.danger{color:var(--red);background:var(--red-soft)}
 
-/* 额度进度 */
-.progress{height:9px;border-radius:var(--r-pill);background:#e9edf5;overflow:hidden;margin:9px 0 5px}
-.progress i{display:block;height:100%;border-radius:var(--r-pill);
-  background:linear-gradient(90deg,var(--blue),#5b8cff);transition:width var(--t-slow) var(--ease)}
-.progress.low i{background:linear-gradient(90deg,var(--orange),#fbbf24)}
-.progress.out i{background:linear-gradient(90deg,var(--red),#f4787c)}
+  .chip{
+    display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--surface);
+    border:1px solid var(--border);border-radius:var(--r-full);padding:5px 10px;
+    color:var(--text-2);cursor:pointer;transition:all var(--dur-fast) var(--ease);
+  }
+  .chip:hover{border-color:var(--blue-line);color:var(--blue);background:var(--blue-soft)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 
-/* 首页 */
-.greet{font-size:19px;font-weight:900;margin-bottom:3px;letter-spacing:-.03em;font-family:var(--font-display)}
-.quota-num{font-size:30px;font-weight:600;color:var(--blue-deep);font-family:var(--font-num);letter-spacing:-.02em}
-.quota-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--accent);
-  background:var(--accent-soft);border-radius:var(--r-pill);padding:3px 8px;font-family:var(--font-num)}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.grid-item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 4px;text-align:center;
-  cursor:pointer;transition:transform var(--t) var(--ease),box-shadow var(--t),border-color var(--t)}
-.grid-item:hover{transform:translateY(-3px);box-shadow:var(--sh-2);border-color:var(--blue-line)}
-.grid-item .ico{font-size:23px}
-.grid-item .name{font-size:11px;margin-top:5px;font-weight:600}
-.expert-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer}
-.expert-row:last-child{border-bottom:none}
-.expert-row:hover .avatar{transform:scale(1.05)}
-.avatar{width:42px;height:42px;border-radius:13px;
-  background:linear-gradient(135deg,#eaf1ff,#d8e6ff);display:flex;align-items:center;justify-content:center;
-  font-size:21px;flex-shrink:0;transition:transform var(--t) var(--ease)}
-.kicker{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .progress{height:7px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden;margin:8px 0 4px}
+  .progress i{display:block;height:100%;background:var(--blue);border-radius:var(--r-full);transition:width var(--dur) var(--ease)}
+  .progress.low i{background:var(--accent)}
 
-/* 会话 */
-.chat{display:flex;flex-direction:column;height:100%;min-height:0}
-.chat-head{background:var(--card);padding:10px 14px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}
-.chat-head .nm{font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px}
-.msgs{flex:1;overflow-y:auto;padding:14px 12px;min-height:0}
-.msg{display:flex;margin-bottom:14px;gap:8px;animation:rise var(--t) var(--ease) both}
-.msg .avatar{width:32px;height:32px;font-size:16px;border-radius:11px}
-.bubble{background:var(--card);border:1px solid var(--border);border-radius:4px 16px 16px 16px;
-  padding:11px 13px;font-size:13.5px;line-height:1.75;max-width:82%;box-shadow:var(--sh-1);word-break:break-word}
-.msg.me{flex-direction:row-reverse}
-.msg.me .bubble{background:var(--blue);color:#fff;border:none;border-radius:16px 4px 16px 16px;
-  box-shadow:0 6px 16px rgba(47,111,237,.22)}
-.bubble .cursor{display:inline-block;width:2px;height:14px;background:var(--blue);vertical-align:-2px;
-  margin-left:2px;animation:blink .9s steps(2) infinite}
-@keyframes blink{50%{opacity:0}}
-.meta-line{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.7;border-top:1px dashed var(--border);padding-top:6px}
-.meta-line b{color:var(--ink-2);font-family:var(--font-num)}
-.cite{display:block;margin-top:7px;font-size:11.5px;color:var(--blue-deep);background:var(--blue-soft);
-  border-radius:9px;padding:6px 9px;cursor:pointer;font-weight:600;transition:background var(--t-fast)}
-.cite:hover{background:#dbe8ff}
-.approve-card{border:1px solid var(--blue-line);background:linear-gradient(180deg,#f7faff,#eef4ff);
-  border-radius:13px;padding:11px;margin-top:9px;font-size:12.5px;max-width:82%}
-.approve-card .hd{font-weight:800;color:var(--blue-deep);margin-bottom:3px}
-.approve-card .row{display:flex;gap:8px;margin-top:9px}
-.input-bar{background:var(--card);border-top:1px solid var(--border);padding:9px 10px;display:flex;gap:8px;
-  align-items:center;flex-shrink:0}
-.input-bar input{flex:1;min-width:0;border:1px solid var(--border);border-radius:var(--r-pill);padding:10px 14px;
-  font-size:13px;outline:none;background:#f6f8fc;font-family:var(--font-body);transition:border-color var(--t-fast),background var(--t-fast)}
-.input-bar input:focus{border-color:var(--blue);background:#fff}
-.kb-chip{font-size:11px;font-weight:700;color:var(--blue-deep);background:var(--blue-soft);border-radius:var(--r-pill);
-  padding:6px 11px;cursor:pointer;white-space:nowrap;border:1px solid transparent;transition:all var(--t-fast)}
-.kb-chip.off{color:var(--muted);background:#eef0f5;border-color:var(--border)}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.chip{font-size:11.5px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-pill);
-  padding:6px 11px;color:var(--ink-2);cursor:pointer;transition:all var(--t-fast)}
-.chip:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+  .empty{text-align:center;padding:22px 10px;color:var(--text-3);font-size:12px}
+  .empty .ic{width:26px;height:26px;opacity:.5;margin-bottom:6px}
 
-/* 列表行 */
-.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 2px;
-  border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
-.row:last-child{border-bottom:none}
-.row:hover .t{color:var(--blue)}
-.row .t{flex:1;transition:color var(--t-fast)}
-.badge{font-size:10px;border-radius:5px;padding:2px 7px;font-weight:700;white-space:nowrap}
-.badge.ok{color:var(--green);background:var(--green-soft)}
-.badge.wait{color:var(--orange);background:var(--orange-soft)}
-.badge.err{color:var(--red);background:var(--red-soft)}
+  /* ---------- 6. 首页：经营数据看板 ---------- */
+  .greet{font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+  .greet-sub{color:var(--text-2);font-size:12px;margin:2px 0 14px}
+  .seg{display:flex;background:var(--surface-3);border-radius:10px;padding:2px}
+  .seg span{
+    text-align:center;font-size:11px;padding:3.5px 11px;border-radius:8px;cursor:pointer;
+    color:var(--text-2);transition:all var(--dur-fast) var(--ease);
+  }
+  .seg span.on{background:var(--surface);color:var(--blue-dark);font-weight:700;box-shadow:var(--sh-1)}
+  .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .kpi{
+    background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;
+    cursor:pointer;transition:all var(--dur-fast) var(--ease);
+  }
+  .kpi:hover{border-color:var(--blue-line);background:var(--blue-soft)}
+  .kpi .k-label{font-size:10.5px;color:var(--text-2);display:flex;justify-content:space-between}
+  .kpi .k-num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:17px;font-weight:600;margin-top:3px;letter-spacing:-.02em}
+  .delta{font-family:var(--font-mono);font-size:9.5px;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:2px;font-weight:600}
+  .delta.up{color:var(--green);background:var(--green-soft)}
+  .delta.down{color:var(--red);background:var(--red-soft)}
+  .bars{display:flex;align-items:flex-end;gap:9px;height:74px;padding-bottom:18px;border-bottom:1px solid var(--border);position:relative;margin-top:8px}
+  .bar{flex:1;background:var(--blue-line);border-radius:3px 3px 0 0;position:relative;transition:height var(--dur-slow) var(--ease)}
+  .bar.hot{background:linear-gradient(180deg,var(--blue),#5b8cff)}
+  .bar span{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:9px;color:var(--text-3);font-family:var(--font-mono)}
+  .insight{
+    margin-top:20px;padding:9px 11px;background:var(--blue-soft);border:1px solid var(--blue-line);
+    border-radius:10px;font-size:11.5px;line-height:1.65;color:#1c3f7d;
+  }
+  .insight b{color:var(--blue-dark)}
 
-/* 我的 */
-.me-head{display:flex;align-items:center;gap:13px}
-.me-head .avatar{width:56px;height:56px;font-size:28px;border-radius:17px}
-.switch{color:var(--blue);cursor:pointer;font-weight:700}
+  .brief-item{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+  .brief-item:last-child{border-bottom:none}
+  .brief-item .bico{
+    width:26px;height:26px;border-radius:7px;background:var(--blue-soft);color:var(--blue);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .brief-item .bico .ic{width:14px;height:14px}
+  .suggest{
+    display:block;margin-top:10px;font-size:11.5px;color:var(--blue-dark);background:var(--blue-soft);
+    border:1px solid var(--blue-line);border-radius:10px;padding:9px 11px;cursor:pointer;line-height:1.55;
+    transition:background var(--dur-fast) var(--ease);
+  }
+  .suggest:hover{background:#dde9ff}
 
-/* 表单 */
-.form-item{margin-bottom:11px}
-.form-item label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:600}
-.form-item textarea,.form-item input,.form-item select{width:100%;border:1px solid var(--border);border-radius:11px;
-  padding:10px;font-size:13px;font-family:var(--font-body);background:#f6f8fc;outline:none;color:var(--ink);
-  transition:border-color var(--t-fast),background var(--t-fast)}
-.form-item textarea:focus,.form-item input:focus,.form-item select:focus{border-color:var(--blue);background:#fff}
-.form-item textarea{resize:vertical;line-height:1.7}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+  .grid-item{
+    background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 4px;
+    text-align:center;cursor:pointer;transition:all var(--dur-fast) var(--ease);
+  }
+  .grid-item:hover{border-color:var(--blue-line);transform:translateY(-2px);box-shadow:var(--sh-2)}
+  .grid-item .ic{width:21px;height:21px;color:var(--blue)}
+  .grid-item .name{font-size:11px;margin-top:5px}
 
-/* Toast */
-.toast{position:absolute;left:50%;bottom:112px;transform:translateX(-50%) translateY(8px);
-  background:rgba(13,18,32,.9);color:#fff;font-size:12px;border-radius:10px;padding:9px 17px;
-  opacity:0;transition:all var(--t) var(--ease);pointer-events:none;z-index:99;white-space:nowrap;max-width:90%}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .expert-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer}
+  .expert-row:last-child{border-bottom:none}
+  .expert-row:hover .ename{color:var(--blue)}
+  .avatar{
+    width:40px;height:40px;border-radius:11px;background:var(--blue-soft);color:var(--blue);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .avatar .ic{width:20px;height:20px}
+  .ename{font-weight:700;font-size:12.5px;transition:color var(--dur-fast) var(--ease)}
 
-/* 额度用尽引导 */
-.exhaust{border:1px solid var(--orange);background:linear-gradient(180deg,#fffaf0,#fff5e4);
-  border-radius:14px;padding:13px;margin-top:9px;max-width:82%;font-size:13px;line-height:1.8}
-.exhaust .hd{font-weight:800;color:#b45309;margin-bottom:5px}
-.exhaust ol{margin:6px 0 9px 16px;font-size:12.5px;color:var(--ink-2)}
+  /* ---------- 7. 待办 ---------- */
+  .todo-item{display:flex;align-items:flex-start;gap:10px;padding:12px 2px;border-bottom:1px solid var(--border);cursor:pointer}
+  .todo-item:last-child{border-bottom:none}
+  .todo-item:active{background:var(--surface-2)}
+  .todo-item .tico{
+    width:28px;height:28px;border-radius:8px;background:var(--surface-3);color:var(--text-2);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;
+  }
+  .todo-item .tico .ic{width:15px;height:15px}
+  .todo-item .tmain{flex:1;min-width:0}
+  .todo-item .tt{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .todo-item .ts{font-size:11px;color:var(--text-2);margin-top:3px;line-height:1.5}
 
-/* 入场编排 */
-@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.stagger>*{animation:rise var(--t-slow) var(--ease) both}
-.stagger>*:nth-child(1){animation-delay:40ms}
-.stagger>*:nth-child(2){animation-delay:130ms}
-.stagger>*:nth-child(3){animation-delay:220ms}
-.stagger>*:nth-child(4){animation-delay:310ms}
-.stagger>*:nth-child(5){animation-delay:400ms}
-.stagger>*:nth-child(6){animation-delay:490ms}
+  /* ---------- 8. 会话 ---------- */
+  .chat{display:flex;flex-direction:column;height:100%}
+  .chat-head{
+    background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;gap:8px;
+  }
+  .chat-head .cname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat-head .cmodel{font-family:var(--font-mono);font-size:10px;color:var(--text-3);font-weight:500;flex-shrink:0}
+  .msgs{flex:1;overflow-y:auto;padding:12px;scrollbar-width:thin}
+  .msg{display:flex;margin-bottom:12px;gap:8px;align-items:flex-start}
+  .msg .avatar{width:30px;height:30px;border-radius:9px;background:var(--blue-soft);color:var(--blue)}
+  .msg .avatar .ic{width:16px;height:16px}
+  .msg.me{flex-direction:row-reverse}
+  .msg.me .avatar{background:var(--text);color:#fff}
+  .bubble{
+    background:var(--surface);border:1px solid var(--border);border-radius:4px 14px 14px 14px;
+    padding:9px 12px;font-size:12.5px;line-height:1.65;max-width:82%;white-space:pre-wrap;word-break:break-word;
+  }
+  .msg.me .bubble{background:var(--blue);color:#fff;border:none;border-radius:14px 4px 14px 14px}
+  .msg.me .bubble .cite{background:rgba(255,255,255,.18);color:#fff;border:none}
+  .meta-line{font-family:var(--font-mono);font-size:9.5px;color:var(--text-3);margin-top:6px;letter-spacing:.01em}
+  .cite{
+    display:block;margin-top:6px;font-size:10.5px;color:var(--blue);background:var(--blue-soft);
+    border:1px solid var(--blue-line);border-radius:6px;padding:4px 8px;
+  }
+  .typing{display:inline-flex;gap:3px;align-items:center}
+  .typing i{width:4px;height:4px;border-radius:50%;background:var(--text-3);animation:blink 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
 
-/* 响应式：窄屏铺满 */
-@media (max-width:460px){
-  body{padding:0}
-  .phone{width:100vw;height:100vh;border-radius:0;border:none;box-shadow:none}
-}
-@media (prefers-reduced-motion:reduce){
-  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
-}
+  .param-card{background:var(--surface);border:1px solid var(--blue);border-radius:12px;padding:11px 12px;max-width:88%;font-size:12px}
+  .param-card .pc-title{font-size:12.5px;font-weight:700;margin-bottom:9px;display:flex;align-items:center;gap:6px}
+  .form-item{margin-bottom:8px}
+  .form-item label{font-size:10.5px;color:var(--text-2);display:block;margin-bottom:3px}
+  .form-item input,.form-item textarea,.form-item select{
+    width:100%;border:1px solid var(--border);border-radius:7px;padding:7px 9px;font-size:12px;
+    font-family:inherit;background:var(--surface-2);outline:none;color:var(--text);
+  }
+  .form-item input:focus,.form-item textarea:focus,.form-item select:focus{border-color:var(--blue);background:var(--surface)}
+  .approve-card{border:1px solid var(--blue);background:var(--blue-soft);border-radius:12px;padding:10px;margin-top:8px;font-size:12px;max-width:88%}
+  .approve-card .arow{display:flex;gap:8px;margin-top:9px}
+  .task-card{background:var(--surface);border:1px solid var(--green);border-radius:12px;padding:11px 12px;max-width:88%;font-size:12px}
+  .task-card .tc-title{font-size:12.5px;font-weight:700;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .trow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dashed var(--border)}
+  .trow:last-of-type{border-bottom:none}
+  .trow b{font-weight:600;text-align:right}
+
+  .quota-warn{
+    display:none;background:var(--accent-soft);color:#8a5a06;font-size:11px;padding:7px 12px;
+    border-bottom:1px solid var(--accent-line);align-items:center;gap:6px;
+  }
+  .quota-warn .ic{width:13px;height:13px}
+  .input-bar{
+    background:var(--surface);border-top:1px solid var(--border);padding:8px 10px;
+    display:flex;gap:8px;align-items:center;flex-shrink:0;
+  }
+  .input-bar input{
+    flex:1;border:1px solid var(--border);border-radius:var(--r-full);padding:8px 14px;
+    font-size:12.5px;outline:none;background:var(--surface-2);font-family:inherit;min-width:0;color:var(--text);
+  }
+  .input-bar input:focus{border-color:var(--blue);background:var(--surface)}
+  .kb-chip{
+    font-size:11px;color:var(--blue);background:var(--blue-soft);border:1px solid var(--blue-line);
+    border-radius:var(--r-full);padding:5px 10px;cursor:pointer;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:4px;transition:all var(--dur-fast) var(--ease);
+  }
+  .kb-chip .ic{width:13px;height:13px}
+  .kb-chip.off{color:var(--text-2);background:var(--surface-3);border-color:var(--border)}
+
+  /* ---------- 9. 数字员工 ---------- */
+  .agent-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:10px;box-shadow:var(--sh-1)}
+  .agent-head{display:flex;align-items:center;gap:10px}
+  .agent-head .amain{flex:1;min-width:0}
+  .aname{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .adesc{font-size:11px;color:var(--text-2);margin-top:2px}
+  .switch{
+    width:38px;height:22px;border-radius:var(--r-full);background:var(--surface-3);
+    position:relative;cursor:pointer;flex-shrink:0;transition:background var(--dur-fast) var(--ease);
+    border:none;padding:0;
+  }
+  .switch i{
+    position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 3px rgba(20,26,38,.25);transition:left var(--dur-fast) var(--ease);
+  }
+  .switch.on{background:var(--green)}
+  .switch.on i{left:18px}
+  .agent-meta{font-size:11px;color:var(--text-2);margin-top:9px;line-height:1.6;border-top:1px dashed var(--border);padding-top:8px}
+  .agent-ops{display:flex;gap:8px;margin-top:9px}
+
+  /* ---------- 10. 我的 / 其他 ---------- */
+  .me-head{display:flex;align-items:center;gap:12px}
+  .me-head .avatar{width:52px;height:52px;border-radius:15px}
+  .me-head .avatar .ic{width:26px;height:26px}
+  .quota-big{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:24px;font-weight:700;color:var(--blue-dark);letter-spacing:-.02em}
+
+  /* ---------- 11. 登录门 ---------- */
+  .gate{padding:26px 22px;display:flex;flex-direction:column;height:100%}
+  .gate-brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .gate-brand .logo{
+    width:42px;height:42px;border-radius:12px;background:var(--blue);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .gate-brand .logo .ic{width:22px;height:22px;stroke-width:1.8}
+  .gate h1{font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
+  .gate .lead{color:var(--text-2);font-size:12px;margin:6px 0 22px;line-height:1.65}
+  .gate .form-item label{font-size:11px}
+  .gate .form-item input{padding:10px 12px;font-size:13px}
+  .gate .err{color:var(--red);font-size:11.5px;min-height:16px;margin:2px 0 8px}
+  .gate .hint{
+    margin-top:auto;font-size:10.5px;color:var(--text-3);line-height:1.7;
+    border-top:1px solid var(--border);padding-top:12px;font-family:var(--font-mono);
+  }
+
+  /* ---------- 12. Toast ---------- */
+  .toast{
+    position:absolute;left:50%;bottom:104px;transform:translateX(-50%) translateY(6px);
+    background:rgba(20,26,38,.90);color:#fff;font-size:11.5px;border-radius:8px;padding:8px 15px;
+    opacity:0;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease);
+    pointer-events:none;z-index:99;white-space:nowrap;max-width:90%;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- 13. 入场动效（错峰 + 降级） ---------- */
+  .reveal{opacity:0;transform:translateY(14px)}
+  .reveal.in{opacity:1;transform:none;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
+  .page.active .reveal:nth-child(1){transition-delay:0ms}
+  .page.active .reveal:nth-child(2){transition-delay:60ms}
+  .page.active .reveal:nth-child(3){transition-delay:120ms}
+  .page.active .reveal:nth-child(4){transition-delay:180ms}
+  .page.active .reveal:nth-child(5){transition-delay:240ms}
+  .page.active .reveal:nth-child(6){transition-delay:300ms}
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms!important;transition-duration:.01ms!important}
+    .reveal{opacity:1;transform:none}
+  }
+  :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
 </style>
 </head>
-<body data-page-node-id="SxjqqzlTnNie1YvSaN0uNi">
-<div class="ambient" data-page-node-id="Vij5p3niF2CKmUtfvRl6bF"></div>
+<body>
 
-<div class="stage" data-page-node-id="jojWo4WksTHrS1bqIcACT3">
-<div class="phone" data-page-node-id="dS0LPsfLGpVsKEGbEq7lR2">
-  <div class="statusbar" data-page-node-id="R6T8BhqFv5WVDoUn9Jcnhu"><span data-page-node-id="Q9P2Xgqq4L9bVxYL2zUMEu">9:41</span><span data-page-node-id="Wdb2GCG25l6wUAv5eFQSJS">中国移动 5G ▮▮▮</span></div>
+<!-- 图标精灵：全部描边 SVG，无 emoji -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.1A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 8.4-8.4h.6a8.4 8.4 0 0 1 8 8z"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 3v4M9.5 12.5h.01M14.5 12.5h.01M8 19v2M16 19v2"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 3v18M5 21h14M3 8h18"/><path d="M6 8 3 14h6zM18 8l-3 6h6z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v4M12 9v10M17 12v7"/></symbol>
+    <symbol id="i-bank" viewBox="0 0 24 24"><path d="M3 21h18M12 3l9 5H3zM6 10v11M10 10v11M14 10v11M18 10v11"/></symbol>
+    <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="m3 11 15-7v16L3 13z"/><path d="M3 11v2a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1zM18 8a5 5 0 0 1 0 8"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-sheet" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></symbol>
+    <symbol id="i-log" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 16V8l-9-5-9 5v8l9 5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
+  </defs>
+</svg>
 
-  <div class="mp-header" data-page-node-id="5Csok2weYrxHdHGJGCte8R">
-    <div class="back" id="backBtn" onclick="goBack()" title="返回" data-page-node-id="lWlnKYI3QxFczNQBMHpn2Y">‹</div>
-    <span class="title" id="pageTitle" data-page-node-id="Naz60V5rrws5j4gFyr2uiq">AIOA 智能工作台</span>
-    <span class="link mock" id="linkChip" data-page-node-id="YC9E42KtkPhMFltrKI0wjw"><i data-page-node-id="081jK5WDzY7SoCMOcG5P4L"></i><span id="linkText" data-page-node-id="p1leAt8aZrKyTvK5jIR9Pl">未登录</span></span>
-    <div class="capsule" data-page-node-id="rQxtJAwlRF6Mqd3WxDD1Op"><span data-page-node-id="9vRk5gNyNzT3QwF3Zdt6sZ">⋯</span><span data-page-node-id="0rAFFI03CyJpRSYKmC4E0w">◉</span></div>
+<div class="phone">
+  <div class="statusbar">
+    <span id="clock">9:41</span>
+    <span class="sig">5G<span class="bars"><i></i><i></i><i></i><i></i></span></span>
   </div>
 
-  <div class="pages" data-page-node-id="LkMNpI9i4DMwqRvMvtK8xJ">
-    <!-- 首页 -->
-    <section class="page active" id="page-home" data-page-node-id="0pbGB8zZYtyIFS1vijjXLj">
-      <div class="stagger" data-page-node-id="XLPQUzvMMgVXXW7nDTu5SN">
-        <div data-page-node-id="GYI7YG0ajWKv02CTOyg7mz">
-          <div class="kicker" data-page-node-id="qUv6fFAiqf1GptWhptM6RN">DeYang · AI 公共服务平台</div>
-          <div class="greet" data-page-node-id="I75iuzUhrayTU9xsNoOuhv">你好，左齐</div>
-          <div class="muted" style="margin-bottom:13px" data-page-node-id="l9uZf3schGEDGFuVmicbD9">今天想让我帮你做点什么？</div>
-        </div>
-
-        <div class="card" data-page-node-id="jXrk2esp68FwCExCu3uShD">
-          <div style="display:flex;justify-content:space-between;align-items:baseline" data-page-node-id="yGfZwk4uUBDr8nhlJrZfv1">
-            <span class="sec-title" style="margin:0" data-page-node-id="LmQkVonDXDupZqgOU6QgCl">我的额度</span>
-            <span class="muted" data-page-node-id="vvs5kQfPyoiOwxHnIgFJNj">企业套餐 · 银牌会员</span>
-          </div>
-          <div style="display:flex;align-items:baseline;gap:8px;margin-top:7px;flex-wrap:wrap" data-page-node-id="KJAS4zqOwK9rszZO3yXAzA">
-            <span class="quota-num" id="quotaNum" data-page-node-id="N9cYj265p9K6rWNVzgZvS8">86,400</span>
-            <span class="muted" data-page-node-id="arcpgXwHnlom0Xgpts1OkU">/ 100,000 词元（本月套餐）</span>
-            <span class="quota-chip" data-page-node-id="KDVSB4Lb4U7dEAEt6KBDUW">◆ 词元</span>
-          </div>
-          <div class="progress" id="quotaBar" data-page-node-id="YGq4DgtLOr4dpYxsomREsN"><i style="width:86%" data-page-node-id="8vHoSjyLdmNFC5EtQuRwiG"></i></div>
-          <div class="muted" data-page-node-id="hH4vvq69sjLxXRyxwihyGD">今日免费额度剩 <b class="num" id="freeNum" data-page-node-id="W3P3zSAeTflGiWCoKPRenJ">2,000</b> · 额度变化实时留痕</div>
-          <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap" data-page-node-id="R76KmQs1YG5rPEngDIQRea">
-            <button class="btn small" onclick="go('page-bill')" data-page-node-id="DIoZEHmd7rDmxECstBlnla">用量账单</button>
-            <button class="btn ghost small" onclick="toast('已打开词元包商品列表')" data-page-node-id="R6PtDFxIy40lJpBYOUwb6t">购买词元包</button>
-          </div>
-        </div>
-
-        <div data-page-node-id="9P38Tef0qLBH1M1AQcNADP">
-          <div class="sec-title" data-page-node-id="Y8c8F2QS4Qsso0CnD6Sa8v">快捷技能</div>
-          <div class="grid" style="margin-bottom:14px" id="skillGrid" data-page-node-id="UJ2O5Gofod5ihiH9sjf4F8"></div>
-        </div>
-
-        <div data-page-node-id="gsaBqDEfCSLCB7dgnQyKTL">
-          <div class="sec-title" data-page-node-id="ZPrWVNuxKqVFukhc0tEJlm">推荐专家</div>
-          <div class="card" id="homeExperts" data-page-node-id="6kB3c0FSg9ssHPmpW1Hf5o"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 待办（底部独立 Tab）：待我处理 / 我的申请 / 消息通知 -->
-    <section class="page" id="page-todo" data-page-node-id="todoPageAIOA2">
-      <div class="kicker" data-page-node-id="todoKickAIOA2">To-Do</div>
-      <div class="sec-title" data-page-node-id="todoHeadAIOA2">待办</div>
-      <div class="muted" style="margin-bottom:11px" data-page-node-id="todoSubAIOA2">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
-
-      <div class="sec-title" data-page-node-id="todoMineTitleAIOA2">待我处理 <span class="tag" id="todoCount">0</span></div>
-      <div class="card" id="todoList" data-page-node-id="todoListAIOA2"><div class="muted">登录后实时同步</div></div>
-
-      <div class="sec-title" data-page-node-id="mineAppTitleAIOA2">我的申请</div>
-      <div class="card" id="approvalList" data-page-node-id="GLFP50rWNDhpMu2MPqHNr6"><div class="muted">登录后实时同步</div></div>
-
-      <div class="card" data-page-node-id="notifCardAIOA2">
-        <div class="sec-title" data-page-node-id="notifTitleAIOA2">消息通知 <span class="tag" id="notifCount">0</span><span class="switch" style="float:right" onclick="readAllNotifs()" data-page-node-id="notifReadAllAIOA2">全部已读</span></div>
-        <div id="notifList" data-page-node-id="notifListAIOA2"><div class="muted">登录后实时同步</div></div>
-      </div>
-      <div class="muted" style="font-size:10.5px" data-page-node-id="todoFootAIOA2">待办与消息通知实时联动，处理记录全程留痕可查</div>
-    </section>
-
-    <!-- 专家 -->
-    <section class="page" id="page-expert" data-page-node-id="fvcL3BvSbCZdCBX2ZThJ6M">
-      <div class="kicker" data-page-node-id="hYALF1WcBu5rmQahGIxvas">Expert Network</div>
-      <div class="sec-title" data-page-node-id="kwAvZpiB9xjcS5xRChttlC">专家服务</div>
-      <div class="muted" style="margin-bottom:11px" data-page-node-id="A3sDIkp2VqrP7tRRc2PkH5">每位专家 = 人设 + 技能组合 + 专属知识库</div>
-      <div class="card" id="expertList" data-page-node-id="EJKgvoguonrWbDI9Yc3Aoe"></div>
-    </section>
-
-    <!-- 会话 -->
-    <section class="page" id="page-chat" data-page-node-id="g4Y33wA5tCgIxnilt15vzj">
-      <div class="chat" data-page-node-id="lmF1PlgNVKFvJ7QwSrlpzy">
-        <div class="chat-head" data-page-node-id="cOEx64IWX3c5PAh1JDq7vF">
-          <span class="nm" data-page-node-id="VIOEj6K7YaBOZnVx7oP6Iq"><span id="chatIcon" data-page-node-id="idm2RYCrc1TR2eCPX3udB1"></span><span id="chatName" data-page-node-id="uZK4DxZwaWPY9TCgG75aVL">政策咨询专家</span></span>
-          <select class="model-sel" id="modelSel" onchange="onModelChange(this.value)" title="切换模型">
-            <option value="echo">回声演示</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="dashscope">通义千问</option>
-          </select>
-        </div>
-        <div class="msgs" id="msgs" data-page-node-id="I1IXsMSZPjb3CxJkbtoUZh"></div>
-        <div class="input-bar" data-page-node-id="J5hU1z7wsASpF9bvY7wnxM">
-          <span class="kb-chip" id="kbChip" onclick="toggleKB()" data-page-node-id="GWBZQKnqfc4pvRX94PeSnb">知识库 开</span>
-          <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()" data-page-node-id="lbA5Eu9KuK5SF5IDF8HH5t">
-          <button class="btn small" id="sendBtn" onclick="send()" data-page-node-id="J0KL6aC0FqJqUzhCxL76rX">发送</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- 我的 -->
-    <section class="page" id="page-me" data-page-node-id="QyMI35TYd8i2zHFnnDltnc">
-      <div class="card me-head" data-page-node-id="DjwhP2McSOB42EVZmMAn39">
-        <div class="avatar" id="meAvatar" data-page-node-id="091xLb22wvmaRfxgLEcNXI">A</div>
-        <div data-page-node-id="Pyw0KNG2OA8AudUCcVmWfo">
-          <div style="font-weight:800;font-size:16px" data-page-node-id="7eHC7B2Is5xfDZwbcDwknl"><span id="meName" data-page-node-id="CQDXRkqd1lRAA6EoyLFLRg">—</span> <span class="tag" id="meRole" data-page-node-id="oc1CujDqC2UAHqla6CLl5X">—</span></div>
-          <div class="muted" data-page-node-id="uisCGzLazCXVR5qaAQurgG">AIOA 企业智能工作台
-            <span class="switch" onclick="doLogout()" data-page-node-id="ltsfasErrpEczmxrrD6TCE">退出登录</span>
-          </div>
-        </div>
-      </div>
-      <div class="card" data-page-node-id="CobbTOlYSPPLo7f8sGfAEe">
-        <div class="sec-title" data-page-node-id="EhfSSRyG2rDMBL8jW5ikYO">我的知识库</div>
-        <div id="kbList" data-page-node-id="t4Vi4qRgLWavk86w3XaT1C"></div>
-        <div style="margin-top:11px" data-page-node-id="aeWpSkHHM1LHwyTBOml0F8">
-          <button class="btn ghost small" onclick="toast('已打开文件上传（支持 PDF/Word/Excel/图片）')" data-page-node-id="FpDSFsh37vsdupki3hdDDA">＋ 上传资料入知识库</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="sec-title">历史会话 <span class="switch" onclick="newConversation()">＋ 新会话</span></div>
-        <div id="convList"><div class="muted">暂无历史会话</div></div>
-      </div>
-      <div class="card" data-page-node-id="q9D0pzYDYIlchH9dgWW8Td">
-        <div class="sec-title" data-page-node-id="Zb8YI7HDkHBlQUNVZdGK90">账单与留痕</div>
-        <div class="row" onclick="openBuy()"><span class="t">购买词元包</span><span class="muted">下单支付实时到账 ›</span></div>
-        <div class="row" onclick="go('page-bill')" data-page-node-id="rzF2ubGrXfVSJV1cNqhZaI"><span class="t" data-page-node-id="2DMMnycEZjgIf4rGvPE8oF">用量账单</span><span class="muted" data-page-node-id="A13xV6oEtaGDvae17h5TOV">本月 <b class="num" id="meUsed" data-page-node-id="G9SN8mzdtPQlFTT1WpVc8s">13,600</b> 词元 ›</span></div>
-        <div class="row" onclick="go('page-log')" data-page-node-id="jyPRJxNrYV8WoGEqhz6c8S"><span class="t" data-page-node-id="GL2DPNyARXyYr0xLGrXNCz">我的操作记录</span><span class="muted" data-page-node-id="r1pqXaeYD6pZRCWw0pZXhI">全程可查 ›</span></div>
-        <div class="row" onclick="toast('反馈问题入口：错误 / 有害 / 侵权')" data-page-node-id="XPggI5cGIjWDzFDVjdOANN"><span class="t" data-page-node-id="MEVY0LX4aaBQEGx5HAD11E">投诉与纠错</span><span class="muted" data-page-node-id="cR3T6RVsZeqI5rRlKVqTFU">›</span></div>
-      </div>
-      <!-- 待办/审批/通知 已迁移至底部独立「待办」Tab（page-todo） -->
-    </section>
-
-    <!-- 账单 -->
-    <!-- 购买词元包（FR-G4/G6）：商品列表 → 下单 → 模拟支付 → 额度实时到账 -->
-    <section class="page" id="page-buy">
-      <div class="kicker">Purchase</div>
-      <div class="sec-title">购买词元包</div>
-      <div class="muted" style="margin-bottom:11px">下单后支付成功，词元实时到账 · 订单全程留痕可查</div>
-      <div class="card" id="pkgList"><div class="muted">加载中…</div></div>
-      <div class="card" id="payCard" style="display:none">
-        <div class="sec-title">订单确认</div>
-        <div id="payInfo" class="muted"></div>
-        <div class="row" style="margin-top:10px">
-          <button class="btn small" id="payBtn" onclick="mockPay()">模拟支付（微信支付二期接入）</button>
-          <button class="btn ghost small" onclick="cancelPay()">取消</button>
-        </div>
-      </div>
-      <div class="muted" style="font-size:10.5px">企业对公转账购买通道（FR-G5）二期开放 · 支持政务专户结算</div>
-    </section>
-
-    <section class="page" id="page-bill" data-page-node-id="2opCtpqHkACrlqDtAVsx8n">
-      <div class="kicker" data-page-node-id="Vc94xj8KdCjgu8vmeKalDK">Ledger</div>
-      <div class="sec-title" data-page-node-id="6QanHC6AQkn5IFRLR8b9Dp">用量账单（9 月）</div>
-      <div class="card" id="billList" data-page-node-id="I4ildVmyAZp8s6xXUCTrSO"></div>
-      <button class="btn ghost small" onclick="exportBill()" data-page-node-id="KCwCviXcR7rIRE8YB1QmzD">导出明细</button>
-    </section>
-
-    <!-- 留痕 -->
-    <section class="page" id="page-log" data-page-node-id="Lc8Sub0mvgjEKBRsxBkHkS">
-      <div class="kicker" data-page-node-id="xxyMCteSqE0xRHCyg4FkVl">Audit Trail</div>
-      <div class="sec-title" data-page-node-id="Qe859oaIz957mpRlAmPpkH">我的操作记录</div>
-      <div class="card" id="logList" data-page-node-id="UcJOraUmHBD3P4T6eAMjXp"></div>
-      <div class="muted" style="padding:0 2px" data-page-node-id="2K1Qchycoq7wKtpNaa7kj2">记录不可篡改，保存 ≥ 3 年</div>
-    </section>
-
-    <!-- 技能表单 -->
-    <section class="page" id="page-skill" data-page-node-id="Asr9ZqGtz5HSTkDN4TMsGd">
-      <div class="kicker" data-page-node-id="UnWKbC753UJr1m9jrQg0hm">Skill</div>
-      <div class="sec-title" id="skillName" data-page-node-id="yN27oKMwAcYPODuagbnQqE">公文写作</div>
-      <div class="card" id="skillForm" data-page-node-id="GfsFuFGnpmz9R5NxNMhwaH"></div>
-      <div class="card" id="skillResult" style="display:none" data-page-node-id="7NpWsIisdtlpecZQFBJ6J6">
-        <div class="sec-title" data-page-node-id="uYCh4pA0kzQM8hyI95Laep">生成结果</div>
-        <div class="muted" id="skillText" style="line-height:1.85;white-space:pre-wrap" data-page-node-id="th18MXpqJJXaGf5tnhMKru"></div>
-        <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap" data-page-node-id="qDHGgSsEQIfe1Mu6B0T1wZ">
-          <button class="btn ghost small" onclick="toast('已存入个人资料')" data-page-node-id="w6GgqRrJVlaOyML9XGY1so">存为资料</button>
-          <button class="btn small" onclick="go('page-chat');toast('已转入会话，可继续修改')" data-page-node-id="1hY5jaBLpirH3qO0y7LGN7">转会话修改</button>
-        </div>
-      </div>
-    </section>
+  <div class="mp-header">
+    <span class="mp-title" id="pageTitle">AIOA 智能工作台<span class="ver">V1.2</span></span>
+    <div class="capsule"><span class="dots"><i></i><i></i><i></i></span><span class="dot"></span></div>
   </div>
 
-  <nav class="tabbar" data-page-node-id="QcmEWNEe1Gg4Ys5YKYfMkt">
-    <div class="tab active" data-page="page-home"   onclick="switchTab(this)" data-page-node-id="8bbkhHiKhEcPqfPQGXtJhy"><span class="ico" data-page-node-id="ohM4mBCiKWnAvcwC9BcsBn">首</span>首页</div>
-    <div class="tab"         data-page="page-todo"  onclick="switchTab(this)" data-page-node-id="todoTabAIOA2"><span class="ico" data-page-node-id="todoTabIcoAIOA2">办</span>待办<span class="tab-dot" id="todoDot" style="display:none">0</span></div>
-    <div class="tab"         data-page="page-expert" onclick="switchTab(this)" data-page-node-id="3EkL9OrCLwb5AufLJsjFFb"><span class="ico" data-page-node-id="9VXWTCUJSpSIAn0svXGNNS">专</span>专家</div>
-    <div class="tab"         data-page="page-chat"   onclick="switchTab(this)" data-page-node-id="oBf58ZWceJcYlS2TDk0idF"><span class="ico" data-page-node-id="eDFnFKPvBwwdEsC4CS7kzm">话</span>会话</div>
-    <div class="tab"         data-page="page-me"     onclick="switchTab(this)" data-page-node-id="AajODNVUnKbvK902hKoFHU"><span class="ico" data-page-node-id="treeZuaRFwqWQ87Cgn3Jwo">我</span>我的</div>
-  </nav>
+  <div class="pages">
+    <!-- ========== 登录 ========== -->
+    <div class="page active flush" id="page-login">
+      <div class="gate">
+        <div class="gate-brand">
+          <div class="logo"><svg class="ic"><use href="#i-cube"/></svg></div>
+          <div>
+            <h1>AIOA 智能工作台</h1>
+            <div class="muted" style="font-size:11px">企业 AI 办公基座 · 客户端 V1.2</div>
+          </div>
+        </div>
+        <p class="lead">登录后使用专家咨询、技能生成、数字员工与经营看板。数据由企业管理员在管理端统一维护。</p>
+        <div class="form-item"><label>账号</label><input id="lgUser" value="zhangsan" autocomplete="username"></div>
+        <div class="form-item"><label>密码</label><input id="lgPass" type="password" value="User@123" autocomplete="current-password"></div>
+        <div class="err" id="lgErr"></div>
+        <button class="btn block" id="lgBtn" onclick="doLogin()">登录</button>
+        <div class="hint">演示账号：zhangsan / User@123（普通员工）<br>管理员：admin / Admin@123</div>
+      </div>
+    </div>
 
-  <div class="toast" id="toast" data-page-node-id="vHBt4pRiLqYhYUDcCfucFQ"></div>
-</div>
-</div>
+    <!-- ========== 工作台 ========== -->
+    <div class="page" id="page-home">
+      <div class="greet reveal" id="greet">你好</div>
+      <div class="greet-sub reveal" id="greetSub">今天想让我帮你做点什么？</div>
 
-<!-- 真实登录遮罩（用户名/密码 → 后端鉴权） -->
-<style>
-.login-screen{position:fixed;inset:0;background:rgba(244,247,252,.97);display:none;align-items:center;justify-content:center;z-index:50}
-.login-card{width:300px;max-width:86vw;background:#fff;border-radius:18px;padding:22px 20px;box-shadow:0 20px 60px rgba(20,40,80,.18)}
-.login-card .kicker{margin-bottom:2px}
-.login-input{width:100%;box-sizing:border-box;margin:8px 0;padding:11px 12px;border:1px solid #dde3ee;border-radius:10px;font-size:14px;font-family:inherit}
-.login-input:focus{outline:none;border-color:#2f6fed}
-.login-err{color:#d9483b;font-size:12px;min-height:16px;margin-top:6px}
-.login-card .btn{width:100%;margin-top:6px}
-</style>
-<div id="loginScreen" class="login-screen" data-page-node-id="XPBsDsgS3jZfk4TRI4eSdq">
-  <div class="login-card" data-page-node-id="lpSg8lJP6N6mjscBivrgSM">
-    <div class="kicker" data-page-node-id="ZZXIF6nLW42k03miTQeovI">AIOA 智能工作台</div>
-    <div class="sec-title" data-page-node-id="5A3pMIWzL24UXV0OqXbHeH">用户登录</div>
-    <input id="loginUser" class="login-input" placeholder="用户名" autocomplete="username" data-page-node-id="Bov8ECTITa0CesmHCE3Rmx">
-    <input id="loginPass" class="login-input" type="password" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" data-page-node-id="fMfr5Afns54R3JFfaRBYbN">
-    <button id="loginBtn" class="btn" onclick="doLogin()" data-page-node-id="WHHprDI34ERFOYfDvRTleQ">登录</button>
-    <div id="loginErr" class="login-err" data-page-node-id="b8GgWEkvuTW9LNSpaW5rrw"></div>
-    <div class="muted" style="margin-top:8px;line-height:1.7" data-page-node-id="732YyDTlUxS7VbhdBn8gZU">演示账号：<br data-page-node-id="2LLVjAAAHkXZY4FVZBgi2J">admin / Admin@123（管理员）<br data-page-node-id="MHB5GZ8eftfl1pXPUyR1NO">zhangsan / User@123（普通用户）</div>
-  </div>
-</div>
+      <!-- 经营数据看板（V1.2 C 位） -->
+      <div class="card reveal">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
+          <div class="sec-title" style="margin:0">
+            <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-chart"/></svg>
+            经营数据 <span class="sub" id="kpiTime">今日 08:00 更新</span>
+          </div>
+          <div class="seg">
+            <span id="segMonth" class="on" onclick="setKpiMode('month')">本月</span>
+            <span id="segQuarter" onclick="setKpiMode('quarter')">本季</span>
+          </div>
+        </div>
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div style="margin:15px 0 0;font-weight:700;font-size:12px">近 6 个月销售额趋势<span class="muted" style="font-weight:400;font-size:10.5px">（万元）</span></div>
+        <div class="bars" id="kpiBars"></div>
+        <div class="insight" id="kpiInsight"></div>
+        <div style="display:flex;gap:8px;margin-top:11px">
+          <button class="btn small" onclick="openSkill('数据分析')">深入分析</button>
+          <button class="btn ghost small" onclick="openSkill('经营报表')">查看报表</button>
+        </div>
+        <div class="muted" style="margin-top:9px" id="kpiSource"></div>
+      </div>
 
-<!-- 审批意见弹层（通过/驳回前填写意见，默认文案预填，可改可清空；从待办点入为中性模式，两键同弹） -->
-<div id="decisionModal" class="login-screen">
-  <div class="login-card">
-    <div class="kicker">审批意见</div>
-    <div class="sec-title" id="decisionTitle">处理审批</div>
-    <div class="muted" id="decisionWhat" style="margin:-4px 0 8px;font-size:11px;word-break:break-all"></div>
-    <textarea id="decisionNote" class="login-input" rows="3" style="height:auto;min-height:74px;padding:10px 12px;line-height:1.6;resize:vertical" placeholder="填写审批意见（可清空留空）"></textarea>
-    <div style="display:flex;gap:8px;margin-top:4px">
-      <button class="btn ghost" style="flex:1" onclick="cancelDecision()">取消</button>
-      <button class="btn ghost" style="flex:1" id="decisionReject" onclick="confirmDecision('REJECT')">驳回</button>
-      <button class="btn" style="flex:1" id="decisionOk" onclick="confirmDecision('APPROVE')">通过</button>
+      <div class="card reveal">
+        <div class="sec-title" style="margin-top:0">
+          <svg class="ic" style="width:15px;height:15px;color:var(--accent)"><use href="#i-inbox"/></svg>
+          今天要办的事 <span class="badge go" id="todayCnt">0 件</span>
+        </div>
+        <div id="todayList"></div>
+        <div class="suggest" id="todaySuggest" style="display:none" onclick="askSuggest()"></div>
+      </div>
+
+      <div class="sec-title reveal">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-spark"/></svg>
+        快捷技能 <span class="sub">· 点击即在会话中开始</span>
+      </div>
+      <div class="grid reveal" id="skillGrid"></div>
+
+      <div class="sec-title reveal">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-bot"/></svg>
+        推荐专家
+        <span class="sub" style="margin-left:auto;cursor:pointer;color:var(--blue)" onclick="switchTabById('page-agent')">全部 ›</span>
+      </div>
+      <div class="card reveal" id="homeExperts"></div>
+    </div>
+
+    <!-- ========== 待办 ========== -->
+    <div class="page" id="page-todo">
+      <div class="sec-title reveal">待办</div>
+      <div class="muted reveal" style="margin-bottom:12px">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
+
+      <div class="sec-title">待我处理（<span id="todoCnt" class="num">0</span>）</div>
+      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoPending"></div>
+
+      <div class="sec-title">数字员工已代办</div>
+      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoDone"></div>
+
+      <div class="sec-title">我的申请</div>
+      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoMine"></div>
+      <div class="muted" style="margin-top:2px">待办与消息通知实时联动，处理记录全程留痕可查</div>
+    </div>
+
+    <!-- ========== 会话（主入口） ========== -->
+    <div class="page flush" id="page-chat">
+      <div class="chat">
+        <div class="chat-head">
+          <span class="cname" id="chatName">会话</span>
+          <span class="cmodel" id="chatModel">模型：智能路由</span>
+        </div>
+        <div class="msgs" id="msgs"></div>
+        <div class="quota-warn" id="quotaWarn">
+          <svg class="ic"><use href="#i-warn"/></svg><span id="quotaWarnText"></span>
+        </div>
+        <div class="input-bar">
+          <span class="kb-chip" id="kbChip" onclick="toggleKB()">
+            <svg class="ic"><use href="#i-db"/></svg><span id="kbChipText">知识库 开</span>
+          </span>
+          <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()">
+          <button class="btn small" onclick="send()" id="sendBtn">发送</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 数字员工 ========== -->
+    <div class="page" id="page-agent">
+      <div class="sec-title reveal">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-bot"/></svg>
+        数字员工
+      </div>
+      <div class="muted reveal" style="margin-bottom:11px">自动运行 · 定时产出 · 结果进入待办与消息，全程留痕</div>
+      <div id="agentList"></div>
+      <div style="margin:4px 0 18px"><button class="btn ghost block" onclick="createAgentFlow()">＋ 创建数字员工</button></div>
+
+      <div class="sec-title">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-user"/></svg>
+        专家服务 <span class="badge go">管理员预置</span>
+      </div>
+      <div class="muted" style="margin-bottom:11px">每位专家 = 人设 + 技能组合 + 专属知识库</div>
+      <div class="card" style="padding-top:4px;padding-bottom:4px" id="expertList"></div>
+      <div class="muted" style="margin-top:6px">外部能力（政务申报平台、OA、腾讯文档等）由管理员在后台统一连接配置</div>
+    </div>
+
+    <!-- ========== 我的 ========== -->
+    <div class="page" id="page-me">
+      <div class="card me-head reveal">
+        <div class="avatar"><svg class="ic"><use href="#i-user"/></svg></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15.5px" id="meName">—</div>
+          <div class="muted" id="meRole">企业成员身份</div>
+        </div>
+      </div>
+
+      <!-- 成果沉淀（V1.2 新增） -->
+      <div class="card reveal">
+        <div class="sec-title">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-doc"/></svg>
+          我的成果 <span class="sub">· 对话产出自动沉淀</span>
+        </div>
+        <div id="resultList"></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="sec-title">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-wallet"/></svg>
+          额度与账单
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="quota-big" id="quotaNum">0</span>
+          <span class="muted">/ <span class="num" id="quotaTotal">0</span> 词元（本月套餐）</span>
+        </div>
+        <div class="progress" id="quotaBar"><i style="width:0%"></i></div>
+        <div class="muted">额度变化实时留痕 · 低于 10% 时将在会话中提醒</div>
+        <div style="margin-top:11px;display:flex;gap:8px">
+          <button class="btn small" onclick="go('page-bill')">用量账单</button>
+          <button class="btn ghost small" onclick="go('page-buy')">购买词元包</button>
+        </div>
+      </div>
+
+      <div class="card reveal">
+        <div class="sec-title">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-db"/></svg>
+          我的知识库
+        </div>
+        <div id="kbList"></div>
+        <div style="margin-top:11px"><button class="btn ghost small" onclick="uploadKb()">＋ 上传资料入知识库</button></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="sec-title">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-shield"/></svg>
+          安全与设置
+        </div>
+        <div class="row click" onclick="go('page-log')">
+          <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-log"/></svg>我的操作记录</span>
+          <span class="muted">全程可查 ›</span>
+        </div>
+        <div class="row click" onclick="toast('反馈入口：错误 / 有害 / 侵权')">
+          <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-warn"/></svg>投诉与纠错</span><span class="muted">›</span>
+        </div>
+        <div class="row">
+          <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-gear"/></svg>关于</span>
+          <span class="muted">AIOA 智能工作台 V1.2</span>
+        </div>
+        <div class="row click" onclick="doLogout()">
+          <span style="display:flex;align-items:center;gap:8px;color:var(--red)"><svg class="ic" style="width:15px;height:15px"><use href="#i-chevron"/></svg>退出登录</span>
+          <span class="muted"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 账单 ========== -->
+    <div class="page" id="page-bill">
+      <div class="sec-title reveal">用量账单</div>
+      <div class="card reveal" id="billList"></div>
+      <button class="btn ghost small" onclick="exportBill()">导出明细</button>
+    </div>
+
+    <!-- ========== 词元包 ========== -->
+    <div class="page" id="page-buy">
+      <div class="sec-title reveal">购买词元包</div>
+      <div class="muted reveal" style="margin-bottom:12px">购买后额度实时到账，可在「我的 - 额度与账单」查看</div>
+      <div id="pkgList"></div>
+    </div>
+
+    <!-- ========== 操作记录 ========== -->
+    <div class="page" id="page-log">
+      <div class="sec-title reveal">我的操作记录</div>
+      <div class="card reveal" id="logList"></div>
+      <div class="muted" style="margin-top:2px">记录不可篡改，保存 ≥ 3 年</div>
+    </div>
+
+    <!-- ========== 成果详情（V1.2 新增） ========== -->
+    <div class="page" id="page-result">
+      <div class="sec-title reveal" id="resultTitle">成果详情</div>
+      <div class="card reveal">
+        <div class="muted" id="resultMeta" style="margin-bottom:9px"></div>
+        <div id="resultBody" style="font-size:12.5px;line-height:1.8;white-space:pre-wrap"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost small" onclick="go('page-chat')">继续编辑</button>
+        <button class="btn small" id="resultSubmitBtn" onclick="submitResultApproval()">发起审批</button>
+        <button class="btn ghost small" onclick="toast('已复制分享链接')">转发</button>
+      </div>
     </div>
   </div>
+
+  <div class="tabbar">
+    <div class="tab active" data-page="page-home" onclick="switchTab(this)">
+      <svg class="ic"><use href="#i-home"/></svg>工作台
+    </div>
+    <div class="tab" data-page="page-todo" onclick="switchTab(this)">
+      <svg class="ic"><use href="#i-bell"/></svg><span class="cnt" id="tabCnt" style="display:none">0</span>待办
+    </div>
+    <div class="tab fab" data-page="page-chat" onclick="switchTab(this)">
+      <span class="ic"><svg class="ic"><use href="#i-chat"/></svg></span>会话
+    </div>
+    <div class="tab" data-page="page-agent" onclick="switchTab(this)">
+      <svg class="ic"><use href="#i-bot"/></svg>数字员工
+    </div>
+    <div class="tab" data-page="page-me" onclick="switchTab(this)">
+      <svg class="ic"><use href="#i-user"/></svg>我的
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
 </div>
 
 <script>
-/* ============================================================
-   1. 业务数据（全部来自后端 aioa-resource，登录后 loadLiveData 拉取；
-      未登录/接口失败一律空态展示，不再内置任何静态演示数据）
-   ============================================================ */
-const EXPERTS = [];
-
-const SKILLS = {};
-
-const KB_FILES = [];
-
+/* ============================================================================
+   1. 状态
+   ============================================================================ */
 const state = {
-  quota:0, used:0, free:0,
+  token:null, user:null, isAdmin:false, model:'echo',
+  quota:0, used:0, free:0, left:0, quotaInfo:null,
   chatExpert:null, kbOn:true, busy:false,
-  conversationId:null, es:null, history:[],
-  mode:'guest', token:null, user:null, roles:[], isAdmin:false, todoApprovals:[], notifs:[], unread:0,
-  bill:[],
-  log:[],
-  approvals:[], lastAnswer:'',
-  model:'echo', conversations:[]
+  conversationId:null, runId:null, controller:null,
+  experts:[], skills:[], kbDocs:[], bill:[], log:[],
+  approvals:[], notifs:[], unread:0, packages:[], conversations:[],
+  kpi:{month:null, quarter:null}, kpiMode:'month',
+  workers:[], results:[], currentResult:null,
+  lastAnswer:''
 };
 
-/* ============================================================
-   2. API 适配层 —— 统一联调入口（ApiResponse{code,message,data}，code=0 成功）
-      经 serve.py 同域代理到后端 :8080，规避 CORS
-   ============================================================ */
+/* ============================================================================
+   2. API 适配层（经 serve.py 同域代理到 :8080，规避 CORS）
+   ============================================================================ */
 const API = {
   base:'/api',
   async req(path, opts={}){
     const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
     if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const res = await fetch(this.base+path, Object.assign({}, opts, {headers}));
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const body = await res.json();
-    // 剥壳：统一响应体 {code,message,data}，code===0 为成功
+    const body = await res.json().catch(()=>null);
     if(body && typeof body==='object' && 'code' in body){
-      if(body.code !== 0) throw new Error(body.message || ('业务错误 '+body.code));
+      if(body.code !== 0){
+        const err = new Error(body.message || ('业务错误 '+body.code));
+        err.code = body.code; err.status = res.status;
+        throw err;
+      }
       return body.data;
     }
+    if(!res.ok) throw new Error('HTTP '+res.status);
     return body;
   },
   login(u,p){ return this.req('/v1/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})}); },
+
+  /* 会话与运行 */
   createConversation(title,appCode){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode})}); },
   createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context,model_ref:state.model})}); },
   listConversations(){ return this.req('/v1/conversations'); },
   renameConversation(id,title){ return this.req('/v1/conversations/'+id,{method:'PUT',body:JSON.stringify({title})}); },
   listMessages(convId){ return this.req('/v1/conversations/'+convId+'/messages'); },
-  packages(){ return this.req('/v1/packages'); },
-  createOrder(packageId){ return this.req('/v1/orders',{method:'POST',body:JSON.stringify({packageId})}); },
-  mockPay(orderNo){ return this.req('/v1/payments/notify/mock/'+orderNo,{method:'POST',body:'{}'}); },
   cancel(runId){ return this.req('/v1/runs/'+runId+'/cancel',{method:'POST'}); },
 
-  /* ---- 用户端业务域（原为前端 mock，现接后端 aioa-resource 模块） ---- */
+  /* 业务域 */
   experts(){ return this.req('/v1/experts'); },
   skills(){  return this.req('/v1/skills'); },
   kbDocs(){  return this.req('/v1/kb/documents'); },
@@ -540,6 +758,9 @@ const API = {
   quota(){   return this.req('/v1/quota'); },
   ledger(){  return this.req('/v1/ledger?limit=50'); },
   logs(){    return this.req('/v1/logs?limit=50'); },
+  packages(){ return this.req('/v1/packages'); },
+  createOrder(packageId){ return this.req('/v1/orders',{method:'POST',body:JSON.stringify({packageId})}); },
+  mockPay(orderNo){ return this.req('/v1/payments/notify/mock/'+orderNo,{method:'POST',body:'{}'}); },
   approvalSubmit(bizType, title, content, runId, conversationId){
     return this.req('/v1/approvals',{method:'POST',body:JSON.stringify({bizType,title,content,runId,conversationId})});
   },
@@ -547,22 +768,29 @@ const API = {
   approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
   notificationList(){ return this.req('/v1/notifications?limit=20'); },
   notificationRead(id){ return this.req('/v1/notifications/'+id+'/read',{method:'POST'}); },
-  notificationReadAll(){ return this.req('/v1/notifications/read-all',{method:'POST'}); },
+
+  /* V1.2 新增域 */
+  kpiBoard(period){ return this.req('/v1/kpi/board?period='+period); },
+  workers(){ return this.req('/v1/workers'); },
+  createWorker(body){ return this.req('/v1/workers',{method:'POST',body:JSON.stringify(body)}); },
+  toggleWorker(id){ return this.req('/v1/workers/'+id+'/toggle',{method:'POST'}); },
+  results(){ return this.req('/v1/results'); },
+  createResult(body){ return this.req('/v1/results',{method:'POST',body:JSON.stringify(body)}); },
+  resultDetail(id){ return this.req('/v1/results/'+id); },
+  updateResult(id, body){ return this.req('/v1/results/'+id,{method:'PUT',body:JSON.stringify(body)}); },
+
   async ensureConversation(){
     if(state.conversationId) return state.conversationId;
-    const c = await this.createConversation(state.chatExpert.name+' · 会话','aioa-client');
+    const c = await this.createConversation((state.chatExpert ? state.chatExpert.name : '会话')+' · 对话','aioa-client');
     state.conversationId = c && (c.id || c.conversationId);
     if(!state.conversationId) throw new Error('会话创建失败');
     return state.conversationId;
   },
-  /* SSE 订阅：run.started → message.delta×N → message.completed → run.completed
-     用 fetch + ReadableStream 而非 EventSource：
-       · EventSource 无法携带 Authorization 头（后端 SSE 需鉴权）
-       · fetch 可配合 AbortController 实现真正的「中断生成」（FR-D1） */
+
+  /* SSE：fetch + ReadableStream（EventSource 无法带 Authorization 头） */
   async stream(runId, h){
     const ctrl = new AbortController();
     state.controller = ctrl;
-    state.runId = runId;
     const headers = {Accept:'text/event-stream'};
     if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
     const res = await fetch(this.base+'/v1/runs/'+runId+'/events', {headers, signal:ctrl.signal});
@@ -575,21 +803,19 @@ const API = {
       if(done) break;
       buf += dec.decode(value, {stream:true});
       let i;
-      while((i = buf.indexOf('\n\n')) !== -1){       // SSE 帧以空行分隔
+      while((i = buf.indexOf('\n\n')) !== -1){
         const frame = buf.slice(0, i);
         buf = buf.slice(i + 2);
         const ev = parseSseFrame(frame);
         if(!ev) continue;
         if(ev.event === 'run.started'){
           const p = safeJson(ev.data);
-          if(p && p.model && h.onStarted) h.onStarted(p);  // 真实模型名透出（run.started 新增 model/gateway_key）
+          if(p && p.model && h.onStarted) h.onStarted(p);
         }else if(ev.event === 'message.delta'){
           const t = pickText(ev.data); if(t) h.onDelta(t);
         }else if(ev.event === 'message.completed'){
-          // 该帧带最终 content 与 usage；正文已由 deltas 逐段追加完成，
-          // 此处只取用量与引用溯源/工具调用，切勿再追加一次（否则文本重复）
           const p = safeJson(ev.data);
-          const u = pickUsage(p); if(u) h.onUsage(u);
+          h.onUsage(pickUsage(p));
           if(h.onCompleted) h.onCompleted(p);
         }else if(ev.event === 'approval.required'){
           const p = safeJson(ev.data); if(p && h.onApproval) h.onApproval(p);
@@ -597,23 +823,23 @@ const API = {
           h.onUsage(pickUsage(safeJson(ev.data))); return;
         }else if(ev.event === 'run.failed'){
           h.onError(new Error(ev.data || '运行失败')); return;
+        }else if(ev.event === 'error'){
+          h.onError(new Error(ev.data || '运行出错')); return;
         }
       }
     }
   }
 };
 
-/* 解析单个 SSE 帧：event: <name>\ndata: <payload> */
 function parseSseFrame(block){
   let event = null, data = '';
   for(const line of block.split('\n')){
-    if(line.startsWith('event:'))       event = line.slice(6).trim();
-    else if(line.startsWith('data:'))   data += line.slice(5).trim();
+    if(line.startsWith('event:'))     event = line.slice(6).trim();
+    else if(line.startsWith('data:')) data += line.slice(5).trim();
   }
   return event ? {event, data} : null;
 }
 function safeJson(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
-/* 防御式取文本：兼容 {data:{text}} / {text} / {delta} / 纯字符串 多种形态 */
 function pickText(raw){
   const p = safeJson(raw);
   if(p === null) return typeof raw==='string' ? raw : '';
@@ -623,7 +849,6 @@ function pickText(raw){
   if(d && typeof d === 'object') return d.text || d.delta || d.content || '';
   return '';
 }
-/* 防御式取用量：usage.total_tokens / prompt+completion */
 function pickUsage(p){
   if(!p) return null;
   const u = (p.data && p.data.usage) || p.usage || (p.data && p.data.data && p.data.data.usage);
@@ -633,117 +858,28 @@ function pickUsage(p){
   return {prompt:pt, completion:ct, total:u.total_tokens ?? (pt+ct)};
 }
 
-/* ============================================================
-   3. 渲染
-   ============================================================ */
+/* ============================================================================
+   3. 工具
+   ============================================================================ */
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fmt = n => Number(n).toLocaleString('en-US');
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => Number(n||0).toLocaleString('en-US');
+const icon = (k, cls) => '<svg class="ic '+(cls||'')+'"><use href="#i-'+k+'"/></svg>';
+const emptyBox = t => '<div class="empty">'+icon('inbox')+'<div>'+esc(t)+'</div></div>';
 
-/* 未登录/无数据的统一空态行 */
-const emptyHint = msg => '<div class="muted" style="padding:10px 0">'+msg+'</div>';
-
-function renderExperts(){
-  if(!EXPERTS.length){
-    $('expertList').innerHTML = emptyHint(state.token ? '专家目录加载失败，请下拉刷新或重新登录' : '登录后展示平台专家目录');
-    $('homeExperts').innerHTML = emptyHint(state.token ? '专家目录加载失败' : '登录后精选专家将展示在这里');
-    return;
+/* 后端分页/信封结构不一致（数组 / {list} / {items} / {records}），统一解包为数组。
+   注意：早期版本直接对结果调用 .slice() 会在拿到对象时抛 TypeError，
+   并中断整个 renderAll，导致后续所有区块空白 —— 故所有列表渲染必须经由此函数。 */
+function asArray(v){
+  if(Array.isArray(v)) return v;
+  if(v && typeof v === 'object'){
+    for(const k of ['list','items','records','data','rows']){
+      if(Array.isArray(v[k])) return v[k];
+    }
   }
-  const row = (e,i) => '<div class="expert-row" onclick="startChat('+i+')">'
-    + '<div class="avatar">'+e.icon+'</div>'
-    + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px">'+e.name+'</div>'
-    + '<div class="muted">'+esc(e.desc)+'</div>'
-    + '<div style="margin-top:4px">'+e.tags.map(t=>'<span class="tag">'+t+'</span>').join('')+'</div></div>'
-    + '<span class="muted">›</span></div>';
-  $('expertList').innerHTML = EXPERTS.map(row).join('');
-  $('homeExperts').innerHTML = [0,2].filter(i=>i<EXPERTS.length).map(i=>row(EXPERTS[i],i)).join('');
+  return [];
 }
 
-function renderSkills(){
-  const keys = Object.keys(SKILLS);
-  $('skillGrid').innerHTML = keys.length ? keys.map(name=>{
-    const s = SKILLS[name];
-    return '<div class="grid-item" onclick="openSkill(\''+name+'\')" tabindex="0">'
-      + '<div class="ico">'+s.icon+'</div><div class="name">'+name+'</div></div>';
-  }).join('') : emptyHint(state.token ? '技能目录加载失败，请重新进入' : '登录后展示可用技能');
-}
-
-function renderKB(){
-  $('kbList').innerHTML = KB_FILES.length ? KB_FILES.map(f=>{
-    const b = f.state==='ok' ? '<span class="badge ok">已入库</span>' : '<span class="badge wait">解析中</span>';
-    return '<div class="row"><span class="t">'+f.icon+' '+esc(f.name)+'</span>'+b+'</div>';
-  }).join('') : emptyHint(state.token ? '还没有登记资料，在下方「上传资料」登记' : '登录后展示你的知识库资料');
-}
-
-function renderBill(){
-  $('billList').innerHTML = state.bill.length ? state.bill.map(b=>{
-    const io = (b.prompt != null && b.completion != null)
-      ? ' <span class="muted">（入 '+fmt(b.prompt)+' / 出 '+fmt(b.completion)+'）</span>' : '';
-    return '<div class="row"><span class="t">'+esc(b.t)+'</span>'
-         + '<span class="hl num">+'+fmt(b.n)+' 词元'+io+'</span></div>';
-  }).join('')
-    + '<div class="muted" style="margin-top:9px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>'
-  : emptyHint(state.token ? '暂无消费流水，发起一次会话后即可看到真实计量账单' : '登录后展示真实用量账单');
-}
-
-function renderLog(){
-  $('logList').innerHTML = state.log.length ? state.log.map(l=>
-    '<div class="row"><span class="t">'+esc(l.t)+'</span><span class="badge '+l.s+'">'+l.l+'</span></div>').join('')
-  : emptyHint(state.token ? '暂无操作记录' : '登录后展示你的操作记录（全过程留痕）');
-}
-
-function syncQuota(){
-  const hasQuota = state.quota > 0;
-  const left = Math.max(0, state.quota - state.used);
-  const pct  = hasQuota ? Math.min(100, Math.round(state.used / state.quota * 100)) : 0;
-  $('quotaNum').textContent = fmt(hasQuota ? left : 0);
-  $('meUsed').textContent   = fmt(state.used);
-  $('freeNum').textContent  = fmt(state.free);
-  const bar = $('quotaBar');
-  bar.querySelector('i').style.width = pct + '%';
-  bar.classList.toggle('low', pct > 80 && pct < 100);
-  bar.classList.toggle('out', hasQuota && pct >= 100);
-}
-
-function setLink(mode, text){
-  state.mode = mode;
-  const chip = $('linkChip');
-  chip.className = 'link ' + (mode==='live' ? 'live' : 'mock');
-  $('linkText').textContent = text;
-}
-
-/* ---------- 导航 ---------- */
-const TITLES = {'page-home':'AIOA 智能工作台','page-todo':'待办','page-expert':'专家服务','page-chat':'会话',
-                'page-me':'我的','page-bill':'用量账单','page-log':'我的操作记录','page-skill':'技能调用'};
-const SUBPAGES = ['page-bill','page-log','page-skill'];
-
-function go(id){
-  // 离开页面时必须一并移除 chat-active：否则该类的 display:flex 会盖在其他页之上
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active','chat-active'));
-  const el = $(id);
-  el.classList.add('active');
-  if(id === 'page-chat') el.classList.add('chat-active');
-  $('pageTitle').textContent = TITLES[id] || 'AIOA 智能工作台';
-  $('backBtn').classList.toggle('show', SUBPAGES.includes(id));
-  el.scrollTop = 0;
-  if(id === 'page-chat') scrollMsgs();
-}
-function goBack(){
-  const cur = state.chatExpert ? 'page-me' : 'page-home';
-  go(cur);
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-me'));
-}
-function switchTab(el){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  go(el.dataset.page);
-  if(el.dataset.page === 'page-chat' && !$('msgs').children.length){
-    const idx = EXPERTS.indexOf(state.chatExpert);
-    if(idx >= 0) startChat(idx);
-  }
-}
-
-/* ---------- Toast ---------- */
 let toastTimer;
 function toast(msg){
   const t = $('toast');
@@ -752,725 +888,767 @@ function toast(msg){
   toastTimer = setTimeout(()=>t.classList.remove('show'), 1900);
 }
 
-/* ============================================================
-   4. 会话：流式输出 + 词元计量 + 引用溯源 + 审批卡点
-   ============================================================ */
-function startChat(i){
-  if(!state.token){
-    toast('请先登录后再与专家对话');
-    const ls = document.getElementById('loginScreen');
-    if(ls) ls.style.display = 'flex';
-    return;
-  }
-  if(!EXPERTS.length || !EXPERTS[i]){
-    toast('专家目录未加载，请稍后重试');
-    return;
-  }
-  state.chatExpert = EXPERTS[i];
-  state.conversationId = null;            // 换专家 = 新会话
-  state.history = [];
-  $('chatName').textContent = state.chatExpert.name;
-  $('chatIcon').textContent = state.chatExpert.icon;
-  $('chatModel').textContent = '模型：智能路由';
-  const m = $('msgs');
-  m.innerHTML = '<div class="msg"><div class="avatar">'+state.chatExpert.icon+'</div>'
-    + '<div class="bubble">你好，我是'+state.chatExpert.name+'。'+esc(state.chatExpert.intro)
-    + '<div class="chips">'+state.chatExpert.recs.map(q=>'<span class="chip" onclick="quickAsk(this)">'+esc(q)+'</span>').join('')+'</div>'
-    + '</div></div>';
-  go('page-chat');
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-chat'));
-  $('pageTitle').textContent = state.chatExpert.name;
+/* 图标键映射：后端存 icon 键，前端映射 SVG；未知键回退 bot */
+const ICON_MAP = {bot:'bot', bell:'bell', pen:'pen', megaphone:'megaphone', doc:'doc', sheet:'sheet',
+                  chart:'chart', scale:'scale', bank:'bank', user:'user', clock:'clock'};
+function iconKey(k){ return ICON_MAP[k] || 'bot'; }
+
+/* ============================================================================
+   4. 页面导航
+   ============================================================================ */
+function go(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const p = $(id); if(!p) return;
+  p.classList.add('active');
+  if(id !== 'page-chat') p.scrollTop = 0;
+  // 入场错峰
+  p.querySelectorAll('.reveal').forEach(el=>{
+    el.classList.remove('in');
+    void el.offsetWidth;
+    el.classList.add('in');
+  });
 }
-function quickAsk(el){ $('chatInput').value = el.textContent; send(); }
+const TITLES = {
+  'page-home':'AIOA 智能工作台','page-todo':'待办','page-agent':'数字员工','page-chat':'会话',
+  'page-me':'我的','page-bill':'用量账单','page-buy':'购买词元包','page-log':'我的操作记录','page-result':'成果详情'
+};
+function setTitle(pid){
+  const name = (pid === 'page-chat' && state.chatExpert) ? state.chatExpert.name : (TITLES[pid] || 'AIOA 智能工作台');
+  $('pageTitle').innerHTML = esc(name) + '<span class="ver">V1.2</span>';
+}
+function switchTab(el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  go(el.dataset.page);
+  setTitle(el.dataset.page);
+}
+function switchTabById(pid){
+  const el = document.querySelector('.tab[data-page="'+pid+'"]');
+  if(el) switchTab(el); else { go(pid); setTitle(pid); }
+}
+function activateChatTab(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-chat'));
+}
+
+/* ============================================================================
+   5. 登录 / 登出
+   ============================================================================ */
+async function doLogin(){
+  const u = $('lgUser').value.trim(), p = $('lgPass').value;
+  const btn = $('lgBtn'), err = $('lgErr');
+  err.textContent = '';
+  if(!u || !p){ err.textContent = '请输入账号与密码'; return; }
+  btn.disabled = true; btn.textContent = '登录中…';
+  try{
+    const d = await API.login(u, p);
+    state.token = d.accessToken;
+    state.user = {username:u, nickname:d.nickname || u};
+    try{ localStorage.setItem('aioa_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
+    document.body.classList.add('auth');
+    go('page-home'); setTitle('page-home');
+    await loadLiveData();
+  }catch(e){
+    err.textContent = '登录失败：' + (e.message || '请检查账号密码');
+  }finally{
+    btn.disabled = false; btn.textContent = '登录';
+  }
+}
+function doLogout(){
+  try{ localStorage.removeItem('aioa_session'); }catch(e){}
+  state.token = null; state.user = null;
+  document.body.classList.remove('auth');
+  go('page-login');
+}
+
+/* ============================================================================
+   6. 数据加载（全部真实接口，失败降级为空态）
+   ============================================================================ */
+async function loadLiveData(){
+  const tasks = [
+    ['experts', ()=>API.experts()], ['skills', ()=>API.skills()], ['kbDocs', ()=>API.kbDocs()],
+    ['quotaInfo', ()=>API.quota()], ['bill', ()=>API.ledger()], ['log', ()=>API.logs()],
+    ['approvals', ()=>API.approvalList('mine')], ['notifs', ()=>API.notificationList()],
+    ['packages', ()=>API.packages()], ['workers', ()=>API.workers()], ['results', ()=>API.results()],
+    ['kpiMonth', ()=>API.kpiBoard('month')], ['kpiQuarter', ()=>API.kpiBoard('quarter')]
+  ];
+  await Promise.all(tasks.map(async ([k, fn])=>{
+    try{
+      const v = await fn();
+      if(k === 'kpiMonth') state.kpi.month = v;
+      else if(k === 'kpiQuarter') state.kpi.quarter = v;
+      else if(k === 'quotaInfo') state.quotaInfo = v;          // 对象，单独存放避免与额度数字混淆
+      else if(k === 'notifs') state.notifs = v;                // {items, unread}，渲染时再解包
+      else state[k] = asArray(v);
+    }catch(e){ /* 单项失败不影响整体 */ }
+  }));
+  // 管理员额外拉待我审批
+  if(state.isAdmin){
+    try{ state.todoApprovals = await API.approvalList('todo') || []; }catch(e){}
+  }
+  renderAll();
+}
+
+/* 逐块渲染并隔离异常：任一区块出错只影响自身，不会让整页变空白 */
+function renderAll(){
+  const steps = [renderGreet, renderKPI, renderToday, renderSkills, renderExperts,
+                 renderTodo, renderAgents, renderResults, renderMe, renderBill,
+                 renderLog, renderKb, renderPackages, updateQuotaUI];
+  steps.forEach(fn=>{
+    try{ fn(); }
+    catch(e){ console.error('[render] ' + fn.name + ' failed: ' + (e && e.message ? e.message : e)); }
+  });
+  if(!state.chatExpert && state.experts.length) state.chatExpert = state.experts[0];
+}
+
+function renderGreet(){
+  const n = (state.user && (state.user.nickname || state.user.username)) || '同学';
+  $('greet').textContent = '你好，' + n;
+  $('meName').textContent = n;
+  $('meRole').textContent = state.isAdmin ? '企业管理员 · 可审批与管理' : '企业成员身份';
+  const h = new Date().getHours();
+  $('greetSub').textContent = h < 12 ? '早上好，今天想让我帮你做点什么？'
+    : (h < 18 ? '下午好，有什么可以交给我的？' : '晚上好，要不要看看今天的产出？');
+}
+
+/* ============================================================================
+   7. 经营数据看板（V1.2）
+   ============================================================================ */
+function setKpiMode(mode){
+  state.kpiMode = mode;
+  $('segMonth').classList.toggle('on', mode==='month');
+  $('segQuarter').classList.toggle('on', mode==='quarter');
+  renderKPI();
+}
+function renderKPI(){
+  const b = state.kpi[state.kpiMode];
+  const grid = $('kpiGrid'), bars = $('kpiBars');
+  if(!b || !b.metrics || !b.metrics.length){
+    grid.innerHTML = emptyBox('暂无经营数据，请管理员在管理端「经营数据」录入');
+    bars.innerHTML = ''; $('kpiInsight').textContent = ''; $('kpiSource').textContent = '';
+    $('todayCnt') && 0;
+    return;
+  }
+  grid.innerHTML = b.metrics.map(m=>
+    '<div class="kpi" onclick="openSkill(\'数据分析\')">'+
+      '<div class="k-label"><span>'+esc(m.label)+'</span><span>'+esc(m.compare||'')+'</span></div>'+
+      '<div class="k-num">'+esc(m.value||'—')+
+        '<span class="delta '+(m.up?'up':'down')+'">'+(m.up?'↑':'↓')+esc(m.delta||'')+'</span>'+
+      '</div>'+
+    '</div>').join('');
+
+  const max = Math.max(1, ...(b.trend||[]).map(t=>Number(t.value)||0));
+  bars.innerHTML = (b.trend||[]).map(t=>{
+    const h = Math.max(4, Math.round((Number(t.value)||0) / max * 70));
+    return '<div class="bar'+(t.hot?' hot':'')+'" style="height:'+h+'px"><span>'+esc(t.label)+'</span></div>';
+  }).join('') || '<div class="muted">暂无趋势数据</div>';
+
+  $('kpiInsight').innerHTML = b.insight
+    ? '<b>AI 解读：</b>' + esc(b.insight)
+    : '<b>AI 解读：</b>暂无解读，管理员可在管理端配置';
+  $('kpiSource').textContent = b.source || '';
+  $('kpiTime').textContent = (state.kpiMode==='month' ? '本月' : '本季') + '口径';
+}
+
+/* ============================================================================
+   8. 今天要办的事
+   ============================================================================ */
+function renderToday(){
+  const items = [];
+  asArray(state.notifs).slice(0,3).forEach(n=>{
+    items.push({ico:'bell', text:esc(n.title||'新通知'), sub:esc((n.content||'').slice(0,40)), act:()=>go('page-todo')});
+  });
+  const pending = asArray(state.approvals).filter(a=>a.status==='PENDING');
+  pending.slice(0,3).forEach(a=>{
+    items.push({ico:'doc', text:esc(a.title||'审批单'), sub:'状态：审批中 · 提交于 '+esc((a.createdAt||'').replace('T',' ').slice(0,16)), act:()=>go('page-todo')});
+  });
+  const box = $('todayList');
+  if(!items.length){
+    box.innerHTML = '<div class="muted" style="padding:6px 0">今天没有待办事项，可以让数字员工帮你盯着。</div>';
+    $('todayCnt').textContent = '0 件';
+  }else{
+    box.innerHTML = items.slice(0,3).map((it,i)=>
+      '<div class="brief-item" onclick="go(\'page-todo\')">'+
+        '<div class="bico">'+icon(it.ico)+'</div>'+
+        '<div><div>'+it.text+'</div><div class="muted">'+it.sub+'</div></div>'+
+      '</div>').join('');
+    $('todayCnt').textContent = items.length + ' 件';
+  }
+  const sug = $('todaySuggest');
+  const firstExpert = (state.experts||[])[0];
+  if(firstExpert && (firstExpert.recs||[]).length){
+    sug.style.display = 'block';
+    sug.innerHTML = '试试问「'+esc(firstExpert.name)+'」：'+esc(firstExpert.recs[0]);
+    sug.dataset.q = firstExpert.recs[0];
+    sug.dataset.idx = '0';
+  }else{
+    sug.style.display = 'none';
+  }
+}
+function askSuggest(){
+  const sug = $('todaySuggest');
+  startChat(Number(sug.dataset.idx||0));
+  $('chatInput').value = sug.dataset.q || '';
+  send();
+}
+
+/* ============================================================================
+   9. 技能 / 专家 / 知识库 / 账单 / 日志 / 词元包
+   ============================================================================ */
+function renderSkills(){
+  const box = $('skillGrid');
+  const list = (state.skills||[]).slice(0,4);
+  if(!list.length){ box.innerHTML = emptyBox('暂无可用技能'); return; }
+  const icons = ['doc','scale','chart','bank'];
+  box.innerHTML = list.map((s,i)=>
+    '<div class="grid-item" onclick="openSkill(\''+esc(s.name||s.title||'技能')+'\')">'+
+      icon(icons[i%4])+'<div class="name">'+esc(s.name||s.title||'技能')+'</div></div>').join('');
+}
+function renderExperts(){
+  const box = $('expertList'), home = $('homeExperts');
+  const list = state.experts||[];
+  if(!list.length){
+    box.innerHTML = emptyBox('暂无专家，请管理员在管理端配置');
+    home.innerHTML = emptyBox('暂无推荐专家');
+    return;
+  }
+  const row = (e,i)=>
+    '<div class="expert-row" onclick="startChat('+i+')">'+
+      '<div class="avatar">'+icon(iconKey(e.icon))+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="ename">'+esc(e.name)+'</div>'+
+      '<div class="muted">'+esc(e.desc||e.description||'')+'</div></div>'+
+      '<svg class="ic" style="width:15px;height:15px;color:var(--text-3)"><use href="#i-chevron"/></svg>'+
+    '</div>';
+  box.innerHTML = list.map(row).join('');
+  home.innerHTML = list.slice(0,2).map(row).join('');
+}
+function renderKb(){
+  const box = $('kbList');
+  const list = state.kbDocs||[];
+  if(!list.length){ box.innerHTML = emptyBox('还没有资料，上传后可在会话中被引用'); return; }
+  box.innerHTML = list.slice(0,5).map(d=>{
+    const st = d.state === 'ok' ? ['ok','已入库'] : (d.state === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
+    return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'</span><span class="badge '+st[0]+'">'+st[1]+'</span></div>';
+  }).join('');
+}
+async function uploadKb(){
+  const name = prompt('资料名称（支持 PDF/Word/Excel/图片）：');
+  if(!name) return;
+  try{ await API.kbUpload(name, 'doc', 0); toast('已登记，进入解析队列'); state.kbDocs = await API.kbDocs() || []; renderKb(); }
+  catch(e){ toast('登记失败：'+e.message); }
+}
+function renderBill(){
+  const box = $('billList');
+  const list = state.bill||[];
+  if(!list.length){ box.innerHTML = emptyBox('本月还没有用量记录'); return; }
+  box.innerHTML = list.slice(0,20).map(b=>{
+    const t = (b.createdAt||'').replace('T',' ').slice(0,16);
+    const who = b.bizTitle || b.expertName || b.appName || b.bizType || 'AI 服务';
+    // 账本字段：total_tokens 兼容 totalTokens / prompt+completion 求和
+    const tk = b.totalTokens != null ? b.totalTokens
+      : (b.total_tokens != null ? b.total_tokens : ((b.promptTokens||0)+(b.completionTokens||0)));
+    return '<div class="row"><span>'+esc(t)+' · '+esc(who)+'</span><span class="hl num">+'+fmt(tk)+' 词元</span></div>';
+  }).join('') + '<div class="muted" style="margin-top:8px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>';
+}
+function exportBill(){
+  const rows = [['时间','来源','词元']];
+  (state.bill||[]).forEach(b=>rows.push([(b.createdAt||'').replace('T',' ').slice(0,19),
+    b.bizTitle||b.bizType||'AI 服务',
+    b.totalTokens != null ? b.totalTokens : ((b.promptTokens||0)+(b.completionTokens||0))]));
+  const csv = '\uFEFF' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download = 'AIOA用量账单.csv'; a.click();
+  toast('账单明细已导出');
+}
+function renderLog(){
+  const box = $('logList');
+  const list = state.log||[];
+  if(!list.length){ box.innerHTML = emptyBox('暂无操作记录'); return; }
+  box.innerHTML = list.slice(0,20).map(l=>{
+    const okd = (l.status === 'ok' || l.status === 'SUCCESS' || l.status == null);
+    return '<div class="row"><span>'+esc((l.createdAt||'').replace('T',' ').slice(0,16))+' '+esc(l.action||l.type||'操作')+'</span>'+
+      '<span class="badge '+(okd?'ok':'danger')+'">'+esc(l.label || (okd?'成功':'失败'))+'</span></div>';
+  }).join('');
+}
+function renderPackages(){
+  const box = $('pkgList');
+  const list = state.packages||[];
+  if(!list.length){ box.innerHTML = '<div class="card">'+emptyBox('暂无可售词元包')+'</div>'; return; }
+  box.innerHTML = list.map(p=>{
+    const yuan = p.priceYuan != null ? p.priceYuan : ((p.priceCents != null ? p.priceCents : p.price || 0) / 100);
+    return '<div class="card"><div class="row"><span style="font-weight:700">'+esc(p.packageName||p.name||'词元包')+'</span>'+
+      '<span class="hl">¥'+esc(yuan)+'</span></div>'+
+      '<div class="muted" style="margin-bottom:8px">'+fmt(p.tokens||0)+' 词元 · '+esc(p.desc||p.remark||'')+'</div>'+
+      '<button class="btn small" onclick="buyPackage('+p.id+')">购买并到账</button></div>';
+  }).join('');
+}
+async function buyPackage(id){
+  try{
+    const o = await API.createOrder(id);
+    const no = o.orderNo || o.no;
+    if(!no) throw new Error('下单失败');
+    await API.mockPay(no);
+    toast('购买成功，额度已到账');
+    state.quotaInfo = await API.quota(); applyQuota(state.quotaInfo);
+    updateQuotaUI();
+  }catch(e){ toast('购买失败：'+e.message); }
+}
+function applyQuota(q){
+  if(!q) return;
+  state.quota = q.quota || 0; state.used = q.used || 0; state.free = q.free || 0;
+  state.left = q.left != null ? q.left : (q.quota + q.free - q.used);
+}
+
+/* ============================================================================
+   10. 待办
+   ============================================================================ */
+function renderTodo(){
+  const pending = $('todoPending'), done = $('todoDone'), mine = $('todoMine');
+  const todoList = state.isAdmin ? asArray(state.todoApprovals) : [];
+  const mineList = asArray(state.approvals);
+  const notifList = asArray(state.notifs).slice(0,3);
+
+  // 待我处理：管理员=待审单；普通用户=通知
+  let rows = '';
+  if(state.isAdmin){
+    rows = todoList.filter(a=>a.status==='PENDING').map(a=>
+      todoRow('doc', esc(a.title||'审批单')+' <span class="badge go">待审批</span>',
+        '提交人：'+esc(a.creatorName||a.createdBy||'—')+' ｜ '+esc((a.createdAt||'').replace('T',' ').slice(0,16)),
+        'approveTodo('+a.id+')')).join('');
+  }else{
+    rows = notifList.map(n=>
+      todoRow('bell', esc(n.title||'新通知')+' <span class="badge go">待处理</span>',
+        esc((n.content||'').slice(0,50)), 'readNotif('+n.id+')')).join('');
+  }
+  if(!rows) rows = emptyBox(state.isAdmin ? '没有待你审批的单据' : '没有待处理事项');
+  pending.innerHTML = rows;
+
+  const workerRows = (state.workers||[]).filter(w=>w.on).map(w=>
+    todoRow('bot', esc(w.name)+' · '+esc(w.lastOutput||'')+' <span class="badge ok">已送达</span>',
+      '运行计划：'+esc(w.schedule||''), "go('page-agent')")).join('');
+  done.innerHTML = workerRows || emptyBox('数字员工暂无产出');
+
+  mine.innerHTML = mineList.length
+    ? mineList.slice(0,5).map(a=>{
+        const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
+        return todoRow('pen', esc(a.title||'我的申请')+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
+          esc((a.createdAt||'').replace('T',' ').slice(0,16))+' ｜ '+(a.decisionNote?('意见：'+esc(a.decisionNote)):''),
+          "toast('可在管理端查看完整流转')");
+      }).join('')
+    : emptyBox('暂无申请记录');
+
+  const cnt = state.isAdmin
+    ? todoList.filter(a=>a.status==='PENDING').length
+    : (state.notifs && state.notifs.unread != null ? state.notifs.unread : asArray(state.notifs).length);
+  $('todoCnt').textContent = cnt;
+  const tab = $('tabCnt');
+  if(cnt > 0){ tab.style.display = 'block'; tab.textContent = cnt; } else tab.style.display = 'none';
+}
+function todoRow(ico, title, sub, onclick){
+  return '<div class="todo-item" onclick="'+onclick+'">'+
+    '<div class="tico">'+icon(ico)+'</div>'+
+    '<div class="tmain"><div class="tt">'+title+'</div><div class="ts">'+sub+'</div></div></div>';
+}
+async function readNotif(id){
+  try{ await API.notificationRead(id); }catch(e){}
+  const left = asArray(state.notifs).filter(n=>n.id !== id);
+  state.notifs = (state.notifs && typeof state.notifs === 'object' && !Array.isArray(state.notifs))
+    ? Object.assign({}, state.notifs, {items:left, unread:Math.max(0, (state.notifs.unread||0)-1)})
+    : left;
+  renderTodo(); renderToday();
+}
+async function approveTodo(id){
+  const note = prompt('审批意见（可留空）：', '同意');
+  if(note === null) return;
+  try{
+    await API.approvalDecide(id, 'APPROVE', note || '同意');
+    toast('已通过，已通知发起人并留痕');
+    state.todoApprovals = await API.approvalList('todo') || [];
+    state.approvals = await API.approvalList('mine') || [];
+    renderTodo();
+  }catch(e){ toast('操作失败：'+e.message); }
+}
+
+/* ============================================================================
+   11. 数字员工（V1.2）
+   ============================================================================ */
+function renderAgents(){
+  const box = $('agentList');
+  const list = state.workers||[];
+  if(!list.length){ box.innerHTML = '<div class="card">'+emptyBox('暂无数字员工，点击下方创建')+'</div>'; return; }
+  box.innerHTML = list.map((w,i)=>
+    '<div class="agent-card">'+
+      '<div class="agent-head">'+
+        '<div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
+        '<div class="amain">'+
+          '<div class="aname">'+esc(w.name)+' <span class="badge '+(w.on?'ok':'off')+'">'+esc(w.status||'')+'</span></div>'+
+          '<div class="adesc">'+esc(w.description||'')+'</div>'+
+        '</div>'+
+        '<button class="switch '+(w.on?'on':'')+'" onclick="toggleAgent('+i+')" aria-label="启停"><i></i></button>'+
+      '</div>'+
+      '<div class="agent-meta">最近产出：'+esc(w.lastOutput||'—')+'<br>运行计划：'+esc(w.schedule||'—')+' · 运行记录已入操作日志</div>'+
+      '<div class="agent-ops">'+
+        '<button class="btn ghost small" onclick="toast(\'运行记录已写入操作日志，可在「我的 - 操作记录」查看\')">运行记录</button>'+
+        '<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>'+
+      '</div>'+
+    '</div>').join('');
+}
+async function toggleAgent(i){
+  const w = state.workers[i]; if(!w) return;
+  try{
+    const updated = await API.toggleWorker(w.id);
+    state.workers[i] = updated;
+    renderAgents(); renderTodo();
+    toast(updated.on ? '已恢复运行' : '已停用（历史产出保留）');
+  }catch(e){ toast('操作失败：'+e.message); }
+}
+function editAgent(i){ createAgentFlow(state.workers[i]); }
+
+/* 一句话创建数字员工：配置内化到对话流 */
+function createAgentFlow(worker){
+  state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
+  state.conversationId = null;
+  $('chatName').textContent = '数字员工管家';
+  $('chatModel').textContent = '创建数字员工 · 确认后生效';
+  go('page-chat'); activateChatTab();
+  $('pageTitle').innerHTML = '创建数字员工<span class="ver">V1.2</span>';
+  const m = $('msgs');
+  const preset = worker
+    ? ['按当前配置重新生成：'+worker.name]
+    : ['每天 8 点推送行业新政策','每周五汇总我的待办周报','合同到期前 7 天提醒我'];
+  m.innerHTML = '<div class="msg"><div class="avatar">'+icon('bot')+'</div><div class="bubble">'+
+    '你好！告诉我“什么时间、做什么事”，我来帮你创建一个自动运行的数字员工。也可以从下面的例子开始：'+
+    '<div class="chips">' + preset.map(q=>'<span class="chip" onclick="agentDemo(\''+esc(q).replace(/'/g,"\\'")+'\')">'+esc(q)+'</span>').join('') + '</div>'+
+    '</div></div>';
+  $('chatInput').focus();
+}
+function agentDemo(q){
+  if(state.busy) return;
+  const m = $('msgs');
+  m.insertAdjacentHTML('beforeend',
+    '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
+  const name = (q.length > 9 ? q.slice(0,9) : q) + '…助手';
+  m.insertAdjacentHTML('beforeend',
+    '<div class="msg"><div class="avatar">'+icon('bot')+'</div>'+
+    '<div class="task-card">'+
+      '<div class="tc-title">'+icon('clock')+'新数字员工任务确认</div>'+
+      '<div class="trow"><span>名称</span><b>'+esc(name)+'</b></div>'+
+      '<div class="trow"><span>计划</span><b>'+esc(q)+'</b></div>'+
+      '<div class="trow"><span>动作</span><b>执行后结果推送至待办与消息</b></div>'+
+      '<div class="trow"><span>留痕</span><b>每次运行写入操作日志</b></div>'+
+      '<div style="display:flex;gap:8px;margin-top:10px">'+
+        '<button class="btn small" onclick="confirmAgent(this,\''+esc(name).replace(/'/g,"\\'")+'\',\''+esc(q).replace(/'/g,"\\'")+'\')">确认创建</button>'+
+        '<button class="btn ghost small" onclick="toast(\'已取消\')">取消</button>'+
+      '</div>'+
+    '</div></div>');
+  m.scrollTop = m.scrollHeight;
+}
+async function confirmAgent(btn, name, plan){
+  if(btn){ btn.textContent = '创建中…'; btn.disabled = true; }
+  try{
+    const w = await API.createWorker({name:name, icon:'bot', description:plan, scheduleText:plan});
+    state.workers.unshift(w);
+    renderAgents(); renderTodo();
+    if(btn){ btn.textContent = '已创建'; btn.className = 'btn done small'; }
+    toast('数字员工已创建并开始运行');
+  }catch(e){
+    if(btn){ btn.textContent = '确认创建'; btn.disabled = false; }
+    toast('创建失败：'+e.message);
+  }
+}
+
+/* ============================================================================
+   12. 成果沉淀（V1.2）
+   ============================================================================ */
+function renderResults(){
+  const box = $('resultList');
+  const list = state.results||[];
+  if(!list.length){ box.innerHTML = '<div class="muted" style="padding:4px 0">还没有成果，会话中点击「存为成果」即可沉淀</div>'; return; }
+  box.innerHTML = list.slice(0,6).map((r,i)=>
+    '<div class="row click" onclick="openResult('+i+')">'+
+      '<span style="display:flex;align-items:center;gap:8px;min-width:0">'+icon(iconKey(r.icon))+
+      '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.title)+'</span></span>'+
+      '<span class="muted" style="white-space:nowrap">'+esc(r.meta||'')+' ›</span></div>').join('');
+}
+async function openResult(i){
+  const r = state.results[i]; if(!r) return;
+  state.currentResult = r;
+  $('resultTitle').textContent = r.title;
+  $('resultMeta').textContent = r.meta || '';
+  $('resultBody').textContent = '加载中…';
+  const btn = $('resultSubmitBtn');
+  if(r.status === 'SUBMITTED' || r.status === 'APPROVED'){
+    btn.textContent = r.status === 'APPROVED' ? '已通过' : '审批中';
+    btn.className = 'btn done small'; btn.disabled = true;
+  }else{
+    btn.textContent = '发起审批'; btn.className = 'btn small'; btn.disabled = false;
+  }
+  go('page-result'); setTitle('page-result');
+  // 列表接口不返回正文（避免大字段传输），此处按需拉取详情补全
+  try{
+    const d = await API.resultDetail(r.id);
+    r.body = d.body; r.meta = d.meta || r.meta;
+    if(state.currentResult === r){
+      $('resultBody').textContent = d.body || '（暂无正文）';
+      $('resultMeta').textContent = d.meta || '';
+    }
+  }catch(e){
+    if(state.currentResult === r) $('resultBody').textContent = '正文加载失败：' + (e.message||'');
+  }
+}
+async function submitResultApproval(){
+  const r = state.currentResult; if(!r) return;
+  const btn = $('resultSubmitBtn');
+  btn.disabled = true; btn.textContent = '提交中…';
+  try{
+    await API.updateResult(r.id, {status:'SUBMITTED'});
+    await API.approvalSubmit('RESULT', r.title, (r.body||'').slice(0,500), null, null);
+    r.status = 'SUBMITTED';
+    openResult(state.results.indexOf(r));
+    toast('已提交审批，进入工作流并留痕');
+  }catch(e){
+    btn.disabled = false; btn.textContent = '发起审批';
+    toast('提交失败：'+e.message);
+  }
+}
+async function saveResult(btn, title, body){
+  try{
+    const r = await API.createResult({title:title, icon:'doc', meta:'刚刚 · 会话产出 · 草稿', body:body});
+    state.results.unshift(r);
+    renderResults();
+    if(btn){ btn.textContent = '已存为成果'; btn.className = 'btn done small'; btn.disabled = true; }
+    toast('已存入「我的 - 我的成果」');
+  }catch(e){
+    toast('保存失败：'+e.message);
+  }
+}
+
+/* ============================================================================
+   13. 我的（额度等）
+   ============================================================================ */
+function renderMe(){
+  if(state.quotaInfo) applyQuota(state.quotaInfo);
+  updateQuotaUI();
+}
+function updateQuotaUI(){
+  const total = Math.max(0, (state.quota||0) + (state.free||0));
+  const left = Math.max(0, state.left != null ? state.left : (total - (state.used||0)));
+  $('quotaNum').textContent = fmt(left);
+  $('quotaTotal').textContent = fmt(total);
+  const pct = total > 0 ? Math.min(100, Math.round((total - left) / total * 100)) : 0;
+  const bar = $('quotaBar');
+  bar.querySelector('i').style.width = pct + '%';
+  bar.classList.toggle('low', pct > 80);
+  const warn = $('quotaWarn');
+  if(pct >= 85){
+    warn.style.display = 'flex';
+    $('quotaWarnText').textContent = '本月额度已用 '+pct+'%，可购买词元包或联系管理员扩容';
+  }else{
+    warn.style.display = 'none';
+  }
+}
+
+/* ============================================================================
+   14. 会话（SSE 流式 + 技能参数卡 + 审批卡点 + 存为成果）
+   ============================================================================ */
+function startChat(i){
+  const e = state.experts[i]; if(!e) return;
+  state.chatExpert = e;
+  state.conversationId = null;
+  $('chatName').textContent = e.name;
+  $('chatModel').textContent = '模型：智能路由';
+  go('page-chat'); activateChatTab(); setTitle('page-chat');
+  const m = $('msgs');
+  const recs = (e.recs||[]).map(q=>'<span class="chip" onclick="quickAsk(this,\''+esc(q).replace(/'/g,"\\'")+'\')">'+esc(q)+'</span>').join('');
+  m.innerHTML = '<div class="msg"><div class="avatar">'+icon(iconKey(e.icon))+'</div><div class="bubble">'+
+    '你好，我是'+esc(e.name)+'。'+esc(e.intro||e.desc||e.description||'有什么可以帮到你？')+
+    (recs ? '<div class="chips">'+recs+'</div>' : '')+'</div></div>';
+  m.scrollTop = m.scrollHeight;
+}
+function quickAsk(el, q){ $('chatInput').value = q || el.textContent; send(); }
 function toggleKB(){
   state.kbOn = !state.kbOn;
   const c = $('kbChip');
-  c.textContent = state.kbOn ? '知识库 开' : '知识库 关';
+  $('kbChipText').textContent = state.kbOn ? '知识库 开' : '知识库 关';
   c.classList.toggle('off', !state.kbOn);
   toast(state.kbOn ? '将优先检索你的知识库' : '仅用模型通用知识回答');
 }
-function scrollMsgs(){ const m = $('msgs'); m.scrollTop = m.scrollHeight; }
-
-function addMsg(who, html){
-  const m = $('msgs');
-  const wrap = document.createElement('div');
-  wrap.className = 'msg' + (who==='me' ? ' me' : '');
-  wrap.innerHTML = '<div class="avatar">'+(who==='me' ? (state.user && state.user.nickname ? state.user.nickname.slice(0,1) : '我') : state.chatExpert.icon)+'</div>'
-                 + '<div class="bubble">'+html+'</div>';
-  m.appendChild(wrap);
-  scrollMsgs();
-  return wrap.querySelector('.bubble');
-}
-/* 流式气泡：正文 + 光标分离，避免光标被当作正文 */
-function addStreamBubble(){
-  const m = $('msgs');
-  const wrap = document.createElement('div');
-  wrap.className = 'msg';
-  wrap.innerHTML = '<div class="avatar">'+state.chatExpert.icon+'</div>'
-                 + '<div class="bubble"><span class="txt"></span><span class="cursor"></span></div>';
-  m.appendChild(wrap); scrollMsgs();
-  return {wrap, txt:wrap.querySelector('.txt'), cursor:wrap.querySelector('.cursor'), bubble:wrap.querySelector('.bubble')};
-}
-
-const SENSITIVE = /发文|通知|对外|报送|公告/;
-const ESTIMATE = 400;   // 发起前预估消耗（FR-B2 额度准入前置）
 
 async function send(){
-  if(state.busy){ stopRun(); return; }   // 生成中再次点击 = 中断（FR-D1）
+  if(state.busy) return;
   const input = $('chatInput');
   const q = input.value.trim();
   if(!q){ toast('请输入问题'); return; }
+  if(!state.chatExpert){ toast('请先选择一位专家'); return; }
   input.value = '';
+  const m = $('msgs');
+  m.insertAdjacentHTML('beforeend',
+    '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
+  m.scrollTop = m.scrollHeight;
 
-  addMsg('me', esc(q));
-  state.history.push({role:'user', content:q});
-
-  // FR-B2 / FR-G6 额度准入前置
-  if(state.used + ESTIMATE > state.quota){
-    addMsg('ai', '<div class="exhaust"><div class="hd">额度不足，无法发起本轮会话</div>'
-      + '本月套餐 '+fmt(state.quota)+' 词元已用尽，你可以：<ol>'
-      + '<li>等待明日免费额度发放（每日 2,000 词元）</li>'
-      + '<li>购买词元包（首页「购买词元包」入口）</li>'
-      + '<li>联系管理员开通企业套餐</li></ol>'
-      + '<button class="btn small" onclick="openBuy()">立即购买</button></div>');
+  if(state.left != null && state.left <= 0){
+    m.insertAdjacentHTML('beforeend',
+      '<div class="msg"><div class="avatar">'+icon(iconKey(state.chatExpert.icon))+'</div><div class="bubble">'+
+      '额度已用完。你可以：<br>① 等待下月额度发放<br>② 购买词元包（我的 - 额度与账单）<br>③ 联系管理员扩容</div></div>');
+    m.scrollTop = m.scrollHeight;
     return;
   }
 
   state.busy = true;
-  const btn = $('sendBtn');
-  btn.textContent = '停止'; btn.classList.add('ghost');
+  const bubbleId = 'a' + Date.now();
+  m.insertAdjacentHTML('beforeend',
+    '<div class="msg"><div class="avatar">'+icon(iconKey(state.chatExpert.icon))+'</div>'+
+    '<div><div class="bubble" id="'+bubbleId+'"><span class="typing"><i></i><i></i><i></i></span></div></div></div>');
+  const bubble = $(bubbleId);
+  m.scrollTop = m.scrollHeight;
 
-  const sb = addStreamBubble();
-  let full = '';
-  let usage = null;
-  let failed = null;
-  let citations = [];
-  pendingApprovalCard = null;
-
-  const paint = ()=>{ sb.txt.textContent = full; scrollMsgs(); };
-
-  if(!state.token){
-    toast('请先登录后再发起会话');
-    sb.wrap.remove();
-    state.busy = false; btn.textContent = '发送'; btn.classList.remove('ghost');
-    return;
-  }
-
-  if(state.token){
-    try{
-      const convId = await API.ensureConversation();
-      const ctx = {
-        appCode:'aioa-client', page:'chat',
-        expertCode:state.chatExpert.key, expertName:state.chatExpert.name,
-        kbEnabled:state.kbOn
-      };
-      const run = await API.createRun(convId, q, ctx);
-      const runId = run && (run.runId || run.id);
-      if(!runId) throw new Error('未取得 runId');
-      $('chatModel').textContent = '模型：智能路由 · 已连接';
-      let citations = [];
-      await API.stream(runId, {
-        onStarted:(d)=>{ const label = d.gateway_key === 'echo' ? '回声演示' : d.model; $('chatModel').textContent = '模型：' + label; },
-        onDelta:(t)=>{ if(t){ full += t; paint(); } },
-        onUsage:(u)=>{ usage = u; },
-        onCompleted:(p)=>{ if(p && Array.isArray(p.citations)) citations = p.citations; },
-        onApproval:(card)=>{ pendingApprovalCard = card; },
-        onError:(e)=>{ failed = e.message; }
-      });
-    }catch(e){
-      failed = e.message || '后端连接失败';
-    }
-  }
-
-  // 后端不可用：明确报错，不再用本地假回答兜底；失败轮次不产生任何计量
-  if(failed){
-    sb.cursor.remove();
-    sb.txt.innerHTML = '<div class="exhaust"><div class="hd">后端连接失败，本轮未生成回答</div>'
-      + esc(failed || '当前未登录或后端不可用')
-      + '<div class="muted" style="margin-top:6px">未产生词元计量与账单。请确认后端已启动后重试。</div></div>';
-    scrollMsgs();
-    state.busy = false;
-    btn.textContent = '发送'; btn.classList.remove('ghost');
-    return;
-  }
-
-  sb.cursor.remove();
-  state.busy = false;
-  btn.textContent = '发送'; btn.classList.remove('ghost');
-
-  // 词元结算（FR-G2）：优先用后端 usage，否则按字符估算
-  const tokens = usage && usage.total ? usage.total
-               : (28 + Math.max(1, Math.round(full.length * 1.6)));
-  const pIn  = usage ? usage.prompt : 28;
-  const pOut = usage ? usage.completion : Math.max(1, tokens - 28);
-  settleTurn(q, full, tokens, pIn, pOut, citations);
-  state.history.push({role:'assistant', content:full});
-}
-
-/* 一轮结束：计量入账 + 引用溯源 + 审批卡点 + 留痕 */
-let pendingApprovalCard = null;
-function settleTurn(question, answer, tokens, pIn, pOut, citations){
-  state.used += tokens;
-  syncQuota();
-
-  const m = $('msgs');
-  const last = m.lastElementChild;
-  if(!last) return;
-  const bubble = last.querySelector('.bubble');
-
-  // 来源可追溯（FR-D5 / 交互约束 2）：M1 会话接真实模型/RAG 后由后端返回引用，
-  // 前端不再硬编码假来源；kbOn 仅展示「已启用知识库」状态
-  let extra = '<div class="meta-line">本次消耗 <b>'+fmt(tokens)+'</b> 词元'
-            + '（输入 <b>'+fmt(pIn)+'</b> / 输出 <b>'+fmt(pOut)+'</b>）· 模型：'+(state.model==='echo'?'回声演示':state.model)+' · 已入账本并留痕</div>';
-  // 引用溯源（FR-D5）：后端返回的真实知识库来源
-  if(Array.isArray(citations) && citations.length){
-    extra += '<div class="cite-list"><div class="cite-hd">来源（知识库引用溯源）</div>';
-    citations.forEach((c,idx)=>{
-      extra += '<div class="cite-item" onclick="toast(\'查看原文：'+esc(c.title||'')+'\')">'
-             + '<span class="cite-idx">['+(idx+1)+']</span> '+esc(c.title||('文档 #'+c.docId))+'</div>';
+  let text = '';
+  try{
+    const convId = await API.ensureConversation();
+    const run = await API.createRun(convId, q, {kb_on:state.kbOn, expert:state.chatExpert.name});
+    state.runId = run.id || run.runId;
+    await API.stream(state.runId, {
+      onStarted: p => { $('chatModel').textContent = '模型：' + (p.model || '智能路由'); },
+      onDelta: t => { text += t; bubble.textContent = text; m.scrollTop = m.scrollHeight; },
+      onUsage: u => {
+        if(!u) return;
+        state.lastUsage = u;
+        const extra = document.createElement('div');
+        extra.className = 'meta-line';
+        extra.textContent = '本次消耗 ' + fmt(u.total) + ' 词元（输入 '+fmt(u.prompt)+' / 输出 '+fmt(u.completion)+'）· 已入账本并留痕';
+        bubble.parentNode.appendChild(extra);
+      },
+      onCompleted: p => {
+        const cites = (p && (p.citations || (p.data && p.data.citations))) || [];
+        if(cites && cites.length){
+          cites.slice(0,3).forEach(c=>{
+            const s = document.createElement('span');
+            s.className = 'cite';
+            s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
+            bubble.parentNode.appendChild(s);
+          });
+        }
+      },
+      onError: err => {
+        bubble.textContent = '生成失败：' + (err.message || '未知错误');
+        bubble.style.color = 'var(--red)';
+      }
     });
-    extra += '</div>';
-  }else if(state.kbOn){
-    extra += '<div class="meta-line">已启用知识库辅助回答 · 本回答未引用库内文档</div>';
-  }else{
-    extra += '<div class="meta-line">本回答基于模型通用知识，请注意甄别</div>';
-  }
-  // 审批卡点（FR-D6）：优先使用后端 approval.required 事件下发的卡片
-  if(pendingApprovalCard){
-    extra += '<div class="approve-card"><div class="hd">'+esc(pendingApprovalCard.title||'对外发布审批')+'</div>'
-           + '<div class="muted">'+esc(pendingApprovalCard.reason||'回答内容涉及对外发布场景，需按合规流程提交审批')+'</div>'
-           + '<div class="row"><button class="btn small" onclick="submitApprove(this)">提交审批</button>'
-           + '<button class="btn ghost small" onclick="toast(\'已取消提交\')">取消</button></div></div>';
-    pendingApprovalCard = null;
-  }
-  // 审批卡点（FR-D6）：命中对外发布类意图
-  if(SENSITIVE.test(question) || SENSITIVE.test(answer)){
-    extra += '<div class="approve-card"><div class="hd">该内容拟对外发布，按平台规范需经审批</div>'
-           + '<div class="muted">审批通过后自动进入发文流程，全过程留痕。</div>'
-           + '<div class="row"><button class="btn small" onclick="submitApprove(this)">提交审批</button>'
-           + '<button class="btn ghost small" onclick="toast(\'已取消提交\')">取消</button></div></div>';
-  }
-  bubble.insertAdjacentHTML('beforeend', extra);
-  scrollMsgs();
-  state.lastAnswer = full;   // 供「提交审批」携带正文
-
-  // 账单 + 台账（FR-G3 / FR-H1）：先本地乐观入账，再以服务端账本为准回拉
-  const stamp = stampOf(new Date());
-  state.bill.unshift({t:stamp+' · '+state.chatExpert.name, n:tokens, prompt:pIn, completion:pOut});
-  state.log.unshift({t:stamp+' 发起会话（'+state.chatExpert.name+'）', s:'ok', l:'成功'});
-  renderBill(); renderLog();
-  refreshBilling();
-}
-
-/* 提交审批（FR-D6）：真实写入后端 approval_order，状态 PENDING。
-   任意登录用户均可发起；审批/通过/驳回由「审批中心」（仅租户管理员可见）完成。 */
-async function submitApprove(btn){
-  const content = (state.lastAnswer || '').slice(0, 2000);
-  const title = (state.chatExpert ? state.chatExpert.name : '用户') + ' · 对外发文审批';
-  try{
-    const order = await API.approvalSubmit('对外发文', title, content, state.runId, state.conversationId);
-    btn.textContent = '已提交'; btn.disabled = true; btn.style.opacity = .6;
-    state.log.unshift({t:stampOf(new Date())+' 提交审批（对外发文）', s:'wait', l:'待审批'});
-    renderLog();
-    toast('已提交审批，进入工作流');
-    await loadApprovals();
-    await loadNotifs();
+    state.lastAnswer = text;
+    if(!text) bubble.textContent = '（本次未返回内容）';
+    // 产出后的收口动作
+    afterAnswer(bubble, text);
   }catch(e){
-    toast('提交失败：' + (e.message || '后端异常'));
+    bubble.textContent = '请求失败：' + (e.message || '请检查网络或后端服务');
+    bubble.style.color = 'var(--red)';
+  }finally{
+    state.busy = false;
+    m.scrollTop = m.scrollHeight;
+    try{ state.quotaInfo = await API.quota(); applyQuota(state.quotaInfo); updateQuotaUI(); }catch(_){ }
   }
 }
 
-/* 我的审批：拉取我发起的审批单，PENDING 可附 通过/驳回 操作 */
-async function loadApprovals(){
-  if(!state.token) return;
-  try{
-    const list = await API.approvalList('mine');
-    state.approvals = list || [];
-    if(state.isAdmin){
-      try{ state.todoApprovals = await API.approvalList('todo'); }catch(e){ state.todoApprovals = []; }
-    }
-    renderApprovals();
-  }catch(e){ /* 离线模式不渲染 */ }
-}
-
-function renderApprovals(){
-  const mine = $('approvalList');
-  if(mine) renderApprovalList(mine, state.approvals, false);
-  renderTodos();
-}
-
-/* 待办页 · 待我处理：管理员=租户内待审单（点击行弹出处理层）；红点=待处理数（管理员）或我的审批中数（用户） */
-function renderTodos(){
-  const el = $('todoList'), cnt = $('todoCount'), dot = $('todoDot');
-  const todoPending = (state.todoApprovals||[]).filter(o=>o.status==='PENDING');
-  const minePending = (state.approvals||[]).filter(o=>o.status==='PENDING' && o.mine).length;
-  if(dot){
-    const n = state.isAdmin ? todoPending.length : minePending;
-    dot.textContent = n > 99 ? '99+' : n;
-    dot.style.display = n > 0 ? 'block' : 'none';
+/* 产出收口：公文类触发审批卡点，并提供「存为成果」 */
+function afterAnswer(bubble, text){
+  const wrap = bubble.parentNode;
+  const isDoc = /通知|请示|报告|函/.test(text) && text.indexOf('各有关企业') > -1;
+  if(isDoc){
+    const card = document.createElement('div');
+    card.className = 'approve-card';
+    card.innerHTML = '该文稿拟对外发布，按平台规范需经审批。'+
+      '<div class="arow"><button class="btn small" onclick="submitApproval(this)">提交审批</button>'+
+      '<button class="btn ghost small" onclick="this.closest(\'.approve-card\').remove()">取消</button></div>';
+    wrap.appendChild(card);
   }
-  if(cnt) cnt.textContent = todoPending.length;
-  if(!el) return;
-  if(!todoPending.length){
-    el.innerHTML = '<div class="muted">' + (state.isAdmin
-      ? '暂无待你处理的事项'
-      : '暂无待你处理的事项（你提交的审批由租户管理员处理，进度见下方「我的申请」）') + '</div>';
-    return;
-  }
-  el.innerHTML = todoPending.map(o=>
-    '<div class="row" style="display:block;cursor:pointer" onclick="askDecision('+o.id+')">'
-    + '<div><b>'+esc(o.title||o.bizType)+'</b> <span class="badge wait">待审批</span></div>'
-    + '<div class="muted" style="margin:3px 0 0;font-size:10.5px">申请时间 '+stampOf(o.createdAt)
-    + ' │ 类型：'+esc(o.bizType||'审批')+' │ 点击处理 ›</div></div>'
-  ).join('');
+  const ops = document.createElement('div');
+  ops.style.cssText = 'margin-top:8px;display:flex;gap:8px';
+  const t = (state.chatExpert ? state.chatExpert.name : '会话') + '产出.docx';
+  ops.innerHTML = '<button class="btn small" onclick="saveResult(this, \''+esc(t).replace(/'/g,"\\'")+'\', \''+esc(text.slice(0,4000)).replace(/'/g,"\\'")+'\')">存为成果</button>'+
+                  '<button class="btn ghost small" onclick="toast(\'请直接输入修改要求，如：语气更正式一些\')">继续修改</button>';
+  wrap.appendChild(ops);
 }
 
-/* ---- 站内通知（审批事件驱动）：提交→管理员；通过/驳回→发起人 ---- */
-async function loadNotifs(){
-  if(!state.token) return;
+async function submitApproval(btn){
+  if(btn){ btn.textContent = '提交中…'; btn.disabled = true; }
   try{
-    const d = await API.notificationList();
-    state.notifs = (d && d.items) || [];
-    state.unread = (d && d.unread) || 0;
-    renderNotifs();
-  }catch(e){ /* 通知失败不影响主界面 */ }
-}
-function renderNotifs(){
-  const el = $('notifList'), cnt = $('notifCount');
-  if(cnt) cnt.textContent = state.unread || 0;
-  if(!el) return;
-  if(!state.notifs.length){ el.innerHTML = '<div class="muted">暂无通知</div>'; return; }
-  el.innerHTML = state.notifs.map(n=>
-    '<div class="row" style="display:block;cursor:pointer'+(n.unread?';background:var(--blue-soft);border-radius:9px;padding:6px 8px;margin:0 -8px 6px':'')+'" '
-    + 'onclick="readNotif('+n.id+')">'
-    + '<div><b>'+esc(n.title||'通知')+'</b>'+(n.unread?' <span class="badge wait">未读</span>':'')+'</div>'
-    + '<div class="muted" style="margin:3px 0 0">'+esc(n.content||'')+'</div>'
-    + '<div class="muted" style="margin:2px 0 0;font-size:10px">'+stampOf(n.createdAt)+'</div></div>'
-  ).join('');
-}
-async function readNotif(id){
-  try{ await API.notificationRead(id); }catch(e){}
-  await loadNotifs();
-}
-async function readAllNotifs(){
-  try{ await API.notificationReadAll(); }catch(e){}
-  await loadNotifs();
-  toast('已全部标记为已读');
-}
-
-/* ---- 审批意见弹层：decision 为空=中性打开（通过/驳回两键同弹，用于待办页点击处理） ---- */
-let pendingDecision = null;
-function findApproval(id){
-  return (state.todoApprovals||[]).concat(state.approvals||[]).find(o=>o.id === id);
-}
-function askDecision(id, decision){
-  pendingDecision = {id:id, decision:decision||null};
-  const o = findApproval(id);
-  const t = $('decisionTitle'), ok = $('decisionOk'), rj = $('decisionReject'),
-        note = $('decisionNote'), what = $('decisionWhat');
-  if(what) what.textContent = o ? (o.title || o.bizType || '') : '';
-  if(t) t.textContent = decision==='APPROVE' ? '通过审批' : decision==='REJECT' ? '驳回审批' : '处理审批';
-  if(note) note.value = decision==='APPROVE' ? '内容合规，准予发布'
-                       : decision==='REJECT' ? '不符合发布规范' : '';
-  if(ok) ok.style.display = decision==='REJECT' ? 'none' : 'flex';
-  if(rj) rj.style.display = decision==='APPROVE' ? 'none' : 'flex';
-  const m = $('decisionModal'); if(m) m.style.display = 'flex';
-}
-function cancelDecision(){
-  pendingDecision = null;
-  const m = $('decisionModal'); if(m) m.style.display = 'none';
-}
-async function confirmDecision(decision){
-  const d = pendingDecision; if(!d) return;
-  const dir = decision || d.decision;
-  if(!dir) return;
-  pendingDecision = null;
-  const m = $('decisionModal'); if(m) m.style.display = 'none';
-  const noteEl = $('decisionNote');
-  const note = (noteEl && noteEl.value.trim()) || '';
-  await approveOrder(d.id, dir, note);
-}
-
-/* 渲染一组审批单；withActions=true 时（仅审批中心/管理员）PENDING 显示 通过/驳回 */
-function renderApprovalList(el, list, withActions){
-  if(!el) return;
-  if(!list || !list.length){ el.innerHTML = '<div class="muted">暂无审批单</div>'; return; }
-  const label = {PENDING:'待审批', APPROVED:'已通过', REJECTED:'已驳回'};
-  el.innerHTML = list.map(o=>{
-    const cls = o.status === 'APPROVED' ? 'ok' : o.status === 'REJECTED' ? 'warn' : 'wait';
-    const act = (withActions && o.status === 'PENDING')
-      ? '<div class="row"><button class="btn small" onclick="askDecision('+o.id+',\'APPROVE\')">通过</button>'
-        + '<button class="btn ghost small" onclick="askDecision('+o.id+',\'REJECT\')">驳回</button></div>'
-      : '';
-    const who = o.approver ? '<span class="muted"> · '+esc(o.approver)+'</span>' : '';
-    return '<div class="row" style="display:block"><div><b>'+esc(o.title||o.bizType)+'</b> '
-      + '<span class="badge '+cls+'">'+(label[o.status]||o.status)+'</span>'+who+'</div>'
-      + '<div class="muted" style="margin:3px 0 6px">'+stampOf(o.createdAt)+'</div>'+act+'</div>';
-  }).join('');
-}
-
-/* 审批决策（仅审批中心/管理员可操作；后端 ApprovalController.decide 内部角色检查抛 BizException(403) 兜底）。
-   意见支持自定义：按钮先弹 askDecision 意见弹层，确认后带 note 提交。 */
-async function approveOrder(id, decision, note){
-  try{
-    await API.approvalDecide(id, decision, note || (decision === 'APPROVE' ? '内容合规，准予发布' : '不符合发布规范'));
-    toast(decision === 'APPROVE' ? '已通过' : '已驳回');
-    await loadApprovals();
-    await loadNotifs();
+    const title = (state.chatExpert ? state.chatExpert.name : '会话') + ' · 文稿审批';
+    await API.approvalSubmit('DOC', title, (state.lastAnswer||'').slice(0,1000), state.runId, state.conversationId);
+    if(btn){ btn.textContent = '已提交 · 审批中'; btn.className = 'btn ghost small'; }
+    toast('已提交审批，进入工作流（留痕）');
+    state.approvals = await API.approvalList('mine') || [];
+    renderTodo(); renderToday();
   }catch(e){
-    toast('操作失败：' + (e.message || '后端异常'));
+    if(btn){ btn.textContent = '提交审批'; btn.disabled = false; }
+    toast('提交失败：'+e.message);
   }
 }
 
-/* 中断生成（FR-D1）：中止前端读取流 + 通知后端取消 run */
-function stopRun(){
-  if(state.controller){ try{ state.controller.abort(); }catch(e){} state.controller = null; }
-  if(state.runId && state.token){ API.cancel(state.runId).catch(()=>{}); }
-  const c = document.querySelector('.cursor'); if(c) c.remove();
-  state.busy = false; state.runId = null;
-  const btn = $('sendBtn');
-  btn.textContent = '发送'; btn.classList.remove('ghost');
-  toast('已停止生成');
-}
-
-/* ============================================================
-   5. 技能表单（FR-E1/E2/E3 动态渲染）
-   ============================================================ */
+/* 技能 = 预填参数的会话（表单融入对话流） */
 function openSkill(name){
-  const s = SKILLS[name];
-  if(!s){ toast('技能未加载'); return; }
-  $('skillName').textContent = s.icon + ' ' + name;
-  $('skillResult').style.display = 'none';
-  $('skillForm').innerHTML = s.fields.map(f=>{
-    let ctl;
-    if(f.type === 'select'){
-      ctl = '<select id="sf_'+f.k+'">'+f.options.map(o=>'<option>'+o+'</option>').join('')+'</select>';
-    }else if(f.type === 'textarea'){
-      ctl = '<textarea id="sf_'+f.k+'" rows="4">'+esc(f.value||'')+'</textarea>';
-    }else{
-      ctl = '<input id="sf_'+f.k+'" value="'+esc(f.value||'')+'">';
-    }
-    return '<div class="form-item"><label>'+f.label+'</label>'+ctl+'</div>';
-  }).join('')
-  + '<button class="btn" onclick="genDoc(\''+name+'\')">生成结果</button>'
-  + '<span class="muted" style="margin-left:9px">预计消耗约 <b class="num">'+fmt(s.est)+'</b> 词元</span>';
-  go('page-skill');
-  $('pageTitle').textContent = name;
+  const e = (state.experts||[]).find(x=>/办文|公文|写作/.test(x.name)) || state.experts[0];
+  if(e) state.chatExpert = e;
+  state.conversationId = null;
+  $('chatName').textContent = name + ' · ' + (e ? e.name : '助手');
+  $('chatModel').textContent = '技能：' + name + ' · 参数可调';
+  go('page-chat'); activateChatTab();
+  $('pageTitle').innerHTML = esc(name) + '<span class="ver">V1.2</span>';
+  const m = $('msgs');
+  m.innerHTML =
+    '<div class="msg"><div class="avatar">'+icon('pen')+'</div><div class="bubble">'+
+      '好的，我们直接在会话里完成。我已按常用场景预填了参数，你可以修改后生成，也可以直接用自然语言告诉我要改什么。'+
+    '</div></div>'+
+    '<div class="msg"><div class="avatar">'+icon('pen')+'</div>'+
+    '<div class="param-card">'+
+      '<div class="pc-title">'+icon('doc')+esc(name)+' · 参数</div>'+
+      '<div class="form-item"><label>文种</label><select id="pType"><option>通知</option><option>请示</option><option>工作报告</option><option>函</option></select></div>'+
+      '<div class="form-item"><label>主题与要点</label><textarea id="pTopic" rows="3">关于组织企业参加全市人工智能应用供需对接会的通知</textarea></div>'+
+      '<div class="form-item"><label>字数要求</label><input id="pWords" value="800 字左右"></div>'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<button class="btn small" onclick="genDocInChat(\''+esc(name).replace(/'/g,"\\'")+'\')">生成文稿</button>'+
+        '<span class="muted">预计消耗约 1,500 词元</span></div>'+
+      '<div style="font-size:11px;color:var(--blue);cursor:pointer;text-align:right;margin-top:4px" '+
+        'onclick="toast(\'也可以直接在下方输入修改要求，如：改成 500 字\')">收起参数，用对话调整</div>'+
+    '</div></div>';
+  m.scrollTop = m.scrollHeight;
 }
-
-/* 技能调用（FR-E1/E2/E3）：表单字段拼成结构化提示词，
-   跳转对应专家会话走真实模型链路——生成内容、词元计量、留痕、审批卡点全部真实。 */
-function genDoc(name){
-  const s = SKILLS[name];
-  if(!s){ toast('技能未加载'); return; }
-  if(!state.token){
-    toast('请先登录后再调用技能');
-    const ls = document.getElementById('loginScreen');
-    if(ls) ls.style.display = 'flex';
-    return;
-  }
-  const fields = (s.fields||[]).map(f=>{
-    const el = $('sf_'+f.k);
-    const v = (el && el.value && el.value.trim()) || f.value || '未填写';
-    return '· '+f.label+'：'+v;
-  }).join('\n');
-  const prompt = '请以「'+name+'」技能完成以下任务：\n'+fields;
-  const idx = s.expertKey ? EXPERTS.findIndex(e=>e.key===s.expertKey) : -1;
-  startChat(idx >= 0 ? idx : 0);
-  $('chatInput').value = prompt;
+function genDocInChat(name){
+  if(state.busy) return;
+  const topic = ($('pTopic') && $('pTopic').value) || '相关工作事项';
+  const words = ($('pWords') && $('pWords').value) || '800 字左右';
+  const type  = ($('pType') && $('pType').value) || '通知';
+  $('chatInput').value = '请按以下参数生成' + type + '：主题为「' + topic + '」，篇幅 ' + words + '。要求格式规范、可直接对外发布。';
   send();
 }
 
-/* ============================================================
-   6. 启动 + 自动联调握手
-   ============================================================ */
-/* 'MM-DD HH:mm' 时间戳：接受 Date 或后端 ISO 字符串（createdAt） */
-function stampOf(d){
-  const t = (d instanceof Date) ? d : (d ? new Date(String(d).replace(' ','T')) : new Date());
-  if(isNaN(t.getTime())) return '';
-  const p = n => String(n).padStart(2,'0');
-  return p(t.getMonth()+1)+'-'+p(t.getDate())+' '+p(t.getHours())+':'+p(t.getMinutes());
+/* ============================================================================
+   15. 初始化
+   ============================================================================ */
+function tickClock(){
+  const d = new Date();
+  $('clock').textContent = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
 }
-
-/* 登录成功后拉取全部业务数据（专家/技能/知识库/额度/账单/日志/审批/通知）。
-   接口失败按域降级：单个域失败只影响该域（空态），不再用假数据兜底；
-   全部失败时抛错由调用方提示。 */
-/* ---------- 模型切换（FR-C4）：写入会话 model_ref，下一次 run 生效 ---------- */
-function onModelChange(v){
-  state.model = v;
-  const label = v === 'echo' ? '回声演示' : v;
-  toast('模型已切换：' + label + '（下一轮生效）');
-}
-
-/* ---------- 历史会话（FR-C1）---------- */
-async function loadConversations(){
-  if(!state.token) return;
-  try{
-    const list = await API.listConversations();
-    state.conversations = Array.isArray(list) ? list : ((list && (list.records || list.list)) || []);
-    renderConversations();
-  }catch(e){ /* 未登录或网络失败静默 */ }
-}
-function renderConversations(){
-  const el = $('convList'); if(!el) return;
-  if(!state.conversations.length){
-    el.innerHTML = '<div class="muted">暂无历史会话</div>'; return;
-  }
-  el.innerHTML = state.conversations.slice(0, 10).map(c=>{
-    const cur = c.id === state.conversationId;
-    return '<div class="row" onclick="switchConversation('+c.id+')">'
-      + '<span class="t">'+esc(c.title||('会话 #'+c.id))+'</span>'
-      + '<span class="muted">'+(c.msgCount||0)+' 条'+(cur?' · 当前':'')+'</span>'
-      + '<button class="btn ghost small" onclick="event.stopPropagation();promptRename('+c.id+',this)">重命名</button></div>';
-  }).join('');
-}
-/* FR-D3 会话重命名：仅本人可改，服务端校验归属 */
-async function promptRename(id, btn){
-  const cur = state.conversations.find(c=>c.id===id);
-  const title = prompt('重命名会话', (cur && cur.title) || '');
-  if(title === null) return;                       // 用户取消
-  const t = title.trim();
-  if(!t){ toast('标题不能为空'); return; }
-  try{
-    await API.renameConversation(id, t);
-    if(cur) cur.title = t;
-    renderConversations();
-    if(state.conversationId === id) $('chatName').textContent = t;
-    toast('已重命名');
-  }catch(e){ toast('重命名失败：'+(e.message||'')); }
-}
-/* FR-G3 用量账单导出：真实 CSV（含 BOM，Excel 直接打开） */
-function exportBill(){
-  if(!state.bill.length){ toast('暂无明细可导出'); return; }
-  const rows = [['时间/对象','词元合计','输入词元','输出词元']]
-    .concat(state.bill.map(b=>[b.t||'', b.n||0, b.prompt!=null?b.prompt:'', b.completion!=null?b.completion:'']));
-  const csv = '\uFEFF' + rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'aioa-账单明细-'+new Date().toISOString().slice(0,10)+'.csv';
-  document.body.appendChild(a); a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 800);
-  toast('账单明细已导出（CSV）');
-}
-async function switchConversation(id){
-  if(id === state.conversationId){ toast('已是当前会话'); go('page-chat'); return; }
-  try{
-    const msgs = await API.listMessages(id);
-    state.conversationId = id;
-    state.history = [];
-    $('msgs').innerHTML = '';
-    (Array.isArray(msgs) ? msgs : []).forEach(m=>{
-      const who = m.role === 'user' ? 'me' : 'ai';
-      addMsg(who, esc(m.content || ''));
-      state.history.push({role:m.role, content:m.content});
-    });
-    renderConversations();
-    toast('已切换会话');
-    go('page-chat');
-  }catch(e){ toast('切换失败：'+(e.message||'')); }
-}
-function newConversation(){
-  state.conversationId = null;
-  state.history = [];
-  $('msgs').innerHTML = '';
-  renderConversations();
-  toast('已新建会话');
-  go('page-chat');
-}
-
-/* ---------- 购买词元包（FR-G4/G6）：下单 → 模拟支付 → 实时到账 ---------- */
-let buyOrder = null;
-async function openBuy(){
-  if(!state.token){ toast('请先登录后再购买'); return; }
-  go('page-buy');
-  await loadPackages();
-}
-async function loadPackages(){
-  const el = $('pkgList');
-  try{
-    const pkgs = await API.packages();
-    el.innerHTML = (pkgs||[]).map(p=>
-      '<div class="row" onclick="buyPkg('+p.id+')">'
-      + '<span class="t">'+esc(p.packageName)+'</span>'
-      + '<span class="muted"><b class="num">'+(p.priceCents/100).toFixed(0)+'</b> 元 · '+(p.tokens/10000)+'万词元 ›</span></div>'
-    ).join('') || '<div class="muted">暂无在售商品</div>';
-  }catch(e){ el.innerHTML = '<div class="muted">商品加载失败：'+esc(e.message||'')+'</div>'; }
-}
-async function buyPkg(id){
-  try{
-    const pay = await API.createOrder(id);
-    buyOrder = pay;
-    $('payInfo').innerHTML = '订单号 <b>'+esc(pay.orderNo||'')+'</b> · 金额 <b>'+((pay.amountCents||0)/100).toFixed(2)+'</b> 元<br>'
-      + '<span class="muted">当前为模拟支付通道，微信支付二期接入后自动拉起收银台</span>';
-    $('payCard').style.display = 'block';
-    toast('下单成功，请确认支付');
-  }catch(e){ toast('下单失败：'+(e.message||'')); }
-}
-async function mockPay(){
-  if(!buyOrder || !buyOrder.orderNo) return;
-  const btn = $('payBtn');
-  btn.disabled = true; btn.textContent = '支付中…';
-  try{
-    const r = await API.mockPay(buyOrder.orderNo);
-    const credited = r && r.tokensCredited || 0;
-    toast('支付成功，'+credited.toLocaleString()+' 词元已实时到账');
-    $('payCard').style.display = 'none';
-    buyOrder = null;
-    refreshBilling(); syncQuota();
-    go('page-me');
-  }catch(e){ toast('支付失败：'+(e.message||'')); }
-  btn.disabled = false; btn.textContent = '模拟支付（微信支付二期接入）';
-}
-function cancelPay(){
-  buyOrder = null;
-  $('payCard').style.display = 'none';
-  toast('已取消订单（未支付订单不影响额度）');
-}
-
-async function loadLiveData(){
-  const results = await Promise.allSettled([
-    API.experts(), API.skills(), API.kbDocs(), API.quota(),
-    API.ledger(), API.logs(), API.approvalList('mine'), API.notificationList()
-  ]);
-  const ok = i => results[i].status === 'fulfilled' ? results[i].value : null;
-  const experts = ok(0), skills = ok(1), docs = ok(2), quota = ok(3),
-        ledger = ok(4), logs = ok(5), approvals = ok(6), notifs = ok(7);
-
-  if(experts){
-    EXPERTS.length = 0;                       // 原地替换，保住已有引用
-    experts.forEach(e=>EXPERTS.push({
-      key:e.key, name:e.name, icon:e.icon, desc:e.desc,
-      tags:e.tags||[], intro:e.intro||'', recs:e.recs||[]
-    }));
-  }
-  if(skills){
-    Object.keys(SKILLS).forEach(k=>delete SKILLS[k]);
-    skills.forEach(s=>{ SKILLS[s.name] = {icon:s.icon, est:s.est||0, fields:s.fields||[], expertKey:s.expertKey}; });
-  }
-  if(docs){
-    KB_FILES.length = 0;
-    docs.forEach(f=>KB_FILES.push({name:f.name, icon:f.icon, state:f.state}));
-  }
-  if(quota){ state.quota = quota.quota; state.used = quota.used; state.free = quota.free; }
-  if(ledger && ledger.length) state.bill = ledger.map(toBillRow);
-  if(logs && logs.length)     state.log  = logs.map(toLogRow);
-  if(approvals) state.approvals = approvals;
-  if(notifs){ state.notifs = notifs.items || []; state.unread = notifs.unread || 0; }
-  if(state.isAdmin){
-    try{ const todo = await API.approvalList('todo'); if(todo) state.todoApprovals = todo; }catch(e){}
-  }
-
-  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); renderApprovals(); renderNotifs(); syncQuota();
-  const failedCount = results.filter(r=>r.status==='rejected').length;
-  if(failedCount) toast(failedCount + ' 项数据加载失败，其余功能正常');
-}
-
-/* 后端账本行 → 账单行（时间由 createdAt 格式化，杜绝前端后端两处时间打架） */
-const toBillRow = x => ({t:stampOf(x.createdAt)+' · '+(x.bizTitle||'会话'), n:x.totalTokens,
-                         prompt:x.promptTokens, completion:x.completionTokens});
-/* 后端操作记录 → 日志行 */
-const toLogRow = x => ({t:stampOf(x.createdAt)+' '+x.action, s:x.status, l:x.label});
-
-/* 一轮结束后回拉额度/账本/台账，以服务端账本为准（前端只是乐观更新） */
-async function refreshBilling(){
-  if(!state.token) return;
-  try{
-    const [quota, ledger, logs] = await Promise.all([API.quota(), API.ledger(), API.logs()]);
-    if(quota){ state.quota = quota.quota; state.used = quota.used; state.free = quota.free; syncQuota(); }
-    if(ledger && ledger.length){ state.bill = ledger.map(toBillRow); renderBill(); }
-    if(logs && logs.length){     state.log  = logs.map(toLogRow);    renderLog(); }
-  }catch(e){ /* 回拉失败不打断会话，保留前端乐观值 */ }
-}
-
-async function bootstrap(){
-  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog(); syncQuota();
-
-  // 恢复本地会话（若有有效 token + 用户信息）
+(async function init(){
+  tickClock(); setInterval(tickClock, 30000);
   try{
     const saved = JSON.parse(localStorage.getItem('aioa_session') || 'null');
-    if(saved && saved.token && saved.user){
-      state.token = saved.token;
-      state.user  = saved.user;
-      state.roles = saved.user.roles || [];
-      state.isAdmin = state.roles.indexOf('ROLE_ADMIN') >= 0;
-      state.mode = 'live';
-      renderMeHead();
-      setLink('live','实时联调');
+    if(saved && saved.token){
+      state.token = saved.token; state.user = saved.user;
+      // 用 /auth/me 判断角色
+      try{
+        const me = await API.req('/v1/auth/me');
+        state.isAdmin = (me.roles||[]).indexOf('ROLE_ADMIN') >= 0;
+        state.user = {username:me.username, nickname:me.nickname || me.username};
+      }catch(e){ /* 令牌过期则退回登录页 */ throw e; }
+      document.body.classList.add('auth');
+      go('page-home'); setTitle('page-home');
       await loadLiveData();
-      await loadConversations();
-      startChat(0); go('page-home');
-      document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
-      return;
     }
-  }catch(e){ /* 忽略损坏的本地会话 */ }
-
-  // 无会话 → 展示真实登录页
-  const ls = document.getElementById('loginScreen');
-  if(ls) ls.style.display = 'flex';
-}
-
-/* 真实登录：用户名/密码 → 后端鉴权，写入 token + 角色 */
-async function doLogin(){
-  const u = document.getElementById('loginUser').value.trim();
-  const p = document.getElementById('loginPass').value;
-  const err = document.getElementById('loginErr');
-  err.textContent = '';
-  if(!u || !p){ err.textContent = '请输入用户名和密码'; return; }
-  try{
-    const data = await API.login(u, p);
-    const token = data && (data.accessToken || data.token);
-    if(!token) throw new Error('未取得 accessToken');
-    const user = data.user || { username:u, nickname:u, roles:[] };
-    state.token = token;
-    state.user  = user;
-    state.roles = user.roles || [];
-    state.isAdmin = state.roles.indexOf('ROLE_ADMIN') >= 0;
-    state.mode = 'live';
-    try{ localStorage.setItem('aioa_session', JSON.stringify({token, user})); }catch(e){}
-    const ls = document.getElementById('loginScreen');
-    if(ls) ls.style.display = 'none';
-    renderMeHead();
-    setLink('live','实时联调');
-    await loadLiveData();
-    await loadConversations();
-    startChat(0); go('page-home');
-    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-home'));
   }catch(e){
-    err.textContent = '登录失败：' + (e.message || '用户名或密码错误');
+    try{ localStorage.removeItem('aioa_session'); }catch(_){}
+    state.token = null;
+    go('page-login');
   }
-}
-
-/* 退出登录：清除会话与全部内存数据，回到登录页（空态展示，不留任何残影数据） */
-function doLogout(){
-  try{ localStorage.removeItem('aioa_session'); }catch(e){}
-  if(state.controller){ try{ state.controller.abort(); }catch(e){} state.controller = null; }
-  state.token=null; state.user=null; state.roles=[]; state.isAdmin=false;
-  state.mode='guest'; state.conversationId=null; state.runId=null; state.history=[];
-  state.chatExpert=null; state.lastAnswer='';
-  state.quota=0; state.used=0; state.free=0;
-  state.bill=[]; state.log=[]; state.approvals=[]; state.todoApprovals=[];
-  state.notifs=[]; state.unread=0;
-  EXPERTS.length = 0;
-  Object.keys(SKILLS).forEach(k=>delete SKILLS[k]);
-  KB_FILES.length = 0;
-  renderExperts(); renderSkills(); renderKB(); renderBill(); renderLog();
-  renderApprovals(); renderNotifs(); syncQuota(); renderMeHead();
-  setLink('guest','未登录');
-  $('msgs').innerHTML = '';
-  const ls = document.getElementById('loginScreen');
-  if(ls) ls.style.display = 'flex';
-  toast('已退出登录');
-}
-
-/* 渲染「我的」头部：真实昵称 + 角色标签 */
-function renderMeHead(){
-  const name = document.getElementById('meName');
-  const role = document.getElementById('meRole');
-  if(name) name.textContent = (state.user && (state.user.nickname || state.user.username)) || '—';
-  if(role) role.textContent = state.isAdmin ? '管理员' : (state.roles.length ? '普通用户' : '—');
-}
-bootstrap();
+})();
 </script>
 </body>
 </html>
