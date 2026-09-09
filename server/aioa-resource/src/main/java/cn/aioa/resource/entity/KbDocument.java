@@ -20,6 +20,11 @@ public class KbDocument {
     public static final String STATE_WAIT = "WAIT";
     public static final String STATE_FAILED = "FAILED";
 
+    /** 可见范围：个人（仅本人可见）。 */
+    public static final String SCOPE_PERSONAL = "PERSONAL";
+    /** 可见范围：租户共享（同租户全员可见、可被全员检索）。 */
+    public static final String SCOPE_TENANT = "TENANT";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 

@@ -28,6 +28,9 @@ public class ApprovalOrder {
     /** 发起人 */
     private Long userId;
 
+    /** 发起人姓名（提交时快照，管理端审批中心展示） */
+    private String applicantName;
+
     private String runId;
 
     private Long conversationId;

@@ -49,6 +49,21 @@ class Usage(BaseModel):
     completion_tokens: int = 0
 
 
+class CompleteRequest(BaseModel):
+    """POST /internal/v1/complete 请求体（非流式单轮补全，供数字员工定时任务等内部调用）。"""
+
+    prompt: str
+    system: str | None = None
+    model_ref: str | None = None
+    max_tokens: int | None = None
+
+
+class CompleteResponse(BaseModel):
+    content: str
+    model: str
+    usage: Usage = Field(default_factory=Usage)
+
+
 class SseEvent(BaseModel):
     """SSE 事件：seq 单调递增，type 即 SSE event 名，data 为 JSON 对象。"""
 

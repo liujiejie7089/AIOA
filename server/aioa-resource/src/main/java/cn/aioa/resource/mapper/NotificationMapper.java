@@ -21,4 +21,9 @@ public interface NotificationMapper extends BaseMapper<Notification> {
             + "WHERE u.tenant_id = #{tenantId} AND r.role_code = 'ROLE_ADMIN' "
             + "AND u.status = 'ENABLED' AND u.deleted_at IS NULL")
     List<Long> selectTenantAdminIds(@Param("tenantId") Long tenantId);
+
+    /** 租户内全部启用用户 id（数字员工定时任务到点后全员弹窗提醒）。 */
+    @Select("SELECT id FROM sys_user "
+            + "WHERE tenant_id = #{tenantId} AND status = 'ENABLED' AND deleted_at IS NULL")
+    List<Long> selectTenantUserIds(@Param("tenantId") Long tenantId);
 }

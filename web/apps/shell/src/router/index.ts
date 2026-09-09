@@ -36,6 +36,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '数字员工' }
       },
       {
+        path: 'biz-systems',
+        name: 'biz-systems',
+        component: () => import('@/views/BizSystemView.vue'),
+        meta: { title: '业务系统' }
+      },
+      {
+        path: 'quotas',
+        name: 'quotas',
+        component: () => import('@/views/QuotaAdminView.vue'),
+        meta: { title: '配额管理' }
+      },
+      {
+        path: 'audit',
+        name: 'audit',
+        component: () => import('@/views/AuditView.vue'),
+        meta: { title: '操作审计' }
+      },
+      {
         path: 'results',
         name: 'results',
         component: () => import('@/views/ResultsView.vue'),

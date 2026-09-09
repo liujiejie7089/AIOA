@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.core import runtime
 from app.core.events import to_frame
 from app.core.guards import GuardError
-from app.schemas import RunRequest, SseEvent
+from app.schemas import CompleteRequest, RunRequest, SseEvent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("aioa.agent")
@@ -71,6 +71,45 @@ async def apply_models(payload: dict, request: Request) -> dict:
     applied = apply_overrides(payload.get("models") or [], payload.get("default"))
     logger.info("model config applied via admin push (%d entries)", applied)
     return {"applied": applied, "providers": configured_providers()}
+
+
+@app.post("/internal/v1/complete")
+async def complete(req: CompleteRequest) -> dict:
+    """非流式单轮补全（内部端点）：数字员工定时任务执行、批量摘要等后台调用。
+
+    直接走模型网关（与 /internal/v1/runs 同一配置），不进入 agent 工具循环。
+    """
+    import httpx
+
+    from app.core.agent_runtime import UpstreamError, _post_non_stream
+    from app.model_gateway import gateway
+
+    if not req.prompt or not req.prompt.strip():
+        raise GuardError("BAD_REQUEST", "prompt 不能为空")
+    provider = gateway.resolve(req.model_ref)
+    api_key = provider.api_key()
+    if not api_key:
+        return {"content": "", "model": provider.model, "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                "error": f"provider '{provider.key}' 未配置 api_key（{provider.api_key_env}）"}
+    messages: list[dict] = []
+    if req.system:
+        messages.append({"role": "system", "content": req.system})
+    messages.append({"role": "user", "content": req.prompt})
+    body: dict = {"model": provider.model, "messages": messages, "stream": False, "temperature": 0.3}
+    if req.max_tokens:
+        body["max_tokens"] = req.max_tokens
+    async with httpx.AsyncClient(timeout=120) as client_http:
+        try:
+            message, usage = await _post_non_stream(client_http, provider, api_key, messages, None)
+        except UpstreamError as exc:
+            return {"content": "", "model": provider.model, "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                    "error": f"模型上游错误：{exc}"}
+    return {
+        "content": str(message.get("content") or ""),
+        "model": provider.model,
+        "usage": {"prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                  "completion_tokens": int(usage.get("completion_tokens") or 0)},
+    }
 
 
 @app.exception_handler(RequestValidationError)

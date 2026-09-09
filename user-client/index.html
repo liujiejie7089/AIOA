@@ -177,6 +177,26 @@
   .badge.off{color:var(--text-2);background:var(--surface-3)}
   .badge.danger{color:var(--red);background:var(--red-soft)}
 
+  /* ---------- 通知弹窗提醒（数字员工定时任务/系统通知，V15） ---------- */
+  .notif-mask{
+    position:fixed; inset:0; z-index:999; display:none;
+    align-items:center; justify-content:center;
+    background:rgba(15,23,42,.45); backdrop-filter:blur(2px);
+  }
+  .notif-mask.show{display:flex; animation:fadein .18s var(--ease)}
+  .notif-modal{
+    width:min(340px, 82vw); background:var(--surface); border-radius:var(--r-lg);
+    padding:18px; box-shadow:var(--sh-3); animation:pop .22s var(--ease);
+  }
+  .notif-head{display:flex; align-items:center; gap:8px; font-weight:700; font-size:14px}
+  .notif-body{margin:12px 0; max-height:46vh; overflow:auto; display:flex; flex-direction:column; gap:10px}
+  .notif-item{background:var(--surface-2); border-radius:var(--r); padding:10px 12px}
+  .notif-item .nt{font-weight:600; font-size:13px; margin-bottom:4px}
+  .notif-item .nc{font-size:12px; color:var(--text-2); line-height:1.6; white-space:pre-wrap; word-break:break-word}
+  .notif-foot{display:flex; justify-content:flex-end}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+  @keyframes pop{from{opacity:0; transform:translateY(14px) scale(.96)}to{opacity:1; transform:none}}
+
   .chip{
     display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--surface);
     border:1px solid var(--border);border-radius:var(--r-full);padding:5px 10px;
@@ -1162,15 +1182,22 @@ function renderKb(){
   const box = $('kbList');
   const list = state.kbDocs||[];
   if(!list.length){ box.innerHTML = emptyBox('还没有资料，上传 PDF/Word/Excel 后可在会话中被引用'); return; }
+  const meId = state.user && state.user.id;
   box.innerHTML = list.slice(0,6).map(d=>{
     const st = d.state === 'ok' ? ['ok','已入库'] : (d.state === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
-    const meta = d.chunkCount ? ' · '+d.chunkCount+' 段' : '';
+    // 上传时间（yyyy-MM-ddTHH:mm:ss → MM-dd HH:mm）
+    const tm = d.createdAt ? String(d.createdAt).replace('T',' ').slice(5,16) : '';
+    const meta = [tm, d.chunkCount ? d.chunkCount+' 段' : '', (d.scope === 'TENANT' && d.ownerUserId !== meId) ? '共享' : '']
+      .filter(Boolean).join(' · ');
     const acts = d.state === 'failed'
       ? '<button class="btn ghost small" onclick="retryKb('+d.id+')">重试</button>'
       : '';
-    return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'<span class="muted" style="font-size:11px">'+meta+'</span></span>'+
-      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+acts+
-      '<button class="btn ghost small" onclick="delKb('+d.id+')">删除</button></span></div>';
+    // 仅本人上传的资料可删除；他人共享资料只读（删除会 403）
+    const del = (meId && d.ownerUserId === meId)
+      ? '<button class="btn ghost small" onclick="delKb('+d.id+',this)">删除</button>'
+      : '';
+    return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'<span class="muted" style="font-size:11px">'+(meta?' · '+meta:'')+'</span></span>'+
+      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+acts+del+'</span></div>';
   }).join('');
 }
 /* 文件上传入库（FR-F1/F2）：选择本地 pdf/docx/doc/xlsx/xls/txt，后端解析后切片入库 */
@@ -1285,7 +1312,7 @@ function renderTodo(){
   const mineList = asArray(state.approvals);
   const notifList = asArray(state.notifs).slice(0,3);
 
-  // 待我处理：管理员=待审单；普通用户=通知
+  // 待我处理：管理员=待审单；普通用户=未读通知（与角标同口径，点击弹窗看详情）
   let rows = '';
   if(state.isAdmin){
     rows = todoList.filter(a=>a.status==='PENDING').map(a=>
@@ -1293,9 +1320,9 @@ function renderTodo(){
         '提交人：'+esc(a.creatorName||a.createdBy||'—')+' ｜ '+esc((a.createdAt||'').replace('T',' ').slice(0,16)),
         "openTodoDetail("+a.id+",'todo')")).join('');
   }else{
-    rows = notifList.map(n=>
+    rows = notifItems().filter(n=>!n.readAt).slice(0,10).map(n=>
       todoRow('bell', esc(n.title||'新通知')+' <span class="badge go">待处理</span>',
-        esc((n.content||'').slice(0,50)), 'readNotif('+n.id+')')).join('');
+        esc((n.content||'').slice(0,50)), 'openNotifDetail('+n.id+')')).join('');
   }
   if(!rows) rows = emptyBox(state.isAdmin ? '没有待你审批的单据' : '没有待处理事项');
   pending.innerHTML = rows;
@@ -1314,9 +1341,10 @@ function renderTodo(){
       }).join('')
     : emptyBox('暂无申请记录');
 
+  // 角标 = 列表口径：管理员=待审单数；普通用户=未读通知数
   const cnt = state.isAdmin
     ? todoList.filter(a=>a.status==='PENDING').length
-    : (state.notifs && state.notifs.unread != null ? state.notifs.unread : asArray(state.notifs).length);
+    : notifItems().filter(n=>!n.readAt).length;
   $('todoCnt').textContent = cnt;
   const tab = $('tabCnt');
   if(cnt > 0){ tab.style.display = 'block'; tab.textContent = cnt; } else tab.style.display = 'none';
@@ -1333,6 +1361,62 @@ async function readNotif(id){
     ? Object.assign({}, state.notifs, {items:left, unread:Math.max(0, (state.notifs.unread||0)-1)})
     : left;
   renderTodo(); renderToday();
+}
+/* 点击「待我处理」通知：弹窗展示完整详情（原 readNotif 直接标已读无任何展示） */
+function openNotifDetail(id){
+  const n = notifItems().find(x=>x.id===id);
+  if(!n){ toast('该通知已处理或已刷新，请下拉更新'); return; }
+  showNotifPopup([n]);
+  if(!n.readAt) readNotif(id); // 打开即标已读，角标同步减一
+}
+/* ---- 通知轮询 + 弹窗提醒（V15）：数字员工定时任务完成后推送，无需手动刷新 ---- */
+let notifPollTimer = null;
+let seenNotifMaxId = 0;
+function notifItems(){
+  const n = state.notifs;
+  return n && typeof n === 'object' && !Array.isArray(n) ? (n.items||[]) : (Array.isArray(n) ? n : []);
+}
+function startNotifPolling(){
+  if(notifPollTimer) return;
+  // 首次全量：现有通知记为已见，不弹历史消息
+  seenNotifMaxId = notifItems().reduce((m,x)=>Math.max(m, x.id||0), 0);
+  notifPollTimer = setInterval(pollNotifs, 60000);
+}
+async function pollNotifs(){
+  try{
+    const res = await API.notificationList();
+    if(!res) return;
+    state.notifs = res;
+    renderTodo(); renderToday();
+    const fresh = notifItems().filter(x=>(x.id||0) > seenNotifMaxId && !x.readAt);
+    if(fresh.length){
+      fresh.forEach(x=>{ seenNotifMaxId = Math.max(seenNotifMaxId, x.id||0); });
+      showNotifPopup(fresh);
+    }
+  }catch(e){ /* 令牌过期等情况静默，登录页自会处理 */ }
+}
+function showNotifPopup(items){
+  let mask = $('notifMask');
+  if(!mask){
+    mask = document.createElement('div');
+    mask.id = 'notifMask';
+    mask.className = 'notif-mask';
+    mask.innerHTML = '<div class="notif-modal" role="dialog" aria-modal="true">'+
+      '<div class="notif-head"><svg class="ic" style="width:18px;height:18px;color:var(--blue)"><use href="#i-bell"/></svg><span>新消息提醒</span></div>'+
+      '<div class="notif-body" id="notifBody"></div>'+
+      '<div class="notif-foot"><button class="btn primary" onclick="dismissNotifPopup()">知道了</button></div>'+
+      '</div>';
+    document.body.appendChild(mask);
+  }
+  const body = mask.querySelector('#notifBody');
+  if(body) body.innerHTML = items.map(n=>
+    '<div class="notif-item"><div class="nt">'+esc(n.title||'通知')+'</div><div class="nc">'+esc(n.content||'')+'</div></div>'
+  ).join('');
+  mask.classList.add('show');
+}
+function dismissNotifPopup(){
+  const mask = $('notifMask');
+  if(mask) mask.classList.remove('show');
 }
 /* ---- 待办/审批详情（V1.2.1）：完整信息 + 通过/驳回 + 状态回写 ---- */
 function findApproval(id, scope){
@@ -1753,11 +1837,12 @@ function tickClock(){
       try{
         const me = await API.req('/v1/auth/me');
         state.isAdmin = (me.roles||[]).indexOf('ROLE_ADMIN') >= 0;
-        state.user = {username:me.username, nickname:me.nickname || me.username};
+        state.user = {id: me.id, username:me.username, nickname:me.nickname || me.username};
       }catch(e){ /* 令牌过期则退回登录页 */ throw e; }
       document.body.classList.add('auth');
       go('page-home'); setTitle('page-home');
       await loadLiveData();
+      startNotifPolling();
     }
   }catch(e){
     try{ localStorage.removeItem('aioa_session'); }catch(_){}

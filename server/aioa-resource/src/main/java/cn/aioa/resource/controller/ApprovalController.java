@@ -37,12 +37,13 @@ public class ApprovalController {
     public record DecisionBody(String decision, String note) {
     }
 
-    public record ApprovalView(Long id, String bizType, String title, String content, String status,
-                                String approver, String decisionNote, String decidedAt, String createdAt, boolean mine) {
+    public record ApprovalView(Long id, Long userId, String applicantName, String bizType, String title,
+                                String content, String status, String approver, String decisionNote,
+                                String decidedAt, String createdAt, boolean mine) {
 
         static ApprovalView from(ApprovalOrder o, Long currentUserId) {
-            return new ApprovalView(o.getId(), o.getBizType(), o.getTitle(), o.getContent(),
-                    o.getStatus(), o.getApprover(), o.getDecisionNote(),
+            return new ApprovalView(o.getId(), o.getUserId(), o.getApplicantName(), o.getBizType(), o.getTitle(),
+                    o.getContent(), o.getStatus(), o.getApprover(), o.getDecisionNote(),
                     o.getDecidedAt() == null ? null : o.getDecidedAt().toString(),
                     o.getCreatedAt() == null ? null : o.getCreatedAt().toString(),
                     currentUserId != null && currentUserId.equals(o.getUserId()));

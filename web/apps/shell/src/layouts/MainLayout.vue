@@ -65,6 +65,18 @@
             <el-icon><Cpu /></el-icon>
             <template #title>数字员工</template>
           </el-menu-item>
+          <el-menu-item index="/biz-systems">
+            <el-icon><Connection /></el-icon>
+            <template #title>业务系统</template>
+          </el-menu-item>
+          <el-menu-item index="/quotas">
+            <el-icon><Coin /></el-icon>
+            <template #title>配额管理</template>
+          </el-menu-item>
+          <el-menu-item index="/audit">
+            <el-icon><Document /></el-icon>
+            <template #title>操作审计</template>
+          </el-menu-item>
           <el-menu-item index="/results">
             <el-icon><FolderOpened /></el-icon>
             <template #title>成果沉淀</template>

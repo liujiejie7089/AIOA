@@ -39,6 +39,15 @@ public class AgentWorker {
     /** 运行计划说明 */
     private String scheduleText;
 
+    /** 每日执行时刻 HH:mm（如 08:00），空=不定时。到点由 WorkerScheduler 真实执行 */
+    private String scheduleTime;
+
+    /** 到点执行的任务内容（交给模型真实执行） */
+    private String taskPrompt;
+
+    /** 最近一次定时执行时间（用于防止同一天重复执行） */
+    private LocalDateTime lastRunAt;
+
     /** 1=启用 0=停用 */
     private Integer enabled;
 

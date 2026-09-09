@@ -38,9 +38,13 @@ public class ApprovalService {
     public ApprovalOrder submit(Long tenantId, Long userId, String nickname,
                                  String bizType, String title, String content, String runId, Long conversationId,
                                  Long resultId) {
+        // 发起人姓名快照：JWT 不携带昵称时查库兜底（管理端审批中心展示）
+        String displayName = (nickname == null || nickname.isBlank())
+                ? approvalMapper.selectDisplayName(userId == null ? 0L : userId) : nickname;
         ApprovalOrder order = new ApprovalOrder();
         order.setTenantId(tenantId == null ? 0L : tenantId);
         order.setUserId(userId == null ? 0L : userId);
+        order.setApplicantName(displayName == null || displayName.isBlank() ? ("用户#" + userId) : displayName);
         order.setBizType(bizType == null || bizType.isBlank() ? "对外发文" : bizType);
         order.setTitle(title);
         order.setContent(content);

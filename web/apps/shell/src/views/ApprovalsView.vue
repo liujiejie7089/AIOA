@@ -165,4 +165,25 @@ onMounted(reload)
   font-size: 12px;
   color: var(--aioa-text-sub);
 }
+
+.expand-box {
+  padding: 4px 16px 12px 48px;
+}
+
+.expand-label {
+  font-size: 12px;
+  color: var(--aioa-text-sub);
+  margin-bottom: 6px;
+}
+
+.expand-content {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
 </style>

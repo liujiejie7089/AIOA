@@ -4,6 +4,7 @@ import cn.aioa.common.exception.BizException;
 import cn.aioa.resource.entity.ApprovalOrder;
 import cn.aioa.resource.entity.KbDocument;
 import cn.aioa.resource.entity.TenantQuota;
+import cn.aioa.resource.store.KnowledgeStore;
 import cn.aioa.security.AuthUser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -147,7 +148,7 @@ public class ToolGatewayService {
             throw BizException.badRequest("keyword 不能为空");
         }
         Long uid = user.getUserId() == null ? 0L : user.getUserId();
-        List<KbService.KbHit> hits = kbService.searchHits(
+        List<KnowledgeStore.KbHit> hits = kbService.searchHits(
                 user.getTenantId() == null ? 0L : user.getTenantId(), uid, keyword.trim(), MAX_ROWS);
         return hits.stream().map(h -> {
             Map<String, Object> row = new LinkedHashMap<>();

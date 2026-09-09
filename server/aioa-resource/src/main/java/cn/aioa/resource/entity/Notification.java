@@ -20,6 +20,8 @@ public class Notification {
 
     public static final String TYPE_APPROVAL = "APPROVAL";
     public static final String TYPE_SYSTEM = "SYSTEM";
+    /** 数字员工定时任务执行完成提醒（弹窗提醒数据源） */
+    public static final String TYPE_WORKER = "WORKER";
 
     @TableId(type = IdType.AUTO)
     private Long id;

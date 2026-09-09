@@ -8,6 +8,10 @@ export interface ApprovalOrder {
   title: string
   content: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | string
+  /** 发起人姓名（提交时快照） */
+  applicantName: string
+  /** 发起人 id */
+  userId: number
   approver: string
   decisionNote: string
   decidedAt: string
@@ -313,6 +317,12 @@ export interface AgentWorker {
   status: string
   lastOutput: string
   scheduleText: string
+  /** 每日执行时刻 HH:mm（如 08:00），空=不定时 */
+  scheduleTime: string | null
+  /** 到点执行的任务内容（交给模型真实执行） */
+  taskPrompt: string | null
+  /** 最近一次定时执行时间 */
+  lastRunAt: string | null
   enabled: number
 }
 
@@ -330,6 +340,121 @@ export function adminToggleWorker(id: number): Promise<AgentWorker> {
 }
 export function adminDeleteWorker(id: number): Promise<boolean> {
   return http.delete(`/admin/workers/${id}`).then((r) => unwrap<boolean>(r))
+}
+
+export interface WorkerRun {
+  id: number
+  workerId: number
+  workerName: string
+  triggerType: 'SCHEDULE' | 'MANUAL' | string
+  status: 'SUCCESS' | 'FAILED' | string
+  output: string | null
+  errorMsg: string | null
+  model: string | null
+  durationMs: number
+  startedAt: string
+  finishedAt: string | null
+}
+
+export function adminListWorkerRuns(id: number, limit = 20): Promise<WorkerRun[]> {
+  return http.get(`/admin/workers/${id}/runs`, { params: { limit } }).then((r) => unwrap<WorkerRun[]>(r))
+}
+export function adminRunWorkerNow(id: number): Promise<WorkerRun> {
+  return http.post(`/admin/workers/${id}/run`).then((r) => unwrap<WorkerRun>(r))
+}
+
+/* ============ 业务系统注册与配置管理（V15 · 管理端） ============ */
+
+export interface BizSystem {
+  id: number
+  systemCode: string
+  name: string
+  description: string | null
+  baseUrl: string | null
+  authType: 'NONE' | 'API_KEY' | 'BASIC' | 'BEARER' | string
+  /** 出参敏感字段已掩码（******）；入参传掩码值则保留库中原值 */
+  authConfig: string | null
+  docUrl: string | null
+  docContent: string | null
+  status: 'ENABLED' | 'DISABLED' | string
+  createdAt: string
+}
+
+export function listBizSystems(q?: string): Promise<BizSystem[]> {
+  return http.get('/admin/biz-systems', { params: q ? { q } : {} }).then((r) => unwrap<BizSystem[]>(r))
+}
+export function createBizSystem(body: Partial<BizSystem>): Promise<BizSystem> {
+  return http.post('/admin/biz-systems', body).then((r) => unwrap<BizSystem>(r))
+}
+export function updateBizSystem(id: number, body: Partial<BizSystem>): Promise<BizSystem> {
+  return http.put(`/admin/biz-systems/${id}`, body).then((r) => unwrap<BizSystem>(r))
+}
+export function toggleBizSystem(id: number): Promise<BizSystem> {
+  return http.post(`/admin/biz-systems/${id}/toggle`).then((r) => unwrap<BizSystem>(r))
+}
+export function deleteBizSystem(id: number): Promise<{ id: number; deleted: boolean }> {
+  return http.delete(`/admin/biz-systems/${id}`).then((r) => unwrap<{ id: number; deleted: boolean }>(r))
+}
+
+/* ============ 配额管理（管理端 · 技术方案 5.2 一期） ============ */
+
+export interface QuotaOverviewUser {
+  userId: number
+  nickname: string
+  quotaTokens: number
+  usedTokens: number
+  freeTokens: number
+  updatedAt: string | null
+}
+
+export interface QuotaOverview {
+  totalQuota: number
+  totalUsed: number
+  totalFree: number
+  memberCount: number
+  users: QuotaOverviewUser[]
+}
+
+export function getQuotaOverview(): Promise<QuotaOverview> {
+  return http.get('/admin/quotas').then((r) => unwrap<QuotaOverview>(r))
+}
+export function assignQuota(userId: number, quotaTokens: number): Promise<{ userId: number; quotaTokens: number }> {
+  return http.put(`/admin/quotas/${userId}`, { quotaTokens }).then((r) => unwrap<{ userId: number; quotaTokens: number }>(r))
+}
+export interface UsageRow {
+  bizType: string
+  cnt: number
+  totalTokens: number
+  promptTokens: number
+  completionTokens: number
+}
+export interface LedgerRow {
+  id: number
+  userId: number
+  userName: string
+  bizType: string
+  bizTitle: string | null
+  totalTokens: number
+  createdAt: string
+}
+export function getQuotaUsage(days = 30): Promise<{ since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] }> {
+  return http.get('/admin/quotas/usage', { params: { days } }).then((r) => unwrap<{ since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] }>(r))
+}
+
+/* ============ 操作审计（管理端 · 权限变更审计） ============ */
+
+export interface AuditRow {
+  id: number
+  userId: number
+  userName: string
+  action: string
+  status: string
+  label: string
+  createdAt: string
+}
+
+export function listAuditLogs(limit = 100): Promise<AuditRow[]> {
+  return http.get('/admin/audit-logs', { params: { limit } }).then((r) => unwrap<AuditRow[]>(r))
 }
 
 /* ============ 成果沉淀（V1.2 · 管理端查看） ============ */

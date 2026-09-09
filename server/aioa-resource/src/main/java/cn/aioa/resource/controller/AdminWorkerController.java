@@ -3,7 +3,10 @@ package cn.aioa.resource.controller;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.resource.entity.AgentWorker;
+import cn.aioa.resource.entity.AgentWorkerRun;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
+import cn.aioa.resource.mapper.AgentWorkerRunMapper;
+import cn.aioa.resource.service.WorkerScheduleService;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -15,14 +18,20 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 数字员工 —— 管理端维护（V1.2 新增）：
+ * 数字员工 —— 管理端维护（V1.2 新增；V15 增加定时任务）：
  *   GET/POST/PUT/DELETE /api/v1/admin/workers[/{id}]、POST /{id}/toggle
+ *   GET  /{id}/runs          执行记录（真实运行留痕）
+ *   POST /{id}/run           立即执行一次（手动触发，真实调模型）
  * 管理员可预置数字员工并维护运行计划；用户端创建的一并在此可见。
  */
 @RestController
@@ -30,7 +39,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AdminWorkerController {
 
+    private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
+
     private final AgentWorkerMapper workerMapper;
+    private final AgentWorkerRunMapper runMapper;
+    private final WorkerScheduleService scheduleService;
 
     private AuthUser requireAdmin() {
         AuthUser user = AuthUserContext.require();
@@ -38,6 +51,14 @@ public class AdminWorkerController {
             throw BizException.forbidden("数字员工维护仅租户管理员可操作");
         }
         return user;
+    }
+
+    private AgentWorker requireOwned(AuthUser user, Long id) {
+        AgentWorker cur = workerMapper.selectById(id);
+        if (cur == null || !user.getTenantId().equals(cur.getTenantId())) {
+            throw BizException.notFound("数字员工不存在：" + id);
+        }
+        return cur;
     }
 
     @GetMapping
@@ -54,6 +75,7 @@ public class AdminWorkerController {
         if (body.getName() == null || body.getName().isBlank()) {
             throw BizException.badRequest("数字员工名称不能为空");
         }
+        validateScheduleTime(body.getScheduleTime());
         body.setId(null);
         body.setTenantId(user.getTenantId());
         body.setCreatedBy(user.getUserId());
@@ -62,6 +84,7 @@ public class AdminWorkerController {
         if (body.getEnabled() == null) body.setEnabled(1);
         if (body.getStatus() == null) body.setStatus(AgentWorker.STATUS_RUNNING);
         if (body.getIcon() == null || body.getIcon().isBlank()) body.setIcon("bot");
+        body.setScheduleTime(normalizeScheduleTime(body.getScheduleTime()));
         workerMapper.insert(body);
         return ApiResponse.ok(body);
     }
@@ -69,15 +92,14 @@ public class AdminWorkerController {
     @PutMapping("/{id}")
     public ApiResponse<AgentWorker> update(@PathVariable Long id, @RequestBody AgentWorker body) {
         AuthUser user = requireAdmin();
-        AgentWorker cur = workerMapper.selectById(id);
-        if (cur == null || !user.getTenantId().equals(cur.getTenantId())) {
-            throw BizException.notFound("数字员工不存在：" + id);
-        }
+        AgentWorker cur = requireOwned(user, id);
+        validateScheduleTime(body.getScheduleTime());
         body.setId(id);
         body.setTenantId(cur.getTenantId());
         body.setCreatedBy(cur.getCreatedBy());
         body.setCreatedAt(cur.getCreatedAt());
         body.setUpdatedAt(LocalDateTime.now());
+        body.setScheduleTime(normalizeScheduleTime(body.getScheduleTime()));
         workerMapper.updateById(body);
         return ApiResponse.ok(body);
     }
@@ -85,10 +107,7 @@ public class AdminWorkerController {
     @PostMapping("/{id}/toggle")
     public ApiResponse<AgentWorker> toggle(@PathVariable Long id) {
         AuthUser user = requireAdmin();
-        AgentWorker cur = workerMapper.selectById(id);
-        if (cur == null || !user.getTenantId().equals(cur.getTenantId())) {
-            throw BizException.notFound("数字员工不存在：" + id);
-        }
+        AgentWorker cur = requireOwned(user, id);
         boolean next = Integer.valueOf(0).equals(cur.getEnabled());
         cur.setEnabled(next ? 1 : 0);
         cur.setStatus(next ? AgentWorker.STATUS_RUNNING : AgentWorker.STATUS_IDLE);
@@ -100,10 +119,42 @@ public class AdminWorkerController {
     @DeleteMapping("/{id}")
     public ApiResponse<Boolean> delete(@PathVariable Long id) {
         AuthUser user = requireAdmin();
-        AgentWorker cur = workerMapper.selectById(id);
-        if (cur == null || !user.getTenantId().equals(cur.getTenantId())) {
-            throw BizException.notFound("数字员工不存在：" + id);
-        }
+        requireOwned(user, id);
         return ApiResponse.ok(workerMapper.deleteById(id) > 0);
+    }
+
+    /** 执行记录（真实运行留痕，倒序）。 */
+    @GetMapping("/{id}/runs")
+    public ApiResponse<List<AgentWorkerRun>> runs(@PathVariable Long id,
+                                                  @RequestParam(name = "limit", defaultValue = "20") int limit) {
+        AuthUser user = requireAdmin();
+        AgentWorker cur = requireOwned(user, id);
+        return ApiResponse.ok(runMapper.selectList(new LambdaQueryWrapper<AgentWorkerRun>()
+                .eq(AgentWorkerRun::getWorkerId, cur.getId())
+                .orderByDesc(AgentWorkerRun::getStartedAt)
+                .last("limit " + Math.max(1, Math.min(limit, 100)))));
+    }
+
+    /** 立即执行一次（手动触发，真实调模型并落记录、发通知）。 */
+    @PostMapping("/{id}/run")
+    public ApiResponse<AgentWorkerRun> run(@PathVariable Long id) {
+        AuthUser user = requireAdmin();
+        AgentWorker cur = requireOwned(user, id);
+        return ApiResponse.ok(scheduleService.runNow(cur, AgentWorkerRun.TRIGGER_MANUAL));
+    }
+
+    private void validateScheduleTime(String time) {
+        if (time == null || time.isBlank()) {
+            return;
+        }
+        try {
+            LocalTime.parse(time.trim(), HH_MM);
+        } catch (Exception e) {
+            throw BizException.badRequest("执行时刻格式无效，应为 HH:mm（如 08:00）");
+        }
+    }
+
+    private String normalizeScheduleTime(String time) {
+        return time == null || time.isBlank() ? null : LocalTime.parse(time.trim(), HH_MM).format(HH_MM);
     }
 }
