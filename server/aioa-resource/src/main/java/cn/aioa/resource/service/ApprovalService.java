@@ -80,6 +80,20 @@ public class ApprovalService {
                 .orderByDesc(ApprovalOrder::getCreatedAt));
     }
 
+    /**
+     * 同租户管理员联系信息（用户名 + 昵称）：用户端「无权限」提示中引导联系管理员。
+     * 查不到时回退为空列表，由前端给出通用引导文案。
+     */
+    public List<java.util.Map<String, Object>> listTenantAdmins(Long tenantId) {
+        try {
+            List<java.util.Map<String, Object>> rows = approvalMapper.selectTenantAdmins(tenantId == null ? 0L : tenantId);
+            return rows == null ? List.of() : rows;
+        } catch (Exception e) {
+            log.warn("list tenant admins failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public ApprovalOrder decide(Long id, Long tenantId, Long userId, String nickname,
                                  String decision, String note) {

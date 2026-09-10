@@ -476,3 +476,52 @@ export function adminListResults(): Promise<UserResultItem[]> {
 export function adminDeleteResult(id: number): Promise<boolean> {
   return http.delete(`/admin/results/${id}`).then((r) => unwrap<boolean>(r))
 }
+
+/* ============ 系统参数配置（管理端 · V18 AdminConfigController） ============ */
+
+export interface SysConfigItem {
+  id: number
+  tenantId: number
+  configKey: string
+  configValue: string
+  /** INT / DECIMAL / BOOL / STRING / JSON */
+  valueType: string
+  /** CONVERSATION / QUOTA / KNOWLEDGE / SECURITY / COMMON */
+  groupCode: string
+  configName: string
+  description: string
+  unit: string
+  defaultValue: string
+  minValue: number | null
+  maxValue: number | null
+  editable: boolean
+  sortNo: number
+  updatedAt: string
+}
+
+export interface SysConfigResult {
+  groups: Record<string, string>
+  items: SysConfigItem[]
+  grouped: Record<string, SysConfigItem[]>
+  total: number
+}
+
+export function listConfigs(params?: { q?: string; group?: string }): Promise<SysConfigResult> {
+  return http.get('/admin/configs', { params }).then((r) => unwrap<SysConfigResult>(r))
+}
+
+export function updateConfig(key: string, value: string): Promise<SysConfigItem> {
+  return http.put('/admin/configs/' + encodeURIComponent(key), { value }).then((r) => unwrap<SysConfigItem>(r))
+}
+
+export function updateConfigs(items: { key: string; value: string }[]): Promise<{ changed: string[]; rejected: string[] }> {
+  return http.put('/admin/configs', { items }).then((r) => unwrap<{ changed: string[]; rejected: string[] }>(r))
+}
+
+export function resetConfig(key: string): Promise<SysConfigItem> {
+  return http.post('/admin/configs/' + encodeURIComponent(key) + '/reset').then((r) => unwrap<SysConfigItem>(r))
+}
+
+export function resetAllConfigs(): Promise<{ reseted: number }> {
+  return http.post('/admin/configs/reset').then((r) => unwrap<{ reseted: number }>(r))
+}

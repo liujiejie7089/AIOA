@@ -98,4 +98,14 @@ public class ApprovalController {
                 approverName, decision, note);
         return ApiResponse.ok(ApprovalView.from(order, user.getUserId()));
     }
+
+    /**
+     * 同租户管理员联系信息：用户端「无权限 → 请联系管理员开通相关权限」弹窗中展示。
+     * 所有登录用户可访问（不含敏感信息，仅用户名与昵称）。
+     */
+    @GetMapping("/admin-contacts")
+    public ApiResponse<List<java.util.Map<String, Object>>> adminContacts() {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(approvalService.listTenantAdmins(user.getTenantId()));
+    }
 }

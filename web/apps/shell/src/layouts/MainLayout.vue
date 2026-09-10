@@ -77,6 +77,10 @@
             <el-icon><Document /></el-icon>
             <template #title>操作审计</template>
           </el-menu-item>
+          <el-menu-item index="/settings">
+            <el-icon><Tools /></el-icon>
+            <template #title>系统参数</template>
+          </el-menu-item>
           <el-menu-item index="/results">
             <el-icon><FolderOpened /></el-icon>
             <template #title>成果沉淀</template>

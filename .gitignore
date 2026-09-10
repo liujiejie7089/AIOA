@@ -9,6 +9,7 @@ Thumbs.db
 node_modules/
 dist/
 dist-ssr/
+dist-verify/
 *.local
 .npm/
 .pnpm-store/

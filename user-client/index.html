@@ -193,9 +193,22 @@
   .notif-item{background:var(--surface-2); border-radius:var(--r); padding:10px 12px}
   .notif-item .nt{font-weight:600; font-size:13px; margin-bottom:4px}
   .notif-item .nc{font-size:12px; color:var(--text-2); line-height:1.6; white-space:pre-wrap; word-break:break-word}
-  .notif-foot{display:flex; justify-content:flex-end}
+  .notif-foot{display:flex; justify-content:flex-end; gap:8px}
   @keyframes fadein{from{opacity:0}to{opacity:1}}
   @keyframes pop{from{opacity:0; transform:translateY(14px) scale(.96)}to{opacity:1; transform:none}}
+
+  /* ---------- 权限不足弹窗（统一淡色弹窗 · 手机端居中） ---------- */
+  .perm-modal{width:min(320px, 78vw)}
+  .perm-ico{
+    width:28px;height:28px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);
+  }
+  .perm-ico .ic{width:16px;height:16px;stroke:currentColor}
+  .perm-line{font-size:12.5px;color:var(--text-2);line-height:1.7}
+  .perm-tip{
+    margin-top:10px;padding:9px 11px;border-radius:var(--r);font-size:12px;line-height:1.6;
+    color:var(--blue);background:var(--blue-soft);border:1px dashed var(--blue-line);
+  }
 
   .chip{
     display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--surface);
@@ -459,6 +472,7 @@
     <symbol id="i-log" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol>
     <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 16V8l-9-5-9 5v8l9 5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
     <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/></symbol>
   </defs>
 </svg>
 
@@ -821,6 +835,8 @@ const API = {
   },
   approvalList(scope){ return this.req('/v1/approvals?scope='+(scope||'mine')); },
   approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
+  /* 权限不足时展示可联系的管理员（后端按租户返回管理员账号） */
+  adminContacts(){ return this.req('/v1/approvals/admin-contacts'); },
   notificationList(){ return this.req('/v1/notifications?limit=20'); },
   notificationRead(id){ return this.req('/v1/notifications/'+id+'/read',{method:'POST'}); },
 
@@ -1466,7 +1482,7 @@ async function decideTodo(decision){
     state.approvals = await API.approvalList('mine') || [];
     renderTodo();
     go('page-todo');
-  }catch(e){ toast('操作失败：'+e.message); }
+  }catch(e){ handleApprovalError(e, isApprove ? '通过审批' : '驳回审批'); }
 }
 
 /* ============================================================================
@@ -1608,7 +1624,7 @@ async function submitResultApproval(){
     toast('已提交审批，进入工作流并留痕');
   }catch(e){
     btn.disabled = false; btn.textContent = '发起审批';
-    toast('提交失败：'+e.message);
+    handleApprovalError(e, '发起审批');
   }
 }
 async function saveResult(btn, title, body){
@@ -1779,8 +1795,70 @@ async function submitApproval(btn){
     renderTodo(); renderToday();
   }catch(e){
     if(btn){ btn.textContent = '提交审批'; btn.disabled = false; }
-    toast('提交失败：'+e.message);
+    handleApprovalError(e, '提交');
   }
+}
+
+/* 审批相关错误统一处理：无权限时给出明确引导，并展示权限提示弹窗 */
+function handleApprovalError(e, action){
+  const code = e && e.code;
+  const status = e && e.status;
+  const msg = (e && e.message) || '';
+  if(code === 403 || status === 403 || /权限|禁止|无权限|仅.{0,8}管理员/.test(msg)){
+    showPermissionDialog(action || '操作', msg);
+    return;
+  }
+  // 401 交给全局登录态处理
+  if(code === 401 || status === 401){ toast('登录已过期，请重新登录'); return; }
+  toast((action||'操作') + '失败：' + (msg || '请稍后重试'));
+}
+
+/* 权限不足弹窗：统一淡色弹窗样式，手机端居中 */
+function showPermissionDialog(action, detail){
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal" role="alertdialog" aria-modal="true">'+
+      '<div class="notif-head"><span class="perm-ico">'+
+        '<svg class="ic"><use href="#i-lock"/></svg></span>暂无相关权限</div>'+
+      '<div class="notif-body">'+
+        '<div class="perm-line">当前操作「'+esc(action||'操作')+'」需要相应权限，你尚未开通。</div>'+
+        '<div class="perm-tip">'+(detail && detail.indexOf('权限')<0
+            ? esc(detail)
+            : '请联系管理员开通相关权限')+'</div>'+
+      '</div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-perm-close>知道了</button>'+
+        '<button class="btn small" data-perm-contact>联系管理员</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  const close = ()=> mask.remove();
+  mask.querySelector('[data-perm-close]').onclick = close;
+  mask.querySelector('[data-perm-contact]').onclick = ()=>{ close(); showAdminContact(); };
+  mask.addEventListener('click', ev=>{ if(ev.target === mask) close(); });
+}
+
+/* 联系管理员：展示可联系的管理员信息 */
+async function showAdminContact(){
+  let admins = [];
+  try{ admins = await API.adminContacts() || []; }catch(_){ admins = []; }
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  const rows = admins.length
+    ? admins.map(a=>'<div class="notif-item"><div class="nt">'+esc(a.nickname||a.username)+
+        '</div><div class="nc">账号：'+esc(a.username)+'</div></div>').join('')
+    : '<div class="perm-line">暂未获取到管理员联系方式，请联系本单位信息化负责人。</div>';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
+      '<div class="notif-head"><span class="perm-ico">'+
+        '<svg class="ic"><use href="#i-bell"/></svg></span>联系管理员</div>'+
+      '<div class="notif-body">'+rows+'</div>'+
+      '<div class="notif-foot"><button class="btn small" data-perm-close>关闭</button></div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  mask.querySelector('[data-perm-close]').onclick = ()=> mask.remove();
+  mask.addEventListener('click', ev=>{ if(ev.target === mask) mask.remove(); });
 }
 
 /* 技能 = 预填参数的会话（表单融入对话流） */
