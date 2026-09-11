@@ -7,7 +7,9 @@ import cn.aioa.resource.entity.AgentWorkerRun;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.resource.mapper.AgentWorkerRunMapper;
 import cn.aioa.resource.service.WorkerScheduleService;
+import cn.aioa.resource.support.PermissionCatalog;
 import cn.aioa.resource.support.ScheduleTimeSupport;
+import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -53,7 +55,8 @@ public class WorkerController {
 
     public record WorkerView(Long id, String name, String icon, String description, String status,
                              String lastOutput, String schedule, String scheduleTime, String taskPrompt,
-                             String lastRunAt, boolean on) {
+                             String lastRunAt, boolean on,
+                             String workerType, String roleName, String duty, String requiredPermission) {
 
         static WorkerView from(AgentWorker w) {
             boolean on = !Integer.valueOf(0).equals(w.getEnabled());
@@ -61,9 +64,22 @@ public class WorkerController {
                     ? (w.getScheduleTime() == null || w.getScheduleTime().isBlank()
                     ? AgentWorker.STATUS_PENDING_CONFIG : w.getStatus())
                     : "已停用";
+            WorkerRole role = WorkerRole.of(w.getWorkerType());
             return new WorkerView(w.getId(), w.getName(), w.getIcon(), w.getDescription(), status,
                     w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getTaskPrompt(),
-                    w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on);
+                    w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on,
+                    role.code(), role.displayName(), role.duty(), role.requiredPermission());
+        }
+    }
+
+    /** 角色类型目录：前端据此渲染可选类型，并置灰当前用户无权限承担的类型。 */
+    public record RoleTypeView(String code, String name, String duty, String requiredPermission,
+                               String requiredRoles, boolean granted) {
+
+        static RoleTypeView of(WorkerRole role, AuthUser user) {
+            return new RoleTypeView(role.code(), role.displayName(), role.duty(), role.requiredPermission(),
+                    PermissionCatalog.rolesText(role.requiredPermission()),
+                    PermissionCatalog.holds(user, role.requiredPermission()));
         }
     }
 
@@ -76,6 +92,14 @@ public class WorkerController {
                 .stream().map(WorkerView::from).toList());
     }
 
+    /** 角色类型目录（含当前用户是否具备承担该类型的权限）。 */
+    @GetMapping("/role-types")
+    public ApiResponse<List<RoleTypeView>> roleTypes() {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(java.util.Arrays.stream(WorkerRole.values())
+                .map(role -> RoleTypeView.of(role, user)).toList());
+    }
+
     @PostMapping
     public ApiResponse<WorkerView> create(@RequestBody AgentWorker body) {
         AuthUser user = AuthUserContext.require();
@@ -83,9 +107,13 @@ public class WorkerController {
         if (name.isEmpty()) {
             throw BizException.badRequest("数字员工名称不能为空");
         }
+        // 角色类型 → 所需权限 → 角色，三者任一处不满足即拒绝创建（V21 权限准入）
+        WorkerRole role = resolveRole(body.getWorkerType(), name, body.getDescription());
+        requirePermission(user, role);
         AgentWorker w = new AgentWorker();
         w.setTenantId(user.getTenantId());
         w.setName(name);
+        w.setWorkerType(role.code());
         w.setIcon(trim(body.getIcon()).isEmpty() ? "bot" : body.getIcon());
         w.setDescription(body.getDescription());
         w.setEnabled(1);
@@ -122,6 +150,12 @@ public class WorkerController {
         }
         if (body.getIcon() != null) {
             cur.setIcon(trim(body.getIcon()).isEmpty() ? "bot" : body.getIcon());
+        }
+        // 角色类型变更 = 承担新类型角色，必须重新通过权限准入
+        if (body.getWorkerType() != null && !body.getWorkerType().isBlank()) {
+            WorkerRole role = WorkerRole.of(body.getWorkerType());
+            requirePermission(user, role);
+            cur.setWorkerType(role.code());
         }
         if (body.getDescription() != null) {
             cur.setDescription(body.getDescription());
@@ -198,8 +232,27 @@ public class WorkerController {
         return cur;
     }
 
-    /** 解析执行时刻：支持 HH:mm 与自然语言（每天8点 / 8:30），无法解析返回 null。 */
-    private static String resolveScheduleTime(String raw) {
+    /** 角色类型：显式指定优先，未指定则按名称/职责推断（保证历史与「一句话创建」都有类型）。 */
+    private static WorkerRole resolveRole(String explicitType, String name, String description) {
+        if (explicitType != null && !explicitType.isBlank()) {
+            return WorkerRole.of(explicitType);
+        }
+        return WorkerRole.infer(name, description);
+    }
+
+    /**
+     * 权限准入：创建或承担某类型数字人角色，必须持有该类型所需权限。
+     * 不满足即 403，属**前置拒绝**——不落库、不产生半成品角色。
+     */
+    private static void requirePermission(AuthUser user, WorkerRole role) {
+        String permission = role.requiredPermission();
+        if (!PermissionCatalog.holds(user, permission)) {
+            throw BizException.forbidden("该数字人属「" + role.displayName() + "」，需持有权限码 " + permission
+                    + "（" + PermissionCatalog.rolesText(permission) + "）；当前账号无权创建或承担该类型角色");
+        }
+    }
+
+    /** 解析执行时刻：支持 HH:mm 与自然语言（每天8点 / 8:30），无法解析返回 null。 */    private static String resolveScheduleTime(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }

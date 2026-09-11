@@ -47,6 +47,13 @@ public class AgentRunRequest {
     @JsonProperty("history")
     private List<ChatTurn> history;
 
+    /**
+     * 职责范围（V21）：会话绑定数字员工时下发。Agent 侧据此注入「职责范围」系统提示，
+     * 只回答与该数字员工职责相关的问题，越界一律礼貌拒答。
+     * 键：worker_id / name / role / role_name / duty / permission（见 WorkerRole）。
+     */
+    private Map<String, Object> scope;
+
     /** 一条历史消息（role ∈ user/assistant）。 */
     public record ChatTurn(String role, String content) {
     }

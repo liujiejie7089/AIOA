@@ -77,3 +77,17 @@
   `p.chromium.launch(channel="msedge", headless=True)`（不必下载浏览器）。
 - 免登录：`ctx.add_init_script("localStorage.setItem('aioa_session', <json>)")` 在页面脚本前注入。
 - token：`POST http://127.0.0.1:5181/api/v1/auth/login` → `data.accessToken`（同源反代 :8080）。
+
+## V21 数字员工职责边界与权限规则（2026-09-11）
+- 规格源：`docs/10-数字员工职责边界与权限规则.md`。职责边界/权限规则/触发节点一律回该文，勿散写字符串。
+- 权限模型三段链：`WorkerRole`(类型) → `requiredPermission` → `PermissionCatalog`(权限码→角色集合)。
+  类型：GENERAL(`chat:basic`) / LEAVE_APPROVER(`approval:leave`，仅 `ROLE_ADMIN`) / KB_ASSISTANT(`kb:read`) / DOC_DRAFTER(`doc:draft`)。
+  未知权限码默认拒绝；`AuthUser.permissions` 恒空，故以角色判定（与 ApprovalController 的 ROLE_ADMIN 口径一致）。
+- 触发节点（5 个）：T1 `WorkerController.create` / T1' `update` 改类型 / T2 `ConversationService.bindWorker` 建会话绑定
+  / T3 `RunService.buildScope` 下发 scope / T4·T5 `agent_runtime._build_messages` 注入职责提示 + 越界拒答。
+  **会话绑定只传 `workerId`，职责文本由后端从 `agent_worker` 读出下发**（前端不可伪造 scope）。
+- 数据：`agent_worker.worker_type`、`chat_conversation.worker_id`（V21）。职责边界取 `description` 优先、回落 `WorkerRole.duty()`。
+- 会话记录：复用 `chat_conversation`/`chat_message`；用户端会话页「会话记录」= `openHistory`/`toggleHistoryDetail`/`resumeConversation`。
+- **改 Agent(Python) 代码后必须重启 uvicorn**（非 --reload），否则跑的是旧代码，会产生「E2E 全绿但 scope 未生效」的假绿。
+  软约束类断言必须校验身份/口径证据（如回答里是否出现数字员工身份），不能只验「有回答 + 有拒答词」。
+- 提交若索引里有与本任务无关的预暂存删除，用 `git commit -m msg -- <我的路径...>` 只提交指定路径。

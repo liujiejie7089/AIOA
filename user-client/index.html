@@ -328,8 +328,24 @@
     background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--border);
     display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;gap:8px;
   }
-  .chat-head .cname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat-head .cname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .chat-head .cmodel{font-family:var(--font-mono);font-size:10px;color:var(--text-3);font-weight:500;flex-shrink:0}
+  /* 数字员工会话：职责范围标识（越界拒答的依据，用户可见） */
+  .chat-head .scope-badge{
+    flex-shrink:0;font-size:9.5px;font-weight:700;color:var(--blue);background:var(--blue-soft);
+    border:1px solid var(--blue-soft);border-radius:999px;padding:2px 7px;white-space:nowrap;
+  }
+  .chat-head #historyBtn{flex-shrink:0;padding:3px 8px;font-size:11px}
+  /* 会话记录：历史会话列表 + 只读消息回放 */
+  .hist-item{padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);cursor:pointer}
+  .hist-item:active{background:var(--surface-3)}
+  .hist-title{font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+  .hist-title .hm-tag{font-size:9.5px;font-weight:700;color:var(--blue);background:var(--blue-soft);border-radius:999px;padding:1px 6px;flex-shrink:0}
+  .hist-meta{font-size:10.5px;color:var(--text-3);margin-top:3px}
+  .hist-msg{margin-bottom:9px;font-size:12px;line-height:1.6}
+  .hist-msg .who{font-weight:700;color:var(--text-2);font-size:10.5px;display:block;margin-bottom:2px}
+  .hist-msg.me .who{color:var(--blue)}
+  .hist-msg .txt{white-space:pre-wrap;word-break:break-word}
   .msgs{flex:1;overflow-y:auto;padding:12px;scrollbar-width:thin}
   .msg{display:flex;margin-bottom:12px;gap:8px;align-items:flex-start}
   .msg .avatar{width:30px;height:30px;border-radius:9px;background:var(--blue-soft);color:var(--blue)}
@@ -657,6 +673,8 @@
         <div class="chat-head" data-page-node-id="oSMB4dv40tET6NFIFnVxos">
           <span class="cname" id="chatName" data-page-node-id="4E4MaIkN53EepafxMezGtF">会话</span>
           <span class="cmodel" id="chatModel" data-page-node-id="WwOf4Y5EjqaAAMC6cC7LOD">模型：智能路由</span>
+          <span class="scope-badge" id="scopeBadge" style="display:none" data-page-node-id="Scp1Badge7Vq2Mx4Ka9Lp"></span>
+          <button class="btn ghost small" id="historyBtn" onclick="openHistory()" data-page-node-id="Hist0ryBtn3Zq8Wm5Yb1Nc">会话记录</button>
         </div>
         <div class="msgs" id="msgs" data-page-node-id="uTYgHddWf7NGIh9eUdI7ui"></div>
         <div class="quota-warn" id="quotaWarn" data-page-node-id="EQfkitJvjSdoUd4se2J58P">
@@ -850,7 +868,7 @@
 const state = {
   token:null, user:null, isAdmin:false, model:'default',
   quota:0, used:0, free:0, left:0, quotaInfo:null,
-  chatExpert:null, kbOn:true, busy:false,
+  chatExpert:null, chatWorker:null, kbOn:true, busy:false,
   conversationId:null, runId:null, controller:null,
   experts:[], skills:[], kbDocs:[], bill:[], log:[],
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
@@ -883,7 +901,7 @@ const API = {
   login(u,p){ return this.req('/v1/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})}); },
 
   /* 会话与运行 */
-  createConversation(title,appCode){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode})}); },
+  createConversation(title,appCode,workerId){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode,workerId:workerId||null})}); },
   createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context,model_ref:state.model})}); },
   listConversations(){ return this.req('/v1/conversations'); },
   renameConversation(id,title){ return this.req('/v1/conversations/'+id,{method:'PUT',body:JSON.stringify({title})}); },
@@ -949,7 +967,9 @@ const API = {
 
   async ensureConversation(){
     if(state.conversationId) return state.conversationId;
-    const c = await this.createConversation((state.chatExpert ? state.chatExpert.name : '会话')+' · 对话','aioa-client');
+    // 数字员工会话：带上 workerId → 后端把会话与该员工绑定，Agent 侧限定回答边界
+    const workerId = (state.chatWorker && state.chatWorker.id) ? state.chatWorker.id : null;
+    const c = await this.createConversation((state.chatExpert ? state.chatExpert.name : '会话')+' · 对话','aioa-client', workerId);
     state.conversationId = c && (c.id || c.conversationId);
     if(!state.conversationId) throw new Error('会话创建失败');
     return state.conversationId;
@@ -1097,6 +1117,18 @@ function switchTabById(pid){
 }
 function activateChatTab(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-chat'));
+}
+/* 绑定/解绑当前会话的数字员工：绑定后该会话受其职责边界约束（越界拒答） */
+function setChatWorker(w){
+  state.chatWorker = w || null;
+  const b = $('scopeBadge');
+  if(!b) return;
+  if(w && (w.roleName || w.duty)){
+    b.textContent = '职责限定：' + (w.roleName || w.name || '数字员工');
+    b.style.display = '';
+  }else{
+    b.style.display = 'none';
+  }
 }
 
 /* ============================================================================
@@ -1743,8 +1775,12 @@ function createAgentFlow(worker){
   state.editingWorker = worker || null;
   state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
   state.conversationId = null;
+  // 绑定该数字员工：此后本会话内 AI 只在其职责边界内作答
+  setChatWorker(worker || null);
   $('chatName').textContent = '数字员工管家';
-  $('chatModel').textContent = worker ? ('正在调整「'+worker.name+'」') : '创建数字员工 · 确认后生效';
+  $('chatModel').textContent = worker
+    ? ('正在调整「'+worker.name+'」 · '+(worker.roleName||'通用办公助手'))
+    : '创建数字员工 · 确认后生效';
   go('page-chat'); activateChatTab();
   $('pageTitle').innerHTML = (worker?'调整数字员工':'创建数字员工')+'<span class="ver">V1.2</span>';
   const m = $('msgs');
@@ -1938,6 +1974,7 @@ function startChat(i){
   const e = state.experts[i]; if(!e) return;
   state.chatExpert = e;
   state.conversationId = null;
+  setChatWorker(null);
   $('chatName').textContent = e.name;
   $('chatModel').textContent = '模型：智能路由';
   go('page-chat'); activateChatTab(); setTitle('page-chat');
@@ -2031,6 +2068,78 @@ async function send(){
   }
 }
 
+/* ============================================================================
+   14b. 会话记录：历史会话保存与查看（记录由后端 chat_conversation/chat_message 落库）
+   ============================================================================ */
+function historyBubble(m){
+  const mine = m.role === 'user';
+  const ico = mine ? 'user' : iconKey(state.chatExpert && state.chatExpert.icon);
+  return '<div class="msg'+(mine?' me':'')+'"><div class="avatar">'+icon(ico)+'</div>'+
+         '<div class="bubble">'+esc(m.content||'')+'</div></div>';
+}
+async function openHistory(){
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML = '<div class="notif-modal">'+
+      '<div class="notif-head"><b>会话记录</b><span class="notif-close">×</span></div>'+
+      '<div class="notif-body" id="histBody"><div class="perm-tip">加载中…</div></div></div>';
+  document.body.appendChild(mask);
+  const close = ()=>mask.remove();
+  mask.querySelector('.notif-close').onclick = close;
+  mask.onclick = e=>{ if(e.target===mask) close(); };
+  const body = mask.querySelector('#histBody');
+  try{
+    const list = asArray(await API.listConversations()).filter(c=>c && c.id);
+    if(!list.length){
+      body.innerHTML = '<div class="perm-tip">暂无历史会话。发起一次对话后，记录会出现在这里。</div>';
+      return;
+    }
+    state.conversations = list;
+    body.innerHTML = list.map(c=>
+      '<div class="hist-item" onclick="toggleHistoryDetail('+c.id+', this)">'+
+        '<div class="hist-title"><span>'+esc(c.title||'未命名会话')+'</span>'+
+          (c.workerId ? '<span class="hm-tag">数字员工</span>' : '')+'</div>'+
+        '<div class="hist-meta">'+esc(fmtRunTime(c.lastMsgAt||c.createdAt))+' · '+(c.msgCount||0)+' 条消息</div>'+
+        '<div data-detail></div>'+
+      '</div>').join('');
+  }catch(e){
+    body.innerHTML = '<div class="perm-tip">加载失败：'+esc(e.message||'未知错误')+'</div>';
+  }
+}
+/* 点击历史会话：展开/收起该会话的完整对话内容（懒加载，点开才拉消息） */
+async function toggleHistoryDetail(id, el){
+  const box = el.querySelector('[data-detail]');
+  if(box.dataset.loaded === '1'){ box.innerHTML = ''; box.dataset.loaded = '0'; return; }
+  box.innerHTML = '<div class="perm-tip">加载中…</div>';
+  try{
+    const msgs = asArray(await API.listMessages(id));
+    box.dataset.loaded = '1';
+    box.innerHTML = (msgs.length
+        ? msgs.map(m=>'<div class="hist-msg'+(m.role==='user'?' me':'')+'">'+
+            '<span class="who">'+(m.role==='user'?'我':'AI')+'</span>'+
+            '<div class="txt">'+esc(m.content||'')+'</div></div>').join('')
+        : '<div class="perm-tip">该会话暂无消息</div>')
+      + '<div style="margin-top:6px"><button class="btn ghost small" '
+      + 'onclick="event.stopPropagation();resumeConversation('+id+')">继续此会话</button></div>';
+  }catch(e){
+    box.innerHTML = '<div class="perm-tip">加载失败：'+esc(e.message||'未知错误')+'</div>';
+  }
+}
+/* 载入历史会话到会话页，可继续提问（同一 conversationId，上下文由后端续接） */
+async function resumeConversation(id){
+  try{
+    const msgs = asArray(await API.listMessages(id));
+    const conv = (state.conversations||[]).find(c=>c.id===id);
+    state.conversationId = id;
+    setChatWorker(conv && conv.workerId ? {id:conv.workerId, name:conv.title, roleName:'数字员工'} : state.chatWorker);
+    document.querySelectorAll('.notif-mask').forEach(m=>m.remove());
+    $('msgs').innerHTML = msgs.map(historyBubble).join('') || '<div class="muted" style="padding:8px">该会话暂无消息</div>';
+    go('page-chat'); activateChatTab(); setTitle('page-chat');
+    $('msgs').scrollTop = $('msgs').scrollHeight;
+    toast('已载入历史会话，可继续提问');
+  }catch(e){ toast('载入失败：'+e.message); }
+}
+
 /* 产出收口：公文类触发审批卡点，并提供「存为成果」 */
 function afterAnswer(bubble, text){
   const wrap = bubble.parentNode;
@@ -2074,6 +2183,7 @@ var leaveAttachments = [];   // 本次请假已上传附件 [{name,url}]
 function openLeaveFlow(){
   state.chatExpert = {name:'请假数字人', icon:'calendar', intro:'', recs:[]};
   state.conversationId = null;
+  setChatWorker(null);
   $('chatName').textContent = '请假数字人';
   $('chatModel').textContent = '填写请假信息并提交审批';
   go('page-chat'); activateChatTab();

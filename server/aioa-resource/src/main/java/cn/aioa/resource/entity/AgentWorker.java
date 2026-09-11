@@ -38,6 +38,12 @@ public class AgentWorker {
     /** 最近产出摘要 */
     private String lastOutput;
 
+    /**
+     * 角色类型（V21）：决定职责边界与所需权限，取值见
+     * {@link cn.aioa.resource.support.WorkerRole}。默认 GENERAL。
+     */
+    private String workerType;
+
     /** 运行计划说明 */
     private String scheduleText;
 

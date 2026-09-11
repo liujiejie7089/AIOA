@@ -42,6 +42,9 @@ class RunRequest(BaseModel):
     history: list[dict[str, Any]] | None = None
     # 发起方用户 accessToken（M2 工具回调）：调用业务工具网关时透传，工具权限 = 用户权限
     user_token: str | None = None
+    # 职责范围（V21）：会话绑定数字员工时下发，用于限定回答边界（越界拒答）
+    # 键：worker_id / name / role / role_name / duty / permission
+    scope: dict[str, Any] | None = None
 
 
 class Usage(BaseModel):

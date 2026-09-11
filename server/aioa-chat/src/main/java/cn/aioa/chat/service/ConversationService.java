@@ -6,6 +6,11 @@ import cn.aioa.chat.mapper.ChatConversationMapper;
 import cn.aioa.chat.mapper.ChatMessageMapper;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.PageResult;
+import cn.aioa.resource.entity.AgentWorker;
+import cn.aioa.resource.mapper.AgentWorkerMapper;
+import cn.aioa.resource.support.PermissionCatalog;
+import cn.aioa.resource.support.WorkerRole;
+import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -27,8 +32,9 @@ public class ConversationService {
 
     private final ChatConversationMapper conversationMapper;
     private final ChatMessageMapper messageMapper;
+    private final AgentWorkerMapper workerMapper;
 
-    public ChatConversation create(String title, String appCode) {
+    public ChatConversation create(String title, String appCode, Long workerId) {
         Long userId = AuthUserContext.requireUserId();
         ChatConversation conversation = new ChatConversation();
         conversation.setTenantId(AuthUserContext.tenantIdOrDefault());
@@ -41,8 +47,32 @@ public class ConversationService {
         conversation.setMsgCount(0L);
         conversation.setCreatedAt(LocalDateTime.now());
         conversation.setCreatedBy(userId);
+        if (workerId != null) {
+            bindWorker(conversation, AuthUserContext.require(), workerId);
+        }
         conversationMapper.insert(conversation);
         return conversation;
+    }
+
+    /**
+     * 会话绑定数字员工（V21）：租户归属校验 → 承担该角色所需权限校验。
+     * 不满足即拒绝创建会话，杜绝「无权限却以该数字人身份作答」。
+     */
+    private void bindWorker(ChatConversation conversation, AuthUser user, Long workerId) {
+        AgentWorker worker = workerMapper.selectById(workerId);
+        if (worker == null || !Objects.equals(worker.getTenantId(), user.getTenantId())) {
+            throw BizException.notFound("数字员工不存在：" + workerId);
+        }
+        if (Integer.valueOf(0).equals(worker.getEnabled())) {
+            throw BizException.badRequest("该数字员工已停用，无法建立会话");
+        }
+        WorkerRole role = WorkerRole.of(worker.getWorkerType());
+        if (!PermissionCatalog.holds(user, role.requiredPermission())) {
+            throw BizException.forbidden("无权与该「" + role.displayName() + "」会话：需持有权限码 "
+                    + role.requiredPermission() + "（" + PermissionCatalog.rolesText(role.requiredPermission()) + "）");
+        }
+        conversation.setWorkerId(worker.getId());
+        conversation.setAgentCode("worker:" + worker.getId());
     }
 
     public PageResult<ChatConversation> page(long page, long size, String keyword) {

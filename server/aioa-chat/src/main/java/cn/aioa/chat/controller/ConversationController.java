@@ -39,7 +39,8 @@ public class ConversationController {
     public ApiResponse<ChatConversation> create(@RequestBody(required = false) CreateConversationRequest request) {
         String title = request == null ? null : request.getTitle();
         String appCode = request == null ? null : request.getAppCode();
-        return ApiResponse.ok(conversationService.create(title, appCode));
+        Long workerId = request == null ? null : request.getWorkerId();
+        return ApiResponse.ok(conversationService.create(title, appCode, workerId));
     }
 
     @Operation(summary = "会话列表（分页/搜索）")

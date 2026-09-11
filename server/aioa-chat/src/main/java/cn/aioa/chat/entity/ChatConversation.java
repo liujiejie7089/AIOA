@@ -20,6 +20,13 @@ public class ChatConversation {
     private String title;
     private String agentCode;
     private String appCode;
+
+    /**
+     * 绑定的数字员工 ID（V21）：非空表示该会话受该数字员工的职责边界约束，
+     * Agent 侧会注入职责范围系统提示，只回答职责范围内的问题。
+     */
+    private Long workerId;
+
     private String modelRef;
     private String summary;
     private Integer contextTurns;

@@ -11,9 +11,12 @@ import cn.aioa.chat.mapper.ChatConversationMapper;
 import cn.aioa.chat.mapper.ChatMessageMapper;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.trace.TraceId;
+import cn.aioa.resource.entity.AgentWorker;
 import cn.aioa.resource.entity.TokenLedger;
+import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.resource.service.ActivityLogService;
 import cn.aioa.resource.service.BillingService;
+import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import cn.aioa.security.ServiceTokenProvider;
@@ -74,6 +77,7 @@ public class RunService {
     private final BillingService billingService;
     private final ActivityLogService activityLogService;
     private final ContentGuardService contentGuard;
+    private final AgentWorkerMapper workerMapper;
 
     /** 传给 Agent 的最大历史轮数（FR-C2 多轮会话）。 */
     private static final int HISTORY_TURNS = 10;
@@ -211,6 +215,10 @@ public class RunService {
         ChatConversation conversation = conversationMapper.selectById(run.getConversationId());
         if (conversation != null && conversation.getModelRef() != null && !conversation.getModelRef().isBlank()) {
             request.setModelRef(conversation.getModelRef());
+        }
+        // V21 会话绑定数字员工：下发职责范围，Agent 侧据此限定回答边界（越界拒答）
+        if (conversation != null && conversation.getWorkerId() != null) {
+            request.setScope(buildScope(conversation.getWorkerId()));
         }
         try {
             subscription[0] = agentWebClient.post()
@@ -358,8 +366,29 @@ public class RunService {
         return request;
     }
 
-    /** "Bearer xxx" -> "xxx"；异常输入返回 null（agent 侧降级为无工具模式）。 */
-    private static String stripBearer(String authorization) {
+    /**
+     * 数字员工职责范围描述（会话绑定时下发）。
+     * 职责边界与所需权限均以 {@link WorkerRole} 为唯一定义源：
+     * 自定义职责（description）优先，缺省回落到角色预设职责。
+     */
+    private Map<String, Object> buildScope(Long workerId) {
+        AgentWorker worker = workerMapper.selectById(workerId);
+        if (worker == null) {
+            return null;
+        }
+        WorkerRole role = WorkerRole.of(worker.getWorkerType());
+        Map<String, Object> scope = new java.util.LinkedHashMap<>();
+        scope.put("worker_id", worker.getId());
+        scope.put("name", worker.getName());
+        scope.put("role", role.code());
+        scope.put("role_name", role.displayName());
+        scope.put("duty", worker.getDescription() == null || worker.getDescription().isBlank()
+                ? role.duty() : worker.getDescription());
+        scope.put("permission", role.requiredPermission());
+        return scope;
+    }
+
+    /** "Bearer xxx" -> "xxx"；异常输入返回 null（agent 侧降级为无工具模式）。 */    private static String stripBearer(String authorization) {
         if (authorization == null || authorization.isBlank()) {
             return null;
         }
