@@ -51,7 +51,7 @@
           </el-sub-menu>
           <el-menu-item index="/approvals">
             <el-icon><Tickets /></el-icon>
-            <template #title>审批中心</template>
+            <template #title>待办</template>
           </el-menu-item>
           <el-menu-item index="/kb">
             <el-icon><Collection /></el-icon>

@@ -10,6 +10,32 @@
       style="margin-bottom: 12px"
     />
 
+    <el-card shadow="never" style="margin-bottom: 12px">
+      <template #header>
+        <div class="card-header">
+          <span>检索测试</span>
+          <span class="sub">验证入库内容可被检索到，并会作为引用来源返回给 AI</span>
+        </div>
+      </template>
+      <div class="search-bar">
+        <el-input v-model="keyword" placeholder="输入关键词，如：报销、产业扶持、公积金" clearable @keyup.enter="doSearch" />
+        <el-button type="primary" :loading="searching" @click="doSearch">检索</el-button>
+      </div>
+      <div v-if="searched" class="hits">
+        <el-empty v-if="!hits.length" description="未命中任何资料" :image-size="60" />
+        <div v-for="(h, i) in hits" :key="i" class="hit">
+          <div class="hit-head">
+            <span class="hit-idx">#{{ i + 1 }}</span>
+            <span class="hit-doc">{{ h.docName }}</span>
+            <el-tag v-if="h.chunkIndex !== null && h.chunkIndex !== undefined" size="small" effect="plain">
+              片段 {{ h.chunkIndex }}
+            </el-tag>
+          </div>
+          <div class="hit-text">{{ h.snippet || '（该资料仅有元信息，无正文片段）' }}</div>
+        </div>
+      </div>
+    </el-card>
+
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
@@ -105,31 +131,6 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 12px">
-      <template #header>
-        <div class="card-header">
-          <span>检索测试</span>
-          <span class="sub">验证入库内容可被检索到，并会作为引用来源返回给 AI</span>
-        </div>
-      </template>
-      <div class="search-bar">
-        <el-input v-model="keyword" placeholder="输入关键词，如：报销、产业扶持、公积金" clearable @keyup.enter="doSearch" />
-        <el-button type="primary" :loading="searching" @click="doSearch">检索</el-button>
-      </div>
-      <div v-if="searched" class="hits">
-        <el-empty v-if="!hits.length" description="未命中任何资料" :image-size="60" />
-        <div v-for="(h, i) in hits" :key="i" class="hit">
-          <div class="hit-head">
-            <span class="hit-idx">#{{ i + 1 }}</span>
-            <span class="hit-doc">{{ h.docName }}</span>
-            <el-tag v-if="h.chunkIndex !== null && h.chunkIndex !== undefined" size="small" effect="plain">
-              片段 {{ h.chunkIndex }}
-            </el-tag>
-          </div>
-          <div class="hit-text">{{ h.snippet || '（该资料仅有元信息，无正文片段）' }}</div>
-        </div>
-      </div>
-    </el-card>
   </div>
 </template>
 
