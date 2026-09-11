@@ -177,6 +177,10 @@
   .badge.go{color:var(--blue);background:var(--blue-soft)}
   .badge.off{color:var(--text-2);background:var(--surface-3)}
   .badge.danger{color:var(--red);background:var(--red-soft)}
+  /* 知会类（无需操作）：中性色，与「待处理/待审批」的蓝色可操作态区分（走查发现 A-2） */
+  .badge.info{color:var(--text-2);background:var(--surface-3)}
+  /* 运行模式标记（事件驱动 / 按需唤起）：中性色，与状态徽标区分（走查发现 D-2） */
+  .badge.mode{color:var(--text-2);background:var(--surface-3)}
 
   /* ---------- 通知弹窗提醒（数字员工定时任务/系统通知，V15） ---------- */
   .notif-mask{
@@ -210,6 +214,15 @@
     margin-top:10px;padding:9px 11px;border-radius:var(--r);font-size:12px;line-height:1.6;
     color:var(--blue);background:var(--blue-soft);border:1px dashed var(--blue-line);
   }
+  /* 审批意见输入（站内弹层，替代原生 prompt；走查发现 A-1） */
+  .note-input{
+    width:100%;margin-top:10px;padding:9px 11px;border:1px solid var(--border);border-radius:var(--r);
+    font-size:13px;font-family:inherit;color:var(--text);background:var(--surface);
+    line-height:1.6;resize:vertical;
+  }
+  .note-input:focus{outline:none;border-color:var(--blue)}
+  .note-presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .note-err{margin-top:6px;font-size:12px;color:var(--red)}
 
   .chip{
     display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--surface);
@@ -440,6 +453,8 @@
   .switch.on{background:var(--green)}
   .switch.on i{left:18px}
   .agent-meta{font-size:11px;color:var(--text-2);margin-top:9px;line-height:1.6;border-top:1px dashed var(--border);padding-top:8px}
+  /* 无产出占位：弱化显示，避免与真实产出混淆（走查发现 D-1） */
+  .agent-meta .meta-empty{color:var(--text-3)}
   .agent-ops{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
   /* ---------- 请假表单（请假数字人） ---------- */
   .leave-form{margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 12px}
@@ -664,8 +679,8 @@
       <div class="muted reveal" style="margin-bottom:12px" data-page-node-id="c1XKil5zi75T41sNVoEA1T">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
 
       <div class="todo-tabs reveal" id="todoTabs" data-page-node-id="xfQD1rJQSV68CnT5h0mfFZ">
-        <div class="todo-tab active" data-tab="pending" onclick="switchTodoTab('pending')">待我处理（<span id="todoCnt" class="num" data-page-node-id="TarGlktYTwTwa6kFKTAFPQ">0</span>）</div>
-        <div class="todo-tab" data-tab="done" onclick="switchTodoTab('done')">数字员工已代办</div>
+        <div class="todo-tab active" data-tab="pending" id="todoTabPending" onclick="switchTodoTab('pending')"><span id="todoPendingLabel" data-page-node-id="TarGlktYTwTwa6kFKTAFPQ">待我处理</span>（<span id="todoCnt" class="num">0</span>）</div>
+        <div class="todo-tab" data-tab="done" id="todoTabDone" onclick="switchTodoTab('done')"><span id="todoDoneLabel">数字员工已代办</span></div>
         <div class="todo-tab" data-tab="mine" onclick="switchTodoTab('mine')">我的申请</div>
       </div>
 
@@ -1484,7 +1499,13 @@ function renderTodo(){
   const mineList = asArray(state.approvals);
   const notifList = asArray(state.notifs).slice(0,3);
 
-  // 待我处理：管理员=待审单；普通用户=未读通知（与角标同口径，点击弹窗看详情）
+  // 标签语义按角色确定（走查发现 A-2）：管理员这里是真待办；普通成员收到的是
+  // 审批结果 / 数字员工产出的「知会」消息，故标为「消息」，不再把知会当待处理。
+  const lblPending = $('todoPendingLabel'), lblDone = $('todoDoneLabel');
+  if(lblPending) lblPending.textContent = state.isAdmin ? '待我处理' : '消息';
+  if(lblDone) lblDone.textContent = '数字员工产出';
+
+  // 待我处理：管理员=待审单（需我操作）；普通用户=未读知会消息（仅知会）
   let rows = '';
   if(state.isAdmin){
     rows = todoList.filter(a=>a.status==='PENDING').map(a=>
@@ -1493,16 +1514,18 @@ function renderTodo(){
         "openTodoDetail("+a.id+",'todo')")).join('');
   }else{
     rows = notifItems().filter(n=>!n.readAt).slice(0,10).map(n=>
-      todoRow('bell', esc(n.title||'新通知')+' <span class="badge go">待处理</span>',
+      todoRow('bell', esc(n.title||'新通知')+' <span class="badge info">知会</span>',
         esc((n.content||'').slice(0,50)), 'openNotifDetail('+n.id+')')).join('');
   }
-  if(!rows) rows = emptyBox(state.isAdmin ? '没有待你审批的单据' : '没有待处理事项');
+  if(!rows) rows = emptyBox(state.isAdmin ? '没有待你审批的单据' : '暂无未读消息');
   pending.innerHTML = rows;
 
-  const workerRows = (state.workers||[]).filter(w=>w.on).map(w=>
-    todoRow('bot', esc(w.name)+' · '+esc(w.lastOutput||'')+' <span class="badge ok">已送达</span>',
+  // 数字员工产出：只列真正执行过（有 lastRunAt）的；徽标由「已送达」改「已执行」——
+  // 一次执行的结果不必然是一份可交付产出（走查发现 D-1），不夸大语义。
+  const workerRows = (state.workers||[]).filter(w=>w.on && w.lastRunAt).map(w=>
+    todoRow('bot', esc(w.name)+' · '+esc(w.lastOutput||'')+' <span class="badge ok">已执行</span>',
       '运行计划：'+esc(w.schedule||''), "go('page-agent')")).join('');
-  done.innerHTML = workerRows || emptyBox('数字员工暂无产出');
+  done.innerHTML = workerRows || emptyBox('数字员工尚未产生执行记录');
 
   mine.innerHTML = mineList.length
     ? mineList.slice(0,5).map(a=>{
@@ -1513,7 +1536,7 @@ function renderTodo(){
       }).join('')
     : emptyBox('暂无申请记录');
 
-  // 角标 = 列表口径：管理员=待审单数；普通用户=未读通知数
+  // 角标口径：管理员=待审单数（需我操作）；普通成员=未读消息数（该标签已改「消息」，非待办）
   const cnt = state.isAdmin
     ? todoList.filter(a=>a.status==='PENDING').length
     : notifItems().filter(n=>!n.readAt).length;
@@ -1645,20 +1668,72 @@ function openTodoDetail(id, scope){
   }
   go('page-todo-detail'); setTitle('page-todo-detail');
 }
-async function decideTodo(decision){
+/* 审批意见常用语（按通过/驳回分档，减少移动端输入成本） */
+const APPROVAL_PRESETS = {
+  APPROVE: ['同意', '同意，按制度执行'],
+  REJECT: ['材料不齐，请补充证明材料', '与排班冲突，请调整时间', '不符合请假制度，不予批准']
+};
+
+/* 审批意见输入弹层（走查发现 A-1）：替代浏览器原生 prompt。
+   原生弹窗在移动端 WebView 中样式割裂、可能被拦截，且无法对「驳回必填」做行内校验。 */
+function askApprovalNote(decision){
   const d = state.todoDetail; if(!d) return;
-  const isApprove = decision==='APPROVE';
-  const note = prompt(isApprove ? '审批意见（可留空）：' : '请填写驳回意见：', isApprove ? '同意' : '');
-  if(note === null) return;
-  if(!isApprove && !note.trim()){ toast('驳回需填写意见'); return; }
+  const isApprove = decision === 'APPROVE';
+  const presets = APPROVAL_PRESETS[isApprove ? 'APPROVE' : 'REJECT'];
+  const order = findApproval(d.id, d.scope) || {};
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
+      '<div class="notif-head">'+(isApprove ? '通过审批' : '驳回审批')+'</div>'+
+      '<div class="notif-body">'+
+        '<div class="perm-line">'+esc(order.title || '审批单')+'</div>'+
+        '<textarea class="note-input" id="approvalNote" rows="3" placeholder="'+
+          (isApprove ? '审批意见（可留空）' : '请填写驳回意见（必填）')+'">'+
+          (isApprove ? '同意' : '')+'</textarea>'+
+        '<div class="note-presets">'+presets.map((p,k)=>
+          '<button class="btn ghost small" type="button" data-preset="'+k+'">'+esc(p)+'</button>').join('')+'</div>'+
+        '<div class="note-err" id="approvalNoteErr" style="display:none">驳回需填写意见</div>'+
+      '</div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-note-cancel>取消</button>'+
+        '<button class="btn small" data-note-ok>确认'+(isApprove?'通过':'驳回')+'</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  const ta = mask.querySelector('#approvalNote');
+  const err = mask.querySelector('#approvalNoteErr');
+  const close = ()=> mask.remove();
+  mask.querySelector('[data-note-cancel]').onclick = close;
+  mask.addEventListener('click', ev=>{ if(ev.target === mask) close(); });
+  mask.querySelectorAll('[data-preset]').forEach(b=>{
+    b.onclick = ()=>{ ta.value = presets[+b.dataset.preset]; err.style.display = 'none'; ta.focus(); };
+  });
+  mask.querySelector('[data-note-ok]').onclick = ()=>{
+    const note = ta.value.trim();
+    if(!isApprove && !note){ err.style.display = 'block'; ta.focus(); return; }
+    close();
+    commitApprovalDecision(d.id, decision, note);
+  };
+  setTimeout(()=>ta.focus(), 30);
+}
+
+/* 提交审批决定（原 decideTodo 中的业务逻辑抽出，供弹层回调复用） */
+async function commitApprovalDecision(id, decision, note){
+  const isApprove = decision === 'APPROVE';
   try{
-    await API.approvalDecide(d.id, decision, note.trim());
+    await API.approvalDecide(id, decision, note);
     toast(isApprove ? '已通过，已通知发起人并留痕' : '已驳回，已通知发起人并留痕');
     state.todoApprovals = await API.approvalList('todo') || [];
     state.approvals = await API.approvalList('mine') || [];
     renderTodo();
     go('page-todo');
   }catch(e){ handleApprovalError(e, isApprove ? '通过审批' : '驳回审批'); }
+}
+
+function decideTodo(decision){
+  // 改为站内弹层收集意见（走查发现 A-1），不再用浏览器原生 prompt
+  askApprovalNote(decision);
 }
 
 /* ============================================================================
@@ -1733,13 +1808,22 @@ function renderAgents(){
     return;
   }
   box.innerHTML = list.map((w,i)=>{
-    const pending = w.on && !w.scheduleTime;
+    // 待配置由后端按运行模式判定（仅定时型缺执行时刻才是待配置），前端不再自行推断
+    const pending = w.status === '待配置';
     const badge = pending ? 'warn' : (w.on?'ok':'off');
     const tip = pending
       ? '<div class="agent-tip">缺少执行时刻，'+(canManage
           ? '点「调整任务」补全后才会真正定时运行'
           : '尚未开始定时运行；如需补全请联系租户管理员')+'</div>'
       : '';
+    // 运行模式：事件驱动/按需唤起不需要执行时刻，展示为能力说明而非「缺失」
+    const needsTime = !w.runMode || w.runMode === 'SCHEDULED';
+    const modeText = w.runMode === 'EVENT' ? '事件驱动'
+      : (w.runMode === 'ON_DEMAND' ? '按需唤起' : '定时');
+    // 产出两态：未运行过（占位值）时不把执行结果当产出展示
+    const hasOut = !!w.lastOutput && w.lastOutput !== '尚未运行';
+    const emptyOut = canManage ? '尚未产出 · 点「调整任务」设定任务内容'
+      : '尚未产出 · 点「对话」发起第一次任务';
     const ops = [
       '<button class="btn small" onclick="useAgent('+i+')">对话</button>',
       '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'
@@ -1756,14 +1840,18 @@ function renderAgents(){
       '<div class="agent-head">'+
         '<div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
         '<div class="amain">'+
-          '<div class="aname">'+esc(w.name)+' <span class="badge '+badge+'">'+esc(w.status||'')+'</span></div>'+
+          '<div class="aname">'+esc(w.name)+' <span class="badge '+badge+'">'+esc(w.status||'')+'</span>'
+            +(needsTime?'':' <span class="badge mode">'+modeText+'</span>')+'</div>'+
           '<div class="adesc">'+esc(w.description||'')+'</div>'+
         '</div>'+
         sw +
       '</div>'+ tip +
-      '<div class="agent-meta">最近产出：'+esc(w.lastOutput||'—')+
+      '<div class="agent-meta">最近产出：'+(hasOut
+          ? esc(w.lastOutput)
+          : '<span class="meta-empty">'+esc(emptyOut)+'</span>')+
         '<br>运行计划：'+esc(w.schedule||'—')+
-        '<br>执行时刻：'+esc(agentTimeText(w)) + (w.lastRunAt?' · 最近执行 '+esc(fmtRunTime(w.lastRunAt)):'')+
+        '<br>'+(needsTime ? '执行时刻：'+esc(agentTimeText(w)) : '运行模式：'+modeText+' · 无需执行时刻')+
+        (w.lastRunAt?' · 最近执行 '+esc(fmtRunTime(w.lastRunAt)):'')+
       '</div>'+
       '<div class="agent-ops">'+ ops.join('') +'</div>'+
     '</div>';
@@ -2091,6 +2179,15 @@ function toggleKB(){
   toast(state.kbOn ? '将优先检索你的知识库' : '仅用模型通用知识回答');
 }
 
+/* 模型档位映射（走查发现 G-1）：对业务用户不裸露具体模型标识，只给档位文案。
+   真实模型名仅管理端调试可见，避免用户做「哪个模型更差」的无效比较。 */
+function modelTier(model){
+  const m = String(model || '').toLowerCase();
+  if(!m) return '智能路由';
+  const known = ['deepseek','gpt','qwen','claude','glm','ernie','moonshot','kimi','doubao','hunyuan'];
+  return known.some(k => m.indexOf(k) >= 0) ? '标准模型' : '智能路由';
+}
+
 async function send(){
   if(state.busy) return;
   const input = $('chatInput');
@@ -2126,7 +2223,7 @@ async function send(){
     const run = await API.createRun(convId, q, {kb_on:state.kbOn, expert:state.chatExpert.name});
     state.runId = run.id || run.runId;
     await API.stream(state.runId, {
-      onStarted: p => { $('chatModel').textContent = '模型：' + (p.model || '智能路由'); },
+      onStarted: p => { $('chatModel').textContent = '模型：' + modelTier(p.model); },
       onDelta: t => { text += t; bubble.textContent = text; m.scrollTop = m.scrollHeight; },
       onUsage: u => {
         if(!u) return;

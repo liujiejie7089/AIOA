@@ -21,6 +21,15 @@ public class AgentWorker {
     public static final String STATUS_IDLE = "待命中";
     /** 已启用但未配置执行时刻/任务内容——不会真正执行，需引导用户补全 */
     public static final String STATUS_PENDING_CONFIG = "待配置";
+    /** 已停用：enabled=0，历史产出保留 */
+    public static final String STATUS_DISABLED = "已停用";
+
+    /** 运行模式·定时型：必须配置执行时刻，缺时刻才判「待配置」 */
+    public static final String RUN_MODE_SCHEDULED = "SCHEDULED";
+    /** 运行模式·事件驱动：由业务事件触发（如请假申请到达），不需要执行时刻 */
+    public static final String RUN_MODE_EVENT = "EVENT";
+    /** 运行模式·按需唤起：用户随时发起，不需要执行时刻 */
+    public static final String RUN_MODE_ON_DEMAND = "ON_DEMAND";
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -43,6 +52,12 @@ public class AgentWorker {
      * {@link cn.aioa.resource.support.WorkerRole}。默认 GENERAL。
      */
     private String workerType;
+
+    /**
+     * 运行模式（V22）：SCHEDULED 定时 / EVENT 事件驱动 / ON_DEMAND 按需唤起。
+     * 决定「待配置」判定——只有定时型才要求执行时刻，避免事件驱动型被误标未配置。
+     */
+    private String runMode;
 
     /** 运行计划说明 */
     private String scheduleText;
@@ -67,4 +82,30 @@ public class AgentWorker {
 
     @TableLogic
     private LocalDateTime deletedAt;
+
+    /**
+     * 是否需要「执行时刻」才算配置完成。纯函数，无副作用，便于单测。
+     *
+     * <p>只有定时型需要执行时刻；事件驱动（EVENT）与按需唤起（ON_DEMAND）本就不应有执行时刻。
+     * {@code runMode} 为空按历史数据（V22 之前）处理为定时型，保持原语义不突变。</p>
+     */
+    public static boolean requiresScheduleTime(String runMode) {
+        return runMode == null || runMode.isBlank() || RUN_MODE_SCHEDULED.equals(runMode);
+    }
+
+    /**
+     * 展示状态判定。纯函数，无副作用，便于单测。
+     *
+     * <p>规则：停用 → 「已停用」；定时型缺执行时刻 → 「待配置」；其余用库内状态。
+     * 修复 D-2：事件驱动/按需唤起的员工不再被误标为「待配置」。</p>
+     */
+    public static String resolveStatus(String runMode, String scheduleTime, String storedStatus, boolean enabled) {
+        if (!enabled) {
+            return STATUS_DISABLED;
+        }
+        if (requiresScheduleTime(runMode) && (scheduleTime == null || scheduleTime.isBlank())) {
+            return STATUS_PENDING_CONFIG;
+        }
+        return (storedStatus == null || storedStatus.isBlank()) ? STATUS_RUNNING : storedStatus;
+    }
 }

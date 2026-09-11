@@ -68,19 +68,19 @@ public class WorkerController {
     private final WorkerScheduleService scheduleService;
 
     public record WorkerView(Long id, String name, String icon, String description, String status,
-                             String lastOutput, String schedule, String scheduleTime, String taskPrompt,
+                             String lastOutput, String schedule, String scheduleTime, String runMode,
+                             String taskPrompt,
                              String lastRunAt, boolean on,
                              String workerType, String roleName, String duty, String requiredPermission) {
 
         static WorkerView from(AgentWorker w) {
             boolean on = !Integer.valueOf(0).equals(w.getEnabled());
-            String status = on
-                    ? (w.getScheduleTime() == null || w.getScheduleTime().isBlank()
-                    ? AgentWorker.STATUS_PENDING_CONFIG : w.getStatus())
-                    : "已停用";
+            // V22：只有定时型（SCHEDULED）缺执行时刻才判「待配置」；
+            // 事件驱动（EVENT）/按需唤起（ON_DEMAND）不需要执行时刻，不再被误标。
+            String status = AgentWorker.resolveStatus(w.getRunMode(), w.getScheduleTime(), w.getStatus(), on);
             WorkerRole role = WorkerRole.of(w.getWorkerType());
             return new WorkerView(w.getId(), w.getName(), w.getIcon(), w.getDescription(), status,
-                    w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getTaskPrompt(),
+                    w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getRunMode(), w.getTaskPrompt(),
                     w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on,
                     role.code(), role.displayName(), role.duty(), role.requiredPermission());
         }
@@ -144,12 +144,16 @@ public class WorkerController {
         // 关键：执行时刻与任务内容必须落库，否则定时调度永远不匹配
         String scheduleTime = resolveScheduleTime(body.getScheduleTime());
         String taskPrompt = resolveTaskPrompt(body.getTaskPrompt(), body.getDescription());
+        String runMode = resolveRunMode(body.getRunMode(), role.code());
         w.setScheduleTime(scheduleTime);
         w.setTaskPrompt(taskPrompt);
+        w.setRunMode(runMode);
         w.setScheduleText(trim(body.getScheduleText()).isEmpty()
+                ? (AgentWorker.requiresScheduleTime(runMode)
                 ? (scheduleTime == null ? "按计划执行" : "每天 " + scheduleTime + " 自动执行")
+                : (AgentWorker.RUN_MODE_EVENT.equals(runMode) ? "触发式（有事件即执行）" : "随时唤起"))
                 : body.getScheduleText());
-        w.setStatus(scheduleTime == null ? AgentWorker.STATUS_PENDING_CONFIG : AgentWorker.STATUS_RUNNING);
+        w.setStatus(AgentWorker.resolveStatus(runMode, scheduleTime, AgentWorker.STATUS_RUNNING, true));
         w.setLastOutput("尚未运行");
         w.setCreatedBy(user.getUserId());
         w.setCreatedAt(LocalDateTime.now());
@@ -187,6 +191,10 @@ public class WorkerController {
         if (body.getScheduleText() != null) {
             cur.setScheduleText(body.getScheduleText());
         }
+        // 运行模式：显式传入优先；未传保持原值（避免编辑丢配置）
+        if (body.getRunMode() != null && !body.getRunMode().isBlank()) {
+            cur.setRunMode(resolveRunMode(body.getRunMode(), cur.getWorkerType()));
+        }
         // 执行时刻：显式传 null/空串表示清空（回到「待配置」）
         if (body.getScheduleTime() != null) {
             cur.setScheduleTime(resolveScheduleTime(body.getScheduleTime()));
@@ -194,10 +202,10 @@ public class WorkerController {
         if (body.getTaskPrompt() != null) {
             cur.setTaskPrompt(resolveTaskPrompt(body.getTaskPrompt(), cur.getDescription()));
         }
-        // 状态：启用中按是否配置了执行时刻自动重算；停用保持停用
+        // 状态：启用中按运行模式与执行时刻自动重算；停用保持停用
         if (!Integer.valueOf(0).equals(cur.getEnabled())) {
-            cur.setStatus(cur.getScheduleTime() == null || cur.getScheduleTime().isBlank()
-                    ? AgentWorker.STATUS_PENDING_CONFIG : AgentWorker.STATUS_RUNNING);
+            cur.setStatus(AgentWorker.resolveStatus(cur.getRunMode(), cur.getScheduleTime(),
+                    AgentWorker.STATUS_RUNNING, true));
         }
         cur.setUpdatedAt(LocalDateTime.now());
         workerMapper.updateById(cur);
@@ -317,6 +325,27 @@ public class WorkerController {
         }
         String d = trim(description);
         return d.isEmpty() ? null : d;
+    }
+
+    /**
+     * 运行模式解析（V22）：显式传入优先；未传时按角色类型推断——请假审批类的本质是
+     * 「有申请即审」的事件驱动，其余默认定时型。取值非法即 400，避免静默落到错误模式
+     * 导致「待配置」误判（走查发现 D-2）。
+     */
+    private static String resolveRunMode(String requested, String workerType) {
+        if (requested != null && !requested.isBlank()) {
+            String v = requested.trim();
+            if (AgentWorker.RUN_MODE_SCHEDULED.equalsIgnoreCase(v)
+                    || AgentWorker.RUN_MODE_EVENT.equalsIgnoreCase(v)
+                    || AgentWorker.RUN_MODE_ON_DEMAND.equalsIgnoreCase(v)) {
+                return v.toUpperCase();
+            }
+            throw BizException.badRequest("运行模式取值非法：" + requested
+                    + "（可选 SCHEDULED 定时 / EVENT 事件驱动 / ON_DEMAND 按需唤起）");
+        }
+        return WorkerRole.of(workerType) == WorkerRole.LEAVE_APPROVER
+                ? AgentWorker.RUN_MODE_EVENT
+                : AgentWorker.RUN_MODE_SCHEDULED;
     }
 
     private static String trim(String s) {

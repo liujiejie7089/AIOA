@@ -126,3 +126,23 @@
 - **无 schema 变更 → 不新增 Flyway 迁移**。
 - 验证：`e2e_v21_worker_scope.py` 29、`e2e_expert_employee_tabs.py` 27、`e2e_worker_chat_scope.py` 13、`e2e_user_leave_intake.py` 8 = **77/77**。
 - 坑：`taskkill //PID` 在 Git Bash 报「无效参数」，用 PowerShell `Stop-Process -Id` 停 8080。
+
+## 用户端体验改进（2026-09-11，三批次推进中）
+计划书：`docs/11-用户端体验改进计划.md`（18 项走查发现 → T0–T21 / 三批次）。
+走查报告：`ux-review/用户体验走查报告.html`（生成脚本 `ux-review/report.py`，重跑即覆盖）；截图 `ux-review/*.png` + `ux-review/batch1/`。
+**批次一（T1–T7）已完成并验收**：`e2e_ux_fixes.py` 29/29、既有 4 套 E2E 77/77。
+- `agent_worker` 新增 **`run_mode`**（`SCHEDULED` / `EVENT` / `ON_DEMAND`，V22 迁移）：**只有定时型缺执行时刻才算「待配置」**，事件驱动/按需唤起不再被误标。
+  判定纯函数在 `AgentWorker.requiresScheduleTime()` / `resolveStatus()`，`WorkerView.from()` 调它；勿在 controller 里另写一套。
+- 前端「产出」两态：有运行记录显示摘要，无则 `meta-empty` 占位；产出徽标「已执行」，纯知会通知用 `badge info` 且不计角标。
+- 审批意见用站内弹层 `askApprovalNote()` + `commitApprovalDecision()`，**不再用原生 `prompt()`**。
+- V23 修 政策快讯员 `description`（原「重新汇总这项工作」会污染会话身份设定）。
+- **Playwright 脚本必须用** `.../python/envs/default/Scripts/python.exe`（3.13.14，已装 playwright）；`.../versions/3.13.12/python.exe` **没装**，会报 `No module named 'playwright'`。
+
+## Flyway 启动约定与历史表修复（2026-09-11，重要）
+- **后端一律按 `start-all.sh` 的约定启动**：`java -Dspring.flyway.validate-on-migrate=false -jar ...`。
+  本库 `flyway_schema_history` **长期只有一条 `v=1, success=0`（09-07 失败记录）**，而 41 张表与 V1–V21 结构都在；靠该开关跳过校验才能起。
+- 一旦用**不带该 flag**的方式启动 → `Detected failed migration to version 1 (init)`，后端直接起不来。
+- 修复：**不要在空历史下靠 `baseline-on-migrate` 重放**（`V1__init.sql` 无 `IF NOT EXISTS`，V2+ 是 `ALTER`，重放必撞表）。
+  正解是**重建历史表并把 V1–V21 全插成 `success=1`**，让 Flyway 只应用新版本。脚本：`scripts/repair_flyway_history.py`（先归档坏表并 JSON 备份）。
+- 新增迁移前**先 `ls db/migration` 取最大版本 +1**（当前已到 V23）。
+- `rm -rf <target>` 会被 safe-delete 拦并**短路 `&&`**；后端已停时直接原地 `mvnw package` 覆盖即可。

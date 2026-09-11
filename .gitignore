@@ -84,3 +84,14 @@ proxy-run*.log
 .workbuddy/probe_*.py
 .workbuddy/restore_*.py
 .workbuddy/_*.js
+
+# ---- 体验走查截图：walkthrough 原图已 base64 内嵌进 用户体验走查报告.html，不入库 ----
+ux-review/*.png
+# 批次改造证据截图体积小且未内嵌，保留入库
+!ux-review/batch1/*.png
+
+# ---- 根目录临时探测脚本 ----
+/_db_inspect.py
+/_trigger_run.py
+/_reconstruct_history.py
+/flyway_history_backup_*.json
