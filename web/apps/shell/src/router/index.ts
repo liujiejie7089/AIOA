@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
         path: 'approvals',
         name: 'approvals',
         component: () => import('@/views/ApprovalsView.vue'),
-        meta: { title: '待办' }
+        meta: { title: '审批中心' }
       },
       { path: 'kb', name: 'kb', component: () => import('@/views/KbView.vue'), meta: { title: '知识库' } },
       {

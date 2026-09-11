@@ -301,6 +301,26 @@
   .todo-item .tmain{flex:1;min-width:0}
   .todo-item .tt{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .todo-item .ts{font-size:11px;color:var(--text-2);margin-top:3px;line-height:1.5}
+  /* 顶部水平三标签：待我处理 / 数字员工已代办 / 我的申请 */
+  .todo-tabs{
+    display:flex; gap:4px; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--r); padding:4px; margin-bottom:12px; box-shadow:var(--sh-1);
+  }
+  .todo-tab{
+    flex:1; text-align:center; padding:8px 6px; font-size:12px; font-weight:600; color:var(--text-2);
+    border-radius:8px; cursor:pointer; user-select:none; white-space:nowrap;
+    transition:background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .todo-tab:active{background:var(--surface-3)}
+  /* 激活态明确反馈：主色高亮背景 + 文字加粗 + 底部下划线 */
+  .todo-tab.active{
+    color:var(--blue); font-weight:700; background:var(--blue-soft);
+    box-shadow:inset 0 -2px 0 var(--blue);
+  }
+  .todo-tab .num{font-family:var(--font-mono)}
+  .todo-panel{display:none}
+  .todo-panel.active{display:block; animation:fadeUp var(--dur) var(--ease)}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
   /* ---------- 8. 会话 ---------- */
   .chat{display:flex;flex-direction:column;height:100%}
@@ -612,15 +632,23 @@
       <div class="sec-title reveal" data-page-node-id="jYviWB2chDqvkA1RYfS3E0">待办</div>
       <div class="muted reveal" style="margin-bottom:12px" data-page-node-id="c1XKil5zi75T41sNVoEA1T">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
 
-      <div class="sec-title" data-page-node-id="xfQD1rJQSV68CnT5h0mfFZ">待我处理（<span id="todoCnt" class="num" data-page-node-id="TarGlktYTwTwa6kFKTAFPQ">0</span>）</div>
-      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoPending" data-page-node-id="2QHPYnAceRXbBOY1j92tHd"></div>
+      <div class="todo-tabs reveal" id="todoTabs" data-page-node-id="xfQD1rJQSV68CnT5h0mfFZ">
+        <div class="todo-tab active" data-tab="pending" onclick="switchTodoTab('pending')">待我处理（<span id="todoCnt" class="num" data-page-node-id="TarGlktYTwTwa6kFKTAFPQ">0</span>）</div>
+        <div class="todo-tab" data-tab="done" onclick="switchTodoTab('done')">数字员工已代办</div>
+        <div class="todo-tab" data-tab="mine" onclick="switchTodoTab('mine')">我的申请</div>
+      </div>
 
-      <div class="sec-title" data-page-node-id="PZzu1QHpgmFVIuc7Symwzt">数字员工已代办</div>
-      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoDone" data-page-node-id="aTQlkgY0Co5C9zX2DB8ZCd"></div>
+      <div class="todo-panel active" data-panel="pending">
+        <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoPending" data-page-node-id="2QHPYnAceRXbBOY1j92tHd"></div>
+      </div>
+      <div class="todo-panel" data-panel="done">
+        <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoDone" data-page-node-id="aTQlkgY0Co5C9zX2DB8ZCd"></div>
+      </div>
+      <div class="todo-panel" data-panel="mine">
+        <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoMine" data-page-node-id="WXR6kSnIPuglNyYAnY6FdY"></div>
+      </div>
 
-      <div class="sec-title" data-page-node-id="n6yOxCnBXpwcXAkgbqF1lc">我的申请</div>
-      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoMine" data-page-node-id="WXR6kSnIPuglNyYAnY6FdY"></div>
-      <div class="muted" style="margin-top:2px" data-page-node-id="UDXxNpbKN5r0HPQshE0aJ1">待办与消息通知实时联动，处理记录全程留痕可查</div>
+      <div class="muted" style="margin-top:8px" data-page-node-id="UDXxNpbKN5r0HPQshE0aJ1">待办与消息通知实时联动，处理记录全程留痕可查</div>
     </div>
 
     <!-- ========== 会话（主入口） ========== -->
@@ -1433,6 +1461,15 @@ function renderTodo(){
   $('todoCnt').textContent = cnt;
   const tab = $('tabCnt');
   if(cnt > 0){ tab.style.display = 'block'; tab.textContent = cnt; } else tab.style.display = 'none';
+}
+/* 待办顶部三标签切换（默认「待我处理」） */
+function switchTodoTab(name){
+  document.querySelectorAll('#todoTabs .todo-tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.tab===name);
+  });
+  document.querySelectorAll('#page-todo .todo-panel').forEach(p=>{
+    p.classList.toggle('active', p.dataset.panel===name);
+  });
 }
 function todoRow(ico, title, sub, onclick){
   return '<div class="todo-item" onclick="'+onclick+'">'+

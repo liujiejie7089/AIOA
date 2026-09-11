@@ -1,12 +1,12 @@
 <template>
   <div>
     <el-alert
-      v-if="tab === 'todo' && todoForbidden"
+      v-if="todoForbidden"
       type="info"
       :closable="false"
       show-icon
-      title="「待我处理」仅租户管理员可见"
-      description="普通用户提交的审批由租户管理员处理，可在「我的申请」跟踪自己申请的进度。"
+      title="「待我审批」仅租户管理员可见"
+      description="普通用户提交的审批由租户管理员处理，可在下方「我发起的」跟踪自己申请的进度。"
       style="margin-bottom: 12px"
     />
 
@@ -14,16 +14,14 @@
       <template #header>
         <div class="card-header">
           <el-tabs v-model="tab" class="flex-tabs" @tab-change="reload">
-            <el-tab-pane label="待我处理" name="todo" />
-            <el-tab-pane label="数字员工已代办" name="bot" />
-            <el-tab-pane label="我的申请" name="mine" />
+            <el-tab-pane label="待我审批" name="todo" />
+            <el-tab-pane label="我发起的" name="mine" />
           </el-tabs>
-          <el-button text type="primary" size="small" :loading="loading || botLoading" @click="reload">刷新</el-button>
+          <el-button text type="primary" size="small" :loading="loading" @click="reload">刷新</el-button>
         </div>
       </template>
 
-      <!-- 待我处理 / 我的申请：审批单列表 -->
-      <el-table v-if="tab !== 'bot'" v-loading="loading" :data="rows" stripe>
+      <el-table v-loading="loading" :data="rows" stripe>
         <el-table-column prop="id" label="单号" width="70" />
         <el-table-column prop="bizType" label="类型" width="110" />
         <el-table-column prop="title" label="标题" min-width="240" show-overflow-tooltip>
@@ -60,43 +58,7 @@
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty
-            :description="tab === 'todo' ? '暂无待你处理的审批单' : '你还没有发起过审批'"
-            :image-size="80"
-          />
-        </template>
-      </el-table>
-
-      <!-- 数字员工已代办：聚合数字员工执行记录 -->
-      <el-table v-else v-loading="botLoading" :data="botRows" stripe>
-        <el-table-column label="数字员工" min-width="130">
-          <template #default="{ row }">
-            <span class="w-name">{{ row.workerName || '数字员工' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="触发" width="90">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain" type="info">{{ row.triggerType === 'MANUAL' ? '手动' : '定时' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="结果" width="90">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" effect="plain" size="small">
-              {{ row.status === 'SUCCESS' ? '成功' : '失败' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="产出 / 说明" min-width="300" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.output || row.errorMsg || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="耗时" width="100">
-          <template #default="{ row }">{{ row.durationMs ? row.durationMs + 'ms' : '—' }}</template>
-        </el-table-column>
-        <el-table-column label="执行时间" width="160">
-          <template #default="{ row }">{{ fmtTime(row.startedAt) }}</template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="数字员工暂未执行过任务" :image-size="80" />
+          <el-empty :description="tab === 'todo' ? '暂无待你处理的审批单' : '你还没有发起过审批'" :image-size="80" />
         </template>
       </el-table>
     </el-card>
@@ -149,21 +111,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  adminListWorkerRuns,
-  adminListWorkers,
-  decideApproval,
-  listApprovals,
-  type ApprovalOrder,
-  type WorkerRun
-} from '@/api/resource'
+import { decideApproval, listApprovals, type ApprovalOrder } from '@/api/resource'
 
-const tab = ref<'todo' | 'bot' | 'mine'>('todo')
+const tab = ref<'todo' | 'mine'>('todo')
 const loading = ref(false)
-const botLoading = ref(false)
 const todoRows = ref<ApprovalOrder[]>([])
 const mineRows = ref<ApprovalOrder[]>([])
-const botRows = ref<WorkerRun[]>([])
 const todoForbidden = ref(false)
 
 const detailVisible = ref(false)
@@ -177,8 +130,6 @@ const LEAVE_FIELDS: Record<string, string> = {
   end: '结束日期',
   reason: '请假事由'
 }
-
-const rows = computed(() => (tab.value === 'mine' ? mineRows.value : todoRows.value))
 
 function openDetail(row: ApprovalOrder) {
   detailRow.value = row
@@ -207,6 +158,8 @@ function openDetail(row: ApprovalOrder) {
   }
   detailVisible.value = true
 }
+
+const rows = computed(() => (tab.value === 'todo' ? todoRows.value : mineRows.value))
 
 function statusLabel(s: string): string {
   if (s === 'APPROVED') return '已通过'
@@ -246,28 +199,14 @@ async function loadMine() {
   }
 }
 
-/** 数字员工已代办：聚合所有数字员工的执行记录，按时间倒序 */
-async function loadBot() {
-  try {
-    const workers = (await adminListWorkers()) || []
-    const lists = await Promise.all(
-      workers.map((w) => adminListWorkerRuns(w.id, 20).catch(() => [] as WorkerRun[]))
-    )
-    botRows.value = lists
-      .flat()
-      .sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')))
-  } catch {
-    botRows.value = []
-  }
-}
-
 async function reload() {
   loading.value = true
-  botLoading.value = true
-  await Promise.allSettled([loadTodo(), loadMine()])
-  loading.value = false
-  await loadBot()
-  botLoading.value = false
+  try {
+    // 两个列表并行加载：普通用户对 todo 的 403 已被捕获为提示，不影响「我发起的」
+    await Promise.allSettled([loadTodo(), loadMine()])
+  } finally {
+    loading.value = false
+  }
 }
 
 async function decide(row: ApprovalOrder, decision: 'APPROVE' | 'REJECT') {
@@ -310,29 +249,9 @@ onMounted(reload)
   margin-bottom: 0;
 }
 
-/* 选中态明确视觉反馈：文字加粗 + 高亮背景 + 加粗底部下划线 */
-.flex-tabs :deep(.el-tabs__item) {
-  font-size: 15px;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.flex-tabs :deep(.el-tabs__item.is-active) {
-  font-weight: 700;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9, #ecf5ff);
-}
-
-.flex-tabs :deep(.el-tabs__active-bar) {
-  height: 3px;
-}
-
 .text-sub {
   font-size: 12px;
   color: var(--aioa-text-sub);
-}
-
-.w-name {
-  font-weight: 600;
 }
 
 .dlg-subtitle {
@@ -357,5 +276,26 @@ onMounted(reload)
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
+}
+
+.expand-box {
+  padding: 4px 16px 12px 48px;
+}
+
+.expand-label {
+  font-size: 12px;
+  color: var(--aioa-text-sub);
+  margin-bottom: 6px;
+}
+
+.expand-content {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  padding: 10px 12px;
 }
 </style>

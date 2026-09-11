@@ -64,3 +64,16 @@
 - **手机壳 Tab 栏遮挡**：Tab 绝对定位高 76px，普通页靠 `.page{padding-bottom:96px}` 避让，但 flush 页（如 `#page-chat` padding:0）需单独加 `padding-bottom:76px`，否则输入框被遮、Playwright 报 `intercepts pointer events`。
 - 成果列表接口**不含 body**（防大字段），详情走 `GET /api/v1/results/{id}`；e2e 要 `wait_for_function` 等正文落地。
 - 管理端鉴权统一 `requireAdmin()` + `BizException.forbidden` → 403；跨租户校验 `tenantId` 不等 → `BizException.notFound`。
+
+## 管理端 vs 用户端职责边界（2026-09-11 澄清）
+- **待办页（待我处理 / 数字员工已代办 / 我的申请）在「用户端 H5」**，`user-client/index.html` 的 `#page-todo`；
+  用户端是单文件 134KB H5，页面靠 `go('page-xxx')` 切换，页面容器 id 形如 `page-todo`/`page-chat`/`page-home`。
+  管理端 `ApprovalsView.vue`（路由 `/approvals`，菜单「审批中心」）**保持原样**，不要往里加三标签。
+- 用户端 session：`localStorage['aioa_session'] = {token,user}`；`init()` 用 `/v1/auth/me` 校验角色。
+  demo 账号 zhangsan/User@123（ROLE_USER）、admin/Admin@123（ROLE_ADMIN）。
+
+## 用户端 H5 无头渲染校验（可复用）
+- venv 无 playwright 时装：`.../envs/default/Scripts/python.exe -m pip install playwright`，用系统 Edge
+  `p.chromium.launch(channel="msedge", headless=True)`（不必下载浏览器）。
+- 免登录：`ctx.add_init_script("localStorage.setItem('aioa_session', <json>)")` 在页面脚本前注入。
+- token：`POST http://127.0.0.1:5181/api/v1/auth/login` → `data.accessToken`（同源反代 :8080）。
