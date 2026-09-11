@@ -73,6 +73,12 @@ export interface KbDoc {
   chunkCount?: number
   /** 解析失败原因 */
   errorMsg?: string
+  /** 入库流水线阶段：PARSING/CHUNKING/EMBEDDING/OK/FAILED */
+  stage?: string
+  /** 入库进度 0-100 */
+  progress?: number
+  /** 失败重试次数 */
+  retryCount?: number
 }
 
 /** 不传 scope=我的资料；scope=tenant=租户全部（仅租户管理员） */
@@ -552,4 +558,23 @@ export function resetConfig(key: string): Promise<SysConfigItem> {
 
 export function resetAllConfigs(): Promise<{ reseted: number }> {
   return http.post('/admin/configs/reset').then((r) => unwrap<{ reseted: number }>(r))
+}
+
+/* ---------- 业务工具网关（数据分析师闭环） ---------- */
+
+export interface ToolDef {
+  type?: string
+  function?: {
+    name: string
+    description: string
+    parameters?: Record<string, unknown>
+  }
+}
+
+export function listTools(): Promise<ToolDef[]> {
+  return http.get('/tools').then((r) => unwrap<ToolDef[]>(r))
+}
+
+export function invokeTool(name: string, arguments_: Record<string, unknown>): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  return http.post('/tools/invoke', { name, arguments: arguments_ }).then((r) => unwrap(r))
 }

@@ -21,6 +21,12 @@ export interface UserInfo {
   tenantCode?: string
   tenantName?: string
   avatar?: string
+  /** 角色码，如 ROLE_ADMIN / ROLE_TENANT_ADMIN / ROLE_ORG_ADMIN / ROLE_DEPT_LEADER / ROLE_MEMBER */
+  roles?: string[]
+  /** 租户 ID（数据锚点：所有租户级数据的归属依据） */
+  tenantId?: number
+  /** 机构 ID（企业端数据锚点，仅机构成员有） */
+  institutionId?: number
 }
 
 export interface LoginPayload {

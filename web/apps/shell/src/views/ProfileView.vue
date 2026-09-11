@@ -13,10 +13,23 @@
         <el-descriptions-item label="用户名">{{ user?.username || '—' }}</el-descriptions-item>
         <el-descriptions-item label="昵称">{{ user?.nickname || user?.displayName || '—' }}</el-descriptions-item>
         <el-descriptions-item label="用户 ID">{{ user?.userId ?? user?.id ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="租户 ID">{{ user?.tenantId ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="角色">
-          <el-tag v-for="r in roles" :key="r" size="small" effect="plain" style="margin-right: 6px">{{ r }}</el-tag>
-          <span v-if="!roles.length">—</span>
+        <el-descriptions-item label="所属租户">
+          <template v-if="tenantId">
+            {{ tenantName || ('#' + tenantId) }}
+            <span class="muted">（ID {{ tenantId }}）</span>
+          </template>
+          <span v-else class="muted">未归属租户（平台级）</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="所属机构">
+          <template v-if="institutionId">
+            {{ institutionName || ('#' + institutionId) }}
+            <span class="muted">（ID {{ institutionId }}）</span>
+          </template>
+          <span v-else class="muted">未加入机构</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="角色" :span="2">
+          <el-tag v-for="r in roles" :key="r" size="small" effect="plain" style="margin-right: 6px">{{ roleText(r) }}</el-tag>
+          <span v-if="!roles.length" class="muted">—</span>
         </el-descriptions-item>
         <el-descriptions-item label="账号状态">
           <el-tag type="success" effect="plain">正常</el-tag>
@@ -51,6 +64,22 @@ const roles = computed<string[]>(() => {
   const u = auth.user as { roles?: string[] } | null
   return u?.roles || []
 })
+
+/** 数据锚点：租户 / 机构归属。登录与 /me 均已下发，前端不再另行反查。 */
+const tenantId = computed(() => (auth.user as { tenantId?: number } | null)?.tenantId ?? 0)
+const tenantName = computed(() => (auth.user as { tenantName?: string } | null)?.tenantName || '')
+const institutionId = computed(() => (auth.user as { institutionId?: number } | null)?.institutionId ?? null)
+const institutionName = computed(() => (auth.user as { institutionName?: string } | null)?.institutionName || '')
+
+const ROLE_TEXT: Record<string, string> = {
+  ROLE_ADMIN: '平台管理员',
+  ROLE_TENANT_ADMIN: '租户管理员',
+  ROLE_ORG_ADMIN: '企业管理员',
+  ROLE_DEPT_LEADER: '部门负责人',
+  ROLE_MEMBER: '机构成员',
+  ROLE_USER: '普通用户'
+}
+function roleText(r: string) { return ROLE_TEXT[r] || r }
 
 const quota = ref<QuotaView | null>(null)
 const quotaError = ref(false)
@@ -115,6 +144,10 @@ onMounted(async () => {
 
 .danger {
   color: var(--el-color-danger);
+}
+
+.muted {
+  color: var(--aioa-text-sub);
 }
 
 .loading {

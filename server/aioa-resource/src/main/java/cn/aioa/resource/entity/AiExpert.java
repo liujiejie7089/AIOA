@@ -48,6 +48,24 @@ public class AiExpert {
 
     private Integer sort;
 
+    /** 领域分类：LEGAL/LABOR/CONTRACT/IP/COMPLIANCE/TAX/DATA。 */
+    private String category;
+
+    /** 模板版本，模板升级时用于提示租户。 */
+    private String templateVersion;
+
+    /** 租户副本指向的全局模板ID；全局模板自身为 null。 */
+    private Long sourceTemplateId;
+
+    /** 可见范围：ALL/TENANT/INSTITUTION/DEPT/USER（细粒度过滤在 expert_config 中）。 */
+    private String visibleScope;
+
+    /** 知识库范围：ALL 或逗号分隔的文档ID。 */
+    private String kbScope;
+
+    /** 新用户是否默认挂载。 */
+    private Boolean defaultEnabled;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

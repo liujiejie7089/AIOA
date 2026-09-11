@@ -29,8 +29,10 @@ public class AdminAuditController {
     @GetMapping
     public ApiResponse<List<Map<String, Object>>> list(@RequestParam(name = "limit", defaultValue = "100") int limit) {
         AuthUser user = AuthUserContext.require();
-        if (!user.getRoles().contains("ROLE_ADMIN")) {
-            throw BizException.forbidden("操作审计仅租户管理员可查看");
+        // 租户级运营能力：平台管理员可跨租户，租户管理员管本租户；
+        // 所有查询均已按 user.getTenantId() 过滤，放开不会跨租户泄露数据。
+        if (!user.getRoles().contains("ROLE_ADMIN") && !user.getRoles().contains("ROLE_TENANT_ADMIN")) {
+            throw BizException.forbidden("操作审计仅平台管理员或租户管理员可查看");
         }
         int size = Math.max(1, Math.min(limit, 500));
         return ApiResponse.ok(logMapper.selectRecentAudit(user.getTenantId(), size));

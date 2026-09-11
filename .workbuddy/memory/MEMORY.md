@@ -68,6 +68,28 @@
 - 成果列表接口**不含 body**（防大字段），详情走 `GET /api/v1/results/{id}`；e2e 要 `wait_for_function` 等正文落地。
 - 管理端鉴权统一 `requireAdmin()` + `BizException.forbidden` → 403；跨租户校验 `tenantId` 不等 → `BizException.notFound`。
 
+## 接口约定（写 E2E / 前端必读）
+- **业务错误 = HTTP 200 + `code != 0`**；只有 401/403/404 才改 HTTP 状态。
+  断言写 `st in (200,400,403,404) and code != 0`，**不要**写 `st == 400`。
+- **企业端控制器基路径是 `/api/v1/org`**（租户端是 `/api/v1/tenant`）。
+  漏写 `/org` 会 404 成 `NoResourceFoundException: No static resource ...`，日志里看着像 500。
+- 审计链校验 `GET /api/v1/tenant/audit/verify` → `{intact, brokenRecordId, count, verifiedRows, legacyRows}`；
+  只有 `verifiedRows == count && legacyRows == 0` 才算「真校验」，否则是靠 V1 遗留锚定放行。
+- 审批入口（`/workflow/tasks`、`decide`、`timeline`）用 `OrgGuard.requireApprover()`：
+  机构成员 **或** 租户管理员（扩容/资源开通的末级审批人是 TENANT_ADMIN，用 `requireOrgUser()` 会把他们全挡掉）。
+
+## V24 企业入驻 / 请假审批 E2E
+- 套件：`e2e_v24_onboarding.py`（阶段一 114）+ `e2e_v24_leave_flow.py`（阶段二 95）+ `scripts/reset_v24_demo.py`。
+  **固定顺序：reset → 阶段一 → 阶段二**（阶段二依赖阶段一造的机构/扩容单/开通单）。当前 209/209 全绿且可重复。
+- 迁移：`V24` 企业与审批域 / `V25` `audit_log.hash_algo`（V1 历史纳秒 / V2 微秒截断）/ `V26` 各租户
+  `institution_id=0` 默认审批流（防止新机构静默降级成单级审批）。
+- 审批流解析优先级：机构专属 > 租户默认 > 内置单级兜底。
+- 入驻第 7 步「成员使用」按**机构**统计请假活动，新机构必须自己走一次：
+  设部门负责人（`PUT /api/v1/org/departments/{id}` 带 `leaderUserId`）→ `POST /api/v1/org/leave/balances` 设额度 → 成员提交。
+- 假种 `quota_days_per_year = 0`（如无薪事假）= **不占额度、只走审批**，不累加 pending、返回
+  `quotaTracked:false / availableAfterPending:null`（避免负数可用天数）。
+- `audit_log` **永不做 UPDATE**；复位时唯一例外是只删 `tenant_id=2` 的演示审计行（`--keep-audit` 可跳过）。
+
 ## 管理端 vs 用户端职责边界（2026-09-11 澄清）
 - **待办页（待我处理 / 数字员工已代办 / 我的申请）在「用户端 H5」**，`user-client/index.html` 的 `#page-todo`；
   用户端是单文件 134KB H5，页面靠 `go('page-xxx')` 切换，页面容器 id 形如 `page-todo`/`page-chat`/`page-home`。

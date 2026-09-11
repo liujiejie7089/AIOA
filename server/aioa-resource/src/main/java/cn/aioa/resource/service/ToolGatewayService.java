@@ -39,6 +39,7 @@ public class ToolGatewayService {
     private final ApprovalService approvalService;
     private final KbService kbService;
     private final BillingService billingService;
+    private final SqlQueryToolService sqlQueryToolService;
 
     /** 单个工具定义：name / description / parameters(JSON Schema) / requiredRoles。 */
     public record ToolDef(String name, String description, String parametersJson, Set<String> requiredRoles) {
@@ -61,6 +62,13 @@ public class ToolGatewayService {
             new ToolDef("get_my_quota",
                     "查询当前用户的词元额度（总量/已用/剩余/使用百分比）",
                     "{\"type\":\"object\",\"properties\":{},\"required\":[]}",
+                    Set.of()),
+            new ToolDef("sql_query",
+                    "对本企业业务数据（销售订单/合同/客户/产品/库存/收款等 biz_* 表）执行只读 SQL 聚合查询，"
+                            + "用于数据分析与经营指标计算",
+                    "{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\",\"description\":\"只读 SELECT 语句，"
+                            + "仅可查询 biz_customer/biz_product/biz_sales_order/biz_contract/biz_inventory/biz_payment 等业务表\"}},"
+                            + "\"required\":[\"sql\"]}",
                     Set.of())
     );
 
@@ -105,6 +113,7 @@ public class ToolGatewayService {
                 case "list_todo_approvals" -> todoApprovals(user);
                 case "search_kb_documents" -> searchKb(user, args);
                 case "get_my_quota" -> myQuota(user);
+                case "sql_query" -> sqlQuery(user, args);
                 default -> null;
             };
             Map<String, Object> out = new LinkedHashMap<>();
@@ -148,17 +157,77 @@ public class ToolGatewayService {
             throw BizException.badRequest("keyword 不能为空");
         }
         Long uid = user.getUserId() == null ? 0L : user.getUserId();
-        List<KnowledgeStore.KbHit> hits = kbService.searchHits(
-                user.getTenantId() == null ? 0L : user.getTenantId(), uid, keyword.trim(), MAX_ROWS);
+        // 检索参数（专家配置 topK/threshold/retrievalMode/kbScope 经 agent 透传，真实生效）
+        int topK = intArg(args, "topK", MAX_ROWS);
+        double threshold = doubleArg(args, "threshold", 0.0);
+        String mode = args == null ? null : String.valueOf(args.get("mode"));
+        List<Long> scope = docIdScope(args);
+        List<KnowledgeStore.KbHit> hits = kbService.search(
+                user.getTenantId() == null ? 0L : user.getTenantId(), uid, keyword.trim(),
+                topK, threshold, mode, scope);
         return hits.stream().map(h -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", h.docId());
             row.put("docName", h.docName());
             row.put("snippet", h.snippet());
             row.put("chunkIndex", h.chunkIndex());
+            row.put("score", h.score());
             row.put("source", "knowledge_base");
             return row;
         }).toList();
+    }
+
+    /** 只读 SQL 查询工具：安全校验 + 租户隔离 + 限行。 */
+    private Map<String, Object> sqlQuery(AuthUser user, Map<String, Object> args) {
+        String sql = String.valueOf(args == null ? null : args.get("sql"));
+        if (sql == null || sql.isBlank() || "null".equals(sql)) {
+            throw BizException.badRequest("sql 不能为空");
+        }
+        SqlQueryToolService.SqlResult r = sqlQueryToolService.query(
+                sql, user.getTenantId() == null ? 0L : user.getTenantId());
+        return r.toMap();
+    }
+
+    private static int intArg(Map<String, Object> args, String key, int def) {
+        if (args == null || args.get(key) == null) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(args.get(key)));
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private static double doubleArg(Map<String, Object> args, String key, double def) {
+        if (args == null || args.get(key) == null) {
+            return def;
+        }
+        try {
+            return Double.parseDouble(String.valueOf(args.get(key)));
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    /** 解析 kbScope 参数（逗号分隔文档ID 或 ALL）。 */
+    private static List<Long> docIdScope(Map<String, Object> args) {
+        if (args == null || args.get("kbScope") == null) {
+            return null;
+        }
+        String v = String.valueOf(args.get("kbScope")).trim();
+        if (v.isBlank() || "ALL".equalsIgnoreCase(v) || "null".equalsIgnoreCase(v)) {
+            return null;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String p : v.split(",")) {
+            try {
+                ids.add(Long.parseLong(p.trim()));
+            } catch (NumberFormatException ignored) {
+                // 忽略非法段
+            }
+        }
+        return ids;
     }
 
     private Map<String, Object> myQuota(AuthUser user) {

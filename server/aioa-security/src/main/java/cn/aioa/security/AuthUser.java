@@ -15,6 +15,10 @@ public class AuthUser {
 
     private Long userId;
     private Long tenantId;
+    /** 所属机构（org_member.institution_id），无归属为 null。 */
+    private Long institutionId;
+    /** 所属部门（org_member.department_id），无归属为 null。 */
+    private Long departmentId;
     private String username;
     private String nickname;
 

@@ -46,7 +46,7 @@ public class KbController {
 
     public record DocView(Long id, String name, String icon, String state, Long sizeBytes,
                           Long ownerUserId, String scope, Integer chunkCount, String errorMsg,
-                          String createdAt) {
+                          String stage, Integer progress, Integer retryCount, String createdAt) {
 
         static DocView from(KbDocument d) {
             return new DocView(d.getId(), d.getDocName(), d.getIcon(),
@@ -54,6 +54,7 @@ public class KbController {
                     d.getSizeBytes(), d.getUserId(),
                     d.getScope() == null ? "PERSONAL" : d.getScope(),
                     d.getChunkCount(), d.getErrorMsg(),
+                    d.getStage(), d.getProgress(), d.getRetryCount(),
                     d.getCreatedAt() == null ? null : d.getCreatedAt().toString());
         }
     }

@@ -66,8 +66,10 @@ public class AdminConfigController {
 
     private AuthUser requireAdmin() {
         AuthUser user = AuthUserContext.require();
-        if (!user.getRoles().contains("ROLE_ADMIN")) {
-            throw BizException.forbidden("系统参数配置仅租户管理员可操作");
+        // 租户级运营能力：平台管理员可跨租户，租户管理员管本租户；
+        // 所有查询均已按 user.getTenantId() 过滤，放开不会跨租户泄露数据。
+        if (!user.getRoles().contains("ROLE_ADMIN") && !user.getRoles().contains("ROLE_TENANT_ADMIN")) {
+            throw BizException.forbidden("系统参数配置仅平台管理员或租户管理员可操作");
         }
         return user;
     }

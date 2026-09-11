@@ -1,9 +1,12 @@
 package cn.aioa.resource.service;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.resource.entity.KbChunk;
 import cn.aioa.resource.entity.KbDocument;
+import cn.aioa.resource.mapper.KbChunkMapper;
 import cn.aioa.resource.store.KnowledgeStore;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -19,12 +22,16 @@ import java.util.List;
  * 后续切换向量数据库只需提供新实现类并配置 {@code aioa.kb.store=vector}，
  * 本类、工具网关、管理端/用户端与已接入的业务系统均零改动。</p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class KbService {
 
-    /** 单个切片的最大字符数，超长按此长度二次切分。 */
+    /** 单个切片的最大字符数，超长按此长度二次切分（默认，可被专家配置 chunkSize 覆盖）。 */
     private static final int CHUNK_SIZE = 500;
+
+    /** 切分重叠字符数（默认）。 */
+    private static final int CHUNK_OVERLAP = 50;
 
     /** 可见范围：个人（仅本人可见）。 */
     public static final String SCOPE_PERSONAL = "PERSONAL";
@@ -32,6 +39,8 @@ public class KbService {
     public static final String SCOPE_TENANT = "TENANT";
 
     private final KnowledgeStore store;
+    private final KbChunkMapper kbChunkMapper;
+    private final EmbeddingProvider embeddingProvider;
 
     /**
      * 当前用户可见的资料：本人资料 + 公共资源（user_id=0）+ 本租户共享（scope=TENANT）。
@@ -57,6 +66,18 @@ public class KbService {
     }
 
     /**
+     * 混合检索（带参数，方案 P2 / B5）：topK / threshold / mode / kbScope 全部真实生效。
+     *
+     * @param docIdScope 知识库范围（kbScope）：null/空=ALL，否则逗号分隔文档ID已解析为 List
+     */
+    public List<KnowledgeStore.KbHit> search(Long tenantId, Long userId, String query,
+                                             int topK, double threshold, String mode,
+                                             List<Long> docIdScope) {
+        float[] queryVec = embeddingProvider.embed(query);
+        return store.search(tenantId, userId, query, queryVec, topK, threshold, mode, docIdScope);
+    }
+
+    /**
      * 登记并入库一份资料：携带正文则同步切片入库并置 OK；无正文置 WAIT 等待异步解析。
      * 切片异常置 FAILED 并记录原因，用户端可重试。
      */
@@ -72,6 +93,9 @@ public class KbService {
                 ? (long) (content == null ? 0 : content.getBytes().length) : sizeBytes);
         doc.setContent(content);
         doc.setScope(normalizeScope(scope));
+        doc.setStage(KbDocument.STAGE_PARSING);
+        doc.setProgress(0);
+        doc.setRetryCount(0);
         doc.setCreatedAt(LocalDateTime.now());
         doc.setCreatedBy(userId);
         store.saveDocument(doc);
@@ -88,23 +112,55 @@ public class KbService {
 
     /** 切片入库：成功置 OK 并回填切片数，失败置 FAILED 并记录原因。 */
     public KbDocument index(KbDocument doc) {
+        return index(doc, CHUNK_SIZE, CHUNK_OVERLAP);
+    }
+
+    /**
+     * 切片 + 向量化入库（方案 P2 / A4 / B5）。
+     *
+     * <p>流程：切分（chunkSize/chunkOverlap 可配置）→ 写切片 → 逐个向量化 →
+     * 置 OK 并回填切片数；任一步异常置 FAILED 并留痕，可重试。</p>
+     */
+    public KbDocument index(KbDocument doc, int chunkSize, int chunkOverlap) {
         try {
-            List<String> chunks = split(doc.getContent());
+            List<String> chunks = split(doc.getContent(), chunkSize, chunkOverlap);
             if (chunks.isEmpty()) {
                 throw new IllegalArgumentException("正文为空，无法入库");
             }
             int count = store.replaceChunks(doc, chunks);
+            embedAll(doc.getId(), doc.getTenantId(), chunks);
             doc.setState(KbDocument.STATE_OK);
             doc.setChunkCount(count);
             doc.setErrorMsg(null);
+            doc.setStage(KbDocument.STAGE_OK);
+            doc.setProgress(100);
+            doc.setChunkSize(chunkSize);
+            doc.setChunkOverlap(chunkOverlap);
             doc.setIndexedAt(LocalDateTime.now());
         } catch (Exception e) {
             doc.setState(KbDocument.STATE_FAILED);
+            doc.setStage(KbDocument.STAGE_FAILED);
             doc.setErrorMsg(e.getMessage() == null ? "入库失败" : e.getMessage());
         }
         doc.setUpdatedAt(LocalDateTime.now());
         store.updateDocument(doc);
         return doc;
+    }
+
+    /** 对切片逐条向量化并回写（失败不中断整体，仅记录日志，检索时自动退化关键词）。 */
+    private void embedAll(Long docId, Long tenantId, List<String> chunks) {
+        List<KbChunk> rows = kbChunkMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KbChunk>()
+                .eq(KbChunk::getDocId, docId)
+                .orderByAsc(KbChunk::getChunkIndex));
+        for (int i = 0; i < rows.size() && i < chunks.size(); i++) {
+            KbChunk c = rows.get(i);
+            try {
+                float[] vec = embeddingProvider.embed(chunks.get(i));
+                store.saveEmbedding(c.getId(), chunks.get(i), vec, embeddingProvider.name(), embeddingProvider.dims());
+            } catch (Exception e) {
+                log.warn("切片向量化失败 chunkId={}: {}", c.getId(), e.getMessage());
+            }
+        }
     }
 
     /** 失败重试：重新切片入库。 */
@@ -115,11 +171,13 @@ public class KbService {
         }
         if (doc.getContent() == null || doc.getContent().isBlank()) {
             doc.setState(KbDocument.STATE_FAILED);
+            doc.setStage(KbDocument.STAGE_FAILED);
             doc.setErrorMsg("资料无正文内容，请重新上传");
             doc.setUpdatedAt(LocalDateTime.now());
             store.updateDocument(doc);
             return doc;
         }
+        doc.setRetryCount((doc.getRetryCount() == null ? 0 : doc.getRetryCount()) + 1);
         return index(doc);
     }
 
@@ -150,23 +208,31 @@ public class KbService {
         return searchHits(tenantId, userId, keyword, limit);
     }
 
-    /** 按段落切分：先按换行分段，超长段按 CHUNK_SIZE 二次切分。 */
+    /** 按段落切分：先按换行分段，超长段按 chunkSize 二次切分（带 chunkOverlap 重叠）。 */
     static List<String> split(String content) {
+        return split(content, CHUNK_SIZE, CHUNK_OVERLAP);
+    }
+
+    /** 带参数的切分：chunkSize 为单块字符数，chunkOverlap 为相邻块重叠字符数。 */
+    static List<String> split(String content, int chunkSize, int chunkOverlap) {
         List<String> out = new ArrayList<>();
         if (content == null) {
             return out;
         }
+        int size = chunkSize <= 0 ? CHUNK_SIZE : chunkSize;
+        int overlap = Math.max(0, Math.min(chunkOverlap, size / 2));
         for (String para : content.split("\\r?\\n")) {
             String p = para.trim();
             if (p.isEmpty()) {
                 continue;
             }
-            if (p.length() <= CHUNK_SIZE) {
+            if (p.length() <= size) {
                 out.add(p);
-            } else {
-                for (int s = 0; s < p.length(); s += CHUNK_SIZE) {
-                    out.add(p.substring(s, Math.min(p.length(), s + CHUNK_SIZE)));
-                }
+                continue;
+            }
+            int step = size - overlap;
+            for (int s = 0; s < p.length(); s += step) {
+                out.add(p.substring(s, Math.min(p.length(), s + size)));
             }
         }
         return out;

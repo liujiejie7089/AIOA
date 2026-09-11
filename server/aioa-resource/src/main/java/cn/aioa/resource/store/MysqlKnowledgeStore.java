@@ -4,6 +4,7 @@ import cn.aioa.resource.entity.KbChunk;
 import cn.aioa.resource.entity.KbDocument;
 import cn.aioa.resource.mapper.KbChunkMapper;
 import cn.aioa.resource.mapper.KbDocumentMapper;
+import cn.aioa.resource.service.EmbeddingProvider;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,13 +13,20 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
- * MySQL 存储实现（默认）：文档正文 LONGTEXT + 切片 TEXT，检索用 LIKE 匹配。
+ * MySQL 存储实现（默认，方案 P2）：文档正文 LONGTEXT + 切片 TEXT + 切片向量 BLOB。
  *
- * <p>切换向量库时：新增实现类（如 VectorKnowledgeStore）并配置 {@code aioa.kb.store=vector}，
- * 本类自动让位（@ConditionalOnProperty），业务层零改动。</p>
+ * <p>检索为「关键词（n-gram 覆盖率）+ 向量（余弦）」双路召回，经 RRF（rank_constant=60）
+ * 融合。向量由 {@link EmbeddingProvider} 产出并持久化到 kb_chunk.embedding，
+ * 无向量数据（历史切片）时自动退化为纯关键词检索。</p>
+ *
+ * <p>切换 Elasticsearch：{@code aioa.kb.store=elasticsearch} 启用
+ * {@link ElasticKnowledgeStore}，本类自动让位（@ConditionalOnProperty），业务层零改动。</p>
  */
 @Slf4j
 @Component
@@ -26,8 +34,12 @@ import java.util.List;
 @ConditionalOnProperty(name = "aioa.kb.store", havingValue = "mysql", matchIfMissing = true)
 public class MysqlKnowledgeStore implements KnowledgeStore {
 
+    /** RRF 融合常数（Elasticsearch 生产默认）。 */
+    static final double RRF_K = 60.0;
+
     private final KbDocumentMapper kbDocumentMapper;
     private final KbChunkMapper kbChunkMapper;
+    private final EmbeddingProvider embeddingProvider;
 
     @Override
     public String type() {
@@ -95,37 +107,149 @@ public class MysqlKnowledgeStore implements KnowledgeStore {
     }
 
     @Override
-    public List<KbHit> search(Long tenantId, Long userId, String keyword, int limit) {
-        long tid = tenantId == null ? 0L : tenantId;
-        int max = Math.max(1, limit);
-        List<KbHit> hits = new ArrayList<>();
-        List<Long> docIds = listVisible(tid, userId).stream().map(KbDocument::getId).toList();
-        if (docIds.isEmpty()) {
-            return hits;
+    public void saveEmbedding(Long chunkId, String content, float[] vector, String provider, int dims) {
+        KbChunk chunk = kbChunkMapper.selectById(chunkId);
+        if (chunk == null) {
+            return;
         }
-        List<KbChunk> chunks = kbChunkMapper.selectList(new LambdaQueryWrapper<KbChunk>()
+        chunk.setEmbedding(embeddingProvider.toBytes(vector));
+        chunk.setEmbeddingProvider(provider);
+        chunk.setEmbeddingDims(dims);
+        chunk.setEmbeddingAt(LocalDateTime.now());
+        kbChunkMapper.updateById(chunk);
+    }
+
+    @Override
+    public List<KbHit> search(Long tenantId, Long userId, String query, float[] queryVec,
+                              int topK, double threshold, String mode, List<Long> docIdScope) {
+        long tid = tenantId == null ? 0L : tenantId;
+        int max = Math.max(1, topK);
+
+        // 可见文档 + 知识库范围过滤
+        List<Long> visible = listVisible(tid, userId).stream().map(KbDocument::getId).toList();
+        List<Long> scope = (docIdScope == null || docIdScope.isEmpty()) ? visible
+                : docIdScope.stream().filter(visible::contains).toList();
+        if (scope.isEmpty()) {
+            return List.of();
+        }
+
+        String m = mode == null ? "hybrid" : mode.toLowerCase(Locale.ROOT);
+        boolean wantVector = "vector".equals(m) || "hybrid".equals(m);
+        boolean wantBm25 = "bm25".equals(m) || "hybrid".equals(m);
+
+        List<KbChunk> candidates = kbChunkMapper.selectList(new LambdaQueryWrapper<KbChunk>()
                 .eq(KbChunk::getTenantId, tid)
-                .in(KbChunk::getDocId, docIds)
-                .like(KbChunk::getContent, keyword)
-                .orderByAsc(KbChunk::getId)
-                .last("limit " + max));
-        for (KbChunk c : chunks) {
+                .in(KbChunk::getDocId, scope));
+
+        // 双路打分
+        Map<Long, Double> bm25Score = wantBm25 ? bm25(candidates, query) : Map.of();
+        Map<Long, Double> vecScore = new HashMap<>();
+        if (wantVector && queryVec != null) {
+            for (KbChunk c : candidates) {
+                float[] v = embeddingProvider.fromBytes(c.getEmbedding());
+                if (v == null) {
+                    continue;
+                }
+                double s = EmbeddingProvider.cosine(queryVec, v);
+                if (s >= threshold) {
+                    vecScore.put(c.getId(), s);
+                }
+            }
+        }
+
+        // RRF 融合：只按排名融合，规避关键词分与向量分数量纲不一致
+        Map<Long, Double> fused = new HashMap<>();
+        addRrf(fused, rankBy(bm25Score));
+        addRrf(fused, rankBy(vecScore));
+
+        // 组装命中并按融合分降序、截断
+        List<KbHit> hits = new ArrayList<>();
+        for (Map.Entry<Long, Double> e : fused.entrySet()) {
+            KbChunk c = candidates.stream().filter(x -> x.getId().equals(e.getKey())).findFirst().orElse(null);
+            if (c == null) {
+                continue;
+            }
             KbDocument doc = kbDocumentMapper.selectById(c.getDocId());
             if (doc == null) {
                 continue;
             }
-            hits.add(new KbHit(doc.getId(), doc.getDocName(), c.getContent(), c.getChunkIndex()));
+            Double vec = vecScore.get(c.getId());
+            hits.add(new KbHit(doc.getId(), doc.getDocName(), c.getContent(), c.getChunkIndex(),
+                    vec == null ? null : vec.floatValue()));
         }
-        if (hits.isEmpty()) {
-            // 无正文切片（如只登记元信息的旧数据）时退回按文档名匹配
-            for (KbDocument d : kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
-                    .eq(KbDocument::getTenantId, tid)
-                    .in(KbDocument::getId, docIds)
-                    .like(KbDocument::getDocName, keyword)
-                    .last("limit " + max))) {
-                hits.add(new KbHit(d.getId(), d.getDocName(), null, null));
+        hits.sort((a, b) -> {
+            double sa = fused.getOrDefault(chunkIdOf(a, candidates), 0.0);
+            double sb = fused.getOrDefault(chunkIdOf(b, candidates), 0.0);
+            return Double.compare(sb, sa);
+        });
+        return hits.size() > max ? new ArrayList<>(hits.subList(0, max)) : hits;
+    }
+
+    private Long chunkIdOf(KbHit hit, List<KbChunk> candidates) {
+        return candidates.stream()
+                .filter(x -> x.getDocId().equals(hit.docId())
+                        && Integer.valueOf(x.getChunkIndex()).equals(hit.chunkIndex()))
+                .map(KbChunk::getId).findFirst().orElse(null);
+    }
+
+    @Override
+    public List<KbHit> search(Long tenantId, Long userId, String keyword, int limit) {
+        return search(tenantId, userId, keyword, embeddingProvider.embed(keyword),
+                limit, 0.0, "bm25", null);
+    }
+
+    // ---------- 打分与融合 ----------
+
+    /** 关键词打分：查询词 n-gram 在切片中的覆盖率（近似 BM25 的轻量版，可复现）。 */
+    private Map<Long, Double> bm25(List<KbChunk> chunks, String query) {
+        Map<Long, Double> out = new HashMap<>();
+        if (query == null || query.isBlank()) {
+            return out;
+        }
+        List<String> qgrams = ngrams(query);
+        if (qgrams.isEmpty()) {
+            return out;
+        }
+        for (KbChunk c : chunks) {
+            String content = c.getContent() == null ? "" : c.getContent();
+            int hit = 0;
+            for (String g : qgrams) {
+                if (content.contains(g)) {
+                    hit++;
+                }
+            }
+            if (hit > 0) {
+                out.put(c.getId(), (double) hit / qgrams.size() * (1.0 + Math.log1p(hit)));
             }
         }
-        return hits;
+        return out;
+    }
+
+    private static List<String> ngrams(String s) {
+        List<String> out = new ArrayList<>();
+        String t = s.trim();
+        if (t.length() <= 2) {
+            if (!t.isEmpty()) {
+                out.add(t);
+            }
+            return out;
+        }
+        for (int i = 0; i + 2 <= t.length(); i++) {
+            out.add(t.substring(i, i + 2));
+        }
+        return out;
+    }
+
+    private static List<Long> rankBy(Map<Long, Double> scores) {
+        return scores.entrySet().stream()
+                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    private static void addRrf(Map<Long, Double> fused, List<Long> ranked) {
+        for (int i = 0; i < ranked.size(); i++) {
+            fused.merge(ranked.get(i), 1.0 / (RRF_K + i + 1), Double::sum);
+        }
     }
 }

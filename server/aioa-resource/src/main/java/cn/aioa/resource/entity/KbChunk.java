@@ -28,6 +28,17 @@ public class KbChunk {
 
     private String content;
 
+    /** 向量（float32 序列，小端）；未向量化为 null。 */
+    private byte[] embedding;
+
+    /** 向量化 provider：local / bge-small-zh。 */
+    private String embeddingProvider;
+
+    /** 向量维度，与 provider 绑定（local=256，bge-small-zh=512）。 */
+    private Integer embeddingDims;
+
+    private LocalDateTime embeddingAt;
+
     private LocalDateTime createdAt;
 
     @TableLogic

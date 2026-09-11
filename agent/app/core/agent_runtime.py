@@ -136,9 +136,10 @@ class UpstreamError(RuntimeError):
 
 
 async def _post_non_stream(client_http: httpx.AsyncClient, provider, api_key: str,
-                           messages: list[dict], tools: list[dict] | None) -> tuple[dict, dict]:
+                           messages: list[dict], tools: list[dict] | None,
+                           temperature: float = 0.3) -> tuple[dict, dict]:
     """非流式推理一轮，返回 (assistant_message, usage)。非 200 抛 UpstreamError。"""
-    body: dict = {"model": provider.model, "messages": messages, "stream": False, "temperature": 0.3}
+    body: dict = {"model": provider.model, "messages": messages, "stream": False, "temperature": temperature}
     if tools:
         body["tools"] = tools
     resp = await client_http.post(
@@ -188,11 +189,31 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     )
     seq += 1
 
+    # 专家生效配置（方案 P4 / B5）：后端 resolve 后经 expert_settings 下发，
+    # 温度/topK/threshold/检索模式/知识库范围/工具开关全部从这里取，不再硬编码。
+    es = req.expert_settings or {}
+    temperature = float(es.get("temperature") or 0.3)
+    top_k = int(es.get("topK") or 5)
+    threshold = float(es.get("threshold") or 0.0)
+    retrieval_mode = str(es.get("retrievalMode") or "hybrid")
+    kb_scope = es.get("kbScope") or "ALL"
+    enabled_tools = es.get("tools") or {}
+    effective = {
+        "model": provider.model,
+        "temperature": temperature,
+        "topK": top_k,
+        "threshold": threshold,
+        "retrievalMode": retrieval_mode,
+        "kbScope": kb_scope,
+        "tools": enabled_tools,
+        "enabled": es.get("enabled", True),
+    }
+
     messages = _build_messages(req)
     tool_client = ToolClient.from_request(req.user_token)
     tools = await tool_client.list_tools()
-    logger.info("run %s: history=%d turns, tools=%d",
-                req.run_id, len(req.history or []), len(tools))
+    logger.info("run %s: history=%d turns, tools=%d, temperature=%s, topK=%s, mode=%s",
+                req.run_id, len(req.history or []), len(tools), temperature, top_k, retrieval_mode)
 
     usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0}
     tool_calls_log: list[dict] = []
@@ -204,7 +225,8 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
             # 感知—规划—执行—反思 循环（工具段）：非流式决策，命中工具则执行后回注
             for _round in range(MAX_TOOL_ROUNDS + 1):
                 message, u = await _post_non_stream(http, provider, api_key, messages,
-                                                    tools if _round < MAX_TOOL_ROUNDS else None)
+                                                    tools if _round < MAX_TOOL_ROUNDS else None,
+                                                    temperature)
                 usage["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
                 usage["completion_tokens"] += int(u.get("completion_tokens") or 0)
 
@@ -223,11 +245,15 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
                                  "tool_calls": message.get("tool_calls")})
                 for call in calls:
                     clock.check()
+                    # 检索类工具透传专家配置参数（真实生效），其他工具原样透传
+                    arguments = dict(call["arguments"])
+                    arguments = _inject_search_params(call["name"], arguments, top_k, threshold,
+                                                      retrieval_mode, kb_scope)
                     yield SseEvent(seq=seq, type="tool.call",
-                                   data={"name": call["name"], "arguments": call["arguments"]})
+                                   data={"name": call["name"], "arguments": arguments})
                     seq += 1
-                    outcome = await tool_client.invoke(call["name"], call["arguments"])
-                    tool_calls_log.append({"name": call["name"], "arguments": call["arguments"],
+                    outcome = await tool_client.invoke(call["name"], arguments)
+                    tool_calls_log.append({"name": call["name"], "arguments": arguments,
                                            "ok": outcome.ok})
                     citations.extend(c for c in _citations_from_tool(call["name"], outcome)
                                      if c["docId"] not in {x["docId"] for x in citations})
@@ -287,7 +313,20 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     yield SseEvent(
         seq=seq,
         type="message.completed",
-        data={"content": final_content, "citations": citations, "tool_calls": tool_calls_log, "usage": usage},
+        data={"content": final_content, "citations": citations, "tool_calls": tool_calls_log,
+              "usage": usage, "effective_params": effective},
     )
     seq += 1
     yield SseEvent(seq=seq, type="run.completed", data={"status": "SUCCEEDED", "usage": usage})
+
+
+def _inject_search_params(name: str, arguments: dict, top_k: int, threshold: float,
+                          mode: str, kb_scope: str) -> dict:
+    """检索类工具注入专家配置参数（topK/threshold/mode/kbScope 真实生效）。"""
+    if name != "search_kb_documents":
+        return arguments
+    arguments.setdefault("topK", top_k)
+    arguments.setdefault("threshold", threshold)
+    arguments.setdefault("mode", mode)
+    arguments.setdefault("kbScope", kb_scope)
+    return arguments

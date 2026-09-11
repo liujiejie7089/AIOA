@@ -23,7 +23,16 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isLogin: (state) => !!state.token,
     displayName: (state) => state.user?.displayName || state.user?.username || '未登录',
-    tenantName: (state) => state.user?.tenantName || state.user?.tenantCode || '默认租户'
+    tenantName: (state) => state.user?.tenantName || state.user?.tenantCode || '默认租户',
+    /** 角色码集合（菜单与按钮级权限的判定依据） */
+    roles: (state): string[] => state.user?.roles || [],
+    hasRole: (state) => (role: string): boolean => (state.user?.roles || []).includes(role),
+    /** 平台管理员：跨租户视角 */
+    isPlatformAdmin: (state): boolean => (state.user?.roles || []).includes('ROLE_ADMIN'),
+    /** 租户管理员：管理本租户机构、资源池、授权、分摊 */
+    isTenantAdmin: (state): boolean => (state.user?.roles || []).includes('ROLE_TENANT_ADMIN'),
+    /** 企业管理员：管理本机构部门与员工 */
+    isOrgAdmin: (state): boolean => (state.user?.roles || []).includes('ROLE_ORG_ADMIN')
   },
   actions: {
     async login(payload: LoginPayload): Promise<void> {
