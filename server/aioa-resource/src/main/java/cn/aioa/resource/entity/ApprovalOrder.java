@@ -44,6 +44,12 @@ public class ApprovalOrder {
 
     private String content;
 
+    /** 结构化表单 JSON（如请假 {leaveType,start,end,reason}）；无则为 null */
+    private String formData;
+
+    /** 附件 JSON 数组 [{name,url}]；无则为 null */
+    private String attachment;
+
     private String status;
 
     private String approver;

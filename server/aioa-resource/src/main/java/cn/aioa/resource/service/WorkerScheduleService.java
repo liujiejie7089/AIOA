@@ -144,14 +144,23 @@ public class WorkerScheduleService {
         }
 
         // 回写员工：最近产出摘要 + 最近执行时间（定时触发才更新 lastRunAt，防同日重复）
-        AgentWorker patch = new AgentWorker();
-        patch.setId(worker.getId());
-        if (AgentWorkerRun.TRIGGER_SCHEDULE.equals(run.getTriggerType())) {
-            patch.setLastRunAt(run.getStartedAt());
+        // 回写失败不影响本次执行结果（记录已落库），仅降级为告警日志
+        try {
+            AgentWorker patch = new AgentWorker();
+            patch.setId(worker.getId());
+            if (AgentWorkerRun.TRIGGER_SCHEDULE.equals(run.getTriggerType())) {
+                patch.setLastRunAt(run.getStartedAt());
+            }
+            patch.setLastOutput(summarize(run));
+            patch.setUpdatedAt(LocalDateTime.now());
+            workerMapper.updateById(patch);
+            worker.setLastOutput(patch.getLastOutput());
+            if (patch.getLastRunAt() != null) {
+                worker.setLastRunAt(patch.getLastRunAt());
+            }
+        } catch (Exception e) {
+            log.warn("数字员工最近产出血写失败（执行记录已留痕，不影响结果）worker={}", worker.getId(), e);
         }
-        patch.setLastOutput(summarize(run));
-        patch.setUpdatedAt(LocalDateTime.now());
-        workerMapper.updateById(patch);
 
         // 站内通知租户全员（TYPE_WORKER，用户端轮询到未读后弹窗提醒）
         notifyTenant(worker, run);
@@ -206,12 +215,16 @@ public class WorkerScheduleService {
         }
     }
 
+    /** 最近产出摘要上限：留出时间戳前缀余量，避免超出 last_output 列长度导致写库失败。 */
+    private static final int SUMMARY_LIMIT = 240;
+
+    /** 产出摘要：成功给内容摘要，失败给原因。截断长度与列宽对齐（V19 起为 TEXT，仍保守截断）。 */
     private static String summarize(AgentWorkerRun run) {
-        return AgentWorkerRun.STATUS_SUCCESS.equals(run.getStatus())
-                ? "[" + run.getStartedAt().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")) + "] "
-                + truncate(run.getOutput(), 300)
-                : "[" + run.getStartedAt().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")) + "] 执行失败："
-                + truncate(run.getErrorMsg(), 200);
+        String head = "[" + run.getStartedAt().format(DateTimeFormatter.ofPattern("MM-dd HH:mm")) + "] ";
+        String body = AgentWorkerRun.STATUS_SUCCESS.equals(run.getStatus())
+                ? truncate(run.getOutput(), SUMMARY_LIMIT)
+                : "执行失败：" + truncate(run.getErrorMsg(), SUMMARY_LIMIT);
+        return truncate(head + body, SUMMARY_LIMIT + 20);
     }
 
     private static String truncate(String s, int max) {

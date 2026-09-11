@@ -1,5 +1,7 @@
 package cn.aioa.bridge.controller;
 
+import static cn.aioa.common.exception.BizException.notImplemented;
+
 import cn.aioa.common.resp.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,7 +22,7 @@ public class InternalToolController {
     @Operation(summary = "工具调用（M1 未实现）")
     @PostMapping("/invoke")
     public ApiResponse<Void> invoke(@RequestBody(required = false) ToolInvokeRequest request) {
-        throw cn.aioa.common.exception.BizException.notImplemented("tool invoke 将在 M2 实现");
+        throw notImplemented("tool invoke 将在 M2 实现");
     }
 
     @Data

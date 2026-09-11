@@ -7,6 +7,10 @@ export interface ApprovalOrder {
   bizType: string
   title: string
   content: string
+  /** 结构化表单 JSON（请假：{leaveType,start,end,reason} 等） */
+  formData?: string | null
+  /** 附件 JSON 数组 [{name,url}] */
+  attachment?: string | null
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | string
   /** 发起人姓名（提交时快照） */
   applicantName: string
@@ -26,6 +30,30 @@ export function listApprovals(scope: 'mine' | 'todo'): Promise<ApprovalOrder[]> 
 
 export function decideApproval(id: number, decision: 'APPROVE' | 'REJECT', note?: string): Promise<ApprovalOrder> {
   return http.post(`/approvals/${id}/decision`, { decision, note }).then((r) => unwrap<ApprovalOrder>(r))
+}
+
+/* ---------- 通用文件上传（请假证明等附件） ---------- */
+
+export interface UploadedFile {
+  id: number
+  name: string
+  url: string
+  size: number
+}
+
+/** 上传任意文件，返回可访问的 url（由后端 /api/v1/files/{id} 提供） */
+export function uploadFile(file: File, onProgress?: (percent: number) => void): Promise<UploadedFile> {
+  const fd = new FormData()
+  fd.append('file', file)
+  return http
+    .post('/files/upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total))
+      },
+    })
+    .then((r) => unwrap<UploadedFile>(r))
 }
 
 /* ============ 知识库（aioa-resource KbController） ============ */

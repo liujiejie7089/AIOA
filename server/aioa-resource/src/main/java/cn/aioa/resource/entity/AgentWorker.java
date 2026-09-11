@@ -19,6 +19,8 @@ public class AgentWorker {
 
     public static final String STATUS_RUNNING = "运行中";
     public static final String STATUS_IDLE = "待命中";
+    /** 已启用但未配置执行时刻/任务内容——不会真正执行，需引导用户补全 */
+    public static final String STATUS_PENDING_CONFIG = "待配置";
 
     @TableId(type = IdType.AUTO)
     private Long id;

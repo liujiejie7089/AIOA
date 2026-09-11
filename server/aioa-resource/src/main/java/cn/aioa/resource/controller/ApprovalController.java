@@ -31,22 +31,24 @@ public class ApprovalController {
     private final ApprovalService approvalService;
 
     public record SubmitBody(String bizType, String title, String content, String runId,
-                             Long conversationId, Long resultId) {
+                             Long conversationId, Long resultId, String formData, String attachment) {
     }
 
     public record DecisionBody(String decision, String note) {
     }
 
-    public record ApprovalView(Long id, Long userId, String applicantName, String bizType, String title,
+    public record ApprovalView(Long id, Long userId, String applicantName, String creatorName, String bizType, String title,
                                 String content, String status, String approver, String decisionNote,
-                                String decidedAt, String createdAt, boolean mine) {
+                                String decidedAt, String createdAt, boolean mine,
+                                String formData, String attachment) {
 
         static ApprovalView from(ApprovalOrder o, Long currentUserId) {
-            return new ApprovalView(o.getId(), o.getUserId(), o.getApplicantName(), o.getBizType(), o.getTitle(),
+            return new ApprovalView(o.getId(), o.getUserId(), o.getApplicantName(), o.getApplicantName(), o.getBizType(), o.getTitle(),
                     o.getContent(), o.getStatus(), o.getApprover(), o.getDecisionNote(),
                     o.getDecidedAt() == null ? null : o.getDecidedAt().toString(),
                     o.getCreatedAt() == null ? null : o.getCreatedAt().toString(),
-                    currentUserId != null && currentUserId.equals(o.getUserId()));
+                    currentUserId != null && currentUserId.equals(o.getUserId()),
+                    o.getFormData(), o.getAttachment());
         }
     }
 
@@ -59,8 +61,10 @@ public class ApprovalController {
         String runId = body == null ? null : body.runId();
         Long convId = body == null ? null : body.conversationId();
         Long resultId = body == null ? null : body.resultId();
+        String formData = body == null ? null : body.formData();
+        String attachment = body == null ? null : body.attachment();
         ApprovalOrder order = approvalService.submit(user.getTenantId(), user.getUserId(),
-                user.getNickname(), bizType, title, content, runId, convId, resultId);
+                user.getNickname(), bizType, title, content, runId, convId, resultId, formData, attachment);
         return ApiResponse.ok(ApprovalView.from(order, user.getUserId()));
     }
 

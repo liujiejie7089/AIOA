@@ -7,6 +7,7 @@ import cn.aioa.resource.entity.AgentWorkerRun;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.resource.mapper.AgentWorkerRunMapper;
 import cn.aioa.resource.service.WorkerScheduleService;
+import cn.aioa.resource.support.ScheduleTimeSupport;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -22,10 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 数字员工 —— 管理端维护（V1.2 新增；V15 增加定时任务）：
@@ -38,8 +36,6 @@ import java.util.Map;
 @RequestMapping("/api/v1/admin/workers")
 @RequiredArgsConstructor
 public class AdminWorkerController {
-
-    private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
 
     private final AgentWorkerMapper workerMapper;
     private final AgentWorkerRunMapper runMapper;
@@ -144,17 +140,10 @@ public class AdminWorkerController {
     }
 
     private void validateScheduleTime(String time) {
-        if (time == null || time.isBlank()) {
-            return;
-        }
-        try {
-            LocalTime.parse(time.trim(), HH_MM);
-        } catch (Exception e) {
-            throw BizException.badRequest("执行时刻格式无效，应为 HH:mm（如 08:00）");
-        }
+        ScheduleTimeSupport.validate(time);
     }
 
     private String normalizeScheduleTime(String time) {
-        return time == null || time.isBlank() ? null : LocalTime.parse(time.trim(), HH_MM).format(HH_MM);
+        return ScheduleTimeSupport.normalize(time);
     }
 }

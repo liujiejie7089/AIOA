@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<html lang="zh-CN" data-page-node-id="mnfnxbnHn29SjXumzp4ZRt">
+<head data-page-node-id="ujq3PyVFwN5g1AblczDLy1">
+<meta charset="UTF-8" data-page-node-id="id8bve7d0SnzkBvClBaIAA">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" data-page-node-id="UDv2PXn9ZGHZNf8RII8JF2">
 <title>AIOA 智能工作台 · 客户端 V1.2</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com" data-page-node-id="RTinzNuZ1hO9BnKkx2CbL9">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-page-node-id="LQ70GAd5XrdwZkH0N1TK0M">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" data-page-node-id="CE7vjHOBxX9ylvKIqdwfxs">
 <!--
   ============================================================================
   设计定调（Design Direction）
@@ -29,6 +29,7 @@
     --accent:#f59e0b; --accent-soft:#fef4e6; --accent-line:#f7dcae;
     --green:#0f9d63; --green-soft:#e7f7f0;
     --red:#d93a3f; --red-soft:#fdecec;
+    --amber:#b7791f; --amber-ink:#8a5a12; --amber-soft:#fdf6e3; --amber-line:#f0dfae;
     --bg:#f4f6fa; --surface:#ffffff; --surface-2:#f8fafd; --surface-3:#eef1f7;
     --text:#141a26; --text-2:#626c80; --text-3:#98a1b3;
     --border:#e6eaf2; --border-strong:#d3dbea;
@@ -388,7 +389,55 @@
   .switch.on{background:var(--green)}
   .switch.on i{left:18px}
   .agent-meta{font-size:11px;color:var(--text-2);margin-top:9px;line-height:1.6;border-top:1px dashed var(--border);padding-top:8px}
-  .agent-ops{display:flex;gap:8px;margin-top:9px}
+  .agent-ops{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  /* ---------- 请假表单（请假数字人） ---------- */
+  .leave-form{margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 12px}
+  .lf-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;font-size:12px}
+  .lf-row>label{width:56px;flex-shrink:0;color:var(--text-2);padding-top:6px}
+  .lf-row select,.lf-row input[type=date],.lf-row textarea{
+    flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12px;
+    font-family:inherit;background:var(--surface);color:var(--text);outline:none;
+  }
+  .lf-row textarea{resize:vertical}
+  .lf-hint{font-size:10px;color:var(--text-3);align-self:center;margin-left:4px}
+  .lf-files{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 4px 64px}
+  .lf-file{display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--blue-soft);color:var(--blue);
+    border:1px solid var(--blue-line);border-radius:14px;padding:3px 9px;cursor:pointer}
+  .lf-file i{font-style:normal;font-weight:700;color:var(--red);cursor:pointer}
+  .lf-actions{display:flex;gap:8px;margin-top:6px;padding-left:64px}
+  /* ---------- 审批详情：结构化字段 + 附件 ---------- */
+  .td-extra-title{font-size:11px;color:var(--text-2);margin-bottom:6px;font-weight:600}
+  .td-form{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
+  .tdf-row{display:flex;gap:10px;font-size:12px;padding:3px 0}
+  .tdf-row span{width:64px;flex-shrink:0;color:var(--text-2)}
+  .tdf-row b{font-weight:600;flex:1;white-space:pre-wrap;word-break:break-word}
+  .td-attach{margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .tda-label{font-size:11px;color:var(--text-2)}
+  .tda-item{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--blue);
+    text-decoration:none;background:var(--blue-soft);border:1px solid var(--blue-line);border-radius:14px;padding:3px 10px}
+  .tda-item:hover{filter:brightness(.97)}
+  .agent-tip{
+    margin-top:9px;font-size:11px;line-height:1.5;color:var(--amber-ink);
+    background:var(--amber-soft);border:1px solid var(--amber-line);
+    border-radius:8px;padding:6px 9px;
+  }
+  .badge.warn{color:var(--amber-ink);background:var(--amber-soft)}
+  .tc-hint{
+    margin-top:8px;font-size:11px;line-height:1.5;color:var(--amber-ink);
+    background:var(--amber-soft);border:1px solid var(--amber-line);
+    border-radius:8px;padding:6px 9px;
+  }
+
+  /* ---------- 9b. 数字员工运行记录 ---------- */
+  .run-item{border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:9px;background:var(--surface-2)}
+  .run-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .run-time{font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .run-trigger{font-size:10px;color:var(--text-3);margin-left:auto}
+  .run-out{
+    font-size:11.5px;line-height:1.6;color:var(--text);margin-top:6px;
+    max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;
+  }
+  .run-meta{font-size:10px;color:var(--text-3);margin-top:6px;font-family:var(--font-mono)}
 
   /* ---------- 10. 我的 / 其他 ---------- */
   .me-head{display:flex;align-items:center;gap:12px}
@@ -439,327 +488,331 @@
   :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
 </style>
 </head>
-<body>
+<body data-page-node-id="4h33iGBq57QqsR1LwcOU2o">
 
 <!-- 图标精灵：全部描边 SVG，无 emoji -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
-    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
-    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.1A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 8.4-8.4h.6a8.4 8.4 0 0 1 8 8z"/></symbol>
-    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 3v4M9.5 12.5h.01M14.5 12.5h.01M8 19v2M16 19v2"/></symbol>
-    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
-    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></symbol>
-    <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 3v18M5 21h14M3 8h18"/><path d="M6 8 3 14h6zM18 8l-3 6h6z"/></symbol>
-    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v4M12 9v10M17 12v7"/></symbol>
-    <symbol id="i-bank" viewBox="0 0 24 24"><path d="M3 21h18M12 3l9 5H3zM6 10v11M10 10v11M14 10v11M18 10v11"/></symbol>
-    <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="m3 11 15-7v16L3 13z"/><path d="M3 11v2a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1zM18 8a5 5 0 0 1 0 8"/></symbol>
-    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
-    <symbol id="i-sheet" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></symbol>
-    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
-    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
-    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></symbol>
-    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
-    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
-    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></symbol>
-    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
-    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
-    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
-    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
-    <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/></symbol>
-    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></symbol>
-    <symbol id="i-log" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol>
-    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 16V8l-9-5-9 5v8l9 5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
-    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
-    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/></symbol>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" data-page-node-id="BE4kEQT40IKIrMXAumwBcO">
+  <defs data-page-node-id="ETWFs2yIb1A3UDFWdLxKLG">
+    <symbol id="i-home" viewBox="0 0 24 24" data-page-node-id="c3zQHlNm24YcwIwqbpgk5F"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" data-page-node-id="yVy9RVo0c7zHE9f2rGSvGI"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" data-page-node-id="ElbFl4QTg4o8hfc8JygrQd"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9" data-page-node-id="xrRYhBeFKXFzpMq6FkWRtZ"/><path d="M13.7 21a2 2 0 0 1-3.4 0" data-page-node-id="AINYVwlGfkXXTIOjSq9DIr"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" data-page-node-id="Fl5OrkLli65ACXNIFBqKgl"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.1A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 8.4-8.4h.6a8.4 8.4 0 0 1 8 8z" data-page-node-id="YpeFAs7KWw8G6OzB8yCth4"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24" data-page-node-id="6VIIi9oWPcidCffIoM1iNu"><rect x="4" y="7" width="16" height="12" rx="4" data-page-node-id="eVIwFSwEimm6b4FFTF3CVT"/><path d="M12 3v4M9.5 12.5h.01M14.5 12.5h.01M8 19v2M16 19v2" data-page-node-id="rBPuMjG4uFqnrimSwcSvks"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" data-page-node-id="L82S2iNzdcYD5yRwvFCMWK"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" data-page-node-id="df8xbECqLwHGCwCgIlrTdW"/><circle cx="12" cy="7" r="4" data-page-node-id="UfXZNJZIybIeY39DlMnhao"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24" data-page-node-id="EEzNEQnpAHZV0FjODZwnuM"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" data-page-node-id="5zdquYyju1HNhBSHOyUHvt"/><path d="M14 2v6h6M9 13h6M9 17h4" data-page-node-id="r1GPzBLzuGyULd9FW74s5E"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24" data-page-node-id="oNOJI6PdZ9kz80AktYozHj"><path d="M12 3v18M5 21h14M3 8h18" data-page-node-id="CsrtVvPVvTGryHonE4Ji97"/><path d="M6 8 3 14h6zM18 8l-3 6h6z" data-page-node-id="k9hZ5QaVOAgpxoNna5Y47e"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24" data-page-node-id="fsEW6e3ycpt0y9MWmRUmHw"><path d="M3 3v18h18" data-page-node-id="pMpQL1Mg14q6WI68jufE1C"/><path d="M7 15v4M12 9v10M17 12v7" data-page-node-id="Pl7InVuGFb7iIYyoQ8MRof"/></symbol>
+    <symbol id="i-bank" viewBox="0 0 24 24" data-page-node-id="PMgRfbURS12wHryNuSuW0n"><path d="M3 21h18M12 3l9 5H3zM6 10v11M10 10v11M14 10v11M18 10v11" data-page-node-id="7dxaOsZCfnEpnYNeyknjJ0"/></symbol>
+    <symbol id="i-megaphone" viewBox="0 0 24 24" data-page-node-id="pFDvU3SUHHuSQ15dhFLVt8"><path d="m3 11 15-7v16L3 13z" data-page-node-id="mAhBZTEwhlv28lWYad65D1"/><path d="M3 11v2a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1zM18 8a5 5 0 0 1 0 8" data-page-node-id="xPq4gNLKfQYcjwZf71l8mo"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24" data-page-node-id="i2pWWv43wXubQ6kF6ZTUCq"><path d="M12 20h9" data-page-node-id="cEI7Vcbi2UvaMDPUw8YDS4"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" data-page-node-id="9tP5ymErOlmoH3aQQXvXSR"/></symbol>
+    <symbol id="i-sheet" viewBox="0 0 24 24" data-page-node-id="QlYfZEy65MqEnAp5N3KMI0"><rect x="3" y="3" width="18" height="18" rx="2" data-page-node-id="TeMw9i5lGVNT7BhyIu0dEH"/><path d="M3 9h18M9 9v12" data-page-node-id="XuV8a8Cc3CvEH3wPqnNmZ8"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" data-page-node-id="EQ8naHZSOrBmhWPnSoAppe"><circle cx="12" cy="12" r="9" data-page-node-id="hDLn5VsI2FXv15z8VudvNC"/><path d="M12 7v5l3 2" data-page-node-id="CSdVv7HtJRS2KaBZWcKAPM"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" data-page-node-id="0ciyN4TFQgzfQYBzXcBE9I"><path d="M20 6 9 17l-5-5" data-page-node-id="TI1uGgXUEPVdvaxhCHW5Yr"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24" data-page-node-id="ZMV4EVSjhtHzgqURVUTFLv"><circle cx="12" cy="12" r="9" data-page-node-id="55ALhA5caUWKgal6ITgERq"/><path d="m8.5 12.5 2.5 2.5 4.5-5" data-page-node-id="ofzXbxVGiacuRNWPXcfCbA"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24" data-page-node-id="hsyCevLLFKkFF80mzSgkZL"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" data-page-node-id="VUrXhRcRaZjB5XBl8xmqjV"/><path d="M12 9v4M12 17h.01" data-page-node-id="vqDnxM6eQyDaa5eJ8PyzEi"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24" data-page-node-id="om9hpECt06KMN8I7EcyqjH"><path d="m9 18 6-6-6-6" data-page-node-id="8voXNCjxYoAMpKgkkrOYuh"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" data-page-node-id="toQCuozXa09f2DDz1a4xlD"><path d="M12 5v14M5 12h14" data-page-node-id="pZEkTe0kx4RFTVbqIKlHql"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" data-page-node-id="qS9bOHu648AQ8lTRnLSs3e"><path d="M22 2 11 13" data-page-node-id="Su6jvftmrMkjd4j702YFo4"/><path d="M22 2l-7 20-4-9-9-4z" data-page-node-id="CoOWHlUT7IzH8Ga4R52RXo"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24" data-page-node-id="BzRXMcGGw2It8osQb7jmS2"><ellipse cx="12" cy="5" rx="9" ry="3" data-page-node-id="Ro5eav9u94NtHSyaH6dH90"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3" data-page-node-id="sfjfoT3yhoKzD83EMJyhhK"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" data-page-node-id="O4mzfWizHFZjukwSN3K6dC"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" data-page-node-id="LYDCoUweK38YZ9j8m9Tmh4"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24" data-page-node-id="A3LvvrP593G9gdN9AShyMY"><circle cx="12" cy="12" r="3" data-page-node-id="gctrcw7oVpwSmrC5JaSBr5"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" data-page-node-id="POyHQ5eCY0I3XEvPBpWo8k"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24" data-page-node-id="5NjRyl35By1awfdB1J2rbu"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" data-page-node-id="nwHMtWyHrfEhoGdJ4reqCj"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24" data-page-node-id="bkzWstFBjJ6mCF89abkGPB"><rect x="3" y="6" width="18" height="13" rx="2" data-page-node-id="TQaoXzSmg8XOnDgxY9C0F3"/><path d="M3 10h18M16 14.5h2" data-page-node-id="msNesyEJx8oDUcHNhbpvi3"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24" data-page-node-id="4Y5gH15HyPpkpOcrJqlEZv"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2" data-page-node-id="mFXfPvS96qYS5G5UNdEjJH"/></symbol>
+    <symbol id="i-log" viewBox="0 0 24 24" data-page-node-id="1AFeXNKjH1ThATu0ajEuru"><path d="M4 4h16v16H4z" data-page-node-id="E86C5civBovyqIyAEEEqQi"/><path d="M8 9h8M8 13h8M8 17h5" data-page-node-id="UNXYZUMinXGiZ6wwc2idSR"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24" data-page-node-id="WedFxDBhIS1wWfLHIBCOJb"><path d="M21 16V8l-9-5-9 5v8l9 5z" data-page-node-id="NLpEpPHxdLX7Kens09M4JE"/><path d="m3 8 9 5 9-5M12 13v8" data-page-node-id="XALrrmvF5ddG3sAclWinhW"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24" data-page-node-id="sJYWyGwtRDkdwaJkECiQtR"><path d="M22 12h-6l-2 3h-4l-2-3H2" data-page-node-id="U6foXgh9ZUp6BIve5kuSIz"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z" data-page-node-id="1pwVxK9OB9Z8qOWnmXf4ME"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" data-page-node-id="BAg8FLLhDb0CK8aRcZWYJ5"><rect x="4" y="10" width="16" height="11" rx="2" data-page-node-id="DGHm1mtripGZmBLM8rGCzn"/><path d="M8 10V7a4 4 0 0 1 8 0v3" data-page-node-id="BQhdaYl7QfPxaqoQ8nj9F6"/><path d="M12 15v2" data-page-node-id="kmQXIwXB6yaqCxMf1wJlEu"/></symbol>
   </defs>
 </svg>
 
-<div class="phone">
-  <div class="statusbar">
-    <span id="clock">9:41</span>
-    <span class="sig">5G<span class="bars"><i></i><i></i><i></i><i></i></span></span>
+<div class="phone" data-page-node-id="pRIf3xd8k3lWCjjFjTQKd9">
+  <div class="statusbar" data-page-node-id="BZChDQ69uZCr4yrIAoIKvk">
+    <span id="clock" data-page-node-id="cLd1AzJpYWtSa4UrJVyBY0">9:41</span>
+    <span class="sig" data-page-node-id="YEvQYeTRmUveBCjbTi0saP">5G<span class="bars" data-page-node-id="HqyTJtaNbJiiYN7lAAL9Rl"><i data-page-node-id="9Ig4LdX1r12R72I0fPH7rv"></i><i data-page-node-id="sFsiPWkyHlaZgb98op6npp"></i><i data-page-node-id="olOjB4CpCHZmAlpT2Ulo9I"></i><i data-page-node-id="qsvbuWVpAdtgRGI1MhTJhR"></i></span></span>
   </div>
 
-  <div class="mp-header">
-    <span class="mp-title" id="pageTitle">AIOA 智能工作台<span class="ver">V1.2</span></span>
-    <div class="capsule"><span class="dots"><i></i><i></i><i></i></span><span class="dot"></span></div>
+  <div class="mp-header" data-page-node-id="DKkKcwhZEkxaQkuifmcM89">
+    <span class="mp-title" id="pageTitle" data-page-node-id="62bg6ikuW4L75DvToyEEPB">AIOA 智能工作台<span class="ver" data-page-node-id="3PReCDZbyWt0fjqVU9BdBM">V1.2</span></span>
+    <div class="capsule" data-page-node-id="GDxn8HZaZ73YZeUJMfHP1d"><span class="dots" data-page-node-id="WAsHNSFcstjFgiWjoVvExr"><i data-page-node-id="bxA4EOYE6mSsor5vLOG5tE"></i><i data-page-node-id="FCtsewqzuWuLwYhuRb0VpH"></i><i data-page-node-id="9s2Vf25IX3bqbKkzrCwLB8"></i></span><span class="dot" data-page-node-id="i3mxpv2raMSqFmNw0Y12dW"></span></div>
   </div>
 
-  <div class="pages">
+  <div class="pages" data-page-node-id="Cpx0AVqWLgzCbzuJbF60dc">
     <!-- ========== 登录 ========== -->
-    <div class="page active flush" id="page-login">
-      <div class="gate">
-        <div class="gate-brand">
-          <div class="logo"><svg class="ic"><use href="#i-cube"/></svg></div>
-          <div>
-            <h1>AIOA 智能工作台</h1>
-            <div class="muted" style="font-size:11px">企业 AI 办公基座 · 客户端 V1.2</div>
+    <div class="page active flush" id="page-login" data-page-node-id="Mu9lfB2nTcF70PJXsbxBJx">
+      <div class="gate" data-page-node-id="5wqiPhUGTEBCU0PNzSlIqo">
+        <div class="gate-brand" data-page-node-id="cI9QwI4tEpC19e4HJ0jrL3">
+          <div class="logo" data-page-node-id="h9qrwTvcZ8DWvVVDgNEf8z"><svg class="ic" data-page-node-id="xtYhhhZnXG1ipy7Jh1Sl1z"><use href="#i-cube" data-page-node-id="wL0lTVgUsVvH6BkM5gAZLW"/></svg></div>
+          <div data-page-node-id="3mmWQAfdwCB22U8tDLKlb0">
+            <h1 data-page-node-id="4uykThDiXqy48St4Z3qRFw">AIOA 智能工作台</h1>
+            <div class="muted" style="font-size:11px" data-page-node-id="bGwbPj5HMv1gGfRWhI8w80">企业 AI 办公基座 · 客户端 V1.2</div>
           </div>
         </div>
-        <p class="lead">登录后使用专家咨询、技能生成、数字员工与经营看板。数据由企业管理员在管理端统一维护。</p>
-        <div class="form-item"><label>账号</label><input id="lgUser" value="zhangsan" autocomplete="username"></div>
-        <div class="form-item"><label>密码</label><input id="lgPass" type="password" value="User@123" autocomplete="current-password"></div>
-        <div class="err" id="lgErr"></div>
-        <button class="btn block" id="lgBtn" onclick="doLogin()">登录</button>
-        <div class="hint">演示账号：zhangsan / User@123（普通员工）<br>管理员：admin / Admin@123</div>
+        <p class="lead" data-page-node-id="0xE2y7RO1lX6uHRSFyu4Jg">登录后使用专家咨询、技能生成、数字员工与经营看板。数据由企业管理员在管理端统一维护。</p>
+        <div class="form-item" data-page-node-id="eMSVWJcB0UbWaUrs8h7Tb4"><label data-page-node-id="lC90nigKKXBshCCDP0KD3Q">账号</label><input id="lgUser" value="zhangsan" autocomplete="username" data-page-node-id="l5H6IiEYuEgSxBi09itAi4"></div>
+        <div class="form-item" data-page-node-id="2RbcL7fvIEI4GH6D4X7a4V"><label data-page-node-id="qcoBdJCBzGYRLzhLm4bQ0w">密码</label><input id="lgPass" type="password" value="User@123" autocomplete="current-password" data-page-node-id="GPYQo52uHHpE7595Xs4lqD"></div>
+        <div class="err" id="lgErr" data-page-node-id="XZZsEHEhIdtGWlEUQu2ADc"></div>
+        <button class="btn block" id="lgBtn" onclick="doLogin()" data-page-node-id="GlM0Bk1TZuqXz0v0b01y1a">登录</button>
+        <div class="hint" data-page-node-id="sKxDaH0MbBu47J0E55Y3YD">演示账号：zhangsan / User@123（普通员工）<br data-page-node-id="3ErgzjmJYDGZnTa85a6jH0">管理员：admin / Admin@123</div>
       </div>
     </div>
 
     <!-- ========== 工作台 ========== -->
-    <div class="page" id="page-home">
-      <div class="greet reveal" id="greet">你好</div>
-      <div class="greet-sub reveal" id="greetSub">今天想让我帮你做点什么？</div>
+    <div class="page" id="page-home" data-page-node-id="bT7UcsqMgg3KIr9tR2A3vH">
+      <div class="greet reveal" id="greet" data-page-node-id="lzREkNmlOJKqpsFauarYbM">你好</div>
+      <div class="greet-sub reveal" id="greetSub" data-page-node-id="5mCowKbIZEjnWasFQJjQH1">今天想让我帮你做点什么？</div>
 
       <!-- 经营数据看板（V1.2 C 位） -->
-      <div class="card reveal">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px">
-          <div class="sec-title" style="margin:0">
-            <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-chart"/></svg>
-            经营数据 <span class="sub" id="kpiTime">今日 08:00 更新</span>
+      <div class="card reveal" data-page-node-id="4Dvqx9H9zVDAZCqFYGZjkx">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px" data-page-node-id="18QJoxwBnHKebNq44GOyaF">
+          <div class="sec-title" style="margin:0" data-page-node-id="8YiougV89oFp5AducuIo6I">
+            <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="OQUgiS1jbpDjmWbSQ3wlRX"><use href="#i-chart" data-page-node-id="Hcnh2KKUlmGMCd0ACRyoh1"/></svg>
+            经营数据 <span class="sub" id="kpiTime" data-page-node-id="rlA1NDdKVdzJ7fBEl59919">今日 08:00 更新</span>
           </div>
-          <div class="seg">
-            <span id="segMonth" class="on" onclick="setKpiMode('month')">本月</span>
-            <span id="segQuarter" onclick="setKpiMode('quarter')">本季</span>
+          <div class="seg" data-page-node-id="W7J4CrejR0ETBBK2VH7qHr">
+            <span id="segMonth" class="on" onclick="setKpiMode('month')" data-page-node-id="m74GhGfckED9qqkrUItVj9">本月</span>
+            <span id="segQuarter" onclick="setKpiMode('quarter')" data-page-node-id="E1WlUKJdeCh4FhAVCFo89R">本季</span>
           </div>
         </div>
-        <div class="kpi-grid" id="kpiGrid"></div>
-        <div style="margin:15px 0 0;font-weight:700;font-size:12px">近 6 个月销售额趋势<span class="muted" style="font-weight:400;font-size:10.5px">（万元）</span></div>
-        <div class="bars" id="kpiBars"></div>
-        <div class="insight" id="kpiInsight"></div>
-        <div style="display:flex;gap:8px;margin-top:11px">
-          <button class="btn small" onclick="openSkill('数据分析')">深入分析</button>
-          <button class="btn ghost small" onclick="openSkill('经营报表')">查看报表</button>
+        <div class="kpi-grid" id="kpiGrid" data-page-node-id="sy48jMBajGENx9NGCyoggA"></div>
+        <div style="margin:15px 0 0;font-weight:700;font-size:12px" data-page-node-id="Qm5iJsn3oqHQmh89M15EVd">近 6 个月销售额趋势<span class="muted" style="font-weight:400;font-size:10.5px" data-page-node-id="PKTmCNS09gB3axERftLdE1">（万元）</span></div>
+        <div class="bars" id="kpiBars" data-page-node-id="aP7oSNYz1s1b7wImaXbQXp"></div>
+        <div class="insight" id="kpiInsight" data-page-node-id="pnmeNEd3MoUMZ3BAQwqlU7"></div>
+        <div style="display:flex;gap:8px;margin-top:11px" data-page-node-id="JYXvVxPSJYpVlhnIrtMg15">
+          <button class="btn small" onclick="openSkill('数据分析')" data-page-node-id="INRzbC01Q7pfdt7IHuLm3E">深入分析</button>
+          <button class="btn ghost small" onclick="openSkill('经营报表')" data-page-node-id="zr53fsHGlBT9QYJSiODunm">查看报表</button>
         </div>
-        <div class="muted" style="margin-top:9px" id="kpiSource"></div>
+        <div class="muted" style="margin-top:9px" id="kpiSource" data-page-node-id="sHtWjnroHZ9HI3kCBLHPGZ"></div>
       </div>
 
-      <div class="card reveal">
-        <div class="sec-title" style="margin-top:0">
-          <svg class="ic" style="width:15px;height:15px;color:var(--accent)"><use href="#i-inbox"/></svg>
-          今天要办的事 <span class="badge go" id="todayCnt">0 件</span>
+      <div class="card reveal" data-page-node-id="lAcskejSsjaFMUVOnPIKN2">
+        <div class="sec-title" style="margin-top:0" data-page-node-id="hM11dLpUziTIFvFh6NFN5U">
+          <svg class="ic" style="width:15px;height:15px;color:var(--accent)" data-page-node-id="67XpPg4av1OF0ARHNuyuCe"><use href="#i-inbox" data-page-node-id="JEIE8MfMEdZknUWASHCwuA"/></svg>
+          今天要办的事 <span class="badge go" id="todayCnt" data-page-node-id="RvTu71Ell6U2WPUKBbyASF">0 件</span>
         </div>
-        <div id="todayList"></div>
-        <div class="suggest" id="todaySuggest" style="display:none" onclick="askSuggest()"></div>
+        <div id="todayList" data-page-node-id="XIL1kIPtcSMp7xIuuwSRQN"></div>
+        <div class="suggest" id="todaySuggest" style="display:none" onclick="askSuggest()" data-page-node-id="0Lz3LI5r0ks7ZoZlSw1UoU"></div>
       </div>
 
-      <div class="sec-title reveal">
-        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-spark"/></svg>
-        快捷技能 <span class="sub">· 点击即在会话中开始</span>
+      <div class="sec-title reveal" data-page-node-id="BKVcqzkPlLC7HoWDJTrXxM">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="xeNtw6yj17yoEZkpWFJyZV"><use href="#i-spark" data-page-node-id="fcG6QDBC1fYsenpQ7CEnDI"/></svg>
+        快捷技能 <span class="sub" data-page-node-id="WWGPrMbN9fCWQKHVO8sozL">· 点击即在会话中开始</span>
       </div>
-      <div class="grid reveal" id="skillGrid"></div>
+      <div class="grid reveal" id="skillGrid" data-page-node-id="6T9x6zCfGr17QuCG8RuAk3"></div>
 
-      <div class="sec-title reveal">
-        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-bot"/></svg>
+      <div class="sec-title reveal" data-page-node-id="TEiqJ2UHHxA45nG80oLLMr">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="TfjGc75oQ7YxaCnR5iqbZK"><use href="#i-bot" data-page-node-id="5GHoplSh5qWCNgrwlsZl7m"/></svg>
         推荐专家
-        <span class="sub" style="margin-left:auto;cursor:pointer;color:var(--blue)" onclick="switchTabById('page-agent')">全部 ›</span>
+        <span class="sub" style="margin-left:auto;cursor:pointer;color:var(--blue)" onclick="switchTabById('page-agent')" data-page-node-id="lfT8cIHHw2Rg4vgEy0lBeM">全部 ›</span>
       </div>
-      <div class="card reveal" id="homeExperts"></div>
+      <div class="card reveal" id="homeExperts" data-page-node-id="IBftjTLlg1m8XaVXwJPmBu"></div>
     </div>
 
     <!-- ========== 待办 ========== -->
-    <div class="page" id="page-todo">
-      <div class="sec-title reveal">待办</div>
-      <div class="muted reveal" style="margin-bottom:12px">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
+    <div class="page" id="page-todo" data-page-node-id="WDncBhhfkloSqxXTH6ny48">
+      <div class="sec-title reveal" data-page-node-id="jYviWB2chDqvkA1RYfS3E0">待办</div>
+      <div class="muted reveal" style="margin-bottom:12px" data-page-node-id="c1XKil5zi75T41sNVoEA1T">审批、审核、确认事项实时汇聚 · 点击即可处理</div>
 
-      <div class="sec-title">待我处理（<span id="todoCnt" class="num">0</span>）</div>
-      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoPending"></div>
+      <div class="sec-title" data-page-node-id="xfQD1rJQSV68CnT5h0mfFZ">待我处理（<span id="todoCnt" class="num" data-page-node-id="TarGlktYTwTwa6kFKTAFPQ">0</span>）</div>
+      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoPending" data-page-node-id="2QHPYnAceRXbBOY1j92tHd"></div>
 
-      <div class="sec-title">数字员工已代办</div>
-      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoDone"></div>
+      <div class="sec-title" data-page-node-id="PZzu1QHpgmFVIuc7Symwzt">数字员工已代办</div>
+      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoDone" data-page-node-id="aTQlkgY0Co5C9zX2DB8ZCd"></div>
 
-      <div class="sec-title">我的申请</div>
-      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoMine"></div>
-      <div class="muted" style="margin-top:2px">待办与消息通知实时联动，处理记录全程留痕可查</div>
+      <div class="sec-title" data-page-node-id="n6yOxCnBXpwcXAkgbqF1lc">我的申请</div>
+      <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoMine" data-page-node-id="WXR6kSnIPuglNyYAnY6FdY"></div>
+      <div class="muted" style="margin-top:2px" data-page-node-id="UDXxNpbKN5r0HPQshE0aJ1">待办与消息通知实时联动，处理记录全程留痕可查</div>
     </div>
 
     <!-- ========== 会话（主入口） ========== -->
-    <div class="page flush" id="page-chat">
-      <div class="chat">
-        <div class="chat-head">
-          <span class="cname" id="chatName">会话</span>
-          <span class="cmodel" id="chatModel">模型：智能路由</span>
+    <div class="page flush" id="page-chat" data-page-node-id="Ac240umb8HqAveuoTVw4dv">
+      <div class="chat" data-page-node-id="PP8nvFtsC4YJVMD6cT9i1V">
+        <div class="chat-head" data-page-node-id="oSMB4dv40tET6NFIFnVxos">
+          <span class="cname" id="chatName" data-page-node-id="4E4MaIkN53EepafxMezGtF">会话</span>
+          <span class="cmodel" id="chatModel" data-page-node-id="WwOf4Y5EjqaAAMC6cC7LOD">模型：智能路由</span>
         </div>
-        <div class="msgs" id="msgs"></div>
-        <div class="quota-warn" id="quotaWarn">
-          <svg class="ic"><use href="#i-warn"/></svg><span id="quotaWarnText"></span>
+        <div class="msgs" id="msgs" data-page-node-id="uTYgHddWf7NGIh9eUdI7ui"></div>
+        <div class="quota-warn" id="quotaWarn" data-page-node-id="EQfkitJvjSdoUd4se2J58P">
+          <svg class="ic" data-page-node-id="xiMR5kdm8dKEHq7gtETjpC"><use href="#i-warn" data-page-node-id="IOQ5V245HPiHepuf3Ra4du"/></svg><span id="quotaWarnText" data-page-node-id="HmmjNh1wQlzlFqVe9Y3y4g"></span>
         </div>
-        <div class="input-bar">
-          <span class="kb-chip" id="kbChip" onclick="toggleKB()">
-            <svg class="ic"><use href="#i-db"/></svg><span id="kbChipText">知识库 开</span>
+        <div class="input-bar" data-page-node-id="78BkWv8E8oxzDemZfUi0cu">
+          <span class="kb-chip" id="kbChip" onclick="toggleKB()" data-page-node-id="BE9AzSQDjgyTeCSeLOlQAP">
+            <svg class="ic" data-page-node-id="opboK2nKjY7TBidzHSnE0o"><use href="#i-db" data-page-node-id="Sqr8hyYudM2KHgyPdCQmZR"/></svg><span id="kbChipText" data-page-node-id="AW4lZf1Ib7SGGrkdlWtTPU">知识库 开</span>
           </span>
-          <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()">
-          <button class="btn small" onclick="send()" id="sendBtn">发送</button>
+          <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()" data-page-node-id="IDLgYeFEQ65I1hQ5nTVD06">
+          <button class="btn small" onclick="send()" id="sendBtn" data-page-node-id="TXtd61UeEQoyoqvmNYREs6">发送</button>
         </div>
       </div>
     </div>
 
     <!-- ========== 数字员工 ========== -->
-    <div class="page" id="page-agent">
-      <div class="sec-title reveal">
-        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-bot"/></svg>
+    <div class="page" id="page-agent" data-page-node-id="sNB7hRdI45WH5VSMcqfQ9d">
+      <div class="sec-title reveal" data-page-node-id="SgQFF7Ap7BTdtTU0rAVLsA">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="3X4EVzmtQARO7Z6VuwKCP1"><use href="#i-bot" data-page-node-id="8of0Q5qmLm28Bg4auOVYow"/></svg>
         数字员工
       </div>
-      <div class="muted reveal" style="margin-bottom:11px">自动运行 · 定时产出 · 结果进入待办与消息，全程留痕</div>
-      <div id="agentList"></div>
-      <div style="margin:4px 0 18px"><button class="btn ghost block" onclick="createAgentFlow()">＋ 创建数字员工</button></div>
-
-      <div class="sec-title">
-        <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-user"/></svg>
-        专家服务 <span class="badge go">管理员预置</span>
+      <div class="muted reveal" style="margin-bottom:11px" data-page-node-id="Z9hzSfKC5bRAUsqikqOsS9">自动运行 · 定时产出 · 结果进入待办与消息，全程留痕</div>
+      <div id="agentList" data-page-node-id="gaYcVCzPXXHcAFlogqUm3B"></div>
+      <div style="margin:4px 0 18px;display:flex;gap:8px" data-page-node-id="YsEQarqj1cSydypVZB0PVo">
+        <button class="btn ghost block" onclick="createAgentFlow()" data-page-node-id="CfhV2nVlJtPNFLYmWtP5wh">＋ 创建数字员工</button>
+        <button class="btn block" onclick="openLeaveFlow()" style="flex:1">📅 请假申请</button>
       </div>
-      <div class="muted" style="margin-bottom:11px">每位专家 = 人设 + 技能组合 + 专属知识库</div>
-      <div class="card" style="padding-top:4px;padding-bottom:4px" id="expertList"></div>
-      <div class="muted" style="margin-top:6px">外部能力（政务申报平台、OA、腾讯文档等）由管理员在后台统一连接配置</div>
+
+      <div class="sec-title" data-page-node-id="8oT3IMDAoNZDpZHOTxmxan">
+        <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="11w50oFgXc5MK4oea3XgZN"><use href="#i-user" data-page-node-id="v8WHEvBD2TgVYWUeg9vrEM"/></svg>
+        专家服务 <span class="badge go" data-page-node-id="OaQoV1pGix2x1vBccqHURR">管理员预置</span>
+      </div>
+      <div class="muted" style="margin-bottom:11px" data-page-node-id="1BX5cFNMjUoM7alHXBd4rz">每位专家 = 人设 + 技能组合 + 专属知识库</div>
+      <div class="card" style="padding-top:4px;padding-bottom:4px" id="expertList" data-page-node-id="fdYtOKHZxQRFtFC5A3pNd5"></div>
+      <div class="muted" style="margin-top:6px" data-page-node-id="3WHhNXryQWFBoPpIun6yLY">外部能力（政务申报平台、OA、腾讯文档等）由管理员在后台统一连接配置</div>
     </div>
 
     <!-- ========== 我的 ========== -->
-    <div class="page" id="page-me">
-      <div class="card me-head reveal">
-        <div class="avatar"><svg class="ic"><use href="#i-user"/></svg></div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:15.5px" id="meName">—</div>
-          <div class="muted" id="meRole">企业成员身份</div>
+    <div class="page" id="page-me" data-page-node-id="ZY5LkU8OrrJ3kHkhPWmcZD">
+      <div class="card me-head reveal" data-page-node-id="imTNndpHiF91riBzQFq3Ll">
+        <div class="avatar" data-page-node-id="lvkiY2OtaqoLzhtLj9OXC5"><svg class="ic" data-page-node-id="Ne5sivTsEpzMmB52VH7pXr"><use href="#i-user" data-page-node-id="cNDwjRnGEJVkmH5NA7mWwu"/></svg></div>
+        <div style="flex:1;min-width:0" data-page-node-id="egZZZabgIi9F2wCWxcEa6m">
+          <div style="font-weight:700;font-size:15.5px" id="meName" data-page-node-id="MSOqDVyry7FZhNNm6Jfw8G">—</div>
+          <div class="muted" id="meRole" data-page-node-id="HYA9HBnEGelSepgoNLeu1q">企业成员身份</div>
         </div>
       </div>
 
       <!-- 成果沉淀（V1.2 新增） -->
-      <div class="card reveal">
-        <div class="sec-title">
-          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-doc"/></svg>
-          我的成果 <span class="sub">· 对话产出自动沉淀</span>
+      <div class="card reveal" data-page-node-id="FSjV1GlGbq3dEZOj0LXyKB">
+        <div class="sec-title" data-page-node-id="K3726o1xTtvQXXIjwFQJ9U">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="JhGOzhEJZNpiLQGnkG2WjP"><use href="#i-doc" data-page-node-id="lFEU5CywoIY6jHPHHkagmP"/></svg>
+          我的成果 <span class="sub" data-page-node-id="SIbeVBI95qrVb5jTyR4mjH">· 对话产出自动沉淀</span>
         </div>
-        <div id="resultList"></div>
+        <div id="resultList" data-page-node-id="MXq2pcvEKsqgEvCZ6iBjHp"></div>
       </div>
 
-      <div class="card reveal">
-        <div class="sec-title">
-          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-wallet"/></svg>
+      <div class="card reveal" data-page-node-id="fblXMIq46je6TadraEEgeo">
+        <div class="sec-title" data-page-node-id="tgBD1MflW58QvTjkcafxsU">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="c0dVS4PJZlMihRV5xRp0Cr"><use href="#i-wallet" data-page-node-id="O1gthekjTp3XXY7HZG5FZm"/></svg>
           额度与账单
         </div>
-        <div style="display:flex;align-items:baseline;gap:8px">
-          <span class="quota-big" id="quotaNum">0</span>
-          <span class="muted">/ <span class="num" id="quotaTotal">0</span> 词元（本月套餐）</span>
+        <div style="display:flex;align-items:baseline;gap:8px" data-page-node-id="XnmtN2ojkPgEFncFRCCvB8">
+          <span class="quota-big" id="quotaNum" data-page-node-id="t6olK14U6ZuRHNLUhcAQB6">0</span>
+          <span class="muted" data-page-node-id="qGBCIRaiNJe9oXpXK3E4mM">/ <span class="num" id="quotaTotal" data-page-node-id="EVLLr7rXXtea0CxzBm6lIk">0</span> 词元（本月套餐）</span>
         </div>
-        <div class="progress" id="quotaBar"><i style="width:0%"></i></div>
-        <div class="muted">额度变化实时留痕 · 低于 10% 时将在会话中提醒</div>
-        <div style="margin-top:11px;display:flex;gap:8px">
-          <button class="btn small" onclick="go('page-bill')">用量账单</button>
-          <button class="btn ghost small" onclick="go('page-buy')">购买词元包</button>
+        <div class="progress" id="quotaBar" data-page-node-id="YkqsADlmnftQ2bKUx5dsCm"><i style="width:0%" data-page-node-id="XHERjJE436UEMD62S8faL8"></i></div>
+        <div class="muted" data-page-node-id="OBvNd5CUPcQ2fWsWRrIxQT">额度变化实时留痕 · 低于 10% 时将在会话中提醒</div>
+        <div style="margin-top:11px;display:flex;gap:8px" data-page-node-id="Y1xCkoe1i9dfJbhTGi7cmK">
+          <button class="btn small" onclick="go('page-bill')" data-page-node-id="PIHY3Q8CSZei8FbGVmtBFl">用量账单</button>
+          <button class="btn ghost small" onclick="go('page-buy')" data-page-node-id="u3GgpzpytVaHlOiVHLa3Oj">购买词元包</button>
         </div>
       </div>
 
-      <div class="card reveal">
-        <div class="sec-title">
-          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-db"/></svg>
+      <div class="card reveal" data-page-node-id="XK6F42OGplvIk1GdxyvuP2">
+        <div class="sec-title" data-page-node-id="qRLi2h4XyQy3F2RammXzIY">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="i5PmOdFIW5Z4ZG8Wszn7cT"><use href="#i-db" data-page-node-id="6o92wau0L1XphhQk3cbW3P"/></svg>
           我的知识库
         </div>
-        <div id="kbList"></div>
-        <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn ghost small" onclick="pickKbFile()">＋ 上传文件（PDF/Word/Excel）</button>
-          <button class="btn ghost small" onclick="testKbSearch()">检索测试</button>
+        <div id="kbList" data-page-node-id="yCaNPEYUCBeBa9cs3hbiE1"></div>
+        <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap" data-page-node-id="U0ziuuzRCIFlil0moF6drw">
+          <button class="btn ghost small" onclick="pickKbFile()" data-page-node-id="mU3EU8uzJEzZMVSKOS3D9c">＋ 上传文件（PDF/Word/Excel）</button>
+          <button class="btn ghost small" onclick="testKbSearch()" data-page-node-id="mDtJtVXm3V6mogsq7G7ujw">检索测试</button>
         </div>
-        <input type="file" id="kbFileInput" style="display:none" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv" onchange="onKbFile(event)">
+        <input type="file" id="kbFileInput" style="display:none" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv" onchange="onKbFile(event)" data-page-node-id="BAsVrsWGRqDmAtSbnGknbA">
       </div>
 
-      <div class="card reveal">
-        <div class="sec-title">
-          <svg class="ic" style="width:15px;height:15px;color:var(--blue)"><use href="#i-shield"/></svg>
+      <div class="card reveal" data-page-node-id="nUWVaSF8NDFy6LPg1HkK4X">
+        <div class="sec-title" data-page-node-id="fCEezjuI9b3Zbb1yXjwHQZ">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="57DbmrtiyQdTL5RPjYCTAq"><use href="#i-shield" data-page-node-id="glirU0sCkD3XCmB6xODeRF"/></svg>
           安全与设置
         </div>
-        <div class="row click" onclick="go('page-log')">
-          <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-log"/></svg>我的操作记录</span>
-          <span class="muted">全程可查 ›</span>
+        <div class="row click" onclick="go('page-log')" data-page-node-id="RwRPAvqIU0AuB1wXdpu69X">
+          <span style="display:flex;align-items:center;gap:8px" data-page-node-id="CMajVz80yWPHVn6NldFdA9"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="rEHcCm2GYhZ8w7r4253A8F"><use href="#i-log" data-page-node-id="t1TIMBU4D2ZGQeZlngWHcG"/></svg>我的操作记录</span>
+          <span class="muted" data-page-node-id="QqcACzvLzjc2Ra7I363GcT">全程可查 ›</span>
         </div>
-        <div class="row click" onclick="toast('反馈入口：错误 / 有害 / 侵权')">
-          <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-warn"/></svg>投诉与纠错</span><span class="muted">›</span>
+        <div class="row click" onclick="toast('反馈入口：错误 / 有害 / 侵权')" data-page-node-id="JJx7W2FL48hxVqn9ywzrrj">
+          <span style="display:flex;align-items:center;gap:8px" data-page-node-id="oP8vfQRKmEJZVqJqgaYzxt"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="VOvy36PTavfgkvsyylm23s"><use href="#i-warn" data-page-node-id="8D4fdkGgnRic9HzTnVkS9u"/></svg>投诉与纠错</span><span class="muted" data-page-node-id="fKxbIBqa1l5t4AyKzI6MWp">›</span>
         </div>
-        <div class="row">
-          <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-gear"/></svg>关于</span>
-          <span class="muted">AIOA 智能工作台 V1.2</span>
+        <div class="row" data-page-node-id="ePuVhBGG8WtjvbIqzu5ZFd">
+          <span style="display:flex;align-items:center;gap:8px" data-page-node-id="DAAVXuQXDh0IPwhBtuGFQm"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="2J7ieY6lA1um5n8SLUILhY"><use href="#i-gear" data-page-node-id="i4dE6hk6M5B39kYQ3pqcO6"/></svg>关于</span>
+          <span class="muted" data-page-node-id="DGnDYNsBs70keujPZuhGx4">AIOA 智能工作台 V1.2</span>
         </div>
-        <div class="row click" onclick="doLogout()">
-          <span style="display:flex;align-items:center;gap:8px;color:var(--red)"><svg class="ic" style="width:15px;height:15px"><use href="#i-chevron"/></svg>退出登录</span>
-          <span class="muted"></span>
+        <div class="row click" onclick="doLogout()" data-page-node-id="Fzc04JFMguz9tuti1CHa5G">
+          <span style="display:flex;align-items:center;gap:8px;color:var(--red)" data-page-node-id="IZ1eCcAdHR5jCN8KqxW7Gj"><svg class="ic" style="width:15px;height:15px" data-page-node-id="yoUyVp3Tqs4tQPWCUnx2Xu"><use href="#i-chevron" data-page-node-id="HZSji4nuDYflwC0bCRqZ3d"/></svg>退出登录</span>
+          <span class="muted" data-page-node-id="M8QXOwu7jHjTYpU2VQgd4G"></span>
         </div>
       </div>
     </div>
 
     <!-- ========== 账单 ========== -->
-    <div class="page" id="page-bill">
-      <div class="sec-title reveal">用量账单</div>
-      <div class="card reveal" id="billList"></div>
-      <button class="btn ghost small" onclick="exportBill()">导出明细</button>
+    <div class="page" id="page-bill" data-page-node-id="E7Xkg4ZepqiaPryHn1oYrA">
+      <div class="sec-title reveal" data-page-node-id="11Pt6SXa7s62bVlohyHcL9">用量账单</div>
+      <div class="card reveal" id="billList" data-page-node-id="ZFqawhMeoh6mFWfKXImVT6"></div>
+      <button class="btn ghost small" onclick="exportBill()" data-page-node-id="wUItiTDIo0wvkbxe3xr4uX">导出明细</button>
     </div>
 
     <!-- ========== 词元包 ========== -->
-    <div class="page" id="page-buy">
-      <div class="sec-title reveal">购买词元包</div>
-      <div class="muted reveal" style="margin-bottom:12px">购买后额度实时到账，可在「我的 - 额度与账单」查看</div>
-      <div id="pkgList"></div>
+    <div class="page" id="page-buy" data-page-node-id="aGbirViRZyn5LoJxt1O9ki">
+      <div class="sec-title reveal" data-page-node-id="hmitzJ1mZCqUuPlRAZR4Bl">购买词元包</div>
+      <div class="muted reveal" style="margin-bottom:12px" data-page-node-id="C4ms8Z6oSy1jrwLgwyUfwD">购买后额度实时到账，可在「我的 - 额度与账单」查看</div>
+      <div id="pkgList" data-page-node-id="yTtN3h7tqzxNxfZFw5DkFO"></div>
     </div>
 
     <!-- ========== 操作记录 ========== -->
-    <div class="page" id="page-log">
-      <div class="sec-title reveal">我的操作记录</div>
-      <div class="card reveal" id="logList"></div>
-      <div class="muted" style="margin-top:2px">记录不可篡改，保存 ≥ 3 年</div>
+    <div class="page" id="page-log" data-page-node-id="s6C9pyBo58To97VxWgyUI7">
+      <div class="sec-title reveal" data-page-node-id="G0ZvGOZu2Bt0TFtHHgidkl">我的操作记录</div>
+      <div class="card reveal" id="logList" data-page-node-id="XoguRFISQkRkCCTX9t3han"></div>
+      <div class="muted" style="margin-top:2px" data-page-node-id="OdyheRG78Hw6EIDvAAydzg">记录不可篡改，保存 ≥ 3 年</div>
     </div>
 
     <!-- ========== 成果详情（V1.2 新增） ========== -->
-    <div class="page" id="page-result">
-      <div class="sec-title reveal" id="resultTitle">成果详情</div>
-      <div class="card reveal">
-        <div class="muted" id="resultMeta" style="margin-bottom:9px"></div>
-        <div id="resultBody" style="font-size:12.5px;line-height:1.8;white-space:pre-wrap"></div>
+    <div class="page" id="page-result" data-page-node-id="JtRSCzEHoN5WtHT1BzPsOB">
+      <div class="sec-title reveal" id="resultTitle" data-page-node-id="y13s4gRQknehiliA4NX1Di">成果详情</div>
+      <div class="card reveal" data-page-node-id="ibazRdPGAdLpmf2KOnkpSI">
+        <div class="muted" id="resultMeta" style="margin-bottom:9px" data-page-node-id="vBjyjtQnDNhuZeZ0GI9jDr"></div>
+        <div id="resultBody" style="font-size:12.5px;line-height:1.8;white-space:pre-wrap" data-page-node-id="AVuOEtzZGFnpDtezMV5Das"></div>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn ghost small" onclick="go('page-chat')">继续编辑</button>
-        <button class="btn small" id="resultSubmitBtn" onclick="submitResultApproval()">发起审批</button>
-        <button class="btn ghost small" onclick="toast('已复制分享链接')">转发</button>
+      <div style="display:flex;gap:8px" data-page-node-id="4lebV28VaqETwpsbZMmGd5">
+        <button class="btn ghost small" onclick="go('page-chat')" data-page-node-id="xvtkHU7GFnhFLS4knIwFTZ">继续编辑</button>
+        <button class="btn small" id="resultSubmitBtn" onclick="submitResultApproval()" data-page-node-id="irArBQw8Xp6wD0msQH1fa5">发起审批</button>
+        <button class="btn ghost small" onclick="toast('已复制分享链接')" data-page-node-id="Cg3uYOk1N7RpCbH0wa2HZl">转发</button>
       </div>
     </div>
 
     <!-- ========== 待办/审批详情（V1.2.1 新增） ========== -->
-    <div class="page" id="page-todo-detail">
-      <div class="sec-title reveal" id="tdTitle">审批详情</div>
-      <div class="card reveal">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">
-          <span class="badge wait" id="tdBadge">待审批</span>
-          <span class="muted" id="tdType" style="font-size:11px"></span>
+    <div class="page" id="page-todo-detail" data-page-node-id="2lbahBquXMIBk05CAROVF8">
+      <div class="sec-title reveal" id="tdTitle" data-page-node-id="iOB1BXDy6HY9CotZMlfgBc">审批详情</div>
+      <div class="card reveal" data-page-node-id="BtD75qomEnN63bhGUNlCwp">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px" data-page-node-id="TFPZFa3fUxlNU7V1IpUFC8">
+          <span class="badge wait" id="tdBadge" data-page-node-id="ABOBmrcrFZ2a0yMsMsiYxH">待审批</span>
+          <span class="muted" id="tdType" style="font-size:11px" data-page-node-id="o0GlPPfwIg0Ippo4II8ETA"></span>
         </div>
-        <div class="muted" id="tdMeta" style="margin-bottom:9px;font-size:11px;line-height:1.7"></div>
-        <div style="font-weight:600;margin-bottom:6px">内容</div>
-        <div id="tdContent" style="font-size:12.5px;line-height:1.8;white-space:pre-wrap"></div>
-        <div id="tdDecision" style="display:none;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
-          <div style="font-weight:600;margin-bottom:4px">审批意见</div>
-          <div class="muted" id="tdNote" style="font-size:12px"></div>
+        <div class="muted" id="tdMeta" style="margin-bottom:9px;font-size:11px;line-height:1.7" data-page-node-id="26q9QAclP3ANtEkosHZxGK"></div>
+        <div style="font-weight:600;margin-bottom:6px" data-page-node-id="CXvUJxspR1kpDFhrJZH0xH">内容</div>
+        <div id="tdContent" style="font-size:12.5px;line-height:1.8;white-space:pre-wrap" data-page-node-id="ihqynPqLqB1NoCGD6Ay00q"></div>
+        <div id="tdExtra" style="margin-top:12px"></div>
+        <div id="tdDecision" style="display:none;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)" data-page-node-id="4vFvON7Lmk5YXr5HhuPnsD">
+          <div style="font-weight:600;margin-bottom:4px" data-page-node-id="7aIa29CjaDWsG5NwR4BxiA">审批意见</div>
+          <div class="muted" id="tdNote" style="font-size:12px" data-page-node-id="hY9Ie8T0PUQxxzdLnEvGtZ"></div>
         </div>
       </div>
-      <div style="display:flex;gap:8px" id="tdActions"></div>
+      <div style="display:flex;gap:8px" id="tdActions" data-page-node-id="q18qIdcuvgJn4CRRs1MVsR"></div>
     </div>
   </div>
 
-  <div class="tabbar">
-    <div class="tab active" data-page="page-home" onclick="switchTab(this)">
-      <svg class="ic"><use href="#i-home"/></svg>工作台
+  <div class="tabbar" data-page-node-id="woBmHG36LFtYwDI6Uyd49i">
+    <div class="tab active" data-page="page-home" onclick="switchTab(this)" data-page-node-id="Jq19Ow1EAZoCYL6M08cxxo">
+      <svg class="ic" data-page-node-id="FkAAr7Be0pwEbwpkptBFe0"><use href="#i-home" data-page-node-id="pSKJbfHFlkInv1lQn84QEy"/></svg>工作台
     </div>
-    <div class="tab" data-page="page-todo" onclick="switchTab(this)">
-      <svg class="ic"><use href="#i-bell"/></svg><span class="cnt" id="tabCnt" style="display:none">0</span>待办
+    <div class="tab" data-page="page-todo" onclick="switchTab(this)" data-page-node-id="gyprIVnUeVKl2dvwxteTNI">
+      <svg class="ic" data-page-node-id="DkAwzhWQBCDkINNbyiUvti"><use href="#i-bell" data-page-node-id="9z9R54VBZAPV97XC0hnXpI"/></svg><span class="cnt" id="tabCnt" style="display:none" data-page-node-id="pGNUI18T1jSHsg6FUrk3uu">0</span>待办
     </div>
-    <div class="tab fab" data-page="page-chat" onclick="switchTab(this)">
-      <span class="ic"><svg class="ic"><use href="#i-chat"/></svg></span>会话
+    <div class="tab fab" data-page="page-chat" onclick="switchTab(this)" data-page-node-id="vGkIENT5JGXXHCHzFvCsF2">
+      <span class="ic" data-page-node-id="8nUGry0UxXu2bKiTJC2jAA"><svg class="ic" data-page-node-id="4b9xNNvtKP7778RQjYW89A"><use href="#i-chat" data-page-node-id="Od2xwOoItCNRgkYh4c1hwq"/></svg></span>会话
     </div>
-    <div class="tab" data-page="page-agent" onclick="switchTab(this)">
-      <svg class="ic"><use href="#i-bot"/></svg>数字员工
+    <div class="tab" data-page="page-agent" onclick="switchTab(this)" data-page-node-id="BfByFTUdaGvLudCsljTZHQ">
+      <svg class="ic" data-page-node-id="GE9EIPnLo1YhvSiCuAJ5RF"><use href="#i-bot" data-page-node-id="YGDeq3rZMNJjJHEVPq0037"/></svg>数字员工
     </div>
-    <div class="tab" data-page="page-me" onclick="switchTab(this)">
-      <svg class="ic"><use href="#i-user"/></svg>我的
+    <div class="tab" data-page="page-me" onclick="switchTab(this)" data-page-node-id="M4H8b0vLfQiUAHb080IzNq">
+      <svg class="ic" data-page-node-id="ZIoa9IGnfFv5RDaVEr64yA"><use href="#i-user" data-page-node-id="CSAAUAWGsZvVDJ48j52P2O"/></svg>我的
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" data-page-node-id="t8JRjE2n3aZiNySNNUaTeT"></div>
 </div>
 
 <script>
@@ -774,7 +827,7 @@ const state = {
   experts:[], skills:[], kbDocs:[], bill:[], log:[],
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
   kpi:{month:null, quarter:null}, kpiMode:'month',
-  workers:[], results:[], currentResult:null,
+  workers:[], results:[], currentResult:null, editingWorker:null,
   lastAnswer:''
 };
 
@@ -833,6 +886,18 @@ const API = {
   approvalSubmit(bizType, title, content, runId, conversationId, resultId){
     return this.req('/v1/approvals',{method:'POST',body:JSON.stringify({bizType,title,content,runId,conversationId,resultId})});
   },
+  /* 结构化表单审批（请假等）：附带 form_data(JSON) 与 attachment(JSON 数组) */
+  approvalSubmitForm(bizType, title, content, formData, attachment){
+    return this.req('/v1/approvals',{method:'POST',
+      body:JSON.stringify({bizType,title,content,formData:JSON.stringify(formData),attachment:JSON.stringify(attachment)})});
+  },
+  /* 通用文件上传（请假证明等附件）：multipart 直传，返回 {id,name,url,size} */
+  fileUpload(file){
+    const fd = new FormData(); fd.append('file', file);
+    return fetch(this.base+'/v1/files/upload', {method:'POST', headers:{Authorization:'Bearer '+state.token}, body:fd})
+      .then(r=>r.json().then(d=>{ if(!r.ok || d.code) throw new Error(d.message||('HTTP '+r.status)); return d.data; }));
+  },
+  fileUrl(id){ return this.base+'/v1/files/'+id; },
   approvalList(scope){ return this.req('/v1/approvals?scope='+(scope||'mine')); },
   approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
   /* 权限不足时展示可联系的管理员（后端按租户返回管理员账号） */
@@ -844,7 +909,11 @@ const API = {
   kpiBoard(period){ return this.req('/v1/kpi/board?period='+period); },
   workers(){ return this.req('/v1/workers'); },
   createWorker(body){ return this.req('/v1/workers',{method:'POST',body:JSON.stringify(body)}); },
+  updateWorker(id, body){ return this.req('/v1/workers/'+id,{method:'PUT',body:JSON.stringify(body)}); },
   toggleWorker(id){ return this.req('/v1/workers/'+id+'/toggle',{method:'POST'}); },
+  workerRuns(id){ return this.req('/v1/workers/'+id+'/runs?limit=20'); },
+  runWorkerNow(id){ return this.req('/v1/workers/'+id+'/run',{method:'POST'}); },
+  deleteWorker(id){ return this.req('/v1/workers/'+id,{method:'DELETE'}); },
   results(){ return this.req('/v1/results'); },
   createResult(body){ return this.req('/v1/results',{method:'POST',body:JSON.stringify(body)}); },
   resultDetail(id){ return this.req('/v1/results/'+id); },
@@ -1454,6 +1523,8 @@ function openTodoDetail(id, scope){
     (a.approver ? '<br>审批人：'+esc(a.approver) : '')+
     (a.decidedAt ? '<br>审批时间：'+esc((a.decidedAt||'').replace('T',' ').slice(0,16)) : '');
   $('tdContent').textContent = a.content || '（无正文）';
+  const extra = renderApprovalDetailExtra(a);
+  $('tdExtra').innerHTML = extra ? ('<div class="td-extra-title">申请详情</div>' + extra) : '';
   const dec = $('tdDecision');
   if(a.status!=='PENDING'){
     dec.style.display='block';
@@ -1486,28 +1557,90 @@ async function decideTodo(decision){
 }
 
 /* ============================================================================
-   11. 数字员工（V1.2）
+   11. 数字员工（V1.2 / V18 创建与编辑闭环）
    ============================================================================ */
+
+/* ---------- 自然语言时间解析：用户说的一句话 → HH:mm ---------- */
+var CN_NUM = {'零':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10};
+function parseAgentTime(text){
+  if(!text) return null;
+  var s = String(text)
+    .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0)-65248); })
+    .replace(/：/g, ':');
+  // 顺序关键：先「十X点」复合，再个位「X点」；
+  // 若反过来，个位规则会把「十一点」的「一点」先替换成「十1点」。
+  // 「点/时」统一替换为占位符 @，避免后续规则互相干扰。
+  s = s.replace(/十([一二两三四五六七八九])[点时]/g, function(_,d){ return (10+CN_NUM[d]) + '@'; });
+  s = s.replace(/十[点时]/g, '10@');
+  s = s.replace(/[零一二两三四五六七八九][点时]/g, function(m){ return CN_NUM[m[0]] + '@'; });
+  // 剩余未转换的「点/时」（前面直接是阿拉伯数字）也归一为 @
+  s = s.replace(/(\d)\s*[点时]/g, '$1@');
+  // 占位符还原为标准分隔符，供下面的正则统一匹配
+  s = s.replace(/@/g, '点');
+  var m = s.match(/(\d{1,2})\s*[:点时]\s*(\d{1,2})?\s*分?/);
+  if(!m) return null;
+  var h = parseInt(m[1],10), mi = m[2]===undefined?0:parseInt(m[2],10);
+  if(isNaN(h)||isNaN(mi)||h<0||h>23||mi<0||mi>59) return null;
+  // 「半」= 30 分
+  if(mi===0 && /[点時时]\s*半/.test(s)) mi = 30;
+  // 时段词修正必须在取出数字之后统一处理：否则「晚上八点」会被错判为 08:00
+  if(/(下午|晚上|傍晚|晚间|夜里|夜间)/.test(s) && h<12) h += 12;
+  if(/(凌晨|早上|早晨|上午|半夜|深夜)/.test(s) && h===12) h = 0;
+  return ('0'+h).slice(-2)+':'+('0'+mi).slice(-2);
+}
+
+/* 「每天8点」「每周五10:00」→ 计划说明；解析不到时刻返回 defaultText */
+function describeAgentPlan(text, fallback){
+  var time = parseAgentTime(text);
+  if(!time) return fallback || '按计划执行';
+  var wd = String(text||'').match(/每周([一二三四五六日天1-7])/);
+  if(wd){
+    var map = {'一':'一','二':'二','三':'三','四':'四','五':'五','六':'六','日':'日','天':'日','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'日'};
+    return '每周'+map[wd[1]]+' '+time+' 自动执行';
+  }
+  return '每天 '+time+' 自动执行';
+}
+function agentTaskPrompt(worker){
+  return (worker && worker.taskPrompt) || (worker && worker.description) || '';
+}
+function agentTimeText(worker){
+  return (worker && worker.scheduleTime) ? '每天 '+worker.scheduleTime : '未设置执行时刻';
+}
+function fmtRunTime(s){
+  if(!s) return '—';
+  var t = String(s).replace('T',' ');
+  return t.length>=16 ? t.slice(5,16) : t;
+}
+
 function renderAgents(){
   const box = $('agentList');
   const list = state.workers||[];
   if(!list.length){ box.innerHTML = '<div class="card">'+emptyBox('暂无数字员工，点击下方创建')+'</div>'; return; }
-  box.innerHTML = list.map((w,i)=>
-    '<div class="agent-card">'+
+  box.innerHTML = list.map((w,i)=>{
+    const pending = w.on && !w.scheduleTime;
+    const badge = pending ? 'warn' : (w.on?'ok':'off');
+    const tip = pending
+      ? '<div class="agent-tip">缺少执行时刻，点「调整任务」补全后才会真正定时运行</div>' : '';
+    return '<div class="agent-card">'+
       '<div class="agent-head">'+
         '<div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
         '<div class="amain">'+
-          '<div class="aname">'+esc(w.name)+' <span class="badge '+(w.on?'ok':'off')+'">'+esc(w.status||'')+'</span></div>'+
+          '<div class="aname">'+esc(w.name)+' <span class="badge '+badge+'">'+esc(w.status||'')+'</span></div>'+
           '<div class="adesc">'+esc(w.description||'')+'</div>'+
         '</div>'+
         '<button class="switch '+(w.on?'on':'')+'" onclick="toggleAgent('+i+')" aria-label="启停"><i></i></button>'+
+      '</div>'+ tip +
+      '<div class="agent-meta">最近产出：'+esc(w.lastOutput||'—')+
+        '<br>运行计划：'+esc(w.schedule||'—')+
+        '<br>执行时刻：'+esc(agentTimeText(w)) + (w.lastRunAt?' · 最近执行 '+esc(fmtRunTime(w.lastRunAt)):'')+
       '</div>'+
-      '<div class="agent-meta">最近产出：'+esc(w.lastOutput||'—')+'<br>运行计划：'+esc(w.schedule||'—')+' · 运行记录已入操作日志</div>'+
       '<div class="agent-ops">'+
-        '<button class="btn ghost small" onclick="toast(\'运行记录已写入操作日志，可在「我的 - 操作记录」查看\')">运行记录</button>'+
+        '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'+
+        '<button class="btn ghost small" onclick="runAgentNow('+i+')">立即执行</button>'+
         '<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>'+
       '</div>'+
-    '</div>').join('');
+    '</div>';
+  }).join('');
 }
 async function toggleAgent(i){
   const w = state.workers[i]; if(!w) return;
@@ -1515,61 +1648,158 @@ async function toggleAgent(i){
     const updated = await API.toggleWorker(w.id);
     state.workers[i] = updated;
     renderAgents(); renderTodo();
-    toast(updated.on ? '已恢复运行' : '已停用（历史产出保留）');
+    toast(updated.on ? (updated.scheduleTime?'已恢复运行':'已启用，请补全执行时刻') : '已停用（历史产出保留）');
   }catch(e){ toast('操作失败：'+e.message); }
+}
+async function runAgentNow(i){
+  const w = state.workers[i]; if(!w) return;
+  if(!agentTaskPrompt(w)){ toast('请先「调整任务」补全任务内容'); return; }
+  toast('正在执行…');
+  try{
+    const run = await API.runWorkerNow(w.id);
+    await refreshWorkers();
+    toast(run.status==='SUCCESS' ? '执行完成，产出已推送到消息' : ('执行失败：'+(run.errorMsg||'未知原因')));
+  }catch(e){ handleApprovalError(e, '立即执行'); }
+}
+async function refreshWorkers(){
+  try{ state.workers = await API.workers(); renderAgents(); }catch(e){}
 }
 function editAgent(i){ createAgentFlow(state.workers[i]); }
 
-/* 一句话创建数字员工：配置内化到对话流 */
+/* ---------- 运行记录弹窗 ---------- */
+async function showAgentRuns(i){
+  const w = state.workers[i]; if(!w) return;
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML = '<div class="notif-modal">'+
+      '<div class="notif-head"><b>运行记录 · '+esc(w.name)+'</b>'+
+      '<span class="notif-close">×</span></div>'+
+      '<div class="notif-body"><div class="perm-tip">加载中…</div></div></div>';
+  document.body.appendChild(mask);
+  const close = ()=>mask.remove();
+  mask.querySelector('.notif-close').onclick = close;
+  mask.onclick = e=>{ if(e.target===mask) close(); };
+  const body = mask.querySelector('.notif-body');
+  try{
+    const runs = await API.workerRuns(w.id);
+    if(!runs || !runs.length){
+      body.innerHTML = '<div class="perm-tip">暂无运行记录。配置执行时刻后到点会自动执行，也可点「立即执行」试跑一次。</div>';
+      return;
+    }
+    body.innerHTML = runs.map(r=>{
+      const ok = r.status==='SUCCESS';
+      return '<div class="run-item">'+
+        '<div class="run-top"><span class="badge '+(ok?'ok':'off')+'">'+(ok?'成功':'失败')+'</span>'+
+          '<span class="run-time">'+esc(fmtRunTime(r.startedAt))+'</span>'+
+          '<span class="run-trigger">'+(r.triggerType==='MANUAL'?'手动执行':'定时执行')+'</span></div>'+
+        '<div class="run-out">'+esc(ok ? (r.output||'（无产出）') : (r.errorMsg||'执行失败'))+'</div>'+
+        (r.model?'<div class="run-meta">模型 '+esc(r.model)+(r.durationMs!=null?' · '+(r.durationMs/1000).toFixed(1)+'s':'')+'</div>':'')+
+      '</div>';
+    }).join('');
+  }catch(e){
+    body.innerHTML = '<div class="perm-tip">加载失败：'+esc(e.message)+'</div>';
+  }
+}
+
+/* 一句话创建/编辑数字员工：配置内化到对话流 */
 function createAgentFlow(worker){
+  state.editingWorker = worker || null;
   state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
   state.conversationId = null;
   $('chatName').textContent = '数字员工管家';
-  $('chatModel').textContent = '创建数字员工 · 确认后生效';
+  $('chatModel').textContent = worker ? ('正在调整「'+worker.name+'」') : '创建数字员工 · 确认后生效';
   go('page-chat'); activateChatTab();
-  $('pageTitle').innerHTML = '创建数字员工<span class="ver">V1.2</span>';
+  $('pageTitle').innerHTML = (worker?'调整数字员工':'创建数字员工')+'<span class="ver">V1.2</span>';
   const m = $('msgs');
   const preset = worker
-    ? ['按当前配置重新生成：'+worker.name]
+    ? ['每天 9 点重新汇总这项工作','改成每周五 17:00 执行']
     : ['每天 8 点推送行业新政策','每周五汇总我的待办周报','合同到期前 7 天提醒我'];
-  m.innerHTML = '<div class="msg"><div class="avatar">'+icon('bot')+'</div><div class="bubble">'+
-    '你好！告诉我“什么时间、做什么事”，我来帮你创建一个自动运行的数字员工。也可以从下面的例子开始：'+
+  const intro = worker
+    ? '正在调整「'+esc(worker.name)+'」。当前执行时刻：<b>'+esc(agentTimeText(worker))+'</b>；任务内容：'+
+      esc(agentTaskPrompt(worker)||'（未设置）')+'。直接说新的「什么时间、做什么事」即可。'
+    : '你好！告诉我“什么时间、做什么事”，我来帮你创建一个自动运行的数字员工。也可以从下面的例子开始：';
+  m.innerHTML = '<div class="msg"><div class="avatar">'+icon('bot')+'</div><div class="bubble">'+ intro +
     '<div class="chips">' + preset.map(q=>'<span class="chip" onclick="agentDemo(\''+esc(q).replace(/'/g,"\\'")+'\')">'+esc(q)+'</span>').join('') + '</div>'+
     '</div></div>';
   $('chatInput').focus();
 }
+
+/* 从一句话里拆出「任务内容」：去掉时间描述词 */
+function agentTaskTextFrom(q){
+  var t = String(q||'')
+    .replace(/(每天|每日|每周[一二三四五六日天1-7]?|工作日|早上|早晨|上午|下午|晚上|傍晚|晚间|夜里|凌晨)?\s*\d{1,2}\s*[:点时]\s*(\d{1,2})?\s*分?\s*/g, '')
+    .replace(/[零一二两三四五六七八九十][点时]\s*(\d{1,2})?\s*分?/g, '')
+    .replace(/^(帮我|请|麻烦|我要|我想|给我)+/, '')
+    .replace(/^的/, '').trim();
+  return t || String(q||'').trim();
+}
+
 function agentDemo(q){
   if(state.busy) return;
   const m = $('msgs');
   m.insertAdjacentHTML('beforeend',
     '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
-  const name = (q.length > 9 ? q.slice(0,9) : q) + '…助手';
+  const editing = state.editingWorker;
+  const time = parseAgentTime(q);
+  const name = editing ? editing.name : ((q.length > 9 ? q.slice(0,9) : q) + '…助手');
+  const task = agentTaskTextFrom(q);
+  const plan = describeAgentPlan(q, q);
+  const hint = time ? '' :
+    '<div class="tc-hint">未识别到执行时刻，请补充（例如「每天8点」），否则该员工不会自动运行。</div>';
   m.insertAdjacentHTML('beforeend',
     '<div class="msg"><div class="avatar">'+icon('bot')+'</div>'+
     '<div class="task-card">'+
-      '<div class="tc-title">'+icon('clock')+'新数字员工任务确认</div>'+
+      '<div class="tc-title">'+icon('clock')+(editing?'调整数字员工任务确认':'新数字员工任务确认')+'</div>'+
       '<div class="trow"><span>名称</span><b>'+esc(name)+'</b></div>'+
-      '<div class="trow"><span>计划</span><b>'+esc(q)+'</b></div>'+
+      '<div class="trow"><span>执行时刻</span><b>'+(time?('每天 '+time):'未设置（不会自动执行）')+'</b></div>'+
+      '<div class="trow"><span>任务内容</span><b>'+esc(task||q)+'</b></div>'+
+      '<div class="trow"><span>计划</span><b>'+esc(plan)+'</b></div>'+
       '<div class="trow"><span>动作</span><b>执行后结果推送至待办与消息</b></div>'+
       '<div class="trow"><span>留痕</span><b>每次运行写入操作日志</b></div>'+
+      hint+
       '<div style="display:flex;gap:8px;margin-top:10px">'+
-        '<button class="btn small" onclick="confirmAgent(this,\''+esc(name).replace(/'/g,"\\'")+'\',\''+esc(q).replace(/'/g,"\\'")+'\')">确认创建</button>'+
+        '<button class="btn small" onclick="confirmAgent(this,\''+esc(name).replace(/'/g,"\\'")+'\',\''+esc(q).replace(/'/g,"\\'")+'\')">'+
+          (editing?'保存修改':'确认创建')+'</button>'+
         '<button class="btn ghost small" onclick="toast(\'已取消\')">取消</button>'+
       '</div>'+
     '</div></div>');
   m.scrollTop = m.scrollHeight;
 }
+
 async function confirmAgent(btn, name, plan){
-  if(btn){ btn.textContent = '创建中…'; btn.disabled = true; }
+  const editing = state.editingWorker;
+  if(btn){ btn.textContent = editing?'保存中…':'创建中…'; btn.disabled = true; }
   try{
-    const w = await API.createWorker({name:name, icon:'bot', description:plan, scheduleText:plan});
-    state.workers.unshift(w);
-    renderAgents(); renderTodo();
-    if(btn){ btn.textContent = '已创建'; btn.className = 'btn done small'; }
-    toast('数字员工已创建并开始运行');
+    const scheduleTime = parseAgentTime(plan);
+    const taskPrompt = agentTaskTextFrom(plan) || plan;
+    const body = {
+      name: name,
+      icon: 'bot',
+      description: taskPrompt,
+      scheduleText: describeAgentPlan(plan, plan),
+      scheduleTime: scheduleTime,
+      taskPrompt: taskPrompt
+    };
+    let w;
+    if(editing){
+      w = await API.updateWorker(editing.id, body);
+      const idx = (state.workers||[]).findIndex(x=>x.id===editing.id);
+      if(idx>=0) state.workers[idx] = w; else await refreshWorkers();
+      state.editingWorker = null;
+      renderAgents();
+    }else{
+      w = await API.createWorker(body);
+      state.workers.unshift(w);
+      renderAgents(); renderTodo();
+    }
+    if(btn){ btn.textContent = editing?'已保存':'已创建'; btn.className = 'btn done small'; }
+    toast(scheduleTime
+      ? (editing?'已保存，配置即时生效':'数字员工已创建并在每天 '+scheduleTime+' 自动运行')
+      : '已保存，但缺少执行时刻，请点「调整任务」补全');
+    $('chatModel').textContent = scheduleTime ? '执行时刻 '+scheduleTime+' · 已生效' : '待补全执行时刻';
   }catch(e){
-    if(btn){ btn.textContent = '确认创建'; btn.disabled = false; }
-    toast('创建失败：'+e.message);
+    if(btn){ btn.textContent = editing?'保存修改':'确认创建'; btn.disabled = false; }
+    toast((editing?'保存失败：':'创建失败：')+e.message);
   }
 }
 
@@ -1797,6 +2027,130 @@ async function submitApproval(btn){
     if(btn){ btn.textContent = '提交审批'; btn.disabled = false; }
     handleApprovalError(e, '提交');
   }
+}
+
+/* ============================================================================
+   请假审批闭环（请假数字人）：发起 → 填表 → 上传证明 → 提交 → 管理端审批 → 回显
+   ============================================================================ */
+var leaveAttachments = [];   // 本次请假已上传附件 [{name,url}]
+
+function openLeaveFlow(){
+  state.chatExpert = {name:'请假数字人', icon:'calendar', intro:'', recs:[]};
+  state.conversationId = null;
+  $('chatName').textContent = '请假数字人';
+  $('chatModel').textContent = '填写请假信息并提交审批';
+  go('page-chat'); activateChatTab();
+  $('pageTitle').innerHTML = '请假申请<span class="ver">V1.2</span>';
+  const m = $('msgs');
+  m.innerHTML = '<div class="msg"><div class="avatar">'+icon('calendar')+'</div><div class="bubble">'+
+    '你好，我是请假数字人。请填写下方请假信息，如有证明/附件可一并上传，提交后将送交部门领导审批。'+
+    leaveFormHtml()+'</div></div>';
+  m.scrollTop = m.scrollHeight;
+}
+
+function leaveFormHtml(){
+  return '<div class="leave-form" id="leaveForm">'+
+    '<div class="lf-row"><label>请假类型</label><select id="lfType">'+
+      '<option value="事假">事假</option><option value="病假">病假</option>'+
+      '<option value="年假">年假</option><option value="调休">调休</option>'+
+      '<option value="婚假">婚假</option><option value="产假">产假</option>'+
+      '<option value="其他">其他</option></select></div>'+
+    '<div class="lf-row"><label>开始日期</label><input id="lfStart" type="date"></div>'+
+    '<div class="lf-row"><label>结束日期</label><input id="lfEnd" type="date"></div>'+
+    '<div class="lf-row"><label>请假事由</label><textarea id="lfReason" rows="2" placeholder="请简要说明请假原因"></textarea></div>'+
+    '<div class="lf-row"><label>证明材料</label>'+
+      '<button class="btn ghost small" type="button" onclick="leavePickFiles()">＋ 上传附件</button>'+
+      '<span class="lf-hint">支持病历/准假证明等</span></div>'+
+    '<div class="lf-files" id="lfFiles"></div>'+
+    '<div class="lf-actions">'+
+      '<button class="btn small" type="button" onclick="submitLeave(this)">提交请假申请</button>'+
+      '<button class="btn ghost small" type="button" onclick="toast(\'已取消\')">取消</button>'+
+    '</div></div>';
+}
+
+/* 弹出系统文件选择（即「上传窗口」），支持多文件 */
+function leavePickFiles(){
+  let input = document.getElementById('lfFileInput');
+  if(!input){
+    input = document.createElement('input');
+    input.id = 'lfFileInput';
+    input.type = 'file';
+    input.multiple = true;
+    input.style.display = 'none';
+    input.onchange = leaveOnFiles;
+    document.body.appendChild(input);
+  }
+  input.value = '';
+  input.click();
+}
+async function leaveOnFiles(e){
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  toast('正在上传附件…');
+  for(const f of files){
+    try{
+      const rec = await API.fileUpload(f);
+      leaveAttachments.push({name:rec.name, url:rec.url});
+    }catch(err){ toast('附件上传失败：'+err.message); }
+  }
+  renderLeaveFiles();
+}
+function renderLeaveFiles(){
+  const box = $('lfFiles'); if(!box) return;
+  if(!leaveAttachments.length){ box.innerHTML = ''; return; }
+  box.innerHTML = leaveAttachments.map((a,i)=>
+    '<span class="lf-file" onclick="window.open(\''+esc(a.url)+'\',\'_blank\')">'+icon('doc')+esc(a.name)+
+    '<i onclick="event.stopPropagation();leaveRemoveFile('+i+')">×</i></span>').join('');
+}
+function leaveRemoveFile(i){ leaveAttachments.splice(i,1); renderLeaveFiles(); }
+
+async function submitLeave(btn){
+  const type = $('lfType').value;
+  const start = $('lfStart').value;
+  const end = $('lfEnd').value;
+  const reason = $('lfReason').value.trim();
+  if(!start || !end){ toast('请选择开始与结束日期'); return; }
+  if(!reason){ toast('请填写请假事由'); return; }
+  if(btn){ btn.textContent = '提交中…'; btn.disabled = true; }
+  const formData = {leaveType:type, start, end, reason};
+  const content = '请假申请 · '+type+'（'+start+' 至 '+end+'）\n事由：'+reason;
+  const title = '请假申请 · '+type+'（'+start+'~'+end+'）';
+  try{
+    const order = await API.approvalSubmitForm('请假', title, content, formData, leaveAttachments);
+    leaveAttachments = [];
+    toast('请假申请已提交，等待部门领导审批');
+    state.approvals = await API.approvalList('mine') || [];
+    renderTodo();
+    go('page-todo'); activateTodoTab();
+  }catch(err){
+    if(btn){ btn.textContent = '提交请假申请'; btn.disabled = false; }
+    handleApprovalError(err, '提交请假');
+  }
+}
+
+/* 审批详情：渲染请假结构化字段与附件（请假数字人回显） */
+function renderApprovalDetailExtra(a){
+  let html = '';
+  if(a.formData){
+    try{
+      const f = JSON.parse(a.formData);
+      const rows = [];
+      if(f.leaveType) rows.push(['请假类型', f.leaveType]);
+      if(f.start || f.end) rows.push(['请假时段', (f.start||'')+' 至 '+(f.end||'')]);
+      if(f.reason) rows.push(['请假事由', f.reason]);
+      if(rows.length) html += '<div class="td-form">'+rows.map(r=>'<div class="tdf-row"><span>'+esc(r[0])+'</span><b>'+esc(r[1])+'</b></div>').join('')+'</div>';
+    }catch(_){}
+  }
+  if(a.attachment){
+    try{
+      const arr = JSON.parse(a.attachment);
+      if(Array.isArray(arr) && arr.length){
+        html += '<div class="td-attach"><span class="tda-label">附件</span>'+
+          arr.map(x=>'<a class="tda-item" href="'+esc(x.url)+'" target="_blank">'+icon('doc')+esc(x.name)+'</a>').join('')+'</div>';
+      }
+    }catch(_){}
+  }
+  return html;
 }
 
 /* 审批相关错误统一处理：无权限时给出明确引导，并展示权限提示弹窗 */

@@ -43,6 +43,11 @@
         <el-table-column label="申请时间" width="160">
           <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
         </el-table-column>
+        <el-table-column label="详情" width="90">
+          <template #default="{ row }">
+            <el-button size="small" text type="primary" @click="openDetail(row)">查看</el-button>
+          </template>
+        </el-table-column>
         <el-table-column v-if="tab === 'todo'" label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'PENDING'">
@@ -57,6 +62,49 @@
         </template>
       </el-table>
     </el-card>
+
+    <el-dialog v-model="detailVisible" title="审批详情" width="520px">
+      <template v-if="detailRow">
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="单号">{{ detailRow.id }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ detailRow.bizType || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="标题">{{ detailRow.title || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="发起人">{{ detailRow.applicantName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="statusTag(detailRow.status)" effect="plain">{{ statusLabel(detailRow.status) }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="detailRow.approver" label="审批人">{{ detailRow.approver }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailRow.decisionNote" label="审批意见">{{ detailRow.decisionNote }}</el-descriptions-item>
+          <el-descriptions-item label="申请时间">{{ fmtTime(detailRow.createdAt) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <template v-if="formFields.length">
+          <div class="dlg-subtitle">申请信息</div>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item v-for="f in formFields" :key="f.label" :label="f.label">{{ f.value || '—' }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+
+        <div v-if="detailRow.content" class="dlg-content">{{ detailRow.content }}</div>
+
+        <template v-if="attachments.length">
+          <div class="dlg-subtitle">附件</div>
+          <ul class="att-list">
+            <li v-for="(a, i) in attachments" :key="i">
+              <el-link type="primary" :href="a.url" target="_blank">{{ a.name }}</el-link>
+            </li>
+          </ul>
+        </template>
+      </template>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+        <el-button
+          v-if="detailRow && tab === 'todo' && detailRow.status === 'PENDING'"
+          type="primary"
+          @click="decide(detailRow, 'APPROVE')"
+        >通过</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -70,6 +118,46 @@ const loading = ref(false)
 const todoRows = ref<ApprovalOrder[]>([])
 const mineRows = ref<ApprovalOrder[]>([])
 const todoForbidden = ref(false)
+
+const detailVisible = ref(false)
+const detailRow = ref<ApprovalOrder | null>(null)
+const formFields = ref<{ label: string; value: string }[]>([])
+const attachments = ref<{ name: string; url: string }[]>([])
+
+const LEAVE_FIELDS: Record<string, string> = {
+  leaveType: '请假类型',
+  start: '开始日期',
+  end: '结束日期',
+  reason: '请假事由'
+}
+
+function openDetail(row: ApprovalOrder) {
+  detailRow.value = row
+  formFields.value = []
+  attachments.value = []
+  try {
+    if (row.formData) {
+      const data = JSON.parse(row.formData)
+      const isLeave = /请假/.test(row.bizType || '') || Object.keys(LEAVE_FIELDS).some((k) => k in data)
+      const map = isLeave ? LEAVE_FIELDS : null
+      formFields.value = Object.keys(data).map((k) => ({
+        label: (map && map[k]) || k,
+        value: typeof data[k] === 'object' ? JSON.stringify(data[k]) : String(data[k])
+      }))
+    }
+  } catch {
+    /* 非法 JSON 忽略 */
+  }
+  try {
+    if (row.attachment) {
+      const arr = JSON.parse(row.attachment)
+      if (Array.isArray(arr)) attachments.value = arr.map((x) => ({ name: x.name, url: x.url }))
+    }
+  } catch {
+    /* 忽略 */
+  }
+  detailVisible.value = true
+}
 
 const rows = computed(() => (tab.value === 'todo' ? todoRows.value : mineRows.value))
 
@@ -164,6 +252,30 @@ onMounted(reload)
 .text-sub {
   font-size: 12px;
   color: var(--aioa-text-sub);
+}
+
+.dlg-subtitle {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+  color: var(--aioa-text);
+}
+
+.dlg-content {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.att-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
 }
 
 .expand-box {
