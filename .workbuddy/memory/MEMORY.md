@@ -105,7 +105,10 @@
   `isLeaveCapable()` 依据 `chatWorkerFull().workerType/roleName` 匹配 `/LEAVE_APPROVER|请假|假勤|休假/`；
   `chatWorkerFull()` 在绑定对象缺 `workerType` 时回落 `state.workers` 按 id 补齐。
   只判 `isLeaveRequest` 会导致**非请假数字员工「拒答请假 + 又发请假单」自相矛盾**（已修，勿回退）。
-- 测试脚本（root，untracked，与 repo 既有 `e2e_v*.py` 同风格）：`e2e_expert_employee_tabs.py`(静态 UI 17)、
-  `e2e_worker_chat_scope.py`(真实 LLM 9)、`e2e_user_leave_intake.py`(普通用户 5)。
+- 测试脚本（root，untracked，与 repo 既有 `e2e_v*.py` 同风格）：`e2e_expert_employee_tabs.py`(静态 UI 21)、
+  `e2e_worker_chat_scope.py`(真实 LLM 10)、`e2e_user_leave_intake.py`(普通用户 5)。
+- **权限可见性**：`API.roleTypes()` → `GET /v1/workers/role-types`（普通用户也放行，带 `granted`）；
+  `renderAgents()` 对 `granted=false` 的类型加 `.agent-card.locked` + `.agent-tip.lock` + `.agent-lock` 灰条，
+  只留「运行记录」不给「立即执行/调整任务」，避免用户点进会话才在发送时撞 403。目录未加载时视为 granted（后端兜底）。
 - **待用户决策的产品缺口**：`docs/10` 将 `LEAVE_APPROVER` 会话准入定成仅管理员（T2=holds(approval:leave)），
   导致普通成员进不了请假数字员工会话、也拿不到请假表单。备选：T2 放开为「同租户成员可受理/提交，审批仍走审批权限」。

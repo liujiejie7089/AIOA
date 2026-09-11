@@ -472,6 +472,11 @@
     background:var(--amber-soft);border:1px solid var(--amber-line);
     border-radius:8px;padding:6px 9px;
   }
+  /* 权限不足的类型：中性提示 + 锁定标记，不引导进入会被拒的会话 */
+  .agent-tip.lock{color:var(--text-2);background:var(--text-3-soft,#f1f3f5);border-color:var(--border)}
+  .agent-card.locked{opacity:.82}
+  .agent-lock{display:inline-flex;align-items:center;font-size:11.5px;color:var(--text-3);
+    background:var(--text-3-soft,#f1f3f5);border:1px solid var(--border);border-radius:var(--r-full);padding:5px 12px}
   .badge.warn{color:var(--amber-ink);background:var(--amber-soft)}
   .tc-hint{
     margin-top:8px;font-size:11px;line-height:1.5;color:var(--amber-ink);
@@ -891,6 +896,7 @@ const state = {
   token:null, user:null, isAdmin:false, model:'default',
   quota:0, used:0, free:0, left:0, quotaInfo:null,
   chatExpert:null, chatWorker:null, kbOn:true, busy:false,
+  roleTypes:[],
   conversationId:null, runId:null, controller:null,
   experts:[], skills:[], kbDocs:[], bill:[], log:[],
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
@@ -976,6 +982,8 @@ const API = {
   /* V1.2 新增域 */
   kpiBoard(period){ return this.req('/v1/kpi/board?period='+period); },
   workers(){ return this.req('/v1/workers'); },
+  /* 数字员工类型目录 + 当前用户是否具备创建/承担该类型所需权限（granted） */
+  roleTypes(){ return this.req('/v1/workers/role-types'); },
   createWorker(body){ return this.req('/v1/workers',{method:'POST',body:JSON.stringify(body)}); },
   updateWorker(id, body){ return this.req('/v1/workers/'+id,{method:'PUT',body:JSON.stringify(body)}); },
   toggleWorker(id){ return this.req('/v1/workers/'+id+'/toggle',{method:'POST'}); },
@@ -1193,6 +1201,7 @@ async function loadLiveData(){
     ['quotaInfo', ()=>API.quota()], ['bill', ()=>API.ledger()], ['log', ()=>API.logs()],
     ['approvals', ()=>API.approvalList('mine')], ['notifs', ()=>API.notificationList()],
     ['packages', ()=>API.packages()], ['workers', ()=>API.workers()], ['results', ()=>API.results()],
+    ['roleTypes', ()=>API.roleTypes()],
     ['kpiMonth', ()=>API.kpiBoard('month')], ['kpiQuarter', ()=>API.kpiBoard('quarter')]
   ];
   await Promise.all(tasks.map(async ([k, fn])=>{
@@ -1719,9 +1728,19 @@ function renderAgents(){
   box.innerHTML = list.map((w,i)=>{
     const pending = w.on && !w.scheduleTime;
     const badge = pending ? 'warn' : (w.on?'ok':'off');
-    const tip = pending
-      ? '<div class="agent-tip">缺少执行时刻，点「调整任务」补全后才会真正定时运行</div>' : '';
-    return '<div class="agent-card">'+
+    // 权限可见性：当前用户不具备该类型所需权限时，不引导进入注定被拒的会话（后端 T1'/T2 仍会兜底 403）
+    const granted = workerTypeGranted(w.workerType);
+    const needTxt = workerTypeRoles(w.workerType);
+    const tip = !granted
+      ? '<div class="agent-tip lock">该数字员工属「'+esc(w.roleName||'数字员工')+'」类型，需 '+esc(needTxt||'更高')+' 权限才能调整或发起会话</div>'
+      : (pending ? '<div class="agent-tip">缺少执行时刻，点「调整任务」补全后才会真正定时运行</div>' : '');
+    const ops = granted
+      ? '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'+
+        '<button class="btn ghost small" onclick="runAgentNow('+i+')">立即执行</button>'+
+        '<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>'
+      : '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'+
+        '<span class="agent-lock">需 '+esc(needTxt||'更高')+' 权限</span>';
+    return '<div class="agent-card'+(granted?'':' locked')+'">'+
       '<div class="agent-head">'+
         '<div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
         '<div class="amain">'+
@@ -1734,13 +1753,19 @@ function renderAgents(){
         '<br>运行计划：'+esc(w.schedule||'—')+
         '<br>执行时刻：'+esc(agentTimeText(w)) + (w.lastRunAt?' · 最近执行 '+esc(fmtRunTime(w.lastRunAt)):'')+
       '</div>'+
-      '<div class="agent-ops">'+
-        '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'+
-        '<button class="btn ghost small" onclick="runAgentNow('+i+')">立即执行</button>'+
-        '<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>'+
-      '</div>'+
+      '<div class="agent-ops">'+ ops +'</div>'+
     '</div>';
   }).join('');
+}
+/* 该类型是否具备所需权限：granted=false 表示当前用户不能创建/承担该数字员工角色。
+   目录未加载时（网络失败等）返回 true，交给后端兜底拒绝，避免误隐藏功能。 */
+function workerTypeGranted(type){
+  const hit = (state.roleTypes||[]).find(r=>r.code===type);
+  return hit ? !!hit.granted : true;
+}
+function workerTypeRoles(type){
+  const hit = (state.roleTypes||[]).find(r=>r.code===type);
+  return hit ? (hit.requiredRoles||'') : '';
 }
 async function toggleAgent(i){
   const w = state.workers[i]; if(!w) return;
