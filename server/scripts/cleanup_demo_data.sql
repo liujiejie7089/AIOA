@@ -58,3 +58,10 @@ WHERE `deleted_at` IS NULL
    OR `content` LIKE '%批次二验证%'
    OR `content` LIKE '%截图用%'
   );
+
+-- ---------- C. 成果沉淀 ----------
+-- 「我的成果」里混入的回归测试记录（meta 明确写着「回归测试」）
+UPDATE `user_result`
+SET `deleted_at` = NOW()
+WHERE `deleted_at` IS NULL
+  AND (`title` LIKE '回归-%' OR `meta` LIKE '%回归测试%');

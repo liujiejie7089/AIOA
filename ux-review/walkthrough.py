@@ -6,7 +6,8 @@ import json, os, sys, time, urllib.request as u
 from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:5181"
-OUT = os.path.dirname(os.path.abspath(__file__))
+# 输出目录可用 WALKTHROUGH_OUT 指定，便于「改进前 / 改进后」分别留档而不互相覆盖
+OUT = os.environ.get("WALKTHROUGH_OUT") or os.path.dirname(os.path.abspath(__file__))
 LOG = []
 
 

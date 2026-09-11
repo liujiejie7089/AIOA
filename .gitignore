@@ -97,3 +97,16 @@ ux-review/*.png
 /flyway_history_backup_*.json
 # 演示数据清理前的行快照（本地回滚用，不入库）
 /cleanup_backup_*.json
+# 演示环境额度复位前的行快照（本地回滚用，不入库）
+/quota_backup_*.json
+
+# ---- 运行时上传产物（知识库/审批附件，属本地数据不入库）----
+/uploads/
+/server/uploads/
+
+# ---- 角色矩阵 / 权限验证截图（验完即弃，不入库）----
+/shot-*.png
+
+# ---- 走查基线图与改造后对照图（原图已 base64 内嵌进 用户体验走查报告.html）----
+ux-review/before-fix/
+ux-review/after-fix/

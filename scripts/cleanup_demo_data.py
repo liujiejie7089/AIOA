@@ -40,6 +40,9 @@ TARGETS = [
      "'curl测试','通知链路验证单','意见流验证单','对外发布审批（总测试）') "
      "OR title LIKE '回归-%' OR biz_type='LEAVE' "
      "OR content LIKE '%批次二验证%' OR content LIKE '%截图用%')"),
+    ("user_result", "「我的成果」中的回归测试记录",
+     "SELECT * FROM user_result WHERE deleted_at IS NULL "
+     "AND (title LIKE '回归-%' OR meta LIKE '%回归测试%')"),
 ]
 
 
@@ -111,6 +114,8 @@ def main():
     print("剩余可见数字员工：%d 个" % cur.fetchone()[0])
     cur.execute("SELECT COUNT(*) FROM approval_order WHERE deleted_at IS NULL")
     print("剩余可见审批单：%d 条" % cur.fetchone()[0])
+    cur.execute("SELECT COUNT(*) FROM user_result WHERE deleted_at IS NULL")
+    print("剩余可见成果：%d 条" % cur.fetchone()[0])
     conn.close()
 
 

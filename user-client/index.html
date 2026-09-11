@@ -953,7 +953,7 @@
    ============================================================================ */
 const state = {
   token:null, user:null, isAdmin:false, model:'default',
-  quota:0, used:0, free:0, left:0, quotaInfo:null,
+  quota:0, used:0, free:0, left:null, quotaInfo:null,
   chatExpert:null, chatWorker:null, kbOn:true, busy:false,
   roleTypes:[],
   conversationId:null, runId:null, controller:null,
@@ -2490,7 +2490,10 @@ async function send(){
     '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
   m.scrollTop = m.scrollHeight;
 
-  if(state.left != null && state.left <= 0){
+  /* 额度准入（FR-G6 三分支）。以服务端 /quota 的 exhausted 为唯一判据：
+     不能用 state.left <= 0 兜底，因为 state.left 初始为 0，一旦配额接口失败或尚未返回，
+     用户会被误判为「额度已用完」而彻底无法对话。真耗尽时后端 createRun 亦会 403 兜底。 */
+  if(state.quotaInfo && state.quotaInfo.exhausted === true){
     m.insertAdjacentHTML('beforeend',
       '<div class="msg"><div class="avatar">'+icon(iconKey(state.chatExpert.icon))+'</div><div class="bubble">'+
       '额度已用完。你可以：<br>① 等待下月额度发放<br>② 购买词元包（我的 - 额度与账单）<br>③ 联系管理员扩容</div></div>');
@@ -2695,7 +2698,7 @@ function afterAnswer(bubble, text){
   // 用户请求请假 → 由请假类数字员工发放《请假申请》（未请求、或非请假类数字员工则完全不出现）
   if (isLeaveRequest(state.lastQuery) && isLeaveCapable() && !document.getElementById('leaveForm')) {
     wrap.closest('.msg').insertAdjacentHTML('afterend',
-      '<div class="msg"><div class="avatar">' + icon('calendar') + '</div>' +
+      '<div class="msg"><div class="avatar">' + icon('clock') + '</div>' +
       '<div class="bubble">已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml() + '</div></div>');
     const box = $('msgs'); box.scrollTop = box.scrollHeight;
   }
@@ -2745,7 +2748,7 @@ function openLeaveFlow(){
   go('page-chat'); activateChatTab();
   $('pageTitle').innerHTML = '请假申请<span class="ver">V1.2</span>';
   const m = $('msgs');
-  m.innerHTML = '<div class="msg"><div class="avatar">'+icon('calendar')+'</div><div class="bubble">'+
+  m.innerHTML = '<div class="msg"><div class="avatar">'+icon('clock')+'</div><div class="bubble">'+
     '你好，我是请假数字人。请填写下方请假信息，如有证明/附件可一并上传，提交后将送交部门领导审批。'+
     leaveFormHtml()+'</div></div>';
   m.scrollTop = m.scrollHeight;
