@@ -170,6 +170,27 @@
   `todoRow(ico,title,sub,onclick,cls,tip)` 第 6 参把完整时间写进 `title` 属性。
 - 演示数据清理：`server/scripts/cleanup_demo_data.sql` + `scripts/cleanup_demo_data.py`
   （**先备份 JSON 再逻辑删除**，备份含 `rollback_sql`）。清理后可见员工 = 4 个业务角色。
-- **三批次总验收 = 179/179 全绿**（批次一 29 / 二 30 / 三 31 / 既有 5 套 89）。
+- **三批次总验收 = 180/180 全绿**（批次一 29 / 二 30 / 三 32 / 既有 5 套 89）。
 - 脚本坑：解析 SQL 文件要**先按行剔除注释、再按 `;` 切分**；反过来会让每个语句块的开头
   是它上方的注释行，`startswith('--')` 把含真 SQL 的整块一起丢掉（表现为「影响 0 行」）。
+
+### 额度域：演示漂移与闸门判据（2026-09-11 收尾）
+- **会话类 E2E 突然失败先查额度**：`tenant_quota.used_tokens` 随每次真实 LLM 会话累加，
+  反复跑 E2E 会把演示账号耗干，表现为会话回复「额度已用完。你可以：①…②…③…」。
+  用 `e2e_worker_chat_scope.py` 是 **admin** 登录、admin 无独立额度行 → 回落**租户共享行**
+  （`tenant_id=0, user_id=0`）；zhangsan 有 V6 独立行所以不受影响，**只有 admin 路径失败时极易误判为代码回归**。
+  复位用 `scripts/reset_demo_quota.py`（只加 `free_tokens` 保留 `used_tokens`；先备份 `quota_backup_<ts>.json`）。
+- 用户端额度闸门判据：**必须用服务端 `state.quotaInfo.exhausted === true`**，
+  不要用 `state.left <= 0` —— `state.left` 初值是 0，`/quota` 失败或未返回时会误判「额度已用完」并**彻底堵死对话**。
+  真耗尽后端 `createRun` 有 403 兜底，前端 fail-open 不漏放。
+  **通用：UI 闸门不要拿「数字型 state 的默认值」表达「未知」，默认值会在数据没到位时被当成业务事实。**
+- `BillingService.DEFAULT_QUOTA = 100_000` 对演示偏小（单次会话 ~2.5k 词元，约 40 次触顶），
+  是否上调属产品口径，已在 `docs/11-用户端体验改进计划.md` 留建议。
+- **icon sprite 陷阱**：`icon('X')` 引用了未定义的 `#i-X` 会**静默留白**（无报错）。
+  已统一走 `ICON_MAP` 别名（如 `calendar→clock`、`leave→clock`、`trophy→check-circle`）；
+  批次三加了 S13 守卫（枚举源码里所有 `icon('…')` 字面量，校验 sprite 存在）。
+
+### Git 远端
+- `origin` = 内网 Gitea `http://172.16.8.249:3000/liujiejie/AIOA_System.git`，**沙箱内不可达**（502/超时）。
+- 推 GitHub 用 **`github`** remote：`git -c http.sslVerify=false push github main`
+  （配 `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never` 避免 GCM 卡住；大对象推送较慢，放后台跑）。
