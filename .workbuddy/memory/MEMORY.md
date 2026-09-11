@@ -32,10 +32,13 @@
   AccessDeniedException 走不到 SecurityConfig 的 accessDeniedHandler。本项目 `aioa-common` 明确不引入
   spring-security 依赖，故统一改 `BizException.forbidden(...)` 由 `GlobalExceptionHandler.handleBiz` 映射为 403。
   若 common 允许 spring-security，加 `@ExceptionHandler(AccessDeniedException.class)` 是更直接的解。
-- **GCM 在 headless 沙箱静默挂死**：Git Credential Manager 无缓存 GitHub 凭证时卡在 Schannel 吊销检查
-  `CRYPT_E_NO_REVOCATION_CHECK`。解决：用户给 classic PAT(repo)，一次性内联 URL 推：
-  `git -c http.sslVerify=false -c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 push "https://<user>:<PAT>@github.com/<repo>.git" main`
-  验证远端 `ls-remote` 必须带 `sslVerify=false`，否则报错信息里 URL 会被 git 自动抹凭证。PAT 用完即弃，不持久化。
+- **推 github 只需绕过 Schannel 吊销检查，不需要 PAT（2026-09-11 复核更正）**：失败根因是证书吊销检查
+  `CRYPT_E_NO_REVOCATION_CHECK`（schannel 在沙箱里查不到 CRL），**不是缺凭证**——GCM 已缓存 github 凭证。
+  正确一次性命令：`git -c http.sslVerify=false -c http.lowSpeedLimit=1 -c http.lowSpeedTime=60 push github main`
+  （已实测成功：`d707aba..d10312b main -> main`）。`ls-remote` 同样必须带 `-c http.sslVerify=false`。
+  仅当 GCM 确实无凭证时才需用户给 classic PAT(repo) 内联 URL 推；PAT 用完即弃，不持久化。
+- **gitea `origin`（http://172.16.8.249:3000/liujiejie/AIOA_System.git）不可推**：服务端 `Push to create is not enabled for users`
+  → 403。需先在 gitea 网页端手工建库，本地无法解决。github 才是有效远端。
 
 ## 启动与冒烟约定（2026-09-09 复核）
 - 一键启动：`bash start-all.sh`（幂等，按端口探测自动 skip，日志落 `logs/`）。六端端口：
