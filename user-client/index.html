@@ -321,6 +321,19 @@
   .todo-panel{display:none}
   .todo-panel.active{display:block; animation:fadeUp var(--dur) var(--ease)}
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  /* 「专家与员工」页操作区：单按钮居中，尺寸收敛为舒适可点的胶囊（不再拉满整行） */
+  .agent-actions{display:flex;justify-content:center;margin:6px 0 18px}
+  .agent-actions .btn{min-width:176px;min-height:40px;padding:10px 24px;font-size:13.5px;font-weight:600}
+  /* 数字员工回答的富文本层级：标题放大 / 列表缩进 / 重点加粗放大 */
+  .bubble.ans{white-space:normal}
+  .ans .ans-h{display:block;font-size:13.5px;font-weight:800;color:var(--text);margin:10px 0 4px}
+  .ans .ans-h:first-child{margin-top:2px}
+  .ans .ans-li{display:block;padding-left:15px;text-indent:-11px;margin:3px 0}
+  .ans .ans-li::before{content:'· ';color:var(--blue);font-weight:800}
+  .ans .ans-quote{display:block;margin:6px 0;padding:6px 9px;border-left:3px solid var(--blue);
+    background:var(--blue-soft);border-radius:0 8px 8px 0;color:var(--text-2)}
+  .ans b{font-weight:800;color:var(--text)}
+  .ans .ans-key{font-size:14.5px;font-weight:800;color:var(--blue)}
 
   /* ---------- 8. 会话 ---------- */
   .chat{display:flex;flex-direction:column;height:100%}
@@ -328,14 +341,16 @@
     background:var(--surface);padding:10px 14px;border-bottom:1px solid var(--border);
     display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;gap:8px;
   }
-  .chat-head .cname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .chat-head .cmodel{font-family:var(--font-mono);font-size:10px;color:var(--text-3);font-weight:500;flex-shrink:0}
+  .chat-head .ch-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .chat-head .ch-sub{display:flex;align-items:center;gap:7px;min-width:0}
+  .chat-head .cname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat-head .cmodel{font-family:var(--font-mono);font-size:10px;color:var(--text-3);font-weight:500;flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* 数字员工会话：职责范围标识（越界拒答的依据，用户可见） */
   .chat-head .scope-badge{
     flex-shrink:0;font-size:9.5px;font-weight:700;color:var(--blue);background:var(--blue-soft);
     border:1px solid var(--blue-soft);border-radius:999px;padding:2px 7px;white-space:nowrap;
   }
-  .chat-head #historyBtn{flex-shrink:0;padding:3px 8px;font-size:11px}
+  .chat-head #historyBtn{flex-shrink:0;padding:3px 8px;font-size:11px;align-self:center}
   /* 会话记录：历史会话列表 + 只读消息回放 */
   .hist-item{padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);cursor:pointer}
   .hist-item:active{background:var(--surface-3)}
@@ -671,9 +686,13 @@
     <div class="page flush" id="page-chat" data-page-node-id="Ac240umb8HqAveuoTVw4dv">
       <div class="chat" data-page-node-id="PP8nvFtsC4YJVMD6cT9i1V">
         <div class="chat-head" data-page-node-id="oSMB4dv40tET6NFIFnVxos">
-          <span class="cname" id="chatName" data-page-node-id="4E4MaIkN53EepafxMezGtF">会话</span>
-          <span class="cmodel" id="chatModel" data-page-node-id="WwOf4Y5EjqaAAMC6cC7LOD">模型：智能路由</span>
-          <span class="scope-badge" id="scopeBadge" style="display:none" data-page-node-id="Scp1Badge7Vq2Mx4Ka9Lp"></span>
+          <div class="ch-main">
+            <span class="cname" id="chatName" data-page-node-id="4E4MaIkN53EepafxMezGtF">会话</span>
+            <div class="ch-sub">
+              <span class="cmodel" id="chatModel" data-page-node-id="WwOf4Y5EjqaAAMC6cC7LOD">模型：智能路由</span>
+              <span class="scope-badge" id="scopeBadge" style="display:none" data-page-node-id="Scp1Badge7Vq2Mx4Ka9Lp"></span>
+            </div>
+          </div>
           <button class="btn ghost small" id="historyBtn" onclick="openHistory()" data-page-node-id="Hist0ryBtn3Zq8Wm5Yb1Nc">会话记录</button>
         </div>
         <div class="msgs" id="msgs" data-page-node-id="uTYgHddWf7NGIh9eUdI7ui"></div>
@@ -692,24 +711,27 @@
 
     <!-- ========== 数字员工 ========== -->
     <div class="page" id="page-agent" data-page-node-id="sNB7hRdI45WH5VSMcqfQ9d">
-      <div class="sec-title reveal" data-page-node-id="SgQFF7Ap7BTdtTU0rAVLsA">
-        <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="3X4EVzmtQARO7Z6VuwKCP1"><use href="#i-bot" data-page-node-id="8of0Q5qmLm28Bg4auOVYow"/></svg>
-        数字员工
-      </div>
-      <div class="muted reveal" style="margin-bottom:11px" data-page-node-id="Z9hzSfKC5bRAUsqikqOsS9">自动运行 · 定时产出 · 结果进入待办与消息，全程留痕</div>
-      <div id="agentList" data-page-node-id="gaYcVCzPXXHcAFlogqUm3B"></div>
-      <div style="margin:4px 0 18px;display:flex;gap:8px" data-page-node-id="YsEQarqj1cSydypVZB0PVo">
-        <button class="btn ghost block" onclick="createAgentFlow()" data-page-node-id="CfhV2nVlJtPNFLYmWtP5wh">＋ 创建数字员工</button>
-        <button class="btn block" onclick="openLeaveFlow()" style="flex:1">📅 请假申请</button>
+      <!-- 顶部并排标签：数字员工 / 专家服务（默认选中「数字员工」） -->
+      <div class="todo-tabs reveal" id="agentTabs" data-page-node-id="Ag1TabsKg7Vq2Mx4Ka9Lp">
+        <div class="todo-tab active" data-tab="workers" onclick="switchAgentTab('workers')" data-page-node-id="Ag1TabWorker8Zq3Wm5Yb2Nc">数字员工</div>
+        <div class="todo-tab" data-tab="experts" onclick="switchAgentTab('experts')" data-page-node-id="Ag1TabExpert9Zq4Wm6Yb3Nc">专家服务</div>
       </div>
 
-      <div class="sec-title" data-page-node-id="8oT3IMDAoNZDpZHOTxmxan">
-        <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="11w50oFgXc5MK4oea3XgZN"><use href="#i-user" data-page-node-id="v8WHEvBD2TgVYWUeg9vrEM"/></svg>
-        专家服务 <span class="badge go" data-page-node-id="OaQoV1pGix2x1vBccqHURR">管理员预置</span>
+      <!-- 数字员工 -->
+      <div class="todo-panel active" data-panel="workers">
+        <div class="muted" style="margin-bottom:11px" data-page-node-id="Z9hzSfKC5bRAUsqikqOsS9">自动运行 · 定时产出 · 结果进入待办与消息，全程留痕</div>
+        <div id="agentList" data-page-node-id="gaYcVCzPXXHcAFlogqUm3B"></div>
+        <div class="agent-actions" data-page-node-id="YsEQarqj1cSydypVZB0PVo">
+          <button class="btn ghost" onclick="createAgentFlow()" data-page-node-id="CfhV2nVlJtPNFLYmWtP5wh">＋ 创建数字员工</button>
+        </div>
       </div>
-      <div class="muted" style="margin-bottom:11px" data-page-node-id="1BX5cFNMjUoM7alHXBd4rz">每位专家 = 人设 + 技能组合 + 专属知识库</div>
-      <div class="card" style="padding-top:4px;padding-bottom:4px" id="expertList" data-page-node-id="fdYtOKHZxQRFtFC5A3pNd5"></div>
-      <div class="muted" style="margin-top:6px" data-page-node-id="3WHhNXryQWFBoPpIun6yLY">外部能力（政务申报平台、OA、腾讯文档等）由管理员在后台统一连接配置</div>
+
+      <!-- 专家服务 -->
+      <div class="todo-panel" data-panel="experts">
+        <div class="muted" style="margin-bottom:11px" data-page-node-id="1BX5cFNMjUoM7alHXBd4rz">每位专家 = 人设 + 技能组合 + 专属知识库 <span class="badge go" data-page-node-id="OaQoV1pGix2x1vBccqHURR">管理员预置</span></div>
+        <div class="card" style="padding-top:4px;padding-bottom:4px" id="expertList" data-page-node-id="fdYtOKHZxQRFtFC5A3pNd5"></div>
+        <div class="muted" style="margin-top:6px" data-page-node-id="3WHhNXryQWFBoPpIun6yLY">外部能力（政务申报平台、OA、腾讯文档等）由管理员在后台统一连接配置</div>
+      </div>
     </div>
 
     <!-- ========== 我的 ========== -->
@@ -851,7 +873,7 @@
       <span class="ic" data-page-node-id="8nUGry0UxXu2bKiTJC2jAA"><svg class="ic" data-page-node-id="4b9xNNvtKP7778RQjYW89A"><use href="#i-chat" data-page-node-id="Od2xwOoItCNRgkYh4c1hwq"/></svg></span>会话
     </div>
     <div class="tab" data-page="page-agent" onclick="switchTab(this)" data-page-node-id="BfByFTUdaGvLudCsljTZHQ">
-      <svg class="ic" data-page-node-id="GE9EIPnLo1YhvSiCuAJ5RF"><use href="#i-bot" data-page-node-id="YGDeq3rZMNJjJHEVPq0037"/></svg>数字员工
+      <svg class="ic" data-page-node-id="GE9EIPnLo1YhvSiCuAJ5RF"><use href="#i-bot" data-page-node-id="YGDeq3rZMNJjJHEVPq0037"/></svg>专家与员工
     </div>
     <div class="tab" data-page="page-me" onclick="switchTab(this)" data-page-node-id="M4H8b0vLfQiUAHb080IzNq">
       <svg class="ic" data-page-node-id="ZIoa9IGnfFv5RDaVEr64yA"><use href="#i-user" data-page-node-id="CSAAUAWGsZvVDJ48j52P2O"/></svg>我的
@@ -874,7 +896,7 @@ const state = {
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
   kpi:{month:null, quarter:null}, kpiMode:'month',
   workers:[], results:[], currentResult:null, editingWorker:null,
-  lastAnswer:''
+  lastAnswer:'', lastQuery:''
 };
 
 /* ============================================================================
@@ -1098,7 +1120,7 @@ function go(id){
   });
 }
 const TITLES = {
-  'page-home':'AIOA 智能工作台','page-todo':'待办','page-agent':'数字员工','page-chat':'会话',
+  'page-home':'AIOA 智能工作台','page-todo':'待办','page-agent':'专家与员工','page-chat':'会话',
   'page-me':'我的','page-bill':'用量账单','page-buy':'购买词元包','page-log':'我的操作记录','page-result':'成果详情'
 };
 function setTitle(pid){
@@ -1500,6 +1522,15 @@ function switchTodoTab(name){
     t.classList.toggle('active', t.dataset.tab===name);
   });
   document.querySelectorAll('#page-todo .todo-panel').forEach(p=>{
+    p.classList.toggle('active', p.dataset.panel===name);
+  });
+}
+/* 「专家与员工」页顶部两标签切换（默认「数字员工」） */
+function switchAgentTab(name){
+  document.querySelectorAll('#agentTabs .todo-tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.tab===name);
+  });
+  document.querySelectorAll('#page-agent .todo-panel').forEach(p=>{
     p.classList.toggle('active', p.dataset.panel===name);
   });
 }
@@ -2001,6 +2032,7 @@ async function send(){
   if(!q){ toast('请输入问题'); return; }
   if(!state.chatExpert){ toast('请先选择一位专家'); return; }
   input.value = '';
+  state.lastQuery = q;
   const m = $('msgs');
   m.insertAdjacentHTML('beforeend',
     '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
@@ -2056,6 +2088,8 @@ async function send(){
     });
     state.lastAnswer = text;
     if(!text) bubble.textContent = '（本次未返回内容）';
+    // 数字员工会话：回答做层级化突出（标题放大 / 列表缩进 / 重点加粗放大）
+    else if(state.chatWorker){ bubble.classList.add('ans'); bubble.innerHTML = formatAnswer(text); }
     // 产出后的收口动作
     afterAnswer(bubble, text);
   }catch(e){
@@ -2131,7 +2165,9 @@ async function resumeConversation(id){
     const msgs = asArray(await API.listMessages(id));
     const conv = (state.conversations||[]).find(c=>c.id===id);
     state.conversationId = id;
-    setChatWorker(conv && conv.workerId ? {id:conv.workerId, name:conv.title, roleName:'数字员工'} : state.chatWorker);
+    setChatWorker(conv && conv.workerId
+      ? ((state.workers||[]).find(x=>x.id===conv.workerId) || {id:conv.workerId, name:conv.title, roleName:'数字员工'})
+      : state.chatWorker);
     document.querySelectorAll('.notif-mask').forEach(m=>m.remove());
     $('msgs').innerHTML = msgs.map(historyBubble).join('') || '<div class="muted" style="padding:8px">该会话暂无消息</div>';
     go('page-chat'); activateChatTab(); setTitle('page-chat');
@@ -2140,9 +2176,77 @@ async function resumeConversation(id){
   }catch(e){ toast('载入失败：'+e.message); }
 }
 
+/* ============================================================================
+   14c. 数字员工回答的富文本渲染
+   目的：把回答里的「重点」显性化——小节标题放大、列表缩进、关键数字/结论加粗放大，
+   让长回答更醒目、层次更清晰。先整体转义，再做白名单转换，不引入任何 HTML 注入面。
+   ============================================================================ */
+/* 行内重点：**粗体** / `代码` → 加粗；数量·单位·百分比 → 放大加粗高亮 */
+function ansInline(s){
+  return s
+    .replace(/\*\*([^*]{1,40})\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]{1,40})`/g, '<b>$1</b>')
+    .replace(/([0-9]+(?:\.[0-9]+)?\s*(?:个工作日|工作日|小时|天|日|%|％|元|次|人|份))/g,
+             '<span class="ans-key">$1</span>');
+}
+/* 逐行判定层级：标题 / 列表（含缩进）/ 引用 / 缩进段落 / 普通段落 */
+function formatAnswer(raw){
+  const lines = String(raw == null ? '' : raw).replace(/\r/g, '').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = esc(lines[i]);
+    if (!t.trim()) { out.push('<div style="height:6px"></div>'); continue; }
+    let m = t.match(/^\s*#{1,4}\s*(.+?)\s*$/);
+    if (m) { out.push('<span class="ans-h">' + ansInline(m[1]) + '</span>'); continue; }
+    m = t.match(/^\s*(?:\*\*|__)?\s*(【[^】]{2,30}】)\s*(?:\*\*|__)?\s*$/);
+    if (m) { out.push('<span class="ans-h">' + m[1] + '</span>'); continue; }
+    m = t.match(/^(\s*)(?:[-*•]|\d+[.、)])\s+(.+)$/);
+    if (m) {
+      const depth = Math.min(2, Math.floor(m[1].replace(/\t/g, '  ').length / 2));
+      out.push('<span class="ans-li" style="margin-left:' + (depth * 14) + 'px">' + ansInline(m[2]) + '</span>');
+      continue;
+    }
+    m = t.match(/^\s*&gt;\s?(.*)$/);
+    if (m) { out.push('<span class="ans-quote">' + ansInline(m[1]) + '</span>'); continue; }
+    m = t.match(/^(\s{2,})(.+)$/);
+    if (m) {
+      out.push('<div style="padding-left:' + Math.min(28, m[1].length * 4) + 'px">' + ansInline(m[2]) + '</div>');
+      continue;
+    }
+    out.push('<div>' + ansInline(t) + '</div>');
+  }
+  return out.join('');
+}
+
+/* 请假申请：仅在用户主动提出请求时，由「请假类数字员工」当场发放表单（页面上无独立入口） */
+function isLeaveRequest(q){
+  return /请假|休假|调休|年假|病假|事假|婚假|产假|丧假|探亲假/.test(String(q || ''));
+}
+/* 职责是否覆盖请假：只有请假类数字员工才发放表单，否则会出现「一边说不管请假、一边发表单」的自相矛盾。
+   会话绑定信息可能只带 id（如从会话记录续聊），故回落到 state.workers 补齐类型。 */
+function chatWorkerFull(){
+  const w = state.chatWorker;
+  if(!w) return null;
+  if(w.workerType) return w;
+  const hit = (state.workers||[]).find(x => x.id === w.id);
+  return hit ? Object.assign({}, w, {workerType:hit.workerType, roleName:hit.roleName||w.roleName}) : w;
+}
+function isLeaveCapable(){
+  const w = chatWorkerFull();
+  const key = ((w && (w.workerType || '')) + ' ' + (w && (w.roleName || ''))).trim();
+  return /LEAVE_APPROVER|请假|假勤|休假/.test(key);
+}
+
 /* 产出收口：公文类触发审批卡点，并提供「存为成果」 */
 function afterAnswer(bubble, text){
   const wrap = bubble.parentNode;
+  // 用户请求请假 → 由请假类数字员工发放《请假申请》（未请求、或非请假类数字员工则完全不出现）
+  if (isLeaveRequest(state.lastQuery) && isLeaveCapable() && !document.getElementById('leaveForm')) {
+    wrap.closest('.msg').insertAdjacentHTML('afterend',
+      '<div class="msg"><div class="avatar">' + icon('calendar') + '</div>' +
+      '<div class="bubble">已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml() + '</div></div>');
+    const box = $('msgs'); box.scrollTop = box.scrollHeight;
+  }
   const isDoc = /通知|请示|报告|函/.test(text) && text.indexOf('各有关企业') > -1;
   if(isDoc){
     const card = document.createElement('div');

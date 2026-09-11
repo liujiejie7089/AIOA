@@ -91,3 +91,21 @@
 - **改 Agent(Python) 代码后必须重启 uvicorn**（非 --reload），否则跑的是旧代码，会产生「E2E 全绿但 scope 未生效」的假绿。
   软约束类断言必须校验身份/口径证据（如回答里是否出现数字员工身份），不能只验「有回答 + 有拒答词」。
 - 提交若索引里有与本任务无关的预暂存删除，用 `git commit -m msg -- <我的路径...>` 只提交指定路径。
+
+## 用户端「专家与员工」页与回答展示（V1.2，2026-09-11）
+- 底部导航第 4 项文案 = **「专家与员工」**（原「数字员工」）；导航顺序 工作台/待办/会话(FAB)/专家与员工/我的。
+- `#page-agent` 顶部是**双标签** `#agentTabs`（`.todo-tabs`/`.todo-tab`，复用待办页样式）：`switchAgentTab('workers'|'experts')`
+  切 `.todo-panel[data-panel]`，默认 `workers`；专家列表容器 `#expertList`，数字员工列表 `#agentList`（卡片类 `.agent-card`）。
+- 回答富文本：`formatAnswer()`+`ansInline()` → 渲染进 `.bubble.ans`；层级类 `.ans-h`(标题放大加粗) / `.ans-li`(列表缩进) / `.ans-quote`(引用) / `.ans-key`(重点)。
+- 创建按钮：`.agent-actions`（flex 居中）+ `.agent-actions .btn{min-width:176px;min-height:40px}`；**不是 block 整行**。
+- 会话头 `.chat-head` 为**两行**：`.ch-main`(内含 `.cname` + `.ch-sub`[`.cmodel`+`.scope-badge`]) + `#historyBtn`。
+  单行会因徽标+按钮把名称挤成「数…」，勿改回单行。
+- **请假表单「按需发放」**：页面无独立「请假申请」入口；`afterAnswer()` 需同时满足
+  `isLeaveRequest(state.lastQuery)` **且** `isLeaveCapable()` 才插入 `leaveFormHtml()`。
+  `isLeaveCapable()` 依据 `chatWorkerFull().workerType/roleName` 匹配 `/LEAVE_APPROVER|请假|假勤|休假/`；
+  `chatWorkerFull()` 在绑定对象缺 `workerType` 时回落 `state.workers` 按 id 补齐。
+  只判 `isLeaveRequest` 会导致**非请假数字员工「拒答请假 + 又发请假单」自相矛盾**（已修，勿回退）。
+- 测试脚本（root，untracked，与 repo 既有 `e2e_v*.py` 同风格）：`e2e_expert_employee_tabs.py`(静态 UI 17)、
+  `e2e_worker_chat_scope.py`(真实 LLM 9)、`e2e_user_leave_intake.py`(普通用户 5)。
+- **待用户决策的产品缺口**：`docs/10` 将 `LEAVE_APPROVER` 会话准入定成仅管理员（T2=holds(approval:leave)），
+  导致普通成员进不了请假数字员工会话、也拿不到请假表单。备选：T2 放开为「同租户成员可受理/提交，审批仍走审批权限」。
