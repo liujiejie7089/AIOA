@@ -146,3 +146,15 @@
   正解是**重建历史表并把 V1–V21 全插成 `success=1`**，让 Flyway 只应用新版本。脚本：`scripts/repair_flyway_history.py`（先归档坏表并 JSON 备份）。
 - 新增迁移前**先 `ls db/migration` 取最大版本 +1**（当前已到 V23）。
 - `rm -rf <target>` 会被 safe-delete 拦并**短路 `&&`**；后端已停时直接原地 `mvnw package` 覆盖即可。
+
+## 用户端前端约定与坑（`user-client/index.html`）
+- **本项目展示文案大量使用全角标点**（`（）「」·`）。写正则解析标题必须同时覆盖全角/半角，
+  否则静默不匹配。曾因此让「审批单标题回落解析起止」整条分支失效（`[（(]…[）)]`）。
+- **图标只能引用 sprite 里真实存在的 `#i-*`**（现有：bot bell pen megaphone doc sheet chart scale bank
+  user clock check check-circle chevron cube db gear home inbox lock log plus send shield spark upload wallet warn）。
+  `icon('calendar')` 这种不存在的名字会**渲染成空白**（不报错），已用 `ICON_MAP` 别名兜底（`calendar→clock`）。
+- 弹窗统一走站内组件：`askDialog({mode:'confirm'|'input'|'alert'})` 及 Promise 包装 `askConfirm/askInput/askAlert`；
+  **不要再用原生 `confirm/prompt/alert`**（移动端样式割裂且可能被拦截）。审批意见另有 `askApprovalNote`。
+- 待办行统一由 `todoRow(ico,title,sub,onclick,cls)` 渲染；审批类行用 `approvalIcon()` 取图标+着色类、
+  `approvalBrief()` 取副标题、`approvalTitle()` 取去重后的标题。
+- 测试脚本注意：`e2e_ux_fixes.py`（批次一 29 项）、`e2e_ux_fixes_b2.py`（批次二 30 项）都需 `envs/default` 解释器。

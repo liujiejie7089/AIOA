@@ -314,6 +314,24 @@
   .todo-item .tmain{flex:1;min-width:0}
   .todo-item .tt{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .todo-item .ts{font-size:11px;color:var(--text-2);margin-top:3px;line-height:1.5}
+  /* 批次二·A-4：审批项按业务类型着色，便于列表内快速识别 */
+  .todo-item .tico.cal{background:var(--blue-soft);color:var(--blue)}
+  .todo-item .tico.doc{background:#f1eaff;color:#7038d8}
+  .todo-item .tico.award{background:var(--accent-soft);color:var(--amber-ink)}
+  .todo-item .tico.gen{background:var(--surface-3);color:var(--text-2)}
+  .todo-item.mine-more .tt{color:var(--blue)}
+  /* 批次二·A-5：「我的申请」查看全部弹层 */
+  .all-mine{max-width:92%}
+  .all-mine-list{max-height:56vh;overflow-y:auto;margin:-4px 0}
+  /* 批次二·A-7：请假提交结果确认卡 */
+  .result-card{border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;background:var(--surface-2)}
+  .result-card .rc-head{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;color:var(--text)}
+  .result-card .rc-ok{color:var(--green)}
+  .result-card .rc-row{display:flex;justify-content:space-between;gap:12px;font-size:11.5px;color:var(--text-2);padding:3px 0}
+  .result-card .rc-row b{color:var(--text);font-weight:600;text-align:right}
+  .result-card .rc-ops{display:flex;gap:8px;margin-top:10px}
+  /* 批次二·A-8：请假表单行内校验提示 */
+  .lf-error{color:var(--red);font-size:11.5px;margin-top:6px;line-height:1.5}
   /* 顶部水平三标签：待我处理 / 数字员工已代办 / 我的申请 */
   .todo-tabs{
     display:flex; gap:4px; background:var(--surface); border:1px solid var(--border);
@@ -1120,7 +1138,8 @@ function toast(msg){
 
 /* 图标键映射：后端存 icon 键，前端映射 SVG；未知键回退 bot */
 const ICON_MAP = {bot:'bot', bell:'bell', pen:'pen', megaphone:'megaphone', doc:'doc', sheet:'sheet',
-                  chart:'chart', scale:'scale', bank:'bank', user:'user', clock:'clock'};
+                  chart:'chart', scale:'scale', bank:'bank', user:'user', clock:'clock',
+                  calendar:'clock', leave:'clock', trophy:'check-circle', inbox:'inbox'};
 function iconKey(k){ return ICON_MAP[k] || 'bot'; }
 
 /* ============================================================================
@@ -1303,7 +1322,7 @@ function renderToday(){
   });
   const pending = asArray(state.approvals).filter(a=>a.status==='PENDING');
   pending.slice(0,3).forEach(a=>{
-    items.push({ico:'doc', text:esc(a.title||'审批单'), sub:'状态：审批中 · 提交于 '+esc((a.createdAt||'').replace('T',' ').slice(0,16)), act:()=>go('page-todo')});
+    items.push({ico:'doc', text:esc(approvalTitle(a)), sub:'状态：审批中 · 提交于 '+esc((a.createdAt||'').replace('T',' ').slice(0,16)), act:()=>go('page-todo')});
   });
   const box = $('todayList');
   if(!items.length){
@@ -1405,24 +1424,28 @@ async function retryKb(id){
   catch(e){ toast('重试失败：'+e.message); }
 }
 async function delKb(id){
-  if(!confirm('确定删除该资料？删除后不再参与会话引用。')) return;
+  const okDel = await askConfirm('确定删除该资料？删除后不再参与会话引用。',
+    {title:'删除资料', okText:'删除', danger:true});
+  if(!okDel) return;
   try{ await API.kbDelete(id); state.kbDocs = await API.kbDocs() || []; renderKb(); toast('已删除并留痕'); }
   catch(e){ toast('删除失败：'+e.message); }
 }
 /* 检索测试（FR-F3）：验证入库内容可被检索命中并查看原文片段 */
 async function testKbSearch(){
-  const q = prompt('输入检索关键词：');
+  const q = await askInput('输入检索关键词：',
+    {title:'检索测试', placeholder:'如：请假制度 / 报销标准', required:true, okText:'检索'});
   if(!q) return;
   try{
     const hits = await API.kbSearch(q) || [];
     if(!hits.length){ toast('未命中任何资料'); return; }
     const first = hits[0].snippet ? ('\n\n首条片段：'+hits[0].snippet.slice(0,120)) : '';
-    alert('命中 '+hits.length+' 条：\n'+hits.map(h=>'· '+h.docName).join('\n')+first);
+    await askAlert('命中 '+hits.length+' 条：\n'+hits.map(h=>'· '+h.docName).join('\n')+first, {title:'检索结果'});
   }catch(e){ toast('检索失败：'+e.message); }
 }
 async function uploadKb(){
   // 兼容旧入口：无文件选择时走名称登记
-  const name = prompt('资料名称（也可点「上传文件」直接选择本地文件）：');
+  const name = await askInput('资料名称（也可点「上传文件」直接选择本地文件）：',
+    {title:'登记资料', placeholder:'如：2026 年考勤管理制度', required:true, okText:'登记'});
   if(!name) return;
   try{ await API.kbUpload(name, 'doc', 0); toast('已登记，进入解析队列'); state.kbDocs = await API.kbDocs() || []; renderKb(); }
   catch(e){ toast('登记失败：'+e.message); }
@@ -1493,6 +1516,53 @@ function applyQuota(q){
 /* ============================================================================
    10. 待办
    ============================================================================ */
+/* 天数（含首尾）：请假 9-15 至 9-16 记为 2 天 */
+function daysBetween(s, e){
+  const a = Date.parse(s + 'T00:00:00'), b = Date.parse(e + 'T00:00:00');
+  if(isNaN(a) || isNaN(b)) return 0;
+  return Math.round((b - a) / 86400000) + 1;
+}
+/* 审批行副标题：把关键决策字段前置（走查发现 A-3）。
+   优先解析 formData；历史单据 formData 为空时回落解析标题中的 (起~止)。 */
+function approvalBrief(a){
+  const parts = [];
+  const bt = a.bizType || '';
+  const type = /RESULT/i.test(bt) ? '成果'
+             : (/DOC/i.test(bt) ? '文稿'
+             : (/LEAVE|请假|假勤/.test(bt) ? '请假' : bt));
+  if(type) parts.push(type);
+  let f = null;
+  if(a.formData){ try{ f = JSON.parse(a.formData); }catch(_){ f = null; } }
+  let start = f && f.start, end = f && f.end;
+  if(!start || !end){
+    // 注意：标题里的括号是全角「（）」（submitLeave 就是这么拼的），必须一并匹配
+    const m = /[（(]\s*(\d{4}-\d{2}-\d{2})\s*[~至]\s*(\d{4}-\d{2}-\d{2})\s*[）)]/.exec(a.title || '');
+    if(m){ start = m[1]; end = m[2]; }
+  }
+  if(start && end){
+    parts.push(start.slice(5) + ' 至 ' + end.slice(5));
+    const d = daysBetween(start, end);
+    if(d > 0) parts.push(d + ' 天');
+  }else{
+    parts.push('提交人：' + (a.creatorName || a.createdBy || '—'));
+  }
+  parts.push((a.createdAt || '').replace('T',' ').slice(0,16));
+  return parts.join(' · ');
+}
+/* 标题去掉与副标题重复的日期括号（移动端窄，重复信息会把徽标挤到下一行） */
+function approvalTitle(a){
+  const t = (a.title || '审批单').replace(
+    /[（(]\s*\d{4}-\d{2}-\d{2}\s*[~至]\s*\d{4}-\d{2}-\d{2}\s*[)）]\s*$/, '').trim();
+  return t || '审批单';
+}
+/* 审批项图标：按业务类型区分（走查发现 A-4），返回 [图标名, 颜色类] */
+function approvalIcon(a){
+  const t = (a.bizType || '') + ' ' + (a.title || '');
+  if(/请假|LEAVE|假勤|休假/.test(t)) return ['clock', 'cal'];
+  if(/DOC|文稿/.test(t)) return ['pen', 'doc'];
+  if(/RESULT|成果/.test(t)) return ['trophy', 'award'];
+  return ['doc', 'gen'];
+}
 function renderTodo(){
   const pending = $('todoPending'), done = $('todoDone'), mine = $('todoMine');
   const todoList = state.isAdmin ? asArray(state.todoApprovals) : [];
@@ -1508,10 +1578,11 @@ function renderTodo(){
   // 待我处理：管理员=待审单（需我操作）；普通用户=未读知会消息（仅知会）
   let rows = '';
   if(state.isAdmin){
-    rows = todoList.filter(a=>a.status==='PENDING').map(a=>
-      todoRow('doc', esc(a.title||'审批单')+' <span class="badge go">待审批</span>',
-        '提交人：'+esc(a.creatorName||a.createdBy||'—')+' ｜ '+esc((a.createdAt||'').replace('T',' ').slice(0,16)),
-        "openTodoDetail("+a.id+",'todo')")).join('');
+    rows = todoList.filter(a=>a.status==='PENDING').map(a=>{
+      const ic = approvalIcon(a);
+      return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge go">待审批</span>',
+        esc(approvalBrief(a)), "openTodoDetail("+a.id+",'todo')", ic[1]);
+    }).join('');
   }else{
     rows = notifItems().filter(n=>!n.readAt).slice(0,10).map(n=>
       todoRow('bell', esc(n.title||'新通知')+' <span class="badge info">知会</span>',
@@ -1527,13 +1598,20 @@ function renderTodo(){
       '运行计划：'+esc(w.schedule||''), "go('page-agent')")).join('');
   done.innerHTML = workerRows || emptyBox('数字员工尚未产生执行记录');
 
+  const mineMore = mineList.length > 5
+    ? '<div class="todo-item mine-more" onclick="openAllMine()">'+
+        '<div class="tico gen">'+icon('log')+'</div>'+
+        '<div class="tmain"><div class="tt">查看全部 '+mineList.length+' 条</div>'+
+        '<div class="ts">含历史已通过 / 已驳回的申请记录</div></div></div>'
+    : '';
   mine.innerHTML = mineList.length
     ? mineList.slice(0,5).map(a=>{
         const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
-        return todoRow('pen', esc(a.title||'我的申请')+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
-          esc((a.createdAt||'').replace('T',' ').slice(0,16))+' ｜ '+(a.decisionNote?('意见：'+esc(a.decisionNote)):''),
-          "openTodoDetail("+a.id+",'mine')");
-      }).join('')
+        const ic = approvalIcon(a);
+        const tail = a.decisionNote ? ('意见：'+esc(a.decisionNote)) : esc(approvalBrief(a));
+        return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
+          tail, "openTodoDetail("+a.id+",'mine')", ic[1]);
+      }).join('') + mineMore
     : emptyBox('暂无申请记录');
 
   // 角标口径：管理员=待审单数（需我操作）；普通成员=未读消息数（该标签已改「消息」，非待办）
@@ -1543,6 +1621,33 @@ function renderTodo(){
   $('todoCnt').textContent = cnt;
   const tab = $('tabCnt');
   if(cnt > 0){ tab.style.display = 'block'; tab.textContent = cnt; } else tab.style.display = 'none';
+}
+/* 「我的申请」查看全部（走查发现 A-5）：原实现只显示前 5 条、且没有任何入口看全量 */
+function openAllMine(){
+  const list = asArray(state.approvals);
+  if(!list.length){ toast('暂无申请记录'); return; }
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal all-mine" role="dialog" aria-modal="true">'+
+      '<div class="notif-head">我的申请 · 共 '+list.length+' 条</div>'+
+      '<div class="notif-body"><div class="all-mine-list">'+list.map(a=>{
+        const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
+        const ic = approvalIcon(a);
+        return '<div class="todo-item" data-mine="'+a.id+'">'+
+          '<div class="tico '+ic[1]+'">'+icon(ic[0])+'</div>'+
+          '<div class="tmain"><div class="tt">'+esc(approvalTitle(a))+' <span class="badge '+st[0]+'">'+st[1]+'</span></div>'+
+          '<div class="ts">'+esc(approvalBrief(a))+'</div></div></div>';
+      }).join('')+'</div></div>'+
+      '<div class="notif-foot"><button class="btn small" data-all-close>关闭</button></div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  const close = ()=> mask.remove();
+  mask.querySelector('[data-all-close]').onclick = close;
+  mask.addEventListener('click', ev=>{ if(ev.target === mask) close(); });
+  mask.querySelectorAll('[data-mine]').forEach(el=>{
+    el.onclick = ()=>{ const id = +el.dataset.mine; close(); openTodoDetail(id, 'mine'); };
+  });
 }
 /* 待办顶部三标签切换（默认「待我处理」） */
 function switchTodoTab(name){
@@ -1562,9 +1667,9 @@ function switchAgentTab(name){
     p.classList.toggle('active', p.dataset.panel===name);
   });
 }
-function todoRow(ico, title, sub, onclick){
+function todoRow(ico, title, sub, onclick, cls){
   return '<div class="todo-item" onclick="'+onclick+'">'+
-    '<div class="tico">'+icon(ico)+'</div>'+
+    '<div class="tico '+(cls||'')+'">'+icon(ico)+'</div>'+
     '<div class="tmain"><div class="tt">'+title+'</div><div class="ts">'+sub+'</div></div></div>';
 }
 async function readNotif(id){
@@ -1716,6 +1821,75 @@ function askApprovalNote(decision){
     commitApprovalDecision(d.id, decision, note);
   };
   setTimeout(()=>ta.focus(), 30);
+}
+
+/* ============================================================================
+   站内通用弹层（走查发现 A-1 收尾）
+   统一替代浏览器原生 confirm / prompt / alert —— 原生弹窗在移动端 WebView 中
+   样式割裂、可能被拦截，也无法做行内校验。三种形态：confirm / input / alert。
+   ============================================================================ */
+function askDialog(opts){
+  const o = Object.assign({
+    title:'提示', message:'', mode:'confirm', placeholder:'', value:'',
+    okText:'确定', cancelText:'取消', danger:false, required:false, presets:[],
+    onOk:null, onCancel:null
+  }, opts || {});
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  const inputHtml = o.mode === 'input'
+    ? '<textarea class="note-input" id="askDlgInput" rows="2" placeholder="'+esc(o.placeholder)+'">'+esc(o.value)+'</textarea>'+
+      (o.presets.length ? '<div class="note-presets">'+o.presets.map((p,k)=>
+        '<button class="btn ghost small" type="button" data-preset="'+k+'">'+esc(p)+'</button>').join('')+'</div>' : '')+
+      '<div class="note-err" id="askDlgErr" style="display:none">该项为必填</div>'
+    : '';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
+      '<div class="notif-head">'+esc(o.title)+'</div>'+
+      '<div class="notif-body">'+
+        (o.message ? '<div class="perm-line" style="white-space:pre-wrap">'+esc(o.message)+'</div>' : '')+
+        inputHtml+
+      '</div>'+
+      '<div class="notif-foot">'+
+        (o.mode === 'alert' ? '' : '<button class="btn ghost small" data-dlg-cancel>'+esc(o.cancelText)+'</button>')+
+        '<button class="btn small'+(o.danger ? ' danger' : '')+'" data-dlg-ok>'+esc(o.okText)+'</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  const input = mask.querySelector('#askDlgInput');
+  const err = mask.querySelector('#askDlgErr');
+  let done = false;
+  const finish = (fn, val)=>{ if(done) return; done = true; mask.remove(); if(fn) fn(val); };
+  const cancelBtn = mask.querySelector('[data-dlg-cancel]');
+  if(cancelBtn) cancelBtn.onclick = ()=> finish(o.onCancel, null);
+  // 遮罩点击 = 取消；alert 形态下点击遮罩即关闭
+  mask.addEventListener('click', ev=>{
+    if(ev.target === mask) finish(o.mode === 'alert' ? o.onOk : o.onCancel, null);
+  });
+  mask.querySelectorAll('[data-preset]').forEach(b=>{
+    b.onclick = ()=>{ if(input){ input.value = o.presets[+b.dataset.preset]; input.focus(); } if(err) err.style.display='none'; };
+  });
+  mask.querySelector('[data-dlg-ok]').onclick = ()=>{
+    const val = input ? input.value.trim() : '';
+    if(o.mode === 'input' && o.required && !val){ if(err) err.style.display='block'; if(input) input.focus(); return; }
+    finish(o.onOk, val);
+  };
+  if(input) setTimeout(()=>input.focus(), 30);
+}
+/* Promise 化包装：确认框 → true/false；输入框 → 文本/null */
+function askConfirm(message, opts){
+  return new Promise(res=> askDialog(Object.assign({
+    message:message, onOk:()=>res(true), onCancel:()=>res(false)
+  }, opts || {})));
+}
+function askInput(message, opts){
+  return new Promise(res=> askDialog(Object.assign({
+    message:message, mode:'input', onOk:v=>res(v), onCancel:()=>res(null)
+  }, opts || {})));
+}
+function askAlert(message, opts){
+  return new Promise(res=> askDialog(Object.assign({
+    message:message, mode:'alert', okText:'知道了', onOk:()=>res(true)
+  }, opts || {})));
 }
 
 /* 提交审批决定（原 decideTodo 中的业务逻辑抽出，供弹层回调复用） */
@@ -2476,6 +2650,7 @@ function leaveFormHtml(){
       '<button class="btn ghost small" type="button" onclick="leavePickFiles()">＋ 上传附件</button>'+
       '<span class="lf-hint">支持病历/准假证明等</span></div>'+
     '<div class="lf-files" id="lfFiles"></div>'+
+    '<div class="lf-error" id="lfError" style="display:none"></div>'+
     '<div class="lf-actions">'+
       '<button class="btn small" type="button" onclick="submitLeave(this)">提交请假申请</button>'+
       '<button class="btn ghost small" type="button" onclick="toast(\'已取消\')">取消</button>'+
@@ -2518,13 +2693,55 @@ function renderLeaveFiles(){
 }
 function leaveRemoveFile(i){ leaveAttachments.splice(i,1); renderLeaveFiles(); }
 
+function gotoTodo(){ go('page-todo'); activateTodoTab(); }
+
+/* 提交结果确认卡（走查发现 A-7）：原实现「toast + 立即跳转」，用户来不及看清单号与状态 */
+function showLeaveResultCard(order, info){
+  const box = $('msgs');
+  if(!box){ gotoTodo(); return; }
+  const o = order || {};
+  const no = o.orderNo || o.no || (o.id != null ? ('#' + o.id) : '—');
+  const days = daysBetween(info.start, info.end);
+  const card = document.createElement('div');
+  card.className = 'msg';
+  card.innerHTML = '<div class="avatar">'+icon('clock')+'</div>'+
+    '<div class="bubble"><div class="result-card">'+
+      '<div class="rc-head">'+icon('check-circle','rc-ok')+'<b>请假申请已提交</b></div>'+
+      '<div class="rc-row"><span>申请单号</span><b>'+esc(String(no))+'</b></div>'+
+      '<div class="rc-row"><span>请假类型</span><b>'+esc(info.type || '—')+'</b></div>'+
+      '<div class="rc-row"><span>请假时段</span><b>'+esc(info.start)+' 至 '+esc(info.end)+'（'+(days > 0 ? days + ' 天' : '—')+'）</b></div>'+
+      '<div class="rc-row"><span>当前状态</span><b><span class="badge wait">待审批</span></b></div>'+
+      '<div class="rc-ops">'+
+        '<button class="btn small" onclick="openAllMine()">查看我的申请</button>'+
+        '<button class="btn ghost small" onclick="gotoTodo()">返回待办</button>'+
+      '</div>'+
+    '</div></div>';
+  box.appendChild(card);
+  box.scrollTop = box.scrollHeight;
+}
+
 async function submitLeave(btn){
   const type = $('lfType').value;
   const start = $('lfStart').value;
   const end = $('lfEnd').value;
   const reason = $('lfReason').value.trim();
-  if(!start || !end){ toast('请选择开始与结束日期'); return; }
-  if(!reason){ toast('请填写请假事由'); return; }
+  const errBox = $('lfError');
+  const fail = (msg)=>{
+    if(errBox){ errBox.textContent = msg; errBox.style.display = 'block'; }
+    toast(msg);
+  };
+  if(errBox) errBox.style.display = 'none';
+  if(!start || !end){ fail('请选择开始与结束日期'); return; }
+  // A-8：原实现无区间校验，可提交「结束早于开始」的非法区间
+  if(daysBetween(start, end) <= 0){ fail('结束日期不能早于开始日期'); return; }
+  if(!reason){ fail('请填写请假事由'); return; }
+  // 开始日期早于今天：可能是补录，也可能是误选 → 二次确认后再提交
+  const today = new Date(); today.setHours(0,0,0,0);
+  if(Date.parse(start + 'T00:00:00') < today.getTime()){
+    const okBack = await askConfirm('开始日期 '+start+' 早于今天，确认按补录提交？',
+      {title:'日期确认', okText:'确认提交'});
+    if(!okBack) return;
+  }
   if(btn){ btn.textContent = '提交中…'; btn.disabled = true; }
   const formData = {leaveType:type, start, end, reason};
   const content = '请假申请 · '+type+'（'+start+' 至 '+end+'）\n事由：'+reason;
@@ -2532,10 +2749,11 @@ async function submitLeave(btn){
   try{
     const order = await API.approvalSubmitForm('请假', title, content, formData, leaveAttachments);
     leaveAttachments = [];
-    toast('请假申请已提交，等待部门领导审批');
     state.approvals = await API.approvalList('mine') || [];
     renderTodo();
-    go('page-todo'); activateTodoTab();
+    // A-7：先在会话流内给结果确认卡（含单号），由用户决定何时离开当前页
+    showLeaveResultCard(order, {type:type, start:start, end:end});
+    if(btn){ btn.textContent = '已提交'; btn.disabled = true; }
   }catch(err){
     if(btn){ btn.textContent = '提交请假申请'; btn.disabled = false; }
     handleApprovalError(err, '提交请假');
