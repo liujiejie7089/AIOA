@@ -108,7 +108,18 @@
 - 测试脚本（root，untracked，与 repo 既有 `e2e_v*.py` 同风格）：`e2e_expert_employee_tabs.py`(静态 UI 21)、
   `e2e_worker_chat_scope.py`(真实 LLM 10)、`e2e_user_leave_intake.py`(普通用户 5)。
 - **权限可见性**：`API.roleTypes()` → `GET /v1/workers/role-types`（普通用户也放行，带 `granted`）；
-  `renderAgents()` 对 `granted=false` 的类型加 `.agent-card.locked` + `.agent-tip.lock` + `.agent-lock` 灰条，
-  只留「运行记录」不给「立即执行/调整任务」，避免用户点进会话才在发送时撞 403。目录未加载时视为 granted（后端兜底）。
-- **待用户决策的产品缺口**：`docs/10` 将 `LEAVE_APPROVER` 会话准入定成仅管理员（T2=holds(approval:leave)），
-  导致普通成员进不了请假数字员工会话、也拿不到请假表单。备选：T2 放开为「同租户成员可受理/提交，审批仍走审批权限」。
+  `renderAgents()` 按 `state.isAdmin` 显隐创建按钮 `#agentActions`、启停 `.switch`、「立即执行」「调整任务」，
+  普通成员只渲染「对话」+「运行记录」+ `#agentAdminHint`。
+
+## V22 数字员工权限分档（2026-09-11，用户拍板）
+**口径**：所有用户可**提交请假申请**；**创建/删除等敏感操作仅限管理员**；越权拦截并提示。详见 `docs/10` §3.1 权限矩阵。
+- **使用类（所有成员）**：查看列表/类型目录/运行记录、**与数字员工对话**（`POST /conversations` 带 workerId）、**提交请假申请**（`POST /approvals`）。
+- **管理类（仅 ROLE_ADMIN）**：创建 / 修改 / 启停 / **立即执行** / 删除数字员工 → `WorkerController.requireAdmin()` 前置 403。
+- **审批动作**（`scope=todo`、`/{id}/decision`）沿用既有口径仍仅管理员，本次未改。
+- 判定唯一入口：`PermissionCatalog.isAdmin(user)`；`ConversationService.bindWorker` 已**去掉权限码校验**（只留同租户 + 未停用）。
+- 用户端两个入口：`useAgent(i)`=「对话」（全员，无配置卡片，`chatModel`=「对话模式 · <角色名>」）；
+  `createAgentFlow(worker)`=「调整任务」（仅管理员，有「确认创建/保存修改」卡片）。二者都 `setChatWorker` 以限定职责范围。
+- `RoleTypeView.granted` 语义 = 「可否创建/承担该类型」= `isAdmin && holds(permission)`（普通成员全 false）。
+- **无 schema 变更 → 不新增 Flyway 迁移**。
+- 验证：`e2e_v21_worker_scope.py` 29、`e2e_expert_employee_tabs.py` 27、`e2e_worker_chat_scope.py` 13、`e2e_user_leave_intake.py` 8 = **77/77**。
+- 坑：`taskkill //PID` 在 Git Bash 报「无效参数」，用 PowerShell `Stop-Process -Id` 停 8080。

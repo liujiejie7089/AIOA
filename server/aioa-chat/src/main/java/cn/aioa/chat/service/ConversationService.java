@@ -8,8 +8,6 @@ import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.PageResult;
 import cn.aioa.resource.entity.AgentWorker;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
-import cn.aioa.resource.support.PermissionCatalog;
-import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -55,8 +53,15 @@ public class ConversationService {
     }
 
     /**
-     * 会话绑定数字员工（V21）：租户归属校验 → 承担该角色所需权限校验。
-     * 不满足即拒绝创建会话，杜绝「无权限却以该数字人身份作答」。
+     * 会话绑定数字员工：**同租户 + 未停用**即可绑定（V22）。
+     *
+     * <p>准入口径的变更理由：数字员工的**管理**操作（创建/修改/启停/立即执行/删除）已收敛为
+     * 仅租户管理员；而**使用**数字员工（例如向请假数字人提交请假申请）本属所有成员的业务需求，
+     * 不应再受权限码限制。因此这里只校验租户归属与启用状态，回答边界由
+     * {@code RunService.buildScope} 下发的职责范围（scope）约束。</p>
+     *
+     * <p>即：**能否用** = 同租户且在启用中；**能做什么** = 该员工的职责范围（越界拒答）；
+     * **能否改** = 仅租户管理员（见 WorkerController#requireAdmin）。</p>
      */
     private void bindWorker(ChatConversation conversation, AuthUser user, Long workerId) {
         AgentWorker worker = workerMapper.selectById(workerId);
@@ -65,11 +70,6 @@ public class ConversationService {
         }
         if (Integer.valueOf(0).equals(worker.getEnabled())) {
             throw BizException.badRequest("该数字员工已停用，无法建立会话");
-        }
-        WorkerRole role = WorkerRole.of(worker.getWorkerType());
-        if (!PermissionCatalog.holds(user, role.requiredPermission())) {
-            throw BizException.forbidden("无权与该「" + role.displayName() + "」会话：需持有权限码 "
-                    + role.requiredPermission() + "（" + PermissionCatalog.rolesText(role.requiredPermission()) + "）");
         }
         conversation.setWorkerId(worker.getId());
         conversation.setAgentCode("worker:" + worker.getId());

@@ -76,4 +76,12 @@ public final class PermissionCatalog {
         }
         return user.getRoles() != null && user.getRoles().stream().anyMatch(allowed::contains);
     }
+
+    /**
+     * 是否为租户管理员。数字员工的**管理类操作**（创建/修改/启停/立即执行/删除）一律以此为唯一判定，
+     * 与 {@code ApprovalController} 审批动作的口径一致——避免同一平台出现两套管理员语义。
+     */
+    public static boolean isAdmin(AuthUser user) {
+        return user != null && user.getRoles() != null && user.getRoles().contains(ROLE_ADMIN);
+    }
 }

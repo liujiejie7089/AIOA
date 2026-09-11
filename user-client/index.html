@@ -472,11 +472,6 @@
     background:var(--amber-soft);border:1px solid var(--amber-line);
     border-radius:8px;padding:6px 9px;
   }
-  /* 权限不足的类型：中性提示 + 锁定标记，不引导进入会被拒的会话 */
-  .agent-tip.lock{color:var(--text-2);background:var(--text-3-soft,#f1f3f5);border-color:var(--border)}
-  .agent-card.locked{opacity:.82}
-  .agent-lock{display:inline-flex;align-items:center;font-size:11.5px;color:var(--text-3);
-    background:var(--text-3-soft,#f1f3f5);border:1px solid var(--border);border-radius:var(--r-full);padding:5px 12px}
   .badge.warn{color:var(--amber-ink);background:var(--amber-soft)}
   .tc-hint{
     margin-top:8px;font-size:11px;line-height:1.5;color:var(--amber-ink);
@@ -726,7 +721,8 @@
       <div class="todo-panel active" data-panel="workers">
         <div class="muted" style="margin-bottom:11px" data-page-node-id="Z9hzSfKC5bRAUsqikqOsS9">自动运行 · 定时产出 · 结果进入待办与消息，全程留痕</div>
         <div id="agentList" data-page-node-id="gaYcVCzPXXHcAFlogqUm3B"></div>
-        <div class="agent-actions" data-page-node-id="YsEQarqj1cSydypVZB0PVo">
+        <div id="agentAdminHint" class="muted" style="margin:2px 0 8px;display:none" data-page-node-id="AgHintAdm1Qz8Wm3Yb5Nc">管理操作（创建 / 修改 / 启停 / 删除）仅租户管理员可执行；你可以直接「对话」向数字员工提交请假申请等业务请求</div>
+        <div class="agent-actions" id="agentActions" style="display:none" data-page-node-id="YsEQarqj1cSydypVZB0PVo">
           <button class="btn ghost" onclick="createAgentFlow()" data-page-node-id="CfhV2nVlJtPNFLYmWtP5wh">＋ 创建数字员工</button>
         </div>
       </div>
@@ -1724,45 +1720,56 @@ function fmtRunTime(s){
 function renderAgents(){
   const box = $('agentList');
   const list = state.workers||[];
-  if(!list.length){ box.innerHTML = '<div class="card">'+emptyBox('暂无数字员工，点击下方创建')+'</div>'; return; }
+  // 权限分档：使用（对话/提交申请/看运行记录）对所有成员开放；管理（创建/修改/启停/立即执行/删除）仅租户管理员
+  const canManage = !!state.isAdmin;
+  // 创建入口与「仅管理员可管理」提示按角色显隐（后端 requireAdmin 仍会兜底 403）
+  const act = $('agentActions'), admHint = $('agentAdminHint');
+  if(act) act.style.display = canManage ? '' : 'none';
+  if(admHint) admHint.style.display = canManage ? 'none' : '';
+  if(!list.length){
+    box.innerHTML = '<div class="card">'+emptyBox(canManage
+      ? '暂无数字员工，点击下方创建'
+      : '暂无数字员工，请联系租户管理员创建')+'</div>';
+    return;
+  }
   box.innerHTML = list.map((w,i)=>{
     const pending = w.on && !w.scheduleTime;
     const badge = pending ? 'warn' : (w.on?'ok':'off');
-    // 权限可见性：当前用户不具备该类型所需权限时，不引导进入注定被拒的会话（后端 T1'/T2 仍会兜底 403）
-    const granted = workerTypeGranted(w.workerType);
-    const needTxt = workerTypeRoles(w.workerType);
-    const tip = !granted
-      ? '<div class="agent-tip lock">该数字员工属「'+esc(w.roleName||'数字员工')+'」类型，需 '+esc(needTxt||'更高')+' 权限才能调整或发起会话</div>'
-      : (pending ? '<div class="agent-tip">缺少执行时刻，点「调整任务」补全后才会真正定时运行</div>' : '');
-    const ops = granted
-      ? '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'+
-        '<button class="btn ghost small" onclick="runAgentNow('+i+')">立即执行</button>'+
-        '<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>'
-      : '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'+
-        '<span class="agent-lock">需 '+esc(needTxt||'更高')+' 权限</span>';
-    return '<div class="agent-card'+(granted?'':' locked')+'">'+
+    const tip = pending
+      ? '<div class="agent-tip">缺少执行时刻，'+(canManage
+          ? '点「调整任务」补全后才会真正定时运行'
+          : '尚未开始定时运行；如需补全请联系租户管理员')+'</div>'
+      : '';
+    const ops = [
+      '<button class="btn small" onclick="useAgent('+i+')">对话</button>',
+      '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'
+    ];
+    if(canManage){
+      ops.push('<button class="btn ghost small" onclick="runAgentNow('+i+')">立即执行</button>');
+      ops.push('<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>');
+    }
+    // 启停开关属管理操作：普通成员只看状态徽标，不暴露开关
+    const sw = canManage
+      ? '<button class="switch '+(w.on?'on':'')+'" onclick="toggleAgent('+i+')" aria-label="启停"><i></i></button>'
+      : '';
+    return '<div class="agent-card">'+
       '<div class="agent-head">'+
         '<div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
         '<div class="amain">'+
           '<div class="aname">'+esc(w.name)+' <span class="badge '+badge+'">'+esc(w.status||'')+'</span></div>'+
           '<div class="adesc">'+esc(w.description||'')+'</div>'+
         '</div>'+
-        '<button class="switch '+(w.on?'on':'')+'" onclick="toggleAgent('+i+')" aria-label="启停"><i></i></button>'+
+        sw +
       '</div>'+ tip +
       '<div class="agent-meta">最近产出：'+esc(w.lastOutput||'—')+
         '<br>运行计划：'+esc(w.schedule||'—')+
         '<br>执行时刻：'+esc(agentTimeText(w)) + (w.lastRunAt?' · 最近执行 '+esc(fmtRunTime(w.lastRunAt)):'')+
       '</div>'+
-      '<div class="agent-ops">'+ ops +'</div>'+
+      '<div class="agent-ops">'+ ops.join('') +'</div>'+
     '</div>';
   }).join('');
 }
-/* 该类型是否具备所需权限：granted=false 表示当前用户不能创建/承担该数字员工角色。
-   目录未加载时（网络失败等）返回 true，交给后端兜底拒绝，避免误隐藏功能。 */
-function workerTypeGranted(type){
-  const hit = (state.roleTypes||[]).find(r=>r.code===type);
-  return hit ? !!hit.granted : true;
-}
+/* 类型目录查询：用于在提示语/类型说明里展示「该类型所需角色」，目录未加载时返回空串。 */
 function workerTypeRoles(type){
   const hit = (state.roleTypes||[]).find(r=>r.code===type);
   return hit ? (hit.requiredRoles||'') : '';
@@ -1826,8 +1833,40 @@ async function showAgentRuns(i){
   }
 }
 
+/* 使用数字员工：打开与其绑定的会话（所有成员可用，用于提交请假申请等业务请求）。
+   与「调整任务」的区别：不出现「确认创建 / 保存修改」配置卡片，纯业务提问。 */
+function useAgent(i){
+  const w = state.workers[i]; if(!w) return;
+  state.editingWorker = null;                 // 非编辑态：即便误触也不会走保存分支
+  state.chatExpert = {name:w.name, icon:iconKey(w.icon), intro:'', recs:[]};
+  state.conversationId = null;
+  setChatWorker(w);                           // 绑定 → 后端下发该员工职责范围，越界问题被拒答
+  $('chatName').textContent = w.name;
+  $('chatModel').textContent = '对话模式 · ' + (w.roleName||'通用办公助手');
+  go('page-chat'); activateChatTab();
+  $('pageTitle').innerHTML = '与数字员工对话<span class="ver">V1.2</span>';
+  const chips = (isLeaveCapable()
+    ? ['我要请假','请假需要哪些材料','我的请假审批到哪一步了']
+    : ['你能做什么','帮我整理一下本周工作']).map(q =>
+      '<span class="chip" onclick="useDemo(\''+esc(q).replace(/'/g,"\\'")+'\')">'+esc(q)+'</span>').join('');
+  $('msgs').innerHTML = '<div class="msg"><div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
+    '<div class="bubble">你好，我是「'+esc(w.name)+'」（'+esc(w.roleName||'通用办公助手')+'）。'+
+    (w.description ? esc(w.description)+'。' : '')+'直接说出你的需求即可。'+
+    '<div class="chips">'+chips+'</div></div></div>';
+  $('chatInput').focus();
+}
+
+/* 使用模式下的推荐问题：填入输入框并直接发送（不经过「一句话创建」的配置卡片） */
+function useDemo(q){
+  if(state.busy) return;
+  const i = $('chatInput'); if(!i) return;
+  i.value = q; send();
+}
+
 /* 一句话创建/编辑数字员工：配置内化到对话流 */
 function createAgentFlow(worker){
+  // 创建/修改属管理员敏感操作：此处前置拦截（后端 POST/PUT 亦会 403 兜底）
+  if(!state.isAdmin){ toast('数字员工的创建与修改仅租户管理员可执行'); return; }
   state.editingWorker = worker || null;
   state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
   state.conversationId = null;
@@ -1865,6 +1904,7 @@ function agentTaskTextFrom(q){
 
 function agentDemo(q){
   if(state.busy) return;
+  if(!state.isAdmin){ toast('数字员工的创建与修改仅租户管理员可执行'); return; }
   const m = $('msgs');
   m.insertAdjacentHTML('beforeend',
     '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
@@ -1897,6 +1937,7 @@ function agentDemo(q){
 
 async function confirmAgent(btn, name, plan){
   const editing = state.editingWorker;
+  if(!state.isAdmin){ toast('数字员工的创建与修改仅租户管理员可执行'); return; }
   if(btn){ btn.textContent = editing?'保存中…':'创建中…'; btn.disabled = true; }
   try{
     const scheduleTime = parseAgentTime(plan);
@@ -2445,17 +2486,18 @@ function handleApprovalError(e, action){
 
 /* 权限不足弹窗：统一淡色弹窗样式，手机端居中 */
 function showPermissionDialog(action, detail){
+  const roleTxt = state.isAdmin ? '租户管理员' : '普通成员';
   const mask = document.createElement('div');
   mask.className = 'notif-mask show';
   mask.innerHTML =
     '<div class="notif-modal perm-modal" role="alertdialog" aria-modal="true">'+
       '<div class="notif-head"><span class="perm-ico">'+
-        '<svg class="ic"><use href="#i-lock"/></svg></span>暂无相关权限</div>'+
+        '<svg class="ic"><use href="#i-lock"/></svg></span>操作受限</div>'+
       '<div class="notif-body">'+
-        '<div class="perm-line">当前操作「'+esc(action||'操作')+'」需要相应权限，你尚未开通。</div>'+
+        '<div class="perm-line">当前操作「'+esc(action||'操作')+'」超出你的角色权限范围，已被拦截（当前账号：'+roleTxt+'）。</div>'+
         '<div class="perm-tip">'+(detail && detail.indexOf('权限')<0
             ? esc(detail)
-            : '请联系管理员开通相关权限')+'</div>'+
+            : '该操作仅限租户管理员执行，请联系租户管理员处理')+'</div>'+
       '</div>'+
       '<div class="notif-foot">'+
         '<button class="btn ghost small" data-perm-close>知道了</button>'+

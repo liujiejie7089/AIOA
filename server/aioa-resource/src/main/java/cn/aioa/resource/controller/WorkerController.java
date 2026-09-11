@@ -43,6 +43,20 @@ import java.util.List;
  * <p>关键约定：创建/更新时 {@code scheduleTime}(执行时刻 HH:mm) 与 {@code taskPrompt}(任务内容)
  * 必须落库，否则 {@link WorkerScheduleService} 的定时扫描永远匹配不到该员工。
  * 未配置执行时刻时状态为「待配置」而非「运行中」，避免「看起来在跑、实际从不执行」的误导。</p>
+ *
+ * <h3>操作范围权限矩阵（V22）</h3>
+ * <pre>
+ *   操作                     普通成员   租户管理员   判定点
+ *   ---------------------------------------------------------------
+ *   查看列表 / 类型目录 / 运行记录   ✓         ✓      任意登录用户（只读）
+ *   与该员工建立会话（使用它）       ✓         ✓      ConversationService.bindWorker
+ *   创建 / 修改 / 启停 / 立即执行    ✗ 403     ✓      requireAdmin（敏感管理操作）
+ *   删除                            ✗ 403     ✓      requireAdmin（敏感管理操作）
+ * </pre>
+ *
+ * <p>「使用数字员工」（例如向请假数字人提交请假申请）对所有成员开放；
+ * 「管理数字员工」（创建/改配置/启停/手动执行/删除）仅租户管理员可执行。
+ * 越权一律以 403 + 中文提示拦截，**前置拒绝、不落库、不留半成品**。</p>
  */
 @RestController
 @RequestMapping("/api/v1/workers")
@@ -76,10 +90,18 @@ public class WorkerController {
     public record RoleTypeView(String code, String name, String duty, String requiredPermission,
                                String requiredRoles, boolean granted) {
 
+        /**
+         * {@code granted} = 当前用户**是否可创建/承担该类型角色**。
+         *
+         * <p>定为「创建」语义（而不是单纯的「持有权限码」）：创建数字员工属管理员敏感操作，
+         * 故普通成员对任何类型都为 false，前端据此置灰类型选择；
+         * 管理员则要求同时持有该类型的权限码（如请假类需 {@code approval:leave}）。</p>
+         */
         static RoleTypeView of(WorkerRole role, AuthUser user) {
+            boolean canCreate = PermissionCatalog.isAdmin(user)
+                    && PermissionCatalog.holds(user, role.requiredPermission());
             return new RoleTypeView(role.code(), role.displayName(), role.duty(), role.requiredPermission(),
-                    PermissionCatalog.rolesText(role.requiredPermission()),
-                    PermissionCatalog.holds(user, role.requiredPermission()));
+                    PermissionCatalog.rolesText(role.requiredPermission()), canCreate);
         }
     }
 
@@ -103,6 +125,7 @@ public class WorkerController {
     @PostMapping
     public ApiResponse<WorkerView> create(@RequestBody AgentWorker body) {
         AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "创建数字员工");
         String name = trim(body.getName());
         if (name.isEmpty()) {
             throw BizException.badRequest("数字员工名称不能为空");
@@ -139,6 +162,7 @@ public class WorkerController {
     @PutMapping("/{id}")
     public ApiResponse<WorkerView> update(@PathVariable Long id, @RequestBody AgentWorker body) {
         AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "修改数字员工");
         AgentWorker cur = requireOwned(user, id);
 
         if (body.getName() != null) {
@@ -183,6 +207,7 @@ public class WorkerController {
     @PostMapping("/{id}/toggle")
     public ApiResponse<WorkerView> toggle(@PathVariable Long id) {
         AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "启用或停用数字员工");
         AgentWorker w = requireOwned(user, id);
         boolean next = Integer.valueOf(0).equals(w.getEnabled());
         w.setEnabled(next ? 1 : 0);
@@ -210,6 +235,7 @@ public class WorkerController {
     @PostMapping("/{id}/run")
     public ApiResponse<AgentWorkerRun> run(@PathVariable Long id) {
         AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "手动执行数字员工");
         AgentWorker cur = requireOwned(user, id);
         if (trim(cur.getTaskPrompt()).isEmpty()) {
             throw BizException.badRequest("该数字员工尚未配置任务内容，请先编辑补全后再执行");
@@ -220,8 +246,22 @@ public class WorkerController {
     @DeleteMapping("/{id}")
     public ApiResponse<Boolean> delete(@PathVariable Long id) {
         AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "删除数字员工");
         requireOwned(user, id);
         return ApiResponse.ok(workerMapper.deleteById(id) > 0);
+    }
+
+    /**
+     * 管理类操作的统一闸门：仅租户管理员。
+     *
+     * <p>不通过即 403 前置拒绝——不落库、不改状态、不产生半成品。
+     * 提示语明确给出「谁能做」与「普通成员能做什么」，便于用户自助判断而不是反复试错。</p>
+     */
+    private static void requireAdmin(AuthUser user, String action) {
+        if (!PermissionCatalog.isAdmin(user)) {
+            throw BizException.forbidden(action + "仅租户管理员可执行；"
+                    + "如需变更数字员工配置，请联系租户管理员。提交请假申请等业务操作不受此限制。");
+        }
     }
 
     private AgentWorker requireOwned(AuthUser user, Long id) {
@@ -252,7 +292,8 @@ public class WorkerController {
         }
     }
 
-    /** 解析执行时刻：支持 HH:mm 与自然语言（每天8点 / 8:30），无法解析返回 null。 */    private static String resolveScheduleTime(String raw) {
+    /** 解析执行时刻：支持 HH:mm 与自然语言（每天8点 / 8:30），无法解析返回 null。 */
+    private static String resolveScheduleTime(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
