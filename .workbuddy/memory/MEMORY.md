@@ -158,3 +158,18 @@
 - 待办行统一由 `todoRow(ico,title,sub,onclick,cls)` 渲染；审批类行用 `approvalIcon()` 取图标+着色类、
   `approvalBrief()` 取副标题、`approvalTitle()` 取去重后的标题。
 - 测试脚本注意：`e2e_ux_fixes.py`（批次一 29 项）、`e2e_ux_fixes_b2.py`（批次二 30 项）都需 `envs/default` 解释器。
+
+### 批次三（T14–T21）已收官（2026-09-11）
+- 卡片操作：管理员只有「对话」主按钮 + `toggleAgentMenu(i,ev)` 的「⋯」溢出菜单
+  （`document` click 收起菜单，故触发按钮**必须** `ev.stopPropagation()`）。
+- 产出：`.out-clamp`（line-clamp:2）+ `toggleOut(i)` 展开；运行计划在 `.asched` 副标题，
+  **计划文案已含执行时刻时不要再重复一行「执行时刻：」**。
+- 知识库开关：`applyKbChip()` 挂在 `setChatWorker()`（全绑定路径唯一入口），
+  仅 `KB_CAPABLE_TYPES=['KB_ASSISTANT','GENERAL']` 显示，其余隐藏并强制 `kbOn=false`。
+- 时间显示：`relTime()`（今天/昨天 HH:mm、同年 MM-DD、跨年 YYYY-MM-DD）+ `fullTime()`；
+  `todoRow(ico,title,sub,onclick,cls,tip)` 第 6 参把完整时间写进 `title` 属性。
+- 演示数据清理：`server/scripts/cleanup_demo_data.sql` + `scripts/cleanup_demo_data.py`
+  （**先备份 JSON 再逻辑删除**，备份含 `rollback_sql`）。清理后可见员工 = 4 个业务角色。
+- **三批次总验收 = 179/179 全绿**（批次一 29 / 二 30 / 三 31 / 既有 5 套 89）。
+- 脚本坑：解析 SQL 文件要**先按行剔除注释、再按 `;` 切分**；反过来会让每个语句块的开头
+  是它上方的注释行，`startswith('--')` 把含真 SQL 的整块一起丢掉（表现为「影响 0 行」）。

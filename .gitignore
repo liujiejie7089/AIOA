@@ -95,3 +95,5 @@ ux-review/*.png
 /_trigger_run.py
 /_reconstruct_history.py
 /flyway_history_backup_*.json
+# 演示数据清理前的行快照（本地回滚用，不入库）
+/cleanup_backup_*.json

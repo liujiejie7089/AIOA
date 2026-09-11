@@ -473,7 +473,33 @@
   .agent-meta{font-size:11px;color:var(--text-2);margin-top:9px;line-height:1.6;border-top:1px dashed var(--border);padding-top:8px}
   /* 无产出占位：弱化显示，避免与真实产出混淆（走查发现 D-1） */
   .agent-meta .meta-empty{color:var(--text-3)}
-  .agent-ops{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .agent-ops{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;position:relative;align-items:center}
+  /* 批次三·D-5：产出预览收 2 行 + 展开 */
+  .agent-meta .out-clamp{
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .agent-meta .out-clamp.open{display:block;-webkit-line-clamp:unset;overflow:visible}
+  .out-toggle{
+    background:none;border:none;color:var(--blue);font-size:11px;
+    padding:2px 0;margin-left:2px;cursor:pointer;font-family:inherit;
+  }
+  /* 批次三·D-3：卡片「⋯」溢出菜单 */
+  .agent-menu{
+    display:none;position:absolute;right:0;top:100%;margin-top:4px;z-index:30;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);
+    box-shadow:var(--sh-2);padding:4px;min-width:124px;
+  }
+  .agent-menu.show{display:block}
+  .agent-menu button{
+    display:block;width:100%;text-align:left;background:none;border:none;
+    padding:8px 10px;font-size:12px;border-radius:6px;cursor:pointer;
+    color:var(--text);font-family:inherit;
+  }
+  .agent-menu button:active{background:var(--surface-3)}
+  /* 批次三·D-4：定位高亮 */
+  .agent-card.flash{box-shadow:0 0 0 2px var(--blue-line),var(--sh-2)}
+  /* 批次三·D-4：卡片副标题承载运行计划（自 meta 上移） */
+  .asched{font-size:10.5px;color:var(--text-3);margin-top:3px;line-height:1.5}
   /* ---------- 请假表单（请假数字人） ---------- */
   .leave-form{margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 12px}
   .lf-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;font-size:12px}
@@ -484,6 +510,10 @@
   }
   .lf-row textarea{resize:vertical}
   .lf-hint{font-size:10px;color:var(--text-3);align-self:center;margin-left:4px}
+  /* G-3：附件按钮不换行；说明文字另起一行与控件对齐 */
+  .lf-upload{white-space:nowrap}
+  .lf-row.wrap{flex-wrap:wrap}
+  .lf-row.wrap .lf-hint{display:block;flex-basis:100%;align-self:auto;margin:5px 0 0 64px}
   .lf-files{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 4px 64px}
   .lf-file{display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--blue-soft);color:var(--blue);
     border:1px solid var(--blue-line);border-radius:14px;padding:3px 9px;cursor:pointer}
@@ -762,7 +792,7 @@
 
       <!-- 专家服务 -->
       <div class="todo-panel" data-panel="experts">
-        <div class="muted" style="margin-bottom:11px" data-page-node-id="1BX5cFNMjUoM7alHXBd4rz">每位专家 = 人设 + 技能组合 + 专属知识库 <span class="badge go" data-page-node-id="OaQoV1pGix2x1vBccqHURR">管理员预置</span></div>
+        <div class="muted" style="margin-bottom:11px" data-page-node-id="1BX5cFNMjUoM7alHXBd4rz">专家 = 管理员预置的<b>能力模板</b>（人设 + 技能组合 + 专属知识库）；实例化后成为可自动运行的<b>数字员工</b> <span class="badge go" data-page-node-id="OaQoV1pGix2x1vBccqHURR">管理员预置</span></div>
         <div class="card" style="padding-top:4px;padding-bottom:4px" id="expertList" data-page-node-id="fdYtOKHZxQRFtFC5A3pNd5"></div>
         <div class="muted" style="margin-top:6px" data-page-node-id="3WHhNXryQWFBoPpIun6yLY">外部能力（政务申报平台、OA、腾讯文档等）由管理员在后台统一连接配置</div>
       </div>
@@ -1182,12 +1212,29 @@ function activateChatTab(){
 function setChatWorker(w){
   state.chatWorker = w || null;
   const b = $('scopeBadge');
-  if(!b) return;
-  if(w && (w.roleName || w.duty)){
-    b.textContent = '职责限定：' + (w.roleName || w.name || '数字员工');
-    b.style.display = '';
-  }else{
-    b.style.display = 'none';
+  if(b){
+    if(w && (w.roleName || w.duty)){
+      b.textContent = '职责限定：' + (w.roleName || w.name || '数字员工');
+      b.style.display = '';
+    }else{
+      b.style.display = 'none';
+    }
+  }
+  applyKbChip(state.chatWorker);
+}
+/* G-2：知识库开关只对「知识型」数字员工/普通对话有意义。
+   请假、公文等业务流员工自带数据来源，显示「知识库 开」与当前任务无关且会误导。 */
+const KB_CAPABLE_TYPES = ['KB_ASSISTANT', 'GENERAL'];
+function applyKbChip(w){
+  const chip = $('kbChip');
+  if(!chip) return;
+  const type = w && w.workerType;
+  const show = !w || KB_CAPABLE_TYPES.indexOf(type) >= 0;
+  chip.style.display = show ? '' : 'none';
+  if(!show){
+    state.kbOn = false;
+    const t = $('kbChipText'); if(t) t.textContent = '知识库 关';
+    chip.classList.add('off');
   }
 }
 
@@ -1374,15 +1421,36 @@ function renderExperts(){
     home.innerHTML = emptyBox('暂无推荐专家');
     return;
   }
-  const row = (e,i)=>
-    '<div class="expert-row" onclick="startChat('+i+')">'+
+  // D-4：标注哪些专家已被实例化为数字员工，并可直接跳转过去
+  const roster = new Set((state.workers||[]).map(w=>w.name));
+  const row = (e,i)=>{
+    const hasWorker = roster.has(e.name);
+    return '<div class="expert-row" onclick="startChat('+i+')">'+
       '<div class="avatar">'+icon(iconKey(e.icon))+'</div>'+
-      '<div style="flex:1;min-width:0"><div class="ename">'+esc(e.name)+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="ename">'+esc(e.name)+
+        (hasWorker ? ' <span class="badge go">已有数字员工</span>' : '')+'</div>'+
       '<div class="muted">'+esc(e.desc||e.description||'')+'</div></div>'+
+      (hasWorker
+        ? '<button class="btn ghost small" onclick="event.stopPropagation();gotoWorkerByName(\''+
+            esc(e.name).replace(/'/g,"\\'")+'\')">查看</button>'
+        : '')+
       '<svg class="ic" style="width:15px;height:15px;color:var(--text-3)"><use href="#i-chevron"/></svg>'+
     '</div>';
+  };
   box.innerHTML = list.map(row).join('');
   home.innerHTML = list.slice(0,2).map(row).join('');
+}
+/* 专家 → 对应数字员工（D-4）：切到「数字员工」标签并高亮定位 */
+function gotoWorkerByName(name){
+  switchAgentTab('workers');
+  const idx = (state.workers||[]).findIndex(w=>w.name===name);
+  if(idx < 0){ toast('未找到对应数字员工'); return; }
+  const el = document.querySelectorAll('#agentList .agent-card')[idx];
+  if(el){
+    el.scrollIntoView({block:'center'});
+    el.classList.add('flash');
+    setTimeout(()=>el.classList.remove('flash'), 1600);
+  }
 }
 function renderKb(){
   const box = $('kbList');
@@ -1516,6 +1584,23 @@ function applyQuota(q){
 /* ============================================================================
    10. 待办
    ============================================================================ */
+/* A-6：列表时间改相对格式，完整时间放 title 属性，详情页仍展示完整时间 */
+function fullTime(ts){ return String(ts || '').replace('T',' ').slice(0,16); }
+function relTime(ts){
+  if(!ts) return '—';
+  const raw = String(ts).replace(' ', 'T');
+  const d = new Date(raw);
+  if(isNaN(d.getTime())) return fullTime(ts);
+  const now = new Date();
+  const p2 = n => (n < 10 ? '0' : '') + n;
+  const hm = p2(d.getHours()) + ':' + p2(d.getMinutes());
+  const dayStart = t => new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  const diffDay = Math.round((dayStart(now) - dayStart(d)) / 86400000);
+  if(diffDay === 0) return '今天 ' + hm;
+  if(diffDay === 1) return '昨天 ' + hm;
+  if(d.getFullYear() === now.getFullYear()) return p2(d.getMonth()+1) + '-' + p2(d.getDate());
+  return d.getFullYear() + '-' + p2(d.getMonth()+1) + '-' + p2(d.getDate());
+}
 /* 天数（含首尾）：请假 9-15 至 9-16 记为 2 天 */
 function daysBetween(s, e){
   const a = Date.parse(s + 'T00:00:00'), b = Date.parse(e + 'T00:00:00');
@@ -1546,7 +1631,7 @@ function approvalBrief(a){
   }else{
     parts.push('提交人：' + (a.creatorName || a.createdBy || '—'));
   }
-  parts.push((a.createdAt || '').replace('T',' ').slice(0,16));
+  parts.push(relTime(a.createdAt));
   return parts.join(' · ');
 }
 /* 标题去掉与副标题重复的日期括号（移动端窄，重复信息会把徽标挤到下一行） */
@@ -1581,7 +1666,7 @@ function renderTodo(){
     rows = todoList.filter(a=>a.status==='PENDING').map(a=>{
       const ic = approvalIcon(a);
       return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge go">待审批</span>',
-        esc(approvalBrief(a)), "openTodoDetail("+a.id+",'todo')", ic[1]);
+        esc(approvalBrief(a)), "openTodoDetail("+a.id+",'todo')", ic[1], fullTime(a.createdAt));
     }).join('');
   }else{
     rows = notifItems().filter(n=>!n.readAt).slice(0,10).map(n=>
@@ -1610,7 +1695,7 @@ function renderTodo(){
         const ic = approvalIcon(a);
         const tail = a.decisionNote ? ('意见：'+esc(a.decisionNote)) : esc(approvalBrief(a));
         return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
-          tail, "openTodoDetail("+a.id+",'mine')", ic[1]);
+          tail, "openTodoDetail("+a.id+",'mine')", ic[1], fullTime(a.createdAt));
       }).join('') + mineMore
     : emptyBox('暂无申请记录');
 
@@ -1667,8 +1752,8 @@ function switchAgentTab(name){
     p.classList.toggle('active', p.dataset.panel===name);
   });
 }
-function todoRow(ico, title, sub, onclick, cls){
-  return '<div class="todo-item" onclick="'+onclick+'">'+
+function todoRow(ico, title, sub, onclick, cls, tip){
+  return '<div class="todo-item" onclick="'+onclick+'"'+(tip ? ' title="'+esc(tip)+'"' : '')+'>'+
     '<div class="tico '+(cls||'')+'">'+icon(ico)+'</div>'+
     '<div class="tmain"><div class="tt">'+title+'</div><div class="ts">'+sub+'</div></div></div>';
 }
@@ -1998,14 +2083,17 @@ function renderAgents(){
     const hasOut = !!w.lastOutput && w.lastOutput !== '尚未运行';
     const emptyOut = canManage ? '尚未产出 · 点「调整任务」设定任务内容'
       : '尚未产出 · 点「对话」发起第一次任务';
-    const ops = [
-      '<button class="btn small" onclick="useAgent('+i+')">对话</button>',
-      '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>'
-    ];
-    if(canManage){
-      ops.push('<button class="btn ghost small" onclick="runAgentNow('+i+')">立即执行</button>');
-      ops.push('<button class="btn ghost small" onclick="editAgent('+i+')">调整任务</button>');
-    }
+    // D-3：管理员侧保留「对话」为主操作，其余收进「⋯」溢出菜单，避免卡片按钮挤成多行
+    const ops = canManage
+      ? '<button class="btn small" onclick="useAgent('+i+')">对话</button>'+
+        '<button class="btn ghost small" onclick="toggleAgentMenu('+i+',event)" aria-label="更多操作">⋯</button>'+
+        '<div class="agent-menu" id="agentMenu-'+i+'">'+
+          '<button onclick="showAgentRuns('+i+')">运行记录</button>'+
+          '<button onclick="runAgentNow('+i+')">立即执行</button>'+
+          '<button onclick="editAgent('+i+')">调整任务</button>'+
+        '</div>'
+      : '<button class="btn small" onclick="useAgent('+i+')">对话</button>'+
+        '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>';
     // 启停开关属管理操作：普通成员只看状态徽标，不暴露开关
     const sw = canManage
       ? '<button class="switch '+(w.on?'on':'')+'" onclick="toggleAgent('+i+')" aria-label="启停"><i></i></button>'
@@ -2017,20 +2105,45 @@ function renderAgents(){
           '<div class="aname">'+esc(w.name)+' <span class="badge '+badge+'">'+esc(w.status||'')+'</span>'
             +(needsTime?'':' <span class="badge mode">'+modeText+'</span>')+'</div>'+
           '<div class="adesc">'+esc(w.description||'')+'</div>'+
+          // 运行计划上移为副标题；若计划文案里已含执行时刻，就不再重复一行「执行时刻：」
+          '<div class="asched">运行计划：'+esc(w.schedule||'—')+esc(
+            needsTime
+              ? (agentTimeText(w) !== '未设置执行时刻' && (w.schedule||'').indexOf(agentTimeText(w)) < 0
+                  ? ' · 执行时刻：'+agentTimeText(w) : '')
+              : ' · '+modeText+' · 无需执行时刻')+'</div>'+
         '</div>'+
         sw +
       '</div>'+ tip +
       '<div class="agent-meta">最近产出：'+(hasOut
-          ? esc(w.lastOutput)
+          ? '<span class="out-clamp" id="out-'+i+'">'+esc(w.lastOutput)+'</span>'+
+            '<button class="out-toggle" id="outBtn-'+i+'" onclick="toggleOut('+i+')">展开</button>'
           : '<span class="meta-empty">'+esc(emptyOut)+'</span>')+
-        '<br>运行计划：'+esc(w.schedule||'—')+
-        '<br>'+(needsTime ? '执行时刻：'+esc(agentTimeText(w)) : '运行模式：'+modeText+' · 无需执行时刻')+
-        (w.lastRunAt?' · 最近执行 '+esc(fmtRunTime(w.lastRunAt)):'')+
+        (w.lastRunAt?'<br>最近执行：'+esc(fmtRunTime(w.lastRunAt)):'')+
       '</div>'+
-      '<div class="agent-ops">'+ ops.join('') +'</div>'+
+      '<div class="agent-ops">'+ ops +'</div>'+
     '</div>';
   }).join('');
 }
+/* D-5：产出预览收敛为 2 行，点击展开完整内容 */
+function toggleOut(i){
+  const el = document.getElementById('out-'+i);
+  if(!el) return;
+  const open = el.classList.toggle('open');
+  const btn = document.getElementById('outBtn-'+i);
+  if(btn) btn.textContent = open ? '收起' : '展开';
+}
+/* D-3：员工卡片「⋯」溢出菜单（同时只开一个；点页面其他位置自动关闭） */
+function toggleAgentMenu(i, ev){
+  if(ev) ev.stopPropagation();
+  document.querySelectorAll('.agent-menu.show').forEach(m=>{
+    if(m.id !== 'agentMenu-'+i) m.classList.remove('show');
+  });
+  const el = document.getElementById('agentMenu-'+i);
+  if(el) el.classList.toggle('show');
+}
+document.addEventListener('click', function(){
+  document.querySelectorAll('.agent-menu.show').forEach(m=>m.classList.remove('show'));
+});
 /* 类型目录查询：用于在提示语/类型说明里展示「该类型所需角色」，目录未加载时返回空串。 */
 function workerTypeRoles(type){
   const hit = (state.roleTypes||[]).find(r=>r.code===type);
@@ -2104,7 +2217,9 @@ function useAgent(i){
   state.conversationId = null;
   setChatWorker(w);                           // 绑定 → 后端下发该员工职责范围，越界问题被拒答
   $('chatName').textContent = w.name;
-  $('chatModel').textContent = '对话模式 · ' + (w.roleName||'通用办公助手');
+  // G-4：角色名已在「#chatName」与「职责限定」徽标各出现一次，这里不再重复；
+  // 该行只承载模型档位（首 token 到达后由 modelTier 更新）
+  $('chatModel').textContent = '模型：智能路由';
   go('page-chat'); activateChatTab();
   $('pageTitle').innerHTML = '与数字员工对话<span class="ver">V1.2</span>';
   const chips = (isLeaveCapable()
@@ -2136,7 +2251,7 @@ function createAgentFlow(worker){
   setChatWorker(worker || null);
   $('chatName').textContent = '数字员工管家';
   $('chatModel').textContent = worker
-    ? ('正在调整「'+worker.name+'」 · '+(worker.roleName||'通用办公助手'))
+    ? ('正在调整「'+worker.name+'」')
     : '创建数字员工 · 确认后生效';
   go('page-chat'); activateChatTab();
   $('pageTitle').innerHTML = (worker?'调整数字员工':'创建数字员工')+'<span class="ver">V1.2</span>';
@@ -2646,9 +2761,9 @@ function leaveFormHtml(){
     '<div class="lf-row"><label>开始日期</label><input id="lfStart" type="date"></div>'+
     '<div class="lf-row"><label>结束日期</label><input id="lfEnd" type="date"></div>'+
     '<div class="lf-row"><label>请假事由</label><textarea id="lfReason" rows="2" placeholder="请简要说明请假原因"></textarea></div>'+
-    '<div class="lf-row"><label>证明材料</label>'+
-      '<button class="btn ghost small" type="button" onclick="leavePickFiles()">＋ 上传附件</button>'+
-      '<span class="lf-hint">支持病历/准假证明等</span></div>'+
+    '<div class="lf-row wrap"><label>证明材料</label>'+
+      '<button class="btn ghost small lf-upload" type="button" onclick="leavePickFiles()">＋ 上传附件</button>'+
+      '<span class="lf-hint">支持病历 / 准假证明等</span></div>'+
     '<div class="lf-files" id="lfFiles"></div>'+
     '<div class="lf-error" id="lfError" style="display:none"></div>'+
     '<div class="lf-actions">'+
