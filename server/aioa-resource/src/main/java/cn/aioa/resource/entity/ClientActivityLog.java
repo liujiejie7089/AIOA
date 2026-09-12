@@ -30,6 +30,12 @@ public class ClientActivityLog {
 
     private String label;
 
+    /** 变更前快照（JSON 文本，V32）——历史行与无变更动作为 null。 */
+    private String beforeValue;
+
+    /** 变更后快照（JSON 文本，V32）。 */
+    private String afterValue;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

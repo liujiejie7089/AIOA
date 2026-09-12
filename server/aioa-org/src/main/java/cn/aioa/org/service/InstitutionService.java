@@ -1,5 +1,6 @@
 package cn.aioa.org.service;
 
+import cn.aioa.common.event.TenantProvisionedEvent;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.org.entity.OrgDepartment;
 import cn.aioa.org.entity.OrgInstitution;
@@ -16,6 +17,7 @@ import cn.aioa.security.AuthUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +48,7 @@ public class InstitutionService {
     private final OrgGuard guard;
     private final AuditRecorder audit;
     private final AccountProvisioner accounts;
+    private final ApplicationEventPublisher events;
 
     // ------------------------------------------------------------------ 查询
 
@@ -153,6 +156,9 @@ public class InstitutionService {
 
         audit.record(tenantId, it.getId(), actor, "INSTITUTION_CREATE", "INSTITUTION", it.getId(),
                 "新建机构「" + name + "」（编码 " + code + "）", null, toView(it));
+        // 新机构入驻完成 → 通知能力域做租户级初始化（数字员工预置）。
+        // 监听方幂等且自行吞异常，故此处失败不会影响入驻主流程。
+        events.publishEvent(new TenantProvisionedEvent(tenantId, it.getId(), name));
         return toView(it);
     }
 

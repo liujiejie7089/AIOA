@@ -38,13 +38,20 @@ public final class PermissionCatalog {
     /** 使用数字员工（发起对话、提交业务申请）。所有登录用户。 */
     public static final String WORKER_USE = "worker:use";
     /**
-     * 创建数字员工。租户管理员 + 企业管理员（后者受 {@code institution_id} 约束，仅本机构）。
+     * 创建数字员工。租户管理员 + 企业管理员（后者受 {@code institution_id} 约束，仅本机构）
+     * + 部门负责人（受 {@code visible_scope} 约束，新建即锁定到本部门）。
      *
      * <p>放开企业管理员是为了消除「能管理却不能创建」的自相矛盾；
-     * 越权风险由归属机构兜底——创建的员工自动打上本机构标记，改不了其他机构的。</p>
+     * 放开部门负责人是为了让「本部门数字员工由本部门配置」可落地，
+     * 越权风险由归属机构 + 部门可见范围双重兜底——
+     * 创建的员工自动打上本机构标记，且可见范围强制为「仅本部门」。</p>
      */
     public static final String WORKER_CREATE = "worker:create";
-    /** 管理数字员工（修改/启停/删除）。租户管理员、企业管理员（限本机构）。 */
+    /**
+     * 管理数字员工（修改/启停/删除）。
+     *
+     * <p>租户管理员（全租户）、企业管理员（限本机构）、部门负责人（限已分发到本部门的）。</p>
+     */
     public static final String WORKER_MANAGE = "worker:manage";
 
     // ---- 平台全部内置角色 ----
@@ -62,6 +69,14 @@ public final class PermissionCatalog {
     private static final Set<String> TENANT_ADMINS = Set.of(ROLE_ADMIN, ROLE_TENANT_ADMIN);
     /** 机构管理员级：租户管理员级 + 企业管理员。 */
     private static final Set<String> ORG_ADMINS = Set.of(ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN);
+    /**
+     * 数字员工管理者：机构管理员级 + 部门负责人。
+     *
+     * <p>部门负责人的范围在 {@code WorkerController} 内另行收紧（只看本部门可见的员工），
+     * 不能仅凭本集合判定「能管全部」。</p>
+     */
+    private static final Set<String> WORKER_MANAGERS = Set.of(
+            ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN, ROLE_DEPT_LEADER);
 
     /** 权限码 → 允许的角色。 */
     private static final Map<String, Set<String>> GRANTS = Map.of(
@@ -69,8 +84,8 @@ public final class PermissionCatalog {
             KB_READ, ALL,
             DOC_DRAFT, ALL,
             WORKER_USE, ALL,
-            WORKER_CREATE, ORG_ADMINS,
-            WORKER_MANAGE, ORG_ADMINS,
+            WORKER_CREATE, WORKER_MANAGERS,
+            WORKER_MANAGE, WORKER_MANAGERS,
             APPROVAL_LEAVE, TENANT_ADMINS);
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
@@ -135,6 +150,16 @@ public final class PermissionCatalog {
     /** 是否具备机构管理员及以上身份。 */
     public static boolean isOrgAdmin(AuthUser user) {
         return holdsAny(user, ORG_ADMINS);
+    }
+
+    /** 是否具备「部门负责人」身份且不高于该层级（即范围必须收紧到本部门）。 */
+    public static boolean isDeptLeaderOnly(AuthUser user) {
+        return hasRole(user, ROLE_DEPT_LEADER) && !holdsAny(user, ORG_ADMINS);
+    }
+
+    /** 当前用户是否持有某角色码。 */
+    public static boolean hasRole(AuthUser user, String role) {
+        return user != null && user.getRoles() != null && user.getRoles().contains(role);
     }
 
     private static boolean holdsAny(AuthUser user, Set<String> roles) {

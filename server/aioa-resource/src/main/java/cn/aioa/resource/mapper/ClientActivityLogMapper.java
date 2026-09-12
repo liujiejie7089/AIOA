@@ -16,7 +16,8 @@ public interface ClientActivityLogMapper extends BaseMapper<ClientActivityLog> {
     @Select("SELECT l.id, l.user_id AS userId, "
             + "CASE WHEN l.user_id = 0 THEN '数字员工' "
             + "ELSE COALESCE(u.nickname, u.username, CONCAT('用户#', l.user_id)) END AS userName, "
-            + "l.action, l.status, l.label, l.created_at AS createdAt "
+            + "l.action, l.status, l.label, l.before_value AS beforeValue, l.after_value AS afterValue, "
+            + "l.created_at AS createdAt "
             + "FROM client_activity_log l LEFT JOIN sys_user u ON u.id = l.user_id "
             + "WHERE l.tenant_id = #{tenantId} AND l.deleted_at IS NULL "
             + "ORDER BY l.id DESC LIMIT #{limit}")

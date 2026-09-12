@@ -15,6 +15,7 @@ import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +28,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 数字员工（V1.2 新增；V18 补全创建/编辑闭环）：
@@ -69,14 +72,19 @@ public class WorkerController {
     private final AgentWorkerRunMapper runMapper;
     private final WorkerScheduleService scheduleService;
     private final ClientActivityLogMapper activityLogMapper;
+    /** 审计快照序列化（Spring Boot 自带实例）。 */
+    private final ObjectMapper objectMapper;
 
     /**
-     * 数字员工变更留痕：谁、何时、对哪个数字员工、做了什么。
+     * 数字员工变更留痕：谁、何时、对哪个数字员工、做了什么、<b>改前改后各是什么</b>。
      *
      * <p>写入本模块既有的活动日志（管理端「系统管理 → 审计」直接可见），
      * 不写 audit_log——那张表带 hash 链，跨模块直接插会破坏链校验。</p>
+     *
+     * <p>V32 补齐 V1.2 遗留短板：此前只记动作、不记变更值，无法回答
+     * 「改之前是什么、改之后是什么」，不满足审计可追溯要求。</p>
      */
-    private void audit(AuthUser user, String action, String label) {
+    private void audit(AuthUser user, String action, String label, Object before, Object after) {
         try {
             ClientActivityLog log = new ClientActivityLog();
             log.setTenantId(user.getTenantId());
@@ -84,6 +92,8 @@ public class WorkerController {
             log.setAction(action);
             log.setStatus("SUCCESS");
             log.setLabel(label);
+            log.setBeforeValue(json(before));
+            log.setAfterValue(json(after));
             log.setCreatedBy(user.getUserId());
             log.setCreatedAt(LocalDateTime.now());
             log.setUpdatedAt(LocalDateTime.now());
@@ -91,6 +101,42 @@ public class WorkerController {
         } catch (Exception ignored) {
             // 审计失败不应阻断业务：留痕是增强，不是主流程
         }
+    }
+
+    private String json(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 数字员工的可审计快照：只取<b>配置类</b>字段。
+     *
+     * <p>刻意不含 {@code lastOutput} 等运行产出，避免审计表被大文本撑爆。
+     * 返回新 Map（值已拷贝），故在变更<b>前</b>调用即可安全留存旧值。</p>
+     */
+    private static Map<String, Object> snapshot(AgentWorker w) {
+        if (w == null) {
+            return null;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", w.getId());
+        m.put("name", w.getName());
+        m.put("workerType", w.getWorkerType());
+        m.put("runMode", w.getRunMode());
+        m.put("scheduleTime", w.getScheduleTime());
+        m.put("taskPrompt", w.getTaskPrompt());
+        m.put("status", w.getStatus());
+        m.put("enabled", w.getEnabled());
+        m.put("visibleScope", w.getVisibleScope());
+        m.put("deptIds", w.getDeptIds());
+        m.put("institutionId", w.getInstitutionId());
+        return m;
     }
 
     public record WorkerView(Long id, String name, String icon, String description, String status,
@@ -137,7 +183,7 @@ public class WorkerController {
          * 管理员则要求同时持有该类型的权限码（如请假类需 {@code approval:leave}）。</p>
          */
         static RoleTypeView of(WorkerRole role, AuthUser user) {
-            boolean canCreate = PermissionCatalog.isAdmin(user)
+            boolean canCreate = PermissionCatalog.holds(user, PermissionCatalog.WORKER_CREATE)
                     && PermissionCatalog.holds(user, role.requiredPermission());
             return new RoleTypeView(role.code(), role.displayName(), role.duty(), role.requiredPermission(),
                     PermissionCatalog.rolesText(role.requiredPermission()), canCreate);
@@ -205,7 +251,8 @@ public class WorkerController {
         // 模板类型可能要求特定权限码（如请假类需 approval:leave）
         requirePermission(user, WorkerRole.of(tpl.getWorkerType()));
         workerMapper.insert(w);
-        audit(user, "worker.from_template", "从模板「" + tpl.getName() + "」(id=" + templateId + ") 创建数字员工");
+        audit(user, "worker.from_template", "从模板「" + tpl.getName() + "」(id=" + templateId + ") 创建数字员工",
+                null, snapshot(w));
         return ApiResponse.ok(WorkerView.from(w));
     }
 
@@ -220,6 +267,7 @@ public class WorkerController {
         AuthUser user = AuthUserContext.require();
         requireAdmin(user, "设置数字员工可见范围");
         AgentWorker w = requireOwned(user, id);
+        Map<String, Object> beforeScope = snapshot(w);
         String scope = body == null ? null : (String) body.get("scope");
         if (scope == null || scope.isBlank()) {
             scope = "TENANT";
@@ -228,19 +276,30 @@ public class WorkerController {
         if (!"TENANT".equals(scope) && !"DEPT".equals(scope)) {
             throw BizException.badRequest("可见范围只能为 TENANT 或 DEPT");
         }
-        w.setVisibleScope(scope);
-        if ("DEPT".equals(scope)) {
-            Object ids = body.get("deptIds");
-            if (ids == null || !(ids instanceof java.util.List<?> list) || list.isEmpty()) {
-                throw BizException.badRequest("scope=DEPT 时必须指定 deptIds");
+        // 部门负责人：只能把员工锁定在本部门，不得改成全租户可见（否则等于自我提权）
+        if (PermissionCatalog.isDeptLeaderOnly(user)) {
+            Long deptId = user.getDepartmentId();
+            if (deptId == null) {
+                throw BizException.forbidden("您的账号未绑定部门，无法设置可见范围");
             }
-            w.setDeptIds(list.toString());
+            w.setVisibleScope("DEPT");
+            w.setDeptIds("[" + deptId + "]");
         } else {
-            w.setDeptIds(null);
+            w.setVisibleScope(scope);
+            if ("DEPT".equals(scope)) {
+                Object ids = body.get("deptIds");
+                if (ids == null || !(ids instanceof java.util.List<?> list) || list.isEmpty()) {
+                    throw BizException.badRequest("scope=DEPT 时必须指定 deptIds");
+                }
+                w.setDeptIds(list.toString());
+            } else {
+                w.setDeptIds(null);
+            }
         }
         workerMapper.updateById(w);
         audit(user, "worker.scope", "设置数字员工「" + w.getName() + "」(id=" + id + ") 可见范围="
-                + w.getVisibleScope() + (w.getDeptIds() == null ? "" : " 部门=" + w.getDeptIds()));
+                + w.getVisibleScope() + (w.getDeptIds() == null ? "" : " 部门=" + w.getDeptIds()),
+                beforeScope, snapshot(w));
         return ApiResponse.ok(WorkerView.from(w));
     }
 
@@ -319,17 +378,15 @@ public class WorkerController {
         w.setStatus(AgentWorker.resolveStatus(runMode, scheduleTime, AgentWorker.STATUS_RUNNING, true));
         w.setLastOutput("尚未运行");
         w.setCreatedBy(user.getUserId());
-        // 可见范围：默认本租户全员可见；前端可传 DEPT + deptIds 直接分发到部门
-        String scope = body.getVisibleScope() == null || body.getVisibleScope().isBlank()
-                ? "TENANT" : body.getVisibleScope().trim().toUpperCase();
-        w.setVisibleScope("DEPT".equals(scope) ? "DEPT" : "TENANT");
-        w.setDeptIds("DEPT".equals(w.getVisibleScope()) ? body.getDeptIds() : null);
+        // 可见范围：默认本租户全员可见；前端可传 DEPT + deptIds 直接分发到部门。
+        // 部门负责人不论传什么，一律锁定到本部门（范围纪律，见 V32）。
+        applyVisibilityScope(w, user, body);
         w.setIsTemplate(0);
         w.setCreatedAt(LocalDateTime.now());
         w.setUpdatedAt(LocalDateTime.now());
         workerMapper.insert(w);
         audit(user, "worker.create", "创建数字员工「" + w.getName() + "」类型=" + role.code()
-                + " 可见范围=" + w.getVisibleScope());
+                + " 可见范围=" + w.getVisibleScope(), null, snapshot(w));
         return ApiResponse.ok(WorkerView.from(w));
     }
 
@@ -339,6 +396,8 @@ public class WorkerController {
         AuthUser user = AuthUserContext.require();
         requireAdmin(user, "修改数字员工");
         AgentWorker cur = requireOwned(user, id);
+        // 变更前快照：cur 会被原地改写，故必须先留底
+        Map<String, Object> beforeUpdate = snapshot(cur);
 
         if (body.getName() != null) {
             String name = trim(body.getName());
@@ -380,6 +439,8 @@ public class WorkerController {
         }
         cur.setUpdatedAt(LocalDateTime.now());
         workerMapper.updateById(cur);
+        audit(user, "worker.update", "修改数字员工「" + cur.getName() + "」(id=" + id + ")",
+                beforeUpdate, snapshot(cur));
         return ApiResponse.ok(WorkerView.from(cur));
     }
 
@@ -388,6 +449,7 @@ public class WorkerController {
         AuthUser user = AuthUserContext.require();
         requireAdmin(user, "启用或停用数字员工");
         AgentWorker w = requireOwned(user, id);
+        Map<String, Object> before = snapshot(w);
         boolean next = Integer.valueOf(0).equals(w.getEnabled());
         w.setEnabled(next ? 1 : 0);
         boolean configured = w.getScheduleTime() != null && !w.getScheduleTime().isBlank();
@@ -395,6 +457,8 @@ public class WorkerController {
                 : (configured ? AgentWorker.STATUS_RUNNING : AgentWorker.STATUS_PENDING_CONFIG));
         w.setUpdatedAt(LocalDateTime.now());
         workerMapper.updateById(w);
+        audit(user, "worker.toggle", (next ? "启用" : "停用") + "数字员工「" + w.getName() + "」(id=" + id + ")",
+                before, snapshot(w));
         return ApiResponse.ok(WorkerView.from(w));
     }
 
@@ -419,15 +483,24 @@ public class WorkerController {
         if (trim(cur.getTaskPrompt()).isEmpty()) {
             throw BizException.badRequest("该数字员工尚未配置任务内容，请先编辑补全后再执行");
         }
-        return ApiResponse.ok(scheduleService.runNow(cur, AgentWorkerRun.TRIGGER_MANUAL));
+        AgentWorkerRun run = scheduleService.runNow(cur, AgentWorkerRun.TRIGGER_MANUAL);
+        audit(user, "worker.run", "手动执行数字员工「" + cur.getName() + "」(id=" + id + ")", null,
+                Map.of("runId", run.getId() == null ? 0L : run.getId(),
+                        "trigger", AgentWorkerRun.TRIGGER_MANUAL,
+                        "workerId", cur.getId() == null ? 0L : cur.getId()));
+        return ApiResponse.ok(run);
     }
 
     @DeleteMapping("/{id}")
     public ApiResponse<Boolean> delete(@PathVariable Long id) {
         AuthUser user = AuthUserContext.require();
         requireAdmin(user, "删除数字员工");
-        requireOwned(user, id);
-        return ApiResponse.ok(workerMapper.deleteById(id) > 0);
+        AgentWorker w = requireOwned(user, id);
+        Map<String, Object> before = snapshot(w);
+        boolean ok = workerMapper.deleteById(id) > 0;
+        audit(user, "worker.delete", "删除数字员工「" + w.getName() + "」(id=" + id + ")",
+                before, Map.of("id", id, "deleted", ok));
+        return ApiResponse.ok(ok);
     }
 
     /**
@@ -466,21 +539,62 @@ public class WorkerController {
         if (cur == null || !user.getTenantId().equals(cur.getTenantId())) {
             throw BizException.notFound("数字员工不存在：" + id);
         }
-        // V31 机构约束：租户管理员可管全部；企业管理员仅能管本机构的。
-        // 机构级数字员工（institutionId 非空）只认本机构；租户级（空）不受限。
-        if (!PermissionCatalog.isAdmin(user)
-                && PermissionCatalog.ROLE_ORG_ADMIN.equals(soleOrgAdminRole(user))
-                && user.getInstitutionId() != null
-                && cur.getInstitutionId() != null
+        if (PermissionCatalog.isAdmin(user)) {
+            return cur;   // 系统管理员 / 租户管理员：本租户全部
+        }
+        // V31 机构约束：机构级数字员工（institutionId 非空）只认本机构；租户级（空）不受限。
+        if (user.getInstitutionId() != null && cur.getInstitutionId() != null
                 && !user.getInstitutionId().equals(cur.getInstitutionId())) {
             throw BizException.forbidden("只能管理本机构的数字员工；该数字员工属于其他机构");
+        }
+        // V32 部门约束：部门负责人只能管理「已分发到本部门」的数字员工
+        if (PermissionCatalog.isDeptLeaderOnly(user) && !deptScopedTo(cur, user.getDepartmentId())) {
+            throw BizException.forbidden("部门负责人只能管理已分发到本部门的数字员工；"
+                    + "该数字员工不在您本部门（" + user.getDepartmentId() + "）的可见范围内");
         }
         return cur;
     }
 
-    /** 是否「仅是」企业管理员（不同时具备租户管理员身份）。 */
-    private static String soleOrgAdminRole(AuthUser user) {
-        return PermissionCatalog.isAdmin(user) ? null : PermissionCatalog.ROLE_ORG_ADMIN;
+    /** 该数字员工是否被显式分发到指定部门（{@code visible_scope=DEPT} 且 dept_ids 含该部门）。 */
+    private static boolean deptScopedTo(AgentWorker w, Long deptId) {
+        if (deptId == null || !"DEPT".equals(w.getVisibleScope())) {
+            return false;
+        }
+        String ids = w.getDeptIds();
+        if (ids == null || ids.isBlank()) {
+            return false;
+        }
+        String wanted = deptId.toString();
+        for (String part : ids.replaceAll("[^0-9,]", "").split(",")) {
+            if (wanted.equals(part)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 可见范围落库规则（V32）。
+     *
+     * <p>部门负责人是「委派型管理者」：其创建的数字员工<b>强制</b>锁定到本部门，
+     * 不接收前端传入的 scope，避免通过改包把员工提升为全租户可见。
+     * 机构管理员 / 租户管理员按入参落库（默认 TENANT）。</p>
+     */
+    private static void applyVisibilityScope(AgentWorker w, AuthUser user, AgentWorker body) {
+        if (PermissionCatalog.isDeptLeaderOnly(user)) {
+            Long deptId = user.getDepartmentId();
+            if (deptId == null) {
+                throw BizException.forbidden("您的账号未绑定部门，无法创建数字员工；"
+                        + "请联系企业管理员将您设置为部门负责人");
+            }
+            w.setVisibleScope("DEPT");
+            w.setDeptIds("[" + deptId + "]");
+            return;
+        }
+        String scope = body.getVisibleScope() == null || body.getVisibleScope().isBlank()
+                ? "TENANT" : body.getVisibleScope().trim().toUpperCase();
+        w.setVisibleScope("DEPT".equals(scope) ? "DEPT" : "TENANT");
+        w.setDeptIds("DEPT".equals(w.getVisibleScope()) ? body.getDeptIds() : null);
     }
 
     /** 角色类型：显式指定优先，未指定则按名称/职责推断（保证历史与「一句话创建」都有类型）。 */
