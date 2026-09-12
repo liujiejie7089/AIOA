@@ -33,7 +33,7 @@ public class OnboardingController {
     @GetMapping
     public ApiResponse<Map<String, Object>> overview() {
         AuthUser u = guard.requireTenantAdmin();
-        return ApiResponse.ok(onboardingService.overview(u.getTenantId() == null ? 0L : u.getTenantId()));
+        return ApiResponse.ok(onboardingService.overview(guard.resolveRequestTenant(u)));
     }
 
     /** 单机构 8 步进度与阻塞原因。 */
@@ -41,7 +41,7 @@ public class OnboardingController {
     public ApiResponse<Map<String, Object>> progress(@PathVariable Long institutionId) {
         AuthUser u = guard.requireTenantAdmin();
         return ApiResponse.ok(onboardingService.progress(
-                u.getTenantId() == null ? 0L : u.getTenantId(), institutionId));
+                guard.resolveRequestTenant(u), institutionId));
     }
 
     /** 推进指定步骤（仅当门禁通过）。 */
@@ -51,7 +51,7 @@ public class OnboardingController {
         AuthUser u = guard.requireTenantAdmin();
         Integer step = body == null ? null : Integer.valueOf(Vals.integer(body, "step", 0));
         return ApiResponse.ok(onboardingService.advance(
-                u.getTenantId() == null ? 0L : u.getTenantId(), institutionId, step == 0 ? null : step, u));
+                guard.resolveRequestTenant(u), institutionId, step == 0 ? null : step, u));
     }
 
     /** 一键推进：逐级校验，遇到未通过门禁即停止并说明原因。 */
@@ -59,7 +59,7 @@ public class OnboardingController {
     public ApiResponse<Map<String, Object>> advanceAll(@PathVariable Long institutionId) {
         AuthUser u = guard.requireTenantAdmin();
         return ApiResponse.ok(onboardingService.advanceAll(
-                u.getTenantId() == null ? 0L : u.getTenantId(), institutionId, u));
+                guard.resolveRequestTenant(u), institutionId, u));
     }
 
     /** 步骤定义（前端向导文案，避免前后端硬编码不一致）。 */

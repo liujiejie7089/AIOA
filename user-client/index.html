@@ -675,8 +675,8 @@
       <div class="greet reveal" id="greet" data-page-node-id="lzREkNmlOJKqpsFauarYbM">你好</div>
       <div class="greet-sub reveal" id="greetSub" data-page-node-id="5mCowKbIZEjnWasFQJjQH1">今天想让我帮你做点什么？</div>
 
-      <!-- 经营数据看板（V1.2 C 位） -->
-      <div class="card reveal" data-page-node-id="4Dvqx9H9zVDAZCqFYGZjkx">
+      <!-- 经营数据看板（V1.2 C 位）· V33：无数据时整卡折叠，见 collapse() -->
+      <div class="card reveal" id="cardKpi" data-page-node-id="4Dvqx9H9zVDAZCqFYGZjkx">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px" data-page-node-id="18QJoxwBnHKebNq44GOyaF">
           <div class="sec-title" style="margin:0" data-page-node-id="8YiougV89oFp5AducuIo6I">
             <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="OQUgiS1jbpDjmWbSQ3wlRX"><use href="#i-chart" data-page-node-id="Hcnh2KKUlmGMCd0ACRyoh1"/></svg>
@@ -694,11 +694,13 @@
         <div style="display:flex;gap:8px;margin-top:11px" data-page-node-id="JYXvVxPSJYpVlhnIrtMg15">
           <button class="btn small" onclick="openSkill('数据分析')" data-page-node-id="INRzbC01Q7pfdt7IHuLm3E">深入分析</button>
           <button class="btn ghost small" onclick="openSkill('经营报表')" data-page-node-id="zr53fsHGlBT9QYJSiODunm">查看报表</button>
+          <!-- V33：真实调用模型生成解读，结果落库后回填看板；不做预置文案 -->
+          <button class="btn ghost small" id="kpiInsightBtn" onclick="genKpiInsight()" data-page-node-id="KpiInsightBtnV33b1">AI 解读</button>
         </div>
         <div class="muted" style="margin-top:9px" id="kpiSource" data-page-node-id="sHtWjnroHZ9HI3kCBLHPGZ"></div>
       </div>
 
-      <div class="card reveal" data-page-node-id="lAcskejSsjaFMUVOnPIKN2">
+      <div class="card reveal" id="cardToday" data-page-node-id="lAcskejSsjaFMUVOnPIKN2">
         <div class="sec-title" style="margin-top:0" data-page-node-id="hM11dLpUziTIFvFh6NFN5U">
           <svg class="ic" style="width:15px;height:15px;color:var(--accent)" data-page-node-id="67XpPg4av1OF0ARHNuyuCe"><use href="#i-inbox" data-page-node-id="JEIE8MfMEdZknUWASHCwuA"/></svg>
           今天要办的事 <span class="badge go" id="todayCnt" data-page-node-id="RvTu71Ell6U2WPUKBbyASF">0 件</span>
@@ -707,18 +709,26 @@
         <div class="suggest" id="todaySuggest" style="display:none" onclick="askSuggest()" data-page-node-id="0Lz3LI5r0ks7ZoZlSw1UoU"></div>
       </div>
 
-      <div class="sec-title reveal" data-page-node-id="BKVcqzkPlLC7HoWDJTrXxM">
+      <div class="sec-title reveal" id="secSkills" data-page-node-id="BKVcqzkPlLC7HoWDJTrXxM">
         <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="xeNtw6yj17yoEZkpWFJyZV"><use href="#i-spark" data-page-node-id="fcG6QDBC1fYsenpQ7CEnDI"/></svg>
         快捷技能 <span class="sub" data-page-node-id="WWGPrMbN9fCWQKHVO8sozL">· 点击即在会话中开始</span>
       </div>
       <div class="grid reveal" id="skillGrid" data-page-node-id="6T9x6zCfGr17QuCG8RuAk3"></div>
 
-      <div class="sec-title reveal" data-page-node-id="TEiqJ2UHHxA45nG80oLLMr">
+      <div class="sec-title reveal" id="secExperts" data-page-node-id="TEiqJ2UHHxA45nG80oLLMr">
         <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="TfjGc75oQ7YxaCnR5iqbZK"><use href="#i-bot" data-page-node-id="5GHoplSh5qWCNgrwlsZl7m"/></svg>
         推荐专家
         <span class="sub" style="margin-left:auto;cursor:pointer;color:var(--blue)" onclick="switchTabById('page-agent')" data-page-node-id="lfT8cIHHw2Rg4vgEy0lBeM">全部 ›</span>
       </div>
       <div class="card reveal" id="homeExperts" data-page-node-id="IBftjTLlg1m8XaVXwJPmBu"></div>
+
+      <!-- V33：工作台各模块全空时的兜底说明（有任一模块有数据时自动隐藏） -->
+      <div class="card reveal" id="homeEmpty" style="display:none" data-page-node-id="HmEmptyV33x1Qz8Wm3Yb9Nc">
+        <div class="muted" style="text-align:center;padding:6px 0">
+          工作台暂无可展示的数据<br>
+          <span style="font-size:11px">经营数据、待办、技能与专家由管理员在管理端配置后自动出现</span>
+        </div>
+      </div>
     </div>
 
     <!-- ========== 待办 ========== -->
@@ -882,6 +892,10 @@
       <div class="sec-title reveal" data-page-node-id="hmitzJ1mZCqUuPlRAZR4Bl">购买词元包</div>
       <div class="muted reveal" style="margin-bottom:12px" data-page-node-id="C4ms8Z6oSy1jrwLgwyUfwD">购买后额度实时到账，可在「我的 - 额度与账单」查看</div>
       <div id="pkgList" data-page-node-id="yTtN3h7tqzxNxfZFw5DkFO"></div>
+      <!-- V33：适用场景 —— 内容由后端 sys_config(billing.package.scenes) 配置，未配置时整块折叠 -->
+      <div class="sec-title reveal" id="pkgScenesTitle" style="display:none" data-page-node-id="PkgSceneTtlV33a1">适用场景</div>
+      <div class="muted reveal" id="pkgScenesSub" style="display:none;margin:-6px 0 10px" data-page-node-id="PkgSceneSubV33a2">不同规模团队的选型参考</div>
+      <div id="pkgScenes" data-page-node-id="PkgSceneBoxV33a3"></div>
     </div>
 
     <!-- ========== 操作记录 ========== -->
@@ -1079,6 +1093,10 @@ const API = {
   workerRuns(id){ return this.req('/v1/workers/'+id+'/runs?limit=20'); },
   runWorkerNow(id){ return this.req('/v1/workers/'+id+'/run',{method:'POST'}); },
   deleteWorker(id){ return this.req('/v1/workers/'+id,{method:'DELETE'}); },
+  /* V33：白名单配置读取（如词元包适用场景，后端 sys_config 可编辑） */
+  configs(keys){ return this.req('/v1/configs?keys='+encodeURIComponent((keys||[]).join(','))); },
+  /* V33：经营数据 AI 解读 —— 后端按真实指标调用模型生成，非预置文案 */
+  kpiInsight(period){ return this.req('/v1/kpi/board/insight?period='+(period||'month'),{method:'POST'}); },
   results(){ return this.req('/v1/results'); },
   createResult(body){ return this.req('/v1/results',{method:'POST',body:JSON.stringify(body)}); },
   resultDetail(id){ return this.req('/v1/results/'+id); },
@@ -1326,13 +1344,32 @@ async function loadLiveData(){
     try{ state.todoApprovals = await API.approvalList('todo') || []; }catch(e){}
   }
   renderAll();
+  // 适用场景是配置驱动的独立请求，失败不阻塞首屏（页面其他部分已渲染完）
+  renderPkgScenes();
+}
+
+/* V33：无数据的卡片 / 模块自动折叠。
+   空态原本各自渲染一句「暂无…」占位，四块叠起来就是半屏留白；
+   改为整块 display:none，等有数据再显形。collapse 只改 display，不动内容，故可反复调用。 */
+function collapse(id, hasData){
+  const el = (typeof id === 'string') ? document.getElementById(id) : id;
+  if(el) el.style.display = hasData ? '' : 'none';
+}
+/* 工作台四块全空时给一句兜底说明，避免「折叠后整页只剩一句问候」被误读成加载失败 */
+function collapseHomeFallback(){
+  const ids = ['cardKpi','cardToday','secSkills','secExperts'];
+  const any = ids.some(function(id){
+    const el = document.getElementById(id);
+    return el && el.style.display !== 'none';
+  });
+  collapse('homeEmpty', !any);
 }
 
 /* 逐块渲染并隔离异常：任一区块出错只影响自身，不会让整页变空白 */
 function renderAll(){
   const steps = [renderGreet, renderKPI, renderToday, renderSkills, renderExperts,
                  renderTodo, renderAgents, renderResults, renderMe, renderBill,
-                 renderLog, renderKb, renderPackages, updateQuotaUI];
+                 renderLog, renderKb, renderPackages, updateQuotaUI, collapseHomeFallback];
   steps.forEach(fn=>{
     try{ fn(); }
     catch(e){ console.error('[render] ' + fn.name + ' failed: ' + (e && e.message ? e.message : e)); }
@@ -1365,11 +1402,13 @@ function renderKPI(){
   const b = state.kpi[state.kpiMode];
   const grid = $('kpiGrid'), bars = $('kpiBars');
   if(!b || !b.metrics || !b.metrics.length){
-    grid.innerHTML = emptyBox('暂无经营数据，请管理员在管理端「经营数据」录入');
-    bars.innerHTML = ''; $('kpiInsight').textContent = ''; $('kpiSource').textContent = '';
-    $('todayCnt') && 0;
+    // V33：整卡折叠——空看板留着标题、趋势轴、两个按钮，是最典型的大面积留白
+    collapse('cardKpi', false);
+    grid.innerHTML = ''; bars.innerHTML = '';
+    $('kpiInsight').textContent = ''; $('kpiSource').textContent = '';
     return;
   }
+  collapse('cardKpi', true);
   grid.innerHTML = b.metrics.map(m=>
     '<div class="kpi" onclick="openSkill(\'数据分析\')">'+
       '<div class="k-label"><span>'+esc(m.label)+'</span><span>'+esc(m.compare||'')+'</span></div>'+
@@ -1391,6 +1430,30 @@ function renderKPI(){
   $('kpiTime').textContent = (state.kpiMode==='month' ? '本月' : '本季') + '口径';
 }
 
+/* V33：经营数据 AI 解读 —— 点一次即由后端取当前口径的真实指标调模型生成，
+   生成结果落库（biz_kpi_insight）并回填看板；文案不预置、不写死。 */
+async function genKpiInsight(){
+  const btn = $('kpiInsightBtn');
+  if(!btn || btn.disabled) return;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '生成中…';
+  try{
+    const r = await API.kpiInsight(state.kpiMode);
+    if(!r || !r.insight) throw new Error('未返回解读内容');
+    const b = state.kpi[state.kpiMode] || (state.kpi[state.kpiMode] = {});
+    b.insight = r.insight;
+    b.source = r.source || ('AI 生成 · 模型 ' + (r.model || '智能路由'));
+    renderKPI();
+    btn.textContent = '重新解读';
+    toast('AI 解读已生成');
+  }catch(e){
+    btn.textContent = old;
+    toast('解读生成失败：' + (e && e.message ? e.message : e));
+  }finally{
+    btn.disabled = false;
+  }
+}
+
 /* ============================================================================
    8. 今天要办的事
    ============================================================================ */
@@ -1405,7 +1468,7 @@ function renderToday(){
   });
   const box = $('todayList');
   if(!items.length){
-    box.innerHTML = '<div class="muted" style="padding:6px 0">今天没有待办事项，可以让数字员工帮你盯着。</div>';
+    box.innerHTML = '';
     $('todayCnt').textContent = '0 件';
   }else{
     box.innerHTML = items.slice(0,3).map((it,i)=>
@@ -1417,7 +1480,8 @@ function renderToday(){
   }
   const sug = $('todaySuggest');
   const firstExpert = (state.experts||[])[0];
-  if(firstExpert && (firstExpert.recs||[]).length){
+  const hasSug = !!(firstExpert && (firstExpert.recs||[]).length);
+  if(hasSug){
     sug.style.display = 'block';
     sug.innerHTML = '试试问「'+esc(firstExpert.name)+'」：'+esc(firstExpert.recs[0]);
     sug.dataset.q = firstExpert.recs[0];
@@ -1425,6 +1489,8 @@ function renderToday(){
   }else{
     sug.style.display = 'none';
   }
+  // V33：既无待办也无推荐问句时整卡折叠（原为一句占位文案，却占了整张卡片的高度）
+  collapse('cardToday', items.length > 0 || hasSug);
 }
 function askSuggest(){
   const sug = $('todaySuggest');
@@ -1439,7 +1505,10 @@ function askSuggest(){
 function renderSkills(){
   const box = $('skillGrid');
   const list = (state.skills||[]).slice(0,4);
-  if(!list.length){ box.innerHTML = emptyBox('暂无可用技能'); return; }
+  // V33：标题与卡片一起折叠，否则会留下一个孤零零的「快捷技能」小标题
+  collapse('secSkills', list.length > 0);
+  collapse(box, list.length > 0);
+  if(!list.length){ box.innerHTML = ''; return; }
   const icons = ['doc','scale','chart','bank'];
   box.innerHTML = list.map((s,i)=>
     '<div class="grid-item" onclick="openSkill(\''+esc(s.name||s.title||'技能')+'\')">'+
@@ -1448,9 +1517,12 @@ function renderSkills(){
 function renderExperts(){
   const box = $('expertList'), home = $('homeExperts');
   const list = state.experts||[];
+  // V33：首页「推荐专家」整块折叠（标题 + 卡片）；「专家服务」页保留占位提示，那里是主内容区
+  collapse('secExperts', list.length > 0);
+  collapse(home, list.length > 0);
   if(!list.length){
+    home.innerHTML = '';
     box.innerHTML = emptyBox('暂无专家，请管理员在管理端配置');
-    home.innerHTML = emptyBox('暂无推荐专家');
     return;
   }
   // D-4：标注哪些专家已被实例化为数字员工，并可直接跳转过去
@@ -1595,6 +1667,34 @@ function renderPackages(){
       '<div class="muted" style="margin-bottom:8px">'+fmt(p.tokens||0)+' 词元 · '+esc(p.desc||p.remark||'')+'</div>'+
       '<button class="btn small" onclick="buyPackage('+p.id+')">购买并到账</button></div>';
   }).join('');
+}
+/* V33：词元包「适用场景」—— 内容取自后端 sys_config(billing.package.scenes)。
+   写成配置而非常量，是因为选型话术会随售卖策略变，不该每次改文案都发版。
+   未配置或解析失败时整块折叠（与工作台空态同一纪律：没有内容就不占位）。 */
+async function renderPkgScenes(){
+  const box = $('pkgScenes'), ttl = $('pkgScenesTitle'), sub = $('pkgScenesSub');
+  if(!box) return;
+  let scenes = [];
+  try{
+    const cfg = await API.configs(['billing.package.scenes']);
+    const raw = cfg && cfg['billing.package.scenes'];
+    if(raw){
+      const parsed = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      scenes = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.scenes) ? parsed.scenes : []);
+    }
+  }catch(e){ scenes = []; }
+  const list = scenes.filter(s=>s && (s.title || s.name));
+  collapse(ttl, list.length>0); collapse(sub, list.length>0); collapse(box, list.length>0);
+  if(!list.length){ box.innerHTML = ''; return; }
+  box.innerHTML = list.map(s=>
+    '<div class="card" style="margin-bottom:9px">'+
+      '<div class="row"><span style="font-weight:700">'+esc(s.title||s.name)+'</span>'+
+        (s.fit ? '<span class="badge go">'+esc(s.fit)+'</span>' : '')+'</div>'+
+      '<div class="muted" style="margin:6px 0 8px">'+esc(s.desc||s.detail||'')+'</div>'+
+      ((s.points||[]).length
+        ? '<div style="font-size:12px;line-height:1.9">'+ (s.points||[]).map(p=>'· '+esc(p)).join('<br>') +'</div>'
+        : '')+
+    '</div>').join('');
 }
 async function buyPackage(id){
   try{
@@ -2088,24 +2188,38 @@ function renderAgents(){
   const list = state.workers||[];
   // 权限分档：使用（对话/提交申请/看运行记录）对所有成员开放；管理（创建/修改/启停/立即执行/删除）仅租户管理员
   const canManage = !!state.canManageWorker;
-  // 创建入口与「仅管理员可管理」提示按角色显隐（后端 requireAdmin 仍会兜底 403）
+  // V33：创建对全体成员开放（自建即 SELF、仅本人可见），故创建入口常显；
+  // 提示语改为讲清边界——自建的可随时改，他人创建的需管理员。
   const act = $('agentActions'), admHint = $('agentAdminHint');
-  if(act) act.style.display = canManage ? '' : 'none';
-  if(admHint) admHint.style.display = canManage ? 'none' : '';
+  if(act) act.style.display = '';
+  if(admHint){
+    admHint.style.display = canManage ? 'none' : '';
+    admHint.textContent = '你可以创建自己的数字员工（仅本人可见）并随时调整配置；他人创建的数字员工如需变更，请联系管理员。';
+  }
   if(!list.length){
-    box.innerHTML = '<div class="card">'+emptyBox(canManage
-      ? '暂无数字员工，点击下方创建'
-      : '暂无数字员工，请联系租户管理员创建')+'</div>';
+    box.innerHTML = '<div class="card">'+emptyBox('暂无数字员工，点下方「＋ 创建数字员工」新建一个')+'</div>';
     return;
   }
   box.innerHTML = list.map((w,i)=>{
+    // V33：可编辑 = 管理员身份 或 本人创建（后端 WorkerView.editable 已按同口径计算）
+    const canEdit = canManage || w.editable === true || w.mine === true;
+    // 私有助理（SELF）加一枚标记，避免和团队共享的混淆
+    const privateTag = w.visibleScope === 'SELF'
+      ? ' <span class="badge mode">仅我可见</span>' : '';
+    // V34：待上级审核的内容不对外可见，但创建者本人要能看到进度，否则会以为创建失败
+    const auditTag = w.auditStatus === 'PENDING' ? ' <span class="badge warn">待上级审核</span>'
+      : (w.auditStatus === 'REJECTED' ? ' <span class="badge danger">已驳回</span>' : '');
+    const auditTip = w.auditStatus === 'PENDING'
+      ? '<div class="agent-tip">已提交，待平台管理员审核通过后对成员生效。</div>'
+      : (w.auditStatus === 'REJECTED'
+        ? '<div class="agent-tip">审核未通过'+(w.auditNote?'：'+esc(w.auditNote):'')+'，请修改后重新提交。</div>' : '');
     // 待配置由后端按运行模式判定（仅定时型缺执行时刻才是待配置），前端不再自行推断
     const pending = w.status === '待配置';
     const badge = pending ? 'warn' : (w.on?'ok':'off');
     const tip = pending
-      ? '<div class="agent-tip">缺少执行时刻，'+(canManage
+      ? '<div class="agent-tip">缺少执行时刻，'+(canEdit
           ? '点「调整任务」补全后才会真正定时运行'
-          : '尚未开始定时运行；如需补全请联系租户管理员')+'</div>'
+          : '尚未开始定时运行；如需补全请联系创建者或管理员')+'</div>'
       : '';
     // 运行模式：事件驱动/按需唤起不需要执行时刻，展示为能力说明而非「缺失」
     const needsTime = !w.runMode || w.runMode === 'SCHEDULED';
@@ -2113,10 +2227,10 @@ function renderAgents(){
       : (w.runMode === 'ON_DEMAND' ? '按需唤起' : '定时');
     // 产出两态：未运行过（占位值）时不把执行结果当产出展示
     const hasOut = !!w.lastOutput && w.lastOutput !== '尚未运行';
-    const emptyOut = canManage ? '尚未产出 · 点「调整任务」设定任务内容'
+    const emptyOut = canEdit ? '尚未产出 · 点「调整任务」设定任务内容'
       : '尚未产出 · 点「对话」发起第一次任务';
-    // D-3：管理员侧保留「对话」为主操作，其余收进「⋯」溢出菜单，避免卡片按钮挤成多行
-    const ops = canManage
+    // D-3：可编辑者（管理员 / 创建者）保留「对话」为主操作，其余收进「⋯」溢出菜单，避免卡片按钮挤成多行
+    const ops = canEdit
       ? '<button class="btn small" onclick="useAgent('+i+')">对话</button>'+
         '<button class="btn ghost small" onclick="toggleAgentMenu('+i+',event)" aria-label="更多操作">⋯</button>'+
         '<div class="agent-menu" id="agentMenu-'+i+'">'+
@@ -2126,8 +2240,8 @@ function renderAgents(){
         '</div>'
       : '<button class="btn small" onclick="useAgent('+i+')">对话</button>'+
         '<button class="btn ghost small" onclick="showAgentRuns('+i+')">运行记录</button>';
-    // 启停开关属管理操作：普通成员只看状态徽标，不暴露开关
-    const sw = canManage
+    // V33：启停开关对「可编辑者」开放（含自建者），其余成员只看状态徽标
+    const sw = canEdit
       ? '<button class="switch '+(w.on?'on':'')+'" onclick="toggleAgent('+i+')" aria-label="启停"><i></i></button>'
       : '';
     return '<div class="agent-card">'+
@@ -2135,7 +2249,7 @@ function renderAgents(){
         '<div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
         '<div class="amain">'+
           '<div class="aname">'+esc(w.name)+' <span class="badge '+badge+'">'+esc(w.status||'')+'</span>'
-            +(needsTime?'':' <span class="badge mode">'+modeText+'</span>')+'</div>'+
+            +(needsTime?'':' <span class="badge mode">'+modeText+'</span>')+privateTag+auditTag+'</div>'+
           '<div class="adesc">'+esc(w.description||'')+'</div>'+
           // 运行计划上移为副标题；若计划文案里已含执行时刻，就不再重复一行「执行时刻：」
           '<div class="asched">运行计划：'+esc(w.schedule||'—')+esc(
@@ -2145,7 +2259,7 @@ function renderAgents(){
               : ' · '+modeText+' · 无需执行时刻')+'</div>'+
         '</div>'+
         sw +
-      '</div>'+ tip +
+      '</div>'+ tip + auditTip +
       '<div class="agent-meta">最近产出：'+(hasOut
           ? '<span class="out-clamp" id="out-'+i+'">'+esc(w.lastOutput)+'</span>'+
             '<button class="out-toggle" id="outBtn-'+i+'" onclick="toggleOut('+i+')">展开</button>'
@@ -2274,8 +2388,10 @@ function useDemo(q){
 
 /* 一句话创建/编辑数字员工：配置内化到对话流 */
 function createAgentFlow(worker){
-  // 创建/修改属管理员敏感操作：此处前置拦截（后端 POST/PUT 亦会 403 兜底）
-  if(!state.canManageWorker){ toast('数字员工的创建与修改需管理权限（租户管理员 / 企业管理员 / 部门负责人）；当前身份：'+workerRoleText()); return; }
+  // V33：新建对全体成员开放；修改需「管理员 或 本人创建」（后端 PUT 仍会按同一口径 403 兜底）
+  if(worker && !canEditWorker(worker)){
+    toast('该数字员工由他人创建，调整需管理员权限；当前身份：'+workerRoleText()); return;
+  }
   state.editingWorker = worker || null;
   state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
   state.conversationId = null;
@@ -2311,9 +2427,16 @@ function agentTaskTextFrom(q){
   return t || String(q||'').trim();
 }
 
+/* 数字员工是否可由当前用户编辑：管理员身份，或本人创建（与后端 WorkerView.editable 同口径） */
+function canEditWorker(w){
+  if(!w) return true;                       // 新建：全员可建
+  return !!state.canManageWorker || w.editable === true || w.mine === true;
+}
 function agentDemo(q){
   if(state.busy) return;
-  if(!state.canManageWorker){ toast('数字员工的创建与修改需管理权限（租户管理员 / 企业管理员 / 部门负责人）；当前身份：'+workerRoleText()); return; }
+  if(state.editingWorker && !canEditWorker(state.editingWorker)){
+    toast('该数字员工由他人创建，调整需管理员权限；当前身份：'+workerRoleText()); return;
+  }
   const m = $('msgs');
   m.insertAdjacentHTML('beforeend',
     '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
@@ -2346,7 +2469,9 @@ function agentDemo(q){
 
 async function confirmAgent(btn, name, plan){
   const editing = state.editingWorker;
-  if(!state.canManageWorker){ toast('数字员工的创建与修改需管理权限（租户管理员 / 企业管理员 / 部门负责人）；当前身份：'+workerRoleText()); return; }
+  if(editing && !canEditWorker(editing)){
+    toast('该数字员工由他人创建，调整需管理员权限；当前身份：'+workerRoleText()); return;
+  }
   if(btn){ btn.textContent = editing?'保存中…':'创建中…'; btn.disabled = true; }
   try{
     const scheduleTime = parseAgentTime(plan);

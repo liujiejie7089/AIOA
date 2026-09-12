@@ -38,21 +38,41 @@ public final class PermissionCatalog {
     /** 使用数字员工（发起对话、提交业务申请）。所有登录用户。 */
     public static final String WORKER_USE = "worker:use";
     /**
-     * 创建数字员工。租户管理员 + 企业管理员（后者受 {@code institution_id} 约束，仅本机构）
-     * + 部门负责人（受 {@code visible_scope} 约束，新建即锁定到本部门）。
+     * 创建数字员工。所有登录用户均可创建（V33 放开普通成员）。
      *
-     * <p>放开企业管理员是为了消除「能管理却不能创建」的自相矛盾；
-     * 放开部门负责人是为了让「本部门数字员工由本部门配置」可落地，
-     * 越权风险由归属机构 + 部门可见范围双重兜底——
-     * 创建的员工自动打上本机构标记，且可见范围强制为「仅本部门」。</p>
+     * <p>放开普通成员的依据：数字员工本质是「个人 AI 助理」，要求人人都找管理员代建
+     * 既不现实也放大审批负担。风险由<b>可见范围</b>兜底，而非剥夺创建权：</p>
+     * <ul>
+     *   <li>企业管理员：受 {@code institution_id} 约束，仅本机构；</li>
+     *   <li>部门负责人：受 {@code visible_scope} 约束，新建即锁定到本部门；</li>
+     *   <li>普通成员：新建即锁定为 {@code SELF}（仅本人可见），他人列表里根本不出现。</li>
+     * </ul>
+     * <p>越权类型是另一道闸：请假审批类仍需 {@code approval:leave}，
+     * 普通成员即使能建通用助理，也建不了有审批权的数字人。</p>
      */
     public static final String WORKER_CREATE = "worker:create";
+    /**
+     * 修改<b>自己创建</b>的数字员工（配置、启停）。
+     *
+     * <p>与 {@link #WORKER_MANAGE} 的区别：后者管全租户/全机构的资产，前者只管自己的。
+     * 「创建者即所有者」是最小权限的常规做法——能建就能改，但不因此获得删他人资产的权力，
+     * 删除仍只认 {@link #WORKER_MANAGE}。</p>
+     */
+    public static final String WORKER_EDIT_SELF = "worker:edit:self";
     /**
      * 管理数字员工（修改/启停/删除）。
      *
      * <p>租户管理员（全租户）、企业管理员（限本机构）、部门负责人（限已分发到本部门的）。</p>
      */
     public static final String WORKER_MANAGE = "worker:manage";
+
+    /**
+     * 专家（AI 专家）的创建与配置：从全局模板导入租户副本、改参数、启停、删除。
+     *
+     * <p>此前 {@code ExpertConfigController} 只认 {@code ROLE_ADMIN || ROLE_TENANT_ADMIN}，
+     * 企业管理员无法为自己的机构引入专家。现纳入企业管理员，范围仍受其机构约束。</p>
+     */
+    public static final String EXPERT_MANAGE = "expert:manage";
 
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
@@ -78,14 +98,25 @@ public final class PermissionCatalog {
     private static final Set<String> WORKER_MANAGERS = Set.of(
             ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN, ROLE_DEPT_LEADER);
 
+    /**
+     * 专家管理者：机构管理员级（不含部门负责人）。
+     *
+     * <p>专家是面向整个租户/机构的知识资产，部门负责人不参与专家治理；
+     * 其可配置的是「本部门数字员工」。</p>
+     */
+    private static final Set<String> EXPERT_MANAGERS = Set.of(
+            ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN);
+
     /** 权限码 → 允许的角色。 */
     private static final Map<String, Set<String>> GRANTS = Map.of(
             CHAT_BASIC, ALL,
             KB_READ, ALL,
             DOC_DRAFT, ALL,
             WORKER_USE, ALL,
-            WORKER_CREATE, WORKER_MANAGERS,
+            WORKER_CREATE, ALL,
+            WORKER_EDIT_SELF, ALL,
             WORKER_MANAGE, WORKER_MANAGERS,
+            EXPERT_MANAGE, EXPERT_MANAGERS,
             APPROVAL_LEAVE, TENANT_ADMINS);
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
@@ -155,6 +186,27 @@ public final class PermissionCatalog {
     /** 是否具备「部门负责人」身份且不高于该层级（即范围必须收紧到本部门）。 */
     public static boolean isDeptLeaderOnly(AuthUser user) {
         return hasRole(user, ROLE_DEPT_LEADER) && !holdsAny(user, ORG_ADMINS);
+    }
+
+    /**
+     * 是否为「数字员工管理者」（系统管理员 / 租户管理员 / 企业管理员 / 部门负责人）。
+     *
+     * <p>用于区分两类创建者：管理者创建的资产面向团队（{@code TENANT}/{@code ORG}/{@code DEPT} 可见），
+     * 普通成员创建的只能本人可见（{@code SELF}）。</p>
+     */
+    public static boolean isWorkerManager(AuthUser user) {
+        return holdsAny(user, WORKER_MANAGERS);
+    }
+
+    /**
+     * 是否为该数字员工的创建者（{@code created_by} 匹配）。
+     *
+     * <p>创建者拥有「改自己的」权力，但不因此管到别人的资产；
+     * 两侧都为 null 时返回 false（宁可拒绝，不可放行）。</p>
+     */
+    public static boolean isCreator(AuthUser user, Long createdBy) {
+        return user != null && user.getUserId() != null && createdBy != null
+                && user.getUserId().equals(createdBy);
     }
 
     /** 当前用户是否持有某角色码。 */

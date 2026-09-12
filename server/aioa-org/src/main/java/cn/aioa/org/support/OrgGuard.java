@@ -9,7 +9,11 @@ import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -45,6 +49,7 @@ public class OrgGuard {
 
     private final OrgMemberMapper memberMapper;
     private final OrgInstitutionMapper institutionMapper;
+    private final JdbcTemplate jdbc;
 
     public AuthUser user() {
         return AuthUserContext.require();
@@ -229,6 +234,130 @@ public class OrgGuard {
         out.put("scope", own != null ? "ORG"
                 : (hasRole(u, ROLE_ADMIN) ? "PLATFORM" : "TENANT"));
         return out;
+    }
+
+    // ================================================================== 租户端作用域（V33）
+
+    /**
+     * 解析本次请求应作用的<b>租户</b>——租户端（{@code /api/v1/tenant/*}）数据作用域的唯一判定点。
+     *
+     * <p><b>为何需要</b>：租户端此前一律取 {@code AuthUser.tenantId}。平台管理员的 tenantId 恒为 0
+     * （平台自身租户），而机构、配额、授权、成本分摊数据全部挂在 2..N 号业务租户下，
+     * 于是平台管理员打开「机构管理 / 入驻进度 / 资源授权 / 成本分摊」时四个页面全是空态
+     * ——「菜单能进、数据全空」的锚点缺陷（用户实测反馈「租户、机构模块显示无数据」）。</p>
+     *
+     * <ol>
+     *   <li><b>租户管理员</b>：租户是硬边界，入参必须等于本租户，否则 404（不泄露存在性）；</li>
+     *   <li><b>平台管理员</b>：可跨租户指定；未指定时取「机构最多的启用租户」作默认，
+     *       避免默认落回 tenant 0 再次空态。</li>
+     * </ol>
+     *
+     * @param requested 显式请求的租户 id（可空）
+     * @return 本次请求实际作用的租户 id
+     */
+    public Long resolveScopeTenant(AuthUser u, Long requested) {
+        if (hasRole(u, ROLE_TENANT_ADMIN) && !hasRole(u, ROLE_ADMIN)) {
+            Long own = u.getTenantId() == null ? 0L : u.getTenantId();
+            if (requested != null && !requested.equals(own)) {
+                throw BizException.notFound("租户不存在或无权访问：" + requested);
+            }
+            return own;
+        }
+        if (hasRole(u, ROLE_ADMIN)) {
+            return requested == null ? defaultTenantId() : requireActiveTenant(requested);
+        }
+        throw BizException.forbidden("仅租户管理员或平台管理员可访问租户端数据");
+    }
+
+    /** 便捷重载：作用对象取当前登录用户。 */
+    public Long resolveScopeTenant(Long requested) {
+        return resolveScopeTenant(AuthUserContext.require(), requested);
+    }
+
+    /**
+     * 便捷入口：作用租户 = 当前请求的 {@code ?tenantId=}（可选）经作用域校验后的结果。
+     *
+     * <p>租户端各控制器（机构/配额/授权/分摊/入驻/假种/审批流）统一走这一个入口，
+     * 避免每个控制器各写一份取参逻辑——上一版就是因为只有部分控制器做了作用域解析，
+     * 才出现「机构管理修好了、入驻进度还是空」的半修复状态。</p>
+     */
+    public Long resolveRequestTenant(AuthUser u) {
+        return resolveScopeTenant(u, requestedTenantId());
+    }
+
+    /** 从当前请求读取 {@code ?tenantId=}（平台管理员切换租户用）。 */
+    private static Long requestedTenantId() {
+        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+        if (!(attrs instanceof ServletRequestAttributes sra)) {
+            return null;
+        }
+        String raw = sra.getRequest().getParameter("tenantId");
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            throw BizException.badRequest("tenantId 必须为数字：" + raw);
+        }
+    }
+
+    /**
+     * 当前账号可操作的租户清单 + 默认租户，供前端渲染租户选择器。
+     *
+     * <p>平台管理员拿到全部启用租户（可切换）；租户管理员只拿到自己那一家（选择器自动隐藏）。</p>
+     */
+    public Map<String, Object> selectableTenants() {
+        AuthUser u = AuthUserContext.require();
+        if (!hasRole(u, ROLE_ADMIN) && !hasRole(u, ROLE_TENANT_ADMIN)) {
+            throw BizException.forbidden("仅租户管理员可执行该操作");
+        }
+        boolean platform = hasRole(u, ROLE_ADMIN);
+        String base = "SELECT t.id AS id, t.code AS code, t.name AS name, t.status AS status, "
+                + "(SELECT COUNT(*) FROM org_institution i "
+                + " WHERE i.tenant_id = t.id AND i.deleted_at IS NULL) AS institutionCount "
+                + "FROM sys_tenant t WHERE t.deleted_at IS NULL ";
+        List<Map<String, Object>> items = platform
+                ? jdbc.queryForList(base + "AND t.status = 'ENABLED' ORDER BY t.id")
+                : jdbc.queryForList(base + "AND t.id = ?", u.getTenantId());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", items);
+        out.put("total", items.size());
+        out.put("canSwitch", platform);
+        out.put("boundTenantId", platform ? null : (u.getTenantId() == null ? 0L : u.getTenantId()));
+        out.put("defaultTenantId", platform ? defaultTenantId() : (u.getTenantId() == null ? 0L : u.getTenantId()));
+        out.put("scope", platform ? "PLATFORM" : "TENANT");
+        return out;
+    }
+
+    /**
+     * 平台视角的默认租户：机构最多的启用租户。
+     *
+     * <p>刻意不按 id 取最小——id=1 的「默认租户」名下 0 家机构，取它会立刻回到空态，
+     * 让「已修复」看起来仍然没修好。</p>
+     */
+    private Long defaultTenantId() {
+        List<Long> ids = jdbc.queryForList(
+                "SELECT t.id FROM sys_tenant t WHERE t.status = 'ENABLED' AND t.deleted_at IS NULL "
+                        + "ORDER BY (SELECT COUNT(*) FROM org_institution i "
+                        + " WHERE i.tenant_id = t.id AND i.deleted_at IS NULL) DESC, t.id ASC LIMIT 1",
+                Long.class);
+        if (ids.isEmpty()) {
+            throw BizException.notFound("平台下暂无启用租户");
+        }
+        return ids.get(0);
+    }
+
+    /** 校验租户存在且启用；不存在/停用一律 404（不泄露存在性）。 */
+    private Long requireActiveTenant(Long tenantId) {
+        List<Long> ids = jdbc.queryForList(
+                "SELECT id FROM sys_tenant WHERE id = ? AND status = 'ENABLED' AND deleted_at IS NULL",
+                Long.class, tenantId);
+        if (ids.isEmpty()) {
+            throw BizException.notFound("租户不存在或已停用：" + tenantId);
+        }
+        return ids.get(0);
     }
 
     /** 校验机构存在、启用，且（可选的）租户归属匹配；跨租户一律 404（不泄露存在性）。 */

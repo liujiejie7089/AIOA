@@ -75,7 +75,13 @@
       <!-- AI 解读 -->
       <div class="block-title" style="margin-top: 20px">
         <span>AI 解读与数据来源</span>
-        <el-button type="primary" size="small" :loading="savingInsight" @click="saveInsight">保存解读</el-button>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <!-- V33：真实调用模型生成（读当前口径指标 → 生成 → 落库），不是预置文案 -->
+          <el-button size="small" :loading="generatingInsight" @click="generateInsight">
+            <el-icon><MagicStick /></el-icon>&nbsp;AI 生成解读
+          </el-button>
+          <el-button type="primary" size="small" :loading="savingInsight" @click="saveInsight">保存解读</el-button>
+        </div>
       </div>
       <el-form label-position="top" size="small">
         <el-form-item label="AI 解读正文">
@@ -148,6 +154,7 @@ import {
   adminUpdateKpiMetric,
   adminUpdateKpiTrend,
   adminUpsertKpiInsight,
+  generateKpiInsight,
   type KpiMetric,
   type KpiTrendPoint
 } from '@/api/resource'
@@ -157,8 +164,28 @@ const loading = ref(false)
 const metrics = ref<KpiMetric[]>([])
 const trend = ref<KpiTrendPoint[]>([])
 const savingInsight = ref(false)
+const generatingInsight = ref(false)
 
 const insight = reactive({ content: '', sourceText: '' })
+
+/** V33：按当前口径指标真实调用模型生成解读，回填文本框后仍可人工润色再保存。 */
+async function generateInsight() {
+  if (!metrics.value.length && !trend.value.length) {
+    ElMessage.warning('当前口径下还没有指标数据，请先录入指标或趋势')
+    return
+  }
+  generatingInsight.value = true
+  try {
+    const r = await generateKpiInsight(period.value)
+    insight.content = r.insight || ''
+    insight.sourceText = r.source || ''
+    ElMessage.success(`已生成（模型 ${r.model || '智能路由'} · ${r.promptTokens || 0} 提示词元）`)
+  } catch (e: unknown) {
+    ElMessage.error('生成失败：' + ((e as Error)?.message || '后端异常'))
+  } finally {
+    generatingInsight.value = false
+  }
+}
 
 const metricDlg = ref(false)
 const metricForm = reactive<Partial<KpiMetric> & { id?: number }>({})

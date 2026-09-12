@@ -53,6 +53,23 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(405, "不支持的请求方法"));
     }
 
+    /**
+     * 路径不存在 → 404，而不是 500。
+     *
+     * <p>Spring Boot 3.2 起，未匹配的请求在静态资源处理阶段抛 {@code NoResourceFoundException}；
+     * 它会落到下面的 {@code Exception} 兜底，被包装成「服务内部错误」。
+     * 后果很实际：拼错路径（如把 {@code /api/v1/leave/types} 写成 {@code /api/v1/workflow/leave/types}）
+     * 会看到 500，很容易被误判成后端崩了，而不是「接口没这个路径」。
+     * 这里补一条显式处理，让 404 归 404。</p>
+     */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(
+            org.springframework.web.servlet.resource.NoResourceFoundException e, HttpServletRequest request) {
+        log.warn("No handler for {} {}", request.getMethod(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.fail(404, "接口不存在：" + request.getRequestURI()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleServer(Exception e, HttpServletRequest request) {
         log.error("Unhandled exception on {} {}", request.getMethod(), request.getRequestURI(), e);

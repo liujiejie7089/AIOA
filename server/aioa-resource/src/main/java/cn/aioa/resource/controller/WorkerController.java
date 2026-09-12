@@ -8,6 +8,7 @@ import cn.aioa.resource.entity.ClientActivityLog;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.resource.mapper.AgentWorkerRunMapper;
 import cn.aioa.resource.mapper.ClientActivityLogMapper;
+import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.WorkerScheduleService;
 import cn.aioa.resource.support.PermissionCatalog;
 import cn.aioa.resource.support.ScheduleTimeSupport;
@@ -74,6 +75,7 @@ public class WorkerController {
     private final ClientActivityLogMapper activityLogMapper;
     /** 审计快照序列化（Spring Boot 自带实例）。 */
     private final ObjectMapper objectMapper;
+    private final ContentReviewService reviewService;
 
     /**
      * 数字员工变更留痕：谁、何时、对哪个数字员工、做了什么、<b>改前改后各是什么</b>。
@@ -144,19 +146,33 @@ public class WorkerController {
                              String taskPrompt,
                              String lastRunAt, boolean on,
                              String workerType, String roleName, String duty, String requiredPermission,
-                             String visibleScope, String deptIds, Long sourceTemplateId) {
+                             String visibleScope, String deptIds, Long sourceTemplateId,
+                             Long createdBy, boolean mine, boolean editable,
+                             String auditStatus, String auditNote) {
 
         static WorkerView from(AgentWorker w) {
+            return from(w, null);
+        }
+
+        /**
+         * @param viewer 当前查看者；传入时用于计算 {@code mine}/{@code editable}，
+         *               前端据此决定是否展示「调整任务 / 启停」等管理入口（后端仍会二次校验）。
+         */
+        static WorkerView from(AgentWorker w, AuthUser viewer) {
             boolean on = !Integer.valueOf(0).equals(w.getEnabled());
             // V22：只有定时型（SCHEDULED）缺执行时刻才判「待配置」；
             // 事件驱动（EVENT）/按需唤起（ON_DEMAND）不需要执行时刻，不再被误标。
             String status = AgentWorker.resolveStatus(w.getRunMode(), w.getScheduleTime(), w.getStatus(), on);
             WorkerRole role = WorkerRole.of(w.getWorkerType());
+            boolean mine = PermissionCatalog.isCreator(viewer, w.getCreatedBy());
+            boolean editable = viewer != null
+                    && (PermissionCatalog.holds(viewer, PermissionCatalog.WORKER_MANAGE) || mine);
             return new WorkerView(w.getId(), w.getName(), w.getIcon(), w.getDescription(), status,
                     w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getRunMode(), w.getTaskPrompt(),
                     w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on,
                     role.code(), role.displayName(), role.duty(), role.requiredPermission(),
-                    w.getVisibleScope(), w.getDeptIds(), w.getSourceTemplateId());
+                    w.getVisibleScope(), w.getDeptIds(), w.getSourceTemplateId(),
+                    w.getCreatedBy(), mine, editable, w.getAuditStatus(), w.getAuditNote());
         }
     }
 
@@ -198,7 +214,9 @@ public class WorkerController {
                         .orderByAsc(AgentWorker::getId))
                 .stream()
                 .filter(w -> visibleTo(w, user))
-                .map(WorkerView::from).toList());
+                // V34：待审内容不对普通成员可见（创建者本人与管理员例外，见 ContentReviewService#visible）
+                .filter(w -> reviewService.visible(w.getAuditStatus(), user, w.getCreatedBy()))
+                .map(w -> WorkerView.from(w, user)).toList());
     }
 
     /**
@@ -248,12 +266,15 @@ public class WorkerController {
         w.setVisibleScope("TENANT");
         w.setSourceTemplateId(tpl.getId());
         w.setIsTemplate(0);
+        // V34：与直接创建同一口径——租户管理员「从模板创建」同样是新内容，同样需上级审核，
+        // 否则这里会成为绕开审核的旁路。
+        w.setAuditStatus(reviewService.initialStatus(user));
         // 模板类型可能要求特定权限码（如请假类需 approval:leave）
         requirePermission(user, WorkerRole.of(tpl.getWorkerType()));
         workerMapper.insert(w);
         audit(user, "worker.from_template", "从模板「" + tpl.getName() + "」(id=" + templateId + ") 创建数字员工",
                 null, snapshot(w));
-        return ApiResponse.ok(WorkerView.from(w));
+        return ApiResponse.ok(WorkerView.from(w, user));
     }
 
     /**
@@ -300,7 +321,7 @@ public class WorkerController {
         audit(user, "worker.scope", "设置数字员工「" + w.getName() + "」(id=" + id + ") 可见范围="
                 + w.getVisibleScope() + (w.getDeptIds() == null ? "" : " 部门=" + w.getDeptIds()),
                 beforeScope, snapshot(w));
-        return ApiResponse.ok(WorkerView.from(w));
+        return ApiResponse.ok(WorkerView.from(w, user));
     }
 
     /**
@@ -315,6 +336,11 @@ public class WorkerController {
         String scope = w.getVisibleScope();
         if (scope == null || scope.isBlank() || "TENANT".equals(scope)) {
             return true;
+        }
+        // V33：SELF = 创建者私有。普通成员自建的数字员工不该出现在他人列表里，
+        // 否则「人人可建」会变成互相可见的噪音。
+        if ("SELF".equals(scope)) {
+            return PermissionCatalog.isCreator(user, w.getCreatedBy());
         }
         if (!"DEPT".equals(scope)) {
             return false;
@@ -378,6 +404,8 @@ public class WorkerController {
         w.setStatus(AgentWorker.resolveStatus(runMode, scheduleTime, AgentWorker.STATUS_RUNNING, true));
         w.setLastOutput("尚未运行");
         w.setCreatedBy(user.getUserId());
+        // V34：租户管理员创建的内容需平台管理员审核后才生效（开关见 sys_config approval.tenant.content）
+        w.setAuditStatus(reviewService.initialStatus(user));
         // 可见范围：默认本租户全员可见；前端可传 DEPT + deptIds 直接分发到部门。
         // 部门负责人不论传什么，一律锁定到本部门（范围纪律，见 V32）。
         applyVisibilityScope(w, user, body);
@@ -387,15 +415,16 @@ public class WorkerController {
         workerMapper.insert(w);
         audit(user, "worker.create", "创建数字员工「" + w.getName() + "」类型=" + role.code()
                 + " 可见范围=" + w.getVisibleScope(), null, snapshot(w));
-        return ApiResponse.ok(WorkerView.from(w));
+        return ApiResponse.ok(WorkerView.from(w, user));
     }
 
     /** 原地更新：只覆盖本次传入的字段，未传的保持原值（避免编辑丢配置）。 */
     @PutMapping("/{id}")
     public ApiResponse<WorkerView> update(@PathVariable Long id, @RequestBody AgentWorker body) {
         AuthUser user = AuthUserContext.require();
-        requireAdmin(user, "修改数字员工");
         AgentWorker cur = requireOwned(user, id);
+        // V33：管理者改全部，普通成员改自己创建的。取到实体后再判，因为要看 created_by。
+        requireManageOrOwner(user, cur, "修改数字员工");
         // 变更前快照：cur 会被原地改写，故必须先留底
         Map<String, Object> beforeUpdate = snapshot(cur);
 
@@ -441,14 +470,14 @@ public class WorkerController {
         workerMapper.updateById(cur);
         audit(user, "worker.update", "修改数字员工「" + cur.getName() + "」(id=" + id + ")",
                 beforeUpdate, snapshot(cur));
-        return ApiResponse.ok(WorkerView.from(cur));
+        return ApiResponse.ok(WorkerView.from(cur, user));
     }
 
     @PostMapping("/{id}/toggle")
     public ApiResponse<WorkerView> toggle(@PathVariable Long id) {
         AuthUser user = AuthUserContext.require();
-        requireAdmin(user, "启用或停用数字员工");
         AgentWorker w = requireOwned(user, id);
+        requireManageOrOwner(user, w, "启用或停用数字员工");
         Map<String, Object> before = snapshot(w);
         boolean next = Integer.valueOf(0).equals(w.getEnabled());
         w.setEnabled(next ? 1 : 0);
@@ -459,7 +488,7 @@ public class WorkerController {
         workerMapper.updateById(w);
         audit(user, "worker.toggle", (next ? "启用" : "停用") + "数字员工「" + w.getName() + "」(id=" + id + ")",
                 before, snapshot(w));
-        return ApiResponse.ok(WorkerView.from(w));
+        return ApiResponse.ok(WorkerView.from(w, user));
     }
 
     /** 执行记录（真实运行留痕，倒序）。 */
@@ -517,6 +546,26 @@ public class WorkerController {
         }
     }
 
+    /**
+     * 修改类操作的闸门：管理者管全部，普通成员只改自己创建的（V33）。
+     *
+     * <p>先取实体再判定，是因为「是否创建者」必须看数据，不能只看角色。
+     * 删除不在此列——删除是不可逆操作，仍只认 {@link PermissionCatalog#WORKER_MANAGE}，
+     * 避免「能建就能删」把治理权彻底下放。</p>
+     */
+    private static void requireManageOrOwner(AuthUser user, AgentWorker w, String action) {
+        if (PermissionCatalog.holds(user, PermissionCatalog.WORKER_MANAGE)) {
+            return;
+        }
+        if (PermissionCatalog.holds(user, PermissionCatalog.WORKER_EDIT_SELF)
+                && PermissionCatalog.isCreator(user, w.getCreatedBy())) {
+            return;
+        }
+        throw BizException.forbidden(action + "需要管理权限（" + PermissionCatalog.rolesText(PermissionCatalog.WORKER_MANAGE)
+                + "）或为本人创建；当前账号角色为「" + roleText(user) + "」。"
+                + "自己创建的数字员工可直接修改，他人创建的请联系管理员。");
+    }
+
     /** 创建单独走 worker:create，与「管理」区分——便于将来只下放使用权、不给创建权。 */
     private static void requireCreate(AuthUser user, String action) {
         if (!PermissionCatalog.holds(user, PermissionCatalog.WORKER_CREATE)) {
@@ -541,6 +590,11 @@ public class WorkerController {
         }
         if (PermissionCatalog.isAdmin(user)) {
             return cur;   // 系统管理员 / 租户管理员：本租户全部
+        }
+        // V33：创建者恒可访问自己创建的数字员工（含普通成员自建的 SELF 助理）。
+        // 放在机构/部门约束之前，因为「自己建的」是比「分给我的」更强的归属关系。
+        if (PermissionCatalog.isCreator(user, cur.getCreatedBy())) {
+            return cur;
         }
         // V31 机构约束：机构级数字员工（institutionId 非空）只认本机构；租户级（空）不受限。
         if (user.getInstitutionId() != null && cur.getInstitutionId() != null
@@ -581,6 +635,14 @@ public class WorkerController {
      * 机构管理员 / 租户管理员按入参落库（默认 TENANT）。</p>
      */
     private static void applyVisibilityScope(AgentWorker w, AuthUser user, AgentWorker body) {
+        // V33：普通成员（非管理者）创建的数字员工一律锁定为 SELF（仅本人可见）。
+        // 与其靠校验拦截「越权分发」，不如在源头就不接收 scope 入参——
+        // 这样即使前端改包塞 visibleScope=TENANT 也无法把个人助理提升为全员可见。
+        if (!PermissionCatalog.isWorkerManager(user)) {
+            w.setVisibleScope("SELF");
+            w.setDeptIds(null);
+            return;
+        }
         if (PermissionCatalog.isDeptLeaderOnly(user)) {
             Long deptId = user.getDepartmentId();
             if (deptId == null) {

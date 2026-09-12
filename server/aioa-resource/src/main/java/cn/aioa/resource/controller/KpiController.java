@@ -7,11 +7,13 @@ import cn.aioa.resource.entity.BizKpiTrend;
 import cn.aioa.resource.mapper.BizKpiInsightMapper;
 import cn.aioa.resource.mapper.BizKpiMapper;
 import cn.aioa.resource.mapper.BizKpiTrendMapper;
+import cn.aioa.resource.service.KpiInsightService;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,10 +23,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 经营数据看板（V1.2 新增，用户端只读）：
- *   GET /api/v1/kpi/board?period=month|quarter
+ * 经营数据看板（V1.2 新增；V33 增加按需 AI 解读）：
+ *   GET  /api/v1/kpi/board?period=month|quarter
  *     → {period, metrics[], trend[], insight, source}
- * 数据由管理端「经营数据」页维护（/api/v1/admin/kpi/**）。
+ *   POST /api/v1/kpi/board/insight?period=month|quarter
+ *     → {insight, source, model, period, generatedAt}  ← 真实调用模型生成并落库
+ *
+ * <p>数据由管理端「经营数据」页维护（/api/v1/admin/kpi/**）；
+ * 「AI 解读」由 {@link KpiInsightService} 真实调模型，不使用任何写死文案。</p>
  */
 @RestController
 @RequestMapping("/api/v1/kpi")
@@ -34,6 +40,7 @@ public class KpiController {
     private final BizKpiMapper kpiMapper;
     private final BizKpiTrendMapper trendMapper;
     private final BizKpiInsightMapper insightMapper;
+    private final KpiInsightService kpiInsightService;
 
     public record MetricView(Long id, String label, String value, String delta, boolean up, String compare) {
     }
@@ -81,6 +88,19 @@ public class KpiController {
         data.put("insight", ins == null ? "" : nvl(ins.getContent()));
         data.put("source", ins == null ? "" : nvl(ins.getSourceText()));
         return ApiResponse.ok(data);
+    }
+
+    /**
+     * 按需生成「AI 解读」：把当前期间的指标与趋势交给模型，返回生成的解读并落库。
+     *
+     * <p>为什么是 POST：它会产生真实模型调用与词元消耗，且会写库（非幂等读取）。
+     * 与看板同口径（本租户 + 期间），任何可见看板的登录用户都可用。</p>
+     */
+    @PostMapping("/board/insight")
+    public ApiResponse<Map<String, Object>> generateInsight(
+            @RequestParam(name = "period", defaultValue = BizKpi.PERIOD_MONTH) String period) {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(kpiInsightService.generate(user.getTenantId(), normalizePeriod(period)));
     }
 
     private static String normalizePeriod(String period) {

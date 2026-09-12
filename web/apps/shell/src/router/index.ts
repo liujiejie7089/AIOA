@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { TOKEN_KEY } from '@/api'
+import { EXPERT_MANAGER_ROLES, PLATFORM_ONLY_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -33,7 +34,8 @@ const routes: RouteRecordRaw[] = [
         path: 'workers',
         name: 'workers',
         component: () => import('@/views/WorkersView.vue'),
-        meta: { title: '数字员工', minTier: 'tenant'  }
+        // 创建/管理归属：系统管理员 / 租户管理员 / 企业管理员 / 部门负责人
+        meta: { title: '数字员工', allowRoles: WORKER_MANAGER_ROLES }
       },
       {
         path: 'biz-systems',
@@ -97,8 +99,10 @@ const routes: RouteRecordRaw[] = [
       },
       { path: 'admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { title: '系统管理', minTier: 'platform'  } },
       { path: 'tenants', name: 'tenants', component: () => import('@/views/TenantAdminView.vue'), meta: { title: '租户管理', minTier: 'platform'  } },
-      { path: 'experts', name: 'experts', component: () => import('@/views/ExpertConfigView.vue'), meta: { title: '专家配置', minTier: 'tenant' } },
+      { path: 'experts', name: 'experts', component: () => import('@/views/ExpertConfigView.vue'), meta: { title: '专家配置', allowRoles: EXPERT_MANAGER_ROLES } },
       { path: 'tools', name: 'tools', component: () => import('@/views/ToolRegistryView.vue'), meta: { title: '业务工具', minTier: 'tenant' } },
+      // V34：租户管理员创建的数字员工/专家需平台管理员审核后生效
+      { path: 'content-reviews', name: 'content-reviews', component: () => import('@/views/ContentReviewView.vue'), meta: { title: '内容审核', allowRoles: PLATFORM_ONLY_ROLES } },
       { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { title: '个人信息' } }
     ]
   },
@@ -132,6 +136,12 @@ router.beforeEach((to) => {
     return { path: '/login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
   }
   // 越权访问直接回首页：菜单隐藏只是 UI 层，路由层必须再兜一道
+  // 优先用精确角色集合（如数字员工/专家配置这类「跨层级」能力），
+  // 没有 allowRoles 时才回落到粗粒度层级判定。
+  const allow = to.meta.allowRoles as readonly string[] | undefined
+  if (allow && allow.length && !hasAnyRole(auth.roles, allow)) {
+    return { path: '/home' }
+  }
   const need = to.meta.minTier as 'platform' | 'tenant' | 'org' | undefined
   if (need && tierOf(auth.roles) < TIER[need]) {
     return { path: '/home' }

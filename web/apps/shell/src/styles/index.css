@@ -115,6 +115,15 @@ a {
   gap: 16px;
 }
 
+/* 平台管理员的「当前操作租户」选择器（V33） */
+.tenant-pick {
+  width: 240px;
+}
+
+.tenant-pick .el-select__wrapper {
+  border-radius: 20px;
+}
+
 .user {
   display: flex;
   align-items: center;

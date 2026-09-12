@@ -341,6 +341,50 @@ export function adminUpsertKpiInsight(period: string, body: Partial<KpiInsight>)
   return http.put('/admin/kpi/insight', body, { params: { period } }).then((r) => unwrap<KpiInsight>(r))
 }
 
+/** V33：按当前口径的真实指标调用模型生成解读（非预置文案），生成结果直接落库。 */
+export interface KpiInsightResult {
+  insight: string
+  source: string
+  model: string
+  period: string
+  generatedAt: string
+  promptTokens: number
+}
+export function generateKpiInsight(period: string): Promise<KpiInsightResult> {
+  return http.post('/kpi/board/insight', null, { params: { period } }).then((r) => unwrap<KpiInsightResult>(r))
+}
+
+/* ============ V34 内容审核台（平台管理员审租户管理员创建的内容） ============ */
+export interface ContentReviewItem {
+  type: 'worker' | 'expert'
+  id: number
+  tenantId: number
+  name: string
+  summary?: string
+  auditStatus: string
+  auditNote?: string
+  createdBy?: number
+  createdAt?: string
+}
+export function listContentReviews(status = 'PENDING'): Promise<{
+  items: ContentReviewItem[]
+  total: number
+  status: string
+  switchOn: boolean
+}> {
+  return http.get('/admin/content-reviews', { params: { status } }).then((r) => unwrap(r))
+}
+export function reviewContent(
+  type: string,
+  id: number,
+  approve: boolean,
+  note?: string
+): Promise<Record<string, unknown>> {
+  return http
+    .post(`/admin/content-reviews/${type}/${id}/review`, { approve, note })
+    .then((r) => unwrap<Record<string, unknown>>(r))
+}
+
 /* ============ 数字员工（V1.2 · 管理端维护） ============ */
 
 export interface AgentWorker {

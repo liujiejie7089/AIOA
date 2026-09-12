@@ -5,7 +5,9 @@ import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.resource.entity.AiExpert;
 import cn.aioa.resource.entity.ExpertConfig;
 import cn.aioa.resource.mapper.AiExpertMapper;
+import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.ExpertConfigService;
+import cn.aioa.resource.support.PermissionCatalog;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -40,8 +42,11 @@ import java.util.Map;
  * GET    /api/v1/expert-config/templates               —— 全局模板清单
  * </pre>
  *
- * <p>权限：读接口对所有登录用户开放（按可见范围过滤）；写接口要求
- * ROLE_ADMIN 或 ROLE_TENANT_ADMIN，且只能改自己租户的配置。</p>
+ * <p>权限（V33 明确归属）：读接口对所有登录用户开放（按可见范围过滤）；
+ * 写接口要求权限码 {@link PermissionCatalog#EXPERT_MANAGE}，即
+ * <b>系统管理员 / 租户管理员 / 企业管理员</b>（{@code PermissionCatalog.rolesText("expert:manage")}），
+ * 且只能改自己租户的配置。此前仅认 ROLE_ADMIN/ROLE_TENANT_ADMIN，
+ * 企业管理员无法为自己的机构引入专家。</p>
  */
 @Slf4j
 @RestController
@@ -51,6 +56,7 @@ public class ExpertConfigController {
 
     private final ExpertConfigService configService;
     private final AiExpertMapper expertMapper;
+    private final ContentReviewService reviewService;
 
     // ---------- 读 ----------
 
@@ -81,10 +87,14 @@ public class ExpertConfigController {
         for (AiExpert e : byKey.values()) {
             ExpertConfigService.ResolvedConfig rc = configService.resolve(
                     tid, user.getInstitutionId(), user.getDepartmentId(), user.getUserId(), e.getExpertKey());
-            if (!Boolean.TRUE.equals(rc.settings().getEnabled()) && !isAdmin(user)) {
+            if (!Boolean.TRUE.equals(rc.settings().getEnabled()) && !canManageExperts(user)) {
                 continue; // 关闭的专家对普通用户不可见（管理员仍可见以便配置）
             }
             if (!visible(rc.settings().getVisibleScope(), user)) {
+                continue;
+            }
+            // V34：待审的租户副本不对普通成员可见（创建者本人与管理员仍可见，便于跟踪审核进度）
+            if (!reviewService.visible(e.getAuditStatus(), user, e.getCreatedBy())) {
                 continue;
             }
             Map<String, Object> m = new LinkedHashMap<>(rc.toPayload());
@@ -215,6 +225,12 @@ public class ExpertConfigController {
         copy.setDefaultEnabled(tpl.getDefaultEnabled());
         copy.setEnabled(true);
         copy.setSort(tpl.getSort());
+        // V34：新建的租户副本需平台管理员审核；再次导入（已存在）视为更新，若此前已通过则保持通过
+        if (created) {
+            copy.setAuditStatus(reviewService.initialStatus(user));
+        } else if (copy.getAuditStatus() == null || copy.getAuditStatus().isBlank()) {
+            copy.setAuditStatus(ContentReviewService.APPROVED);
+        }
         if (created) {
             expertMapper.insert(copy);
         } else {
@@ -236,15 +252,16 @@ public class ExpertConfigController {
 
     private AuthUser requireAdmin() {
         AuthUser user = requireUser();
-        if (!isAdmin(user)) {
-            throw BizException.forbidden("专家配置仅平台管理员或租户管理员可操作");
+        if (!PermissionCatalog.holds(user, PermissionCatalog.EXPERT_MANAGE)) {
+            throw BizException.forbidden("专家创建与配置需要权限「专家管理」，可由"
+                    + PermissionCatalog.rolesText(PermissionCatalog.EXPERT_MANAGE) + "执行");
         }
         return user;
     }
 
-    private static boolean isAdmin(AuthUser user) {
-        List<String> roles = user.getRoles();
-        return roles != null && (roles.contains("ROLE_ADMIN") || roles.contains("ROLE_TENANT_ADMIN"));
+    /** 是否具备专家管理权限（系统管理员 / 租户管理员 / 企业管理员）。 */
+    private static boolean canManageExperts(AuthUser user) {
+        return PermissionCatalog.holds(user, PermissionCatalog.EXPERT_MANAGE);
     }
 
     /** 可见范围判定：ALL 全员；其余按层级比对当前用户所属作用域。 */

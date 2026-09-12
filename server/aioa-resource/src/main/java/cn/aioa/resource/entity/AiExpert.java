@@ -66,6 +66,16 @@ public class AiExpert {
     /** 新用户是否默认挂载。 */
     private Boolean defaultEnabled;
 
+    /** 审核态（V34）：PENDING 待上级审核 / APPROVED 已通过 / REJECTED 已驳回。 */
+    private String auditStatus;
+
+    /** 审核意见（驳回时回显给创建者）。 */
+    private String auditNote;
+
+    private Long reviewedBy;
+
+    private LocalDateTime reviewedAt;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

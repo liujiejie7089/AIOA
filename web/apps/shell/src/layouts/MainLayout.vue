@@ -6,7 +6,26 @@
         <span class="brand-text">AIOA 智能办公基座</span>
       </div>
       <div class="header-right">
-        <el-tag size="small" type="info" effect="plain">{{ auth.tenantName }}</el-tag>
+        <!-- 平台管理员：切换「当前操作租户」，租户端全部页面共用（机构/入驻/授权/分摊） -->
+        <el-select
+          v-if="showTenantMenu && canSwitchTenant"
+          :model-value="currentTenantId"
+          size="small"
+          class="tenant-pick"
+          placeholder="选择租户"
+          @change="onTenantChange"
+        >
+          <el-option
+            v-for="t in tenantOptions"
+            :key="t.id"
+            :label="`${t.name}（机构 ${t.institutionCount ?? 0}）`"
+            :value="t.id"
+          />
+        </el-select>
+        <el-tag v-else-if="showTenantMenu && tenantScopeLoaded" size="small" type="success" effect="plain">
+          {{ currentTenantName || auth.tenantName }}
+        </el-tag>
+        <el-tag v-else size="small" type="info" effect="plain">{{ auth.tenantName }}</el-tag>
         <el-button type="primary" plain size="small" @click="assistant.openDrawer()">
           <el-icon><ChatDotRound /></el-icon>
           <span style="margin-left: 4px">AI 助手</span>
@@ -88,7 +107,7 @@
             <el-icon><DataAnalysis /></el-icon>
             <template #title>经营数据</template>
           </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/workers">
+          <el-menu-item v-if="showWorkerMenu" index="/workers">
             <el-icon><Cpu /></el-icon>
             <template #title>数字员工</template>
           </el-menu-item>
@@ -112,13 +131,17 @@
             <el-icon><FolderOpened /></el-icon>
             <template #title>成果沉淀</template>
           </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/experts">
+          <el-menu-item v-if="showExpertMenu" index="/experts">
             <el-icon><MagicStick /></el-icon>
             <template #title>专家配置</template>
           </el-menu-item>
           <el-menu-item v-if="showTenantMenu" index="/tools">
             <el-icon><Switch /></el-icon>
             <template #title>业务工具</template>
+          </el-menu-item>
+          <el-menu-item v-if="isPlatformAdmin" index="/content-reviews">
+            <el-icon><Stamp /></el-icon>
+            <template #title>内容审核</template>
           </el-menu-item>
           <el-menu-item v-if="isPlatformAdmin" index="/tenants">
             <el-icon><OfficeBuilding /></el-icon>
@@ -132,7 +155,14 @@
       </el-aside>
 
       <el-main class="layout-main">
-        <router-view />
+        <!--
+          租户端页面按「当前租户」重新挂载：平台管理员切换租户后，
+          机构/入驻/授权/分摊四个页面必须重新取数，否则会留着上一个租户的数据。
+          作用域就绪前不放行子路由，避免首帧用「空租户」打一次注定为空的请求。
+        -->
+        <router-view v-if="!showTenantMenu || tenantScopeLoaded" v-slot="{ Component }">
+          <component :is="Component" :key="`${route.path}@${currentTenantId ?? 0}`" />
+        </router-view>
       </el-main>
     </el-container>
   </el-container>
@@ -149,6 +179,20 @@ import { useAppsStore } from '@/stores/apps'
 import { useAuthStore } from '@/stores/auth'
 import { useAssistantStore } from '@/stores/assistant'
 import { initBridge } from '@/micro/bridge'
+import {
+  loadTenantScope,
+  resetTenantScope,
+  setCurrentTenant,
+  tenantState
+} from '@/api/tenantScope'
+import {
+  EXPERT_MANAGER_ROLES,
+  ORG_VIEW_ROLES,
+  ROLE,
+  TENANT_SCOPE_ROLES,
+  WORKER_MANAGER_ROLES,
+  hasAnyRole
+} from '@/constants/permissions'
 
 const route = useRoute()
 const router = useRouter()
@@ -158,6 +202,19 @@ const assistant = useAssistantStore()
 
 const collapsed = ref(false)
 
+// 租户端作用域：平台管理员可切换租户（详见 api/tenantScope.ts）
+const tenantOptions = tenantState.tenants
+const canSwitchTenant = tenantState.canSwitch
+const tenantScopeLoaded = tenantState.loaded
+const currentTenantId = tenantState.currentId
+const currentTenantName = tenantState.currentName
+
+function onTenantChange(id: number) {
+  setCurrentTenant(id)
+  const name = tenantState.tenants.value.find((t) => t.id === id)?.name || ''
+  ElMessage.success(`已切换到「${name}」`)
+}
+
 const initial = computed(() => auth.displayName.slice(0, 1).toUpperCase())
 
 /**
@@ -166,25 +223,27 @@ const initial = computed(() => auth.displayName.slice(0, 1).toUpperCase())
  * 且 V24 的租户端 / 企业端能力没有任何入口 —— 菜单既能见又点不开，是典型的数据锚点缺陷。
  */
 const roles = computed(() => auth.roles)
-const isPlatformAdmin = computed(() => roles.value.includes('ROLE_ADMIN'))
-const showTenantMenu = computed(
-  () => roles.value.includes('ROLE_ADMIN') || roles.value.includes('ROLE_TENANT_ADMIN')
-)
+const isPlatformAdmin = computed(() => hasAnyRole(roles.value, [ROLE.ADMIN]))
+const showTenantMenu = computed(() => hasAnyRole(roles.value, TENANT_SCOPE_ROLES))
 /**
  * 机构成员（企业管理员 / 部门负责人 / 成员）看本机构；租户管理员与平台管理员
  * 也开放入口——前者需按部门分发数字员工、后者需运维巡检，均为只读或本租户范围。
  */
-const showOrgMenu = computed(
-  () => roles.value.includes('ROLE_ORG_ADMIN')
-    || roles.value.includes('ROLE_DEPT_LEADER')
-    || roles.value.includes('ROLE_MEMBER')
-    || roles.value.includes('ROLE_TENANT_ADMIN')
-    || roles.value.includes('ROLE_ADMIN')
-)
+const showOrgMenu = computed(() => hasAnyRole(roles.value, ORG_VIEW_ROLES))
+
+/**
+ * 数字员工 / 专家配置的创建与管理权限归属（V33），与后端 PermissionCatalog
+ * 和路由 meta.allowRoles 共用同一份常量，避免三处口径漂移：
+ * - 数字员工：系统管理员 / 租户管理员 / 企业管理员 / 部门负责人；
+ * - 专家配置：系统管理员 / 租户管理员 / 企业管理员（不含部门负责人）。
+ */
+const showWorkerMenu = computed(() => hasAnyRole(roles.value, WORKER_MANAGER_ROLES))
+const showExpertMenu = computed(() => hasAnyRole(roles.value, EXPERT_MANAGER_ROLES))
 
 async function onCommand(command: string | number | object) {
   if (command === 'logout') {
     await auth.logout()
+    resetTenantScope()
     ElMessage.success('已退出登录')
     router.replace('/login')
   } else if (command === 'profile') {
@@ -192,8 +251,16 @@ async function onCommand(command: string | number | object) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   initBridge()
   void apps.list()
+  // 租户端页面（机构/入驻/授权/分摊）依赖作用域，先解析再放行子路由
+  if (showTenantMenu.value) {
+    try {
+      await loadTenantScope()
+    } catch {
+      tenantState.loaded.value = true // 失败也要放行，避免页面永久空白
+    }
+  }
 })
 </script>

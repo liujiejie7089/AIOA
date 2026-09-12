@@ -49,8 +49,29 @@ public class TenantAdminController {
     private final LeaveService leaveService;
     private final ApprovalFlowService flowService;
 
+    /**
+     * 本次请求实际作用的租户。
+     *
+     * <p>V33 修订：此前直接取 {@code AuthUser.tenantId}。平台管理员的 tenantId 恒为 0，
+     * 而机构/配额/授权/分摊数据都挂在 2..N 号业务租户下，导致平台管理员打开租户端页面全是空态。
+     * 现统一走 {@link OrgGuard#resolveRequestTenant(AuthUser)}：租户管理员硬绑定本租户
+     * （带入参越界一律 404），平台管理员可经 {@code ?tenantId=} 切换，未指定时落到
+     * 「机构最多的启用租户」。</p>
+     */
     private Long tenantId(AuthUser u) {
-        return u.getTenantId() == null ? 0L : u.getTenantId();
+        return guard.resolveRequestTenant(u);
+    }
+
+    // ================================================================== FR-A 作用域
+
+    /**
+     * 租户端作用域：返回当前账号可操作的租户清单 + 默认租户，供前端渲染租户选择器。
+     * 平台管理员可切换租户；租户管理员只返回自己那一家。
+     */
+    @GetMapping("/scope")
+    public ApiResponse<Map<String, Object>> scope() {
+        guard.requireTenantAdmin();
+        return ApiResponse.ok(guard.selectableTenants());
     }
 
     // ================================================================== FR-B 机构管理

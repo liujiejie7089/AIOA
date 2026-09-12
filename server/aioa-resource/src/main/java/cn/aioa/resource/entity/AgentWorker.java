@@ -95,6 +95,21 @@ public class AgentWorker {
     /** 1=启用 0=停用 */
     private Integer enabled;
 
+    /**
+     * 审核态（V34）：PENDING 待上级审核 / APPROVED 已通过 / REJECTED 已驳回。
+     *
+     * <p>与 {@link #status}（运行态）正交：运行态回答「配好了没有」，审核态回答「让不让它生效」。
+     * 待审内容对普通成员不可见、不参与调度，但创建者本人与管理员可见，便于跟踪进度。</p>
+     */
+    private String auditStatus;
+
+    /** 审核意见：驳回时回显给创建者，避免「被拒了却不知道为什么」。 */
+    private String auditNote;
+
+    private Long reviewedBy;
+
+    private LocalDateTime reviewedAt;
+
     private Long createdBy;
 
     private LocalDateTime createdAt;
