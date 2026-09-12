@@ -4,8 +4,10 @@ import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.resource.entity.AgentWorker;
 import cn.aioa.resource.entity.AgentWorkerRun;
+import cn.aioa.resource.entity.ClientActivityLog;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.resource.mapper.AgentWorkerRunMapper;
+import cn.aioa.resource.mapper.ClientActivityLogMapper;
 import cn.aioa.resource.service.WorkerScheduleService;
 import cn.aioa.resource.support.PermissionCatalog;
 import cn.aioa.resource.support.ScheduleTimeSupport;
@@ -66,12 +68,37 @@ public class WorkerController {
     private final AgentWorkerMapper workerMapper;
     private final AgentWorkerRunMapper runMapper;
     private final WorkerScheduleService scheduleService;
+    private final ClientActivityLogMapper activityLogMapper;
+
+    /**
+     * 数字员工变更留痕：谁、何时、对哪个数字员工、做了什么。
+     *
+     * <p>写入本模块既有的活动日志（管理端「系统管理 → 审计」直接可见），
+     * 不写 audit_log——那张表带 hash 链，跨模块直接插会破坏链校验。</p>
+     */
+    private void audit(AuthUser user, String action, String label) {
+        try {
+            ClientActivityLog log = new ClientActivityLog();
+            log.setTenantId(user.getTenantId());
+            log.setUserId(user.getUserId());
+            log.setAction(action);
+            log.setStatus("SUCCESS");
+            log.setLabel(label);
+            log.setCreatedBy(user.getUserId());
+            log.setCreatedAt(LocalDateTime.now());
+            log.setUpdatedAt(LocalDateTime.now());
+            activityLogMapper.insert(log);
+        } catch (Exception ignored) {
+            // 审计失败不应阻断业务：留痕是增强，不是主流程
+        }
+    }
 
     public record WorkerView(Long id, String name, String icon, String description, String status,
                              String lastOutput, String schedule, String scheduleTime, String runMode,
                              String taskPrompt,
                              String lastRunAt, boolean on,
-                             String workerType, String roleName, String duty, String requiredPermission) {
+                             String workerType, String roleName, String duty, String requiredPermission,
+                             String visibleScope, String deptIds, Long sourceTemplateId) {
 
         static WorkerView from(AgentWorker w) {
             boolean on = !Integer.valueOf(0).equals(w.getEnabled());
@@ -82,7 +109,19 @@ public class WorkerController {
             return new WorkerView(w.getId(), w.getName(), w.getIcon(), w.getDescription(), status,
                     w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getRunMode(), w.getTaskPrompt(),
                     w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on,
-                    role.code(), role.displayName(), role.duty(), role.requiredPermission());
+                    role.code(), role.displayName(), role.duty(), role.requiredPermission(),
+                    w.getVisibleScope(), w.getDeptIds(), w.getSourceTemplateId());
+        }
+    }
+
+    /** 全局模板视图：供租户「从模板创建」，只读。 */
+    public record TemplateView(Long id, String name, String icon, String description,
+                               String workerType, String roleName, String runMode, String taskPrompt) {
+
+        static TemplateView from(AgentWorker w) {
+            WorkerRole role = WorkerRole.of(w.getWorkerType());
+            return new TemplateView(w.getId(), w.getName(), w.getIcon(), w.getDescription(),
+                    role.code(), role.displayName(), w.getRunMode(), w.getTaskPrompt());
         }
     }
 
@@ -111,7 +150,128 @@ public class WorkerController {
         return ApiResponse.ok(workerMapper.selectList(new LambdaQueryWrapper<AgentWorker>()
                         .eq(AgentWorker::getTenantId, user.getTenantId())
                         .orderByAsc(AgentWorker::getId))
-                .stream().map(WorkerView::from).toList());
+                .stream()
+                .filter(w -> visibleTo(w, user))
+                .map(WorkerView::from).toList());
+    }
+
+    /**
+     * 全局模板列表（tenant_id=0 且 is_template=1），供租户「从模板创建」。
+     * 只读，任何登录用户可见——模板是平台公共资产，不含租户数据。
+     */
+    @GetMapping("/templates")
+    public ApiResponse<List<TemplateView>> templates() {
+        AuthUserContext.require();
+        return ApiResponse.ok(workerMapper.selectList(new LambdaQueryWrapper<AgentWorker>()
+                        .eq(AgentWorker::getTenantId, 0L)
+                        .eq(AgentWorker::getIsTemplate, 1)
+                        .orderByAsc(AgentWorker::getId))
+                .stream().map(TemplateView::from).toList());
+    }
+
+    /**
+     * 从全局模板复制到本租户，解决「租户开通后数字员工列表为空」。
+     *
+     * <p>仅复制可复制的样板字段（名称/职责/运行模式/任务内容），
+     * 不复制 tenant_id、状态与执行记录——模板是样板，不是运行实例。</p>
+     */
+    @PostMapping("/from-template/{templateId}")
+    public ApiResponse<WorkerView> fromTemplate(@PathVariable Long templateId,
+                                                @RequestBody(required = false) java.util.Map<String, Object> body) {
+        AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "从模板创建数字员工");
+        AgentWorker tpl = workerMapper.selectById(templateId);
+        if (tpl == null || !Long.valueOf(0L).equals(tpl.getTenantId()) || !Integer.valueOf(1).equals(tpl.getIsTemplate())) {
+            throw BizException.notFound("模板不存在：" + templateId);
+        }
+        AgentWorker w = new AgentWorker();
+        w.setTenantId(user.getTenantId());
+        w.setInstitutionId(user.getInstitutionId());
+        String name = body == null ? null : trim((String) body.get("name"));
+        w.setName(name == null || name.isEmpty() ? tpl.getName() : name);
+        w.setIcon(tpl.getIcon());
+        w.setDescription(tpl.getDescription());
+        w.setWorkerType(tpl.getWorkerType());
+        w.setRunMode(tpl.getRunMode() == null ? AgentWorker.RUN_MODE_ON_DEMAND : tpl.getRunMode());
+        w.setScheduleText(tpl.getScheduleText());
+        w.setScheduleTime(tpl.getScheduleTime());
+        w.setTaskPrompt(tpl.getTaskPrompt());
+        w.setStatus(AgentWorker.STATUS_IDLE);
+        w.setEnabled(1);
+        w.setCreatedBy(user.getUserId());
+        w.setVisibleScope("TENANT");
+        w.setSourceTemplateId(tpl.getId());
+        w.setIsTemplate(0);
+        // 模板类型可能要求特定权限码（如请假类需 approval:leave）
+        requirePermission(user, WorkerRole.of(tpl.getWorkerType()));
+        workerMapper.insert(w);
+        audit(user, "worker.from_template", "从模板「" + tpl.getName() + "」(id=" + templateId + ") 创建数字员工");
+        return ApiResponse.ok(WorkerView.from(w));
+    }
+
+    /**
+     * 设置可见范围（部门分发）：body = {scope:"TENANT"|"DEPT", deptIds:[1,2]}。
+     *
+     * <p>仅租户管理员可操作——把数字员工分发到哪些部门，属于租户内的管控动作。</p>
+     */
+    @PutMapping("/{id}/visible-scope")
+    public ApiResponse<WorkerView> setVisibleScope(@PathVariable Long id,
+                                                   @RequestBody java.util.Map<String, Object> body) {
+        AuthUser user = AuthUserContext.require();
+        requireAdmin(user, "设置数字员工可见范围");
+        AgentWorker w = requireOwned(user, id);
+        String scope = body == null ? null : (String) body.get("scope");
+        if (scope == null || scope.isBlank()) {
+            scope = "TENANT";
+        }
+        scope = scope.trim().toUpperCase();
+        if (!"TENANT".equals(scope) && !"DEPT".equals(scope)) {
+            throw BizException.badRequest("可见范围只能为 TENANT 或 DEPT");
+        }
+        w.setVisibleScope(scope);
+        if ("DEPT".equals(scope)) {
+            Object ids = body.get("deptIds");
+            if (ids == null || !(ids instanceof java.util.List<?> list) || list.isEmpty()) {
+                throw BizException.badRequest("scope=DEPT 时必须指定 deptIds");
+            }
+            w.setDeptIds(list.toString());
+        } else {
+            w.setDeptIds(null);
+        }
+        workerMapper.updateById(w);
+        audit(user, "worker.scope", "设置数字员工「" + w.getName() + "」(id=" + id + ") 可见范围="
+                + w.getVisibleScope() + (w.getDeptIds() == null ? "" : " 部门=" + w.getDeptIds()));
+        return ApiResponse.ok(WorkerView.from(w));
+    }
+
+    /**
+     * 可见性判定：角色决定「能做什么」，本方法决定「能看到哪个数字员工」。
+     *
+     * <p>管理员可见全部——否则租户管理员将无法管理自己下发到部门的数字员工。</p>
+     */
+    private static boolean visibleTo(AgentWorker w, AuthUser user) {
+        if (PermissionCatalog.isAdmin(user)) {
+            return true;
+        }
+        String scope = w.getVisibleScope();
+        if (scope == null || scope.isBlank() || "TENANT".equals(scope)) {
+            return true;
+        }
+        if (!"DEPT".equals(scope)) {
+            return false;
+        }
+        Long deptId = user.getDepartmentId();
+        String ids = w.getDeptIds();
+        if (deptId == null || ids == null || ids.isBlank()) {
+            return false;
+        }
+        String wanted = deptId.toString();
+        for (String part : ids.replaceAll("[^0-9,]", "").split(",")) {
+            if (wanted.equals(part)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 角色类型目录（含当前用户是否具备承担该类型的权限）。 */
@@ -125,7 +285,7 @@ public class WorkerController {
     @PostMapping
     public ApiResponse<WorkerView> create(@RequestBody AgentWorker body) {
         AuthUser user = AuthUserContext.require();
-        requireAdmin(user, "创建数字员工");
+        requireCreate(user, "创建数字员工");
         String name = trim(body.getName());
         if (name.isEmpty()) {
             throw BizException.badRequest("数字员工名称不能为空");
@@ -135,6 +295,9 @@ public class WorkerController {
         requirePermission(user, role);
         AgentWorker w = new AgentWorker();
         w.setTenantId(user.getTenantId());
+        // V31：记录归属机构。租户管理员（无机构）创建的是租户级，全租户共享；
+        // 企业管理员创建的归本机构，仅本机构可管理。
+        w.setInstitutionId(user.getInstitutionId());
         w.setName(name);
         w.setWorkerType(role.code());
         w.setIcon(trim(body.getIcon()).isEmpty() ? "bot" : body.getIcon());
@@ -156,9 +319,17 @@ public class WorkerController {
         w.setStatus(AgentWorker.resolveStatus(runMode, scheduleTime, AgentWorker.STATUS_RUNNING, true));
         w.setLastOutput("尚未运行");
         w.setCreatedBy(user.getUserId());
+        // 可见范围：默认本租户全员可见；前端可传 DEPT + deptIds 直接分发到部门
+        String scope = body.getVisibleScope() == null || body.getVisibleScope().isBlank()
+                ? "TENANT" : body.getVisibleScope().trim().toUpperCase();
+        w.setVisibleScope("DEPT".equals(scope) ? "DEPT" : "TENANT");
+        w.setDeptIds("DEPT".equals(w.getVisibleScope()) ? body.getDeptIds() : null);
+        w.setIsTemplate(0);
         w.setCreatedAt(LocalDateTime.now());
         w.setUpdatedAt(LocalDateTime.now());
         workerMapper.insert(w);
+        audit(user, "worker.create", "创建数字员工「" + w.getName() + "」类型=" + role.code()
+                + " 可见范围=" + w.getVisibleScope());
         return ApiResponse.ok(WorkerView.from(w));
     }
 
@@ -266,10 +437,28 @@ public class WorkerController {
      * 提示语明确给出「谁能做」与「普通成员能做什么」，便于用户自助判断而不是反复试错。</p>
      */
     private static void requireAdmin(AuthUser user, String action) {
-        if (!PermissionCatalog.isAdmin(user)) {
-            throw BizException.forbidden(action + "仅租户管理员可执行；"
-                    + "如需变更数字员工配置，请联系租户管理员。提交请假申请等业务操作不受此限制。");
+        if (!PermissionCatalog.holds(user, PermissionCatalog.WORKER_MANAGE)) {
+            throw BizException.forbidden(action + "需要管理权限（" + PermissionCatalog.rolesText(PermissionCatalog.WORKER_MANAGE)
+                    + "）；当前账号角色为「" + roleText(user) + "」。"
+                    + "如需变更数字员工配置，请联系本租户管理员。使用数字员工与提交业务申请不受此限制。");
         }
+    }
+
+    /** 创建单独走 worker:create，与「管理」区分——便于将来只下放使用权、不给创建权。 */
+    private static void requireCreate(AuthUser user, String action) {
+        if (!PermissionCatalog.holds(user, PermissionCatalog.WORKER_CREATE)) {
+            throw BizException.forbidden(action + "需要创建权限（" + PermissionCatalog.rolesText(PermissionCatalog.WORKER_CREATE)
+                    + "）；当前账号角色为「" + roleText(user) + "」。"
+                    + "如需新建数字员工，请联系本租户管理员。");
+        }
+    }
+
+    /** 当前用户角色的中文描述，用于权限不足时给出可操作的提示。 */
+    private static String roleText(AuthUser user) {
+        if (user.getRoles() == null || user.getRoles().isEmpty()) {
+            return "无角色";
+        }
+        return String.join("、", user.getRoles());
     }
 
     private AgentWorker requireOwned(AuthUser user, Long id) {
@@ -277,7 +466,21 @@ public class WorkerController {
         if (cur == null || !user.getTenantId().equals(cur.getTenantId())) {
             throw BizException.notFound("数字员工不存在：" + id);
         }
+        // V31 机构约束：租户管理员可管全部；企业管理员仅能管本机构的。
+        // 机构级数字员工（institutionId 非空）只认本机构；租户级（空）不受限。
+        if (!PermissionCatalog.isAdmin(user)
+                && PermissionCatalog.ROLE_ORG_ADMIN.equals(soleOrgAdminRole(user))
+                && user.getInstitutionId() != null
+                && cur.getInstitutionId() != null
+                && !user.getInstitutionId().equals(cur.getInstitutionId())) {
+            throw BizException.forbidden("只能管理本机构的数字员工；该数字员工属于其他机构");
+        }
         return cur;
+    }
+
+    /** 是否「仅是」企业管理员（不同时具备租户管理员身份）。 */
+    private static String soleOrgAdminRole(AuthUser user) {
+        return PermissionCatalog.isAdmin(user) ? null : PermissionCatalog.ROLE_ORG_ADMIN;
     }
 
     /** 角色类型：显式指定优先，未指定则按名称/职责推断（保证历史与「一句话创建」都有类型）。 */

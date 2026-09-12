@@ -63,9 +63,44 @@
             <el-button text type="danger" size="small" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
-        <template #empty><el-empty description="暂无数字员工，点击「新增数字员工」创建" :image-size="70" /></template>
+        <template #empty>
+          <el-empty description="本租户还没有数字员工" :image-size="70">
+            <el-button type="primary" size="small" :loading="tplLoading" @click="openTemplates">
+              从平台模板创建
+            </el-button>
+            <el-button size="small" @click="openDlg(undefined)">空白创建</el-button>
+          </el-empty>
+        </template>
       </el-table>
     </el-card>
+
+    <el-dialog v-model="tplDlg" title="从平台模板创建" width="560px">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="模板是平台内置的样板，复制后归本租户所有，可随意修改。"
+        style="margin-bottom: 12px"
+      />
+      <div v-loading="tplLoading">
+        <el-empty v-if="!templates.length" description="暂无可用模板" :image-size="60" />
+        <div v-else class="tpl-grid">
+          <div v-for="t in templates" :key="t.id" class="tpl-card">
+            <div class="tpl-name">{{ t.name }}</div>
+            <div class="tpl-role">{{ t.roleName }}</div>
+            <div class="tpl-desc">{{ t.description || '—' }}</div>
+            <el-button
+              type="primary"
+              size="small"
+              :loading="tplCreatingId === t.id"
+              @click="createFromTemplate(t)"
+            >
+              创建
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
 
     <el-dialog v-model="dlg" :title="form.id ? '编辑数字员工' : '新增数字员工'" width="520px">
       <el-form label-width="88px" size="small">
@@ -133,8 +168,12 @@ import {
   adminRunWorkerNow,
   adminToggleWorker,
   adminUpdateWorker,
+  createWorkerFromTemplate,
+  listWorkerTemplates,
+  setWorkerVisibleScope,
   type AgentWorker,
-  type WorkerRun
+  type WorkerRun,
+  type WorkerTemplate
 } from '@/api/resource'
 
 const loading = ref(false)
@@ -147,6 +186,36 @@ const runsDlg = ref(false)
 const runsWorker = ref<AgentWorker | null>(null)
 const runs = ref<WorkerRun[]>([])
 const runLoading = ref<number | null>(null)
+
+/** 平台模板：租户下无数字员工时，可从模板一键创建，避免面对空白页无从下手 */
+const tplDlg = ref(false)
+const tplLoading = ref(false)
+const templates = ref<WorkerTemplate[]>([])
+const tplCreatingId = ref<number | null>(null)
+
+async function openTemplates() {
+  tplDlg.value = true
+  tplLoading.value = true
+  try {
+    templates.value = (await listWorkerTemplates()) || []
+  } catch {
+    templates.value = []
+  } finally {
+    tplLoading.value = false
+  }
+}
+
+async function createFromTemplate(t: WorkerTemplate) {
+  tplCreatingId.value = t.id
+  try {
+    await createWorkerFromTemplate(t.id, {})
+    ElMessage.success(`已创建「${t.name}」`)
+    tplDlg.value = false
+    await reload()
+  } finally {
+    tplCreatingId.value = null
+  }
+}
 
 /** HH:mm → Date（time-picker 需要 Date 值） */
 const formTimeValue = computed<Date | null>({
@@ -319,5 +388,34 @@ onMounted(reload)
 
 .run-err {
   color: var(--el-color-danger);
+}
+
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.tpl-card {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--el-fill-color-lighter);
+}
+.tpl-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+}
+.tpl-role {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin: 2px 0 6px;
+}
+.tpl-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+  min-height: 36px;
+  margin-bottom: 8px;
 }
 </style>

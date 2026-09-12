@@ -397,6 +397,43 @@ export function adminRunWorkerNow(id: number): Promise<WorkerRun> {
   return http.post(`/admin/workers/${id}/run`).then((r) => unwrap<WorkerRun>(r))
 }
 
+/* ---------- 数字员工模板与可见范围（V29 · 部门分发） ---------- */
+
+export interface WorkerTemplate {
+  id: number
+  name: string
+  icon: string
+  description: string
+  workerType: string
+  roleName: string
+  runMode: string
+  taskPrompt: string
+}
+
+/** 平台全局模板（tenant_id=0），租户可据此一键创建，避免开通后面对空白页。 */
+export function listWorkerTemplates(): Promise<WorkerTemplate[]> {
+  return http.get('/workers/templates').then((r) => unwrap<WorkerTemplate[]>(r))
+}
+
+/** 从模板复制到本租户。 */
+export function createWorkerFromTemplate(
+  templateId: number,
+  body: { name?: string }
+): Promise<AgentWorker> {
+  return http.post(`/workers/from-template/${templateId}`, body).then((r) => unwrap<AgentWorker>(r))
+}
+
+/** 设置可见范围：TENANT=全租户可见；DEPT=仅指定部门可见（部门分发）。 */
+export function setWorkerVisibleScope(
+  id: number,
+  scope: 'TENANT' | 'DEPT',
+  deptIds?: number[]
+): Promise<AgentWorker> {
+  return http
+    .put(`/workers/${id}/visible-scope`, { scope, deptIds })
+    .then((r) => unwrap<AgentWorker>(r))
+}
+
 /* ============ 业务系统注册与配置管理（V15 · 管理端） ============ */
 
 export interface BizSystem {

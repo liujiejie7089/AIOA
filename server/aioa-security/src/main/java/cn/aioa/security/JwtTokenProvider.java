@@ -23,6 +23,13 @@ public class JwtTokenProvider {
     public static final String CLAIM_TENANT = "tid";
     public static final String CLAIM_ROLES = "roles";
     public static final String CLAIM_TYPE = "typ";
+    /**
+     * 所属机构 / 部门。此前 token 只带 uid+tid+roles，导致请求链路里
+     * {@code AuthUser.institutionId/departmentId} 恒为空——机构约束与部门可见范围
+     * 都会静默失效（表现为"看起来过滤了，其实是所有人/没人能通过"）。
+     */
+    public static final String CLAIM_INSTITUTION = "iid";
+    public static final String CLAIM_DEPT = "did";
     public static final String TYPE_ACCESS = "access";
     public static final String TYPE_REFRESH = "refresh";
 
@@ -53,6 +60,8 @@ public class JwtTokenProvider {
                 .claim(CLAIM_UID, user.getUserId())
                 .claim(CLAIM_TENANT, user.getTenantId() == null ? 0L : user.getTenantId())
                 .claim(CLAIM_ROLES, user.getRoles() == null ? List.of() : user.getRoles())
+                .claim(CLAIM_INSTITUTION, user.getInstitutionId())
+                .claim(CLAIM_DEPT, user.getDepartmentId())
                 .claim(CLAIM_TYPE, type)
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + ttl * 1000L))
@@ -85,10 +94,24 @@ public class JwtTokenProvider {
         return AuthUser.builder()
                 .userId(userId)
                 .tenantId(tenantId == null ? 0L : tenantId)
+                .institutionId(longOrNull(claims.get(CLAIM_INSTITUTION)))
+                .departmentId(longOrNull(claims.get(CLAIM_DEPT)))
                 .username(claims.getSubject())
                 .roles(roles)
                 .permissions(new ArrayList<>())
                 .build();
+    }
+
+    /** claim 可能是 Integer/Long/String（不同签发端序列化差异），统一转 Long，无法解析返回 null。 */
+    private static Long longOrNull(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(String.valueOf(raw));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     public boolean isValid(String token) {

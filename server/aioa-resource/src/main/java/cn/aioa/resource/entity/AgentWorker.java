@@ -36,6 +36,27 @@ public class AgentWorker {
 
     private Long tenantId;
 
+    /**
+     * 归属机构（V31）：空=租户级（租户管理员创建，全租户共享）。
+     * 企业管理员只能管理本机构的数字员工，避免跨机构改删。
+     */
+    private Long institutionId;
+
+    /**
+     * 可见范围（V29）：TENANT=本租户全员可见（默认） / DEPT=仅指定部门可见。
+     * 部门分发的数据基础——角色决定「能做什么」，本字段决定「谁能看到这个数字员工」。
+     */
+    private String visibleScope;
+
+    /** 可见部门 id 列表（JSON 数组），visibleScope=DEPT 时有效。 */
+    private String deptIds;
+
+    /** 来源模板 id：由全局模板（tenant_id=0）复制而来时记录，便于追溯。 */
+    private Long sourceTemplateId;
+
+    /** 1=全局模板（仅 tenant_id=0），可作为租户创建数字员工的样板。 */
+    private Integer isTemplate;
+
     private String name;
 
     private String icon;
