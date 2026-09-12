@@ -170,10 +170,15 @@ const isPlatformAdmin = computed(() => roles.value.includes('ROLE_ADMIN'))
 const showTenantMenu = computed(
   () => roles.value.includes('ROLE_ADMIN') || roles.value.includes('ROLE_TENANT_ADMIN')
 )
+/**
+ * 机构成员（企业管理员 / 部门负责人 / 成员）看本机构；租户管理员与平台管理员
+ * 也开放入口——前者需按部门分发数字员工、后者需运维巡检，均为只读或本租户范围。
+ */
 const showOrgMenu = computed(
   () => roles.value.includes('ROLE_ORG_ADMIN')
     || roles.value.includes('ROLE_DEPT_LEADER')
     || roles.value.includes('ROLE_MEMBER')
+    || roles.value.includes('ROLE_TENANT_ADMIN')
     || roles.value.includes('ROLE_ADMIN')
 )
 

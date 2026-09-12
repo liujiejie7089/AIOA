@@ -62,81 +62,113 @@ public class OrgAdminController {
         return ApiResponse.ok(out);
     }
 
+    // ================================================================== 机构作用域
+
+    /**
+     * 当前账号可查看的机构清单 + 写入能力，供前端渲染机构选择器与按钮显隐。
+     *
+     * <p>机构成员只返回自己那一家（选择器自动隐藏）；租户管理员返回本租户全部启用机构；
+     * 平台管理员返回全局全部启用机构（只读运维视角）。</p>
+     */
+    @GetMapping("/institutions")
+    public ApiResponse<Map<String, Object>> institutions() {
+        guard.requireOrgUser();
+        return ApiResponse.ok(guard.selectableInstitutions());
+    }
+
     // ================================================================== FR-G1 部门树
 
     @GetMapping("/departments")
-    public ApiResponse<Map<String, Object>> departments() {
+    public ApiResponse<Map<String, Object>> departments(
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
         guard.requireOrgUser();
-        return ApiResponse.ok(treeService.tree(guard.requireInstitutionId()));
+        return ApiResponse.ok(treeService.tree(guard.requireInstitutionId(institutionId)));
     }
 
     @PostMapping("/departments")
-    public ApiResponse<Map<String, Object>> createDepartment(@RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.createDept(guard.requireInstitutionId(), u, body));
+    public ApiResponse<Map<String, Object>> createDepartment(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.createDept(guard.requireInstitutionId(institutionId), u, body));
     }
 
     @PutMapping("/departments/{id}")
-    public ApiResponse<Map<String, Object>> updateDepartment(@PathVariable Long id,
-                                                             @RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.updateDept(guard.requireInstitutionId(), id, u, body));
+    public ApiResponse<Map<String, Object>> updateDepartment(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.updateDept(guard.requireInstitutionId(institutionId), id, u, body));
     }
 
     /** FR-G1：调整上级部门，自动迁移子树层级与路径。 */
     @PostMapping("/departments/{id}/move")
-    public ApiResponse<Map<String, Object>> moveDepartment(@PathVariable Long id,
-                                                           @RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
+    public ApiResponse<Map<String, Object>> moveDepartment(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
         Long parentId = Vals.lngObj(body, "parentId");
-        return ApiResponse.ok(treeService.moveDept(guard.requireInstitutionId(), id,
+        return ApiResponse.ok(treeService.moveDept(guard.requireInstitutionId(institutionId), id,
                 parentId == null ? 0L : parentId, u));
     }
 
     @DeleteMapping("/departments/{id}")
-    public ApiResponse<Map<String, Object>> deleteDepartment(@PathVariable Long id) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.deleteDept(guard.requireInstitutionId(), id, u));
+    public ApiResponse<Map<String, Object>> deleteDepartment(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.deleteDept(guard.requireInstitutionId(institutionId), id, u));
     }
 
     // ================================================================== FR-G2/G3 员工
 
     @GetMapping("/members")
     public ApiResponse<Map<String, Object>> members(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
             @RequestParam(name = "departmentId", required = false) Long departmentId,
             @RequestParam(name = "keyword", required = false) String keyword,
             @RequestParam(name = "includeSubDept", defaultValue = "false") boolean includeSubDept,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "size", defaultValue = "50") int size) {
         guard.requireOrgUser();
-        return ApiResponse.ok(treeService.listMembers(guard.requireInstitutionId(), departmentId,
+        return ApiResponse.ok(treeService.listMembers(guard.requireInstitutionId(institutionId), departmentId,
                 keyword, includeSubDept, page, size));
     }
 
     @PostMapping("/members")
-    public ApiResponse<Map<String, Object>> createMember(@RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.createMember(guard.requireInstitutionId(), u, body));
+    public ApiResponse<Map<String, Object>> createMember(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.createMember(guard.requireInstitutionId(institutionId), u, body));
     }
 
     @PutMapping("/members/{id}")
-    public ApiResponse<Map<String, Object>> updateMember(@PathVariable Long id,
-                                                         @RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.updateMember(guard.requireInstitutionId(), id, u, body));
+    public ApiResponse<Map<String, Object>> updateMember(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.updateMember(guard.requireInstitutionId(institutionId), id, u, body));
     }
 
     @DeleteMapping("/members/{id}")
-    public ApiResponse<Map<String, Object>> deleteMember(@PathVariable Long id) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.deleteMember(guard.requireInstitutionId(), id, u));
+    public ApiResponse<Map<String, Object>> deleteMember(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.deleteMember(guard.requireInstitutionId(institutionId), id, u));
     }
 
     /** FR-G3：批量导入员工（逐行返回失败清单，成功率可观测）。 */
     @PostMapping("/members/import")
-    public ApiResponse<Map<String, Object>> importMembers(@RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
-        return ApiResponse.ok(treeService.importMembers(guard.requireInstitutionId(), u,
+    public ApiResponse<Map<String, Object>> importMembers(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.importMembers(guard.requireInstitutionId(institutionId), u,
                 Vals.list(body, "rows")));
     }
 
@@ -144,17 +176,20 @@ public class OrgAdminController {
 
     @GetMapping("/dept-quotas")
     public ApiResponse<List<Map<String, Object>>> deptQuotas(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
             @RequestParam(name = "period", required = false) String period) {
         guard.requireOrgUser();
-        return ApiResponse.ok(quotaService.listDeptQuotas(guard.requireInstitutionId(), period));
+        return ApiResponse.ok(quotaService.listDeptQuotas(guard.requireInstitutionId(institutionId), period));
     }
 
     /** FR-H1：机构 → 部门二次分配（Σ部门额度 ≤ 机构配额）。 */
     @PostMapping("/dept-quotas")
-    public ApiResponse<Map<String, Object>> allocateDeptQuota(@RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
+    public ApiResponse<Map<String, Object>> allocateDeptQuota(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
         return ApiResponse.ok(quotaService.allocateDeptQuota(u.getTenantId(),
-                guard.requireInstitutionId(), u, body));
+                guard.requireInstitutionId(institutionId), u, body));
     }
 
     /** FR-H2：本机构配额与预警（含冻结状态）。 */
@@ -178,9 +213,10 @@ public class OrgAdminController {
     // ================================================================== FR-I 机构知识库
 
     @GetMapping("/kb")
-    public ApiResponse<Map<String, Object>> kb() {
+    public ApiResponse<Map<String, Object>> kb(
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
         guard.requireOrgUser();
-        return ApiResponse.ok(kbService.list(guard.requireInstitutionId()));
+        return ApiResponse.ok(kbService.list(guard.requireInstitutionId(institutionId)));
     }
 
     @GetMapping("/kb/candidates")
@@ -217,17 +253,21 @@ public class OrgAdminController {
 
     /** FR-J1：本机构已授权且启用的资源清单（成员端可见来源）。 */
     @GetMapping("/grants")
-    public ApiResponse<Map<String, Object>> grants() {
+    public ApiResponse<Map<String, Object>> grants(
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
         AuthUser u = guard.requireOrgUser();
-        return ApiResponse.ok(grantService.institutionResources(u.getTenantId(), guard.requireInstitutionId()));
+        return ApiResponse.ok(grantService.institutionResources(u.getTenantId(),
+                guard.requireInstitutionId(institutionId)));
     }
 
     /** FR-J2：资源开通申请（走多级审批，通过后自动授权）。 */
     @PostMapping("/applications/resource-open")
-    public ApiResponse<Map<String, Object>> applyResourceOpen(@RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
+    public ApiResponse<Map<String, Object>> applyResourceOpen(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
         return ApiResponse.ok(grantService.submitOpenApplication(u.getTenantId(),
-                guard.requireInstitutionId(), u, body));
+                guard.requireInstitutionId(institutionId), u, body));
     }
 
     // ================================================================== FR-K1/K2 用量与审计
@@ -235,36 +275,42 @@ public class OrgAdminController {
     /** FR-K1：机构用量看板（部门 / 成员维度）。 */
     @GetMapping("/usage")
     public ApiResponse<Map<String, Object>> usage(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
             @RequestParam(name = "period", required = false) String period) {
         AuthUser u = guard.requireOrgUser();
-        return ApiResponse.ok(dashboardService.orgUsage(u.getTenantId(), guard.requireInstitutionId(), period));
+        return ApiResponse.ok(dashboardService.orgUsage(u.getTenantId(),
+                guard.requireInstitutionId(institutionId), period));
     }
 
     /** FR-K2：机构审计（强制机构硬边界）。 */
     @GetMapping("/audit")
     public ApiResponse<Map<String, Object>> audit(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
             @RequestParam(name = "limit", defaultValue = "100") int limit) {
         AuthUser u = guard.requireOrgUser();
-        return ApiResponse.ok(auditQueryService.orgAudit(u.getTenantId(), guard.requireInstitutionId(), limit));
+        return ApiResponse.ok(auditQueryService.orgAudit(u.getTenantId(),
+                guard.requireInstitutionId(institutionId), limit));
     }
 
     // ================================================================== 请假与审批（企业端视角）
 
     @GetMapping("/leave/requests")
     public ApiResponse<List<Map<String, Object>>> leaveRequests(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
             @RequestParam(name = "status", required = false) String status) {
         AuthUser u = guard.requireOrgUser();
         return ApiResponse.ok(leaveService.institutionRequests(u.getTenantId(),
-                guard.requireInstitutionId(), status));
+                guard.requireInstitutionId(institutionId), status));
     }
 
     @GetMapping("/leave/balances")
     public ApiResponse<List<Map<String, Object>>> leaveBalances(
             @RequestParam(name = "userId") Long userId,
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
             @RequestParam(name = "year", required = false) Integer year) {
         AuthUser u = guard.requireOrgUser();
         // 机构硬边界：只能查本机构成员的余额
-        Long iid = guard.requireInstitutionId();
+        Long iid = guard.requireInstitutionId(institutionId);
         OrgMember m = guard.memberOf(iid, userId);
         if (m == null) {
             throw cn.aioa.common.exception.BizException.notFound("该员工不属于本机构：" + userId);
@@ -274,9 +320,11 @@ public class OrgAdminController {
 
     /** FR-H2：企业管理员调整本机构成员的假期额度。 */
     @PostMapping("/leave/balances")
-    public ApiResponse<Map<String, Object>> upsertLeaveBalance(@RequestBody Map<String, Object> body) {
-        AuthUser u = guard.requireOrgAdmin();
-        Long iid = guard.requireInstitutionId();
+    public ApiResponse<Map<String, Object>> upsertLeaveBalance(
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        Long iid = guard.requireInstitutionId(institutionId);
         Long userId = Vals.lngObj(body, "userId");
         if (userId == null || guard.memberOf(iid, userId) == null) {
             throw cn.aioa.common.exception.BizException.notFound("该员工不属于本机构");
@@ -285,8 +333,9 @@ public class OrgAdminController {
     }
 
     @GetMapping("/approver-candidates")
-    public ApiResponse<List<OrgMember>> approverCandidates() {
-        guard.requireOrgAdmin();
-        return ApiResponse.ok(flowService.approverCandidates(guard.requireInstitutionId()));
+    public ApiResponse<List<OrgMember>> approverCandidates(
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
+        guard.requireOrgUser();
+        return ApiResponse.ok(flowService.approverCandidates(guard.requireInstitutionId(institutionId)));
     }
 }

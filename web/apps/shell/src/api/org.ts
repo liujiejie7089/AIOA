@@ -315,59 +315,99 @@ export function saveApprovalFlowDef(body: Record<string, unknown>): Promise<Appr
 }
 
 // ================================================================== 企业端：组织与员工
-export function getOrgProfile(): Promise<Record<string, unknown>> {
-  return http.get('/org/profile').then((r) => unwrap<Record<string, unknown>>(r))
+//
+// 机构作用域（V32）：机构成员只能看本机构；租户管理员可在本租户内切换机构；
+// 平台管理员可跨租户切换（只读）。所有 /org/* 接口都接受可选的 institutionId。
+export interface SelectableInstitution {
+  id: number
+  name?: string
+  code?: string
+  tenantId?: number
+  status?: string
 }
-export function getDepartments(): Promise<{ tree: OrgDepartment[]; total?: number; depthLimit?: number; maxDepth?: number }> {
-  return http.get('/org/departments').then((r) => unwrap<{ tree: OrgDepartment[]; total?: number; depthLimit?: number; maxDepth?: number }>(r))
+
+export interface OrgScope {
+  items: SelectableInstitution[]
+  total?: number
+  /** 当前账号是否可维护组织与员工（企业管理员 / 租户管理员为 true，平台管理员只读） */
+  canWrite: boolean
+  /** 机构成员硬绑定的机构 id；租户/平台管理员为 null */
+  boundInstitutionId?: number | null
+  /** ORG（机构成员）/ TENANT（租户管理员）/ PLATFORM（平台管理员） */
+  scope?: string
 }
-export function createDepartment(body: Partial<OrgDepartment>): Promise<OrgDepartment> {
-  return http.post('/org/departments', body).then((r) => unwrap<OrgDepartment>(r))
+
+/** 把机构 id 转成 axios params（null/undefined 时不带该参数，由后端按作用域兜底）。 */
+function inst(institutionId?: number | null): Record<string, unknown> {
+  return institutionId ? { institutionId } : {}
 }
-export function updateDepartment(id: number, body: Partial<OrgDepartment>): Promise<OrgDepartment> {
-  return http.put('/org/departments/' + id, body).then((r) => unwrap<OrgDepartment>(r))
+
+export function getOrgScope(): Promise<OrgScope> {
+  return http.get('/org/institutions').then((r) => unwrap<OrgScope>(r))
 }
-export function deleteDepartment(id: number): Promise<unknown> {
-  return http.delete('/org/departments/' + id).then((r) => unwrap<unknown>(r))
+export function getOrgProfile(institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.get('/org/profile', { params: inst(institutionId) }).then((r) => unwrap<Record<string, unknown>>(r))
 }
-export function moveDepartment(id: number, parentId: number): Promise<OrgDepartment> {
-  return http.post('/org/departments/' + id + '/move', { parentId }).then((r) => unwrap<OrgDepartment>(r))
+export function getDepartments(institutionId?: number | null): Promise<{ tree: OrgDepartment[]; total?: number; depthLimit?: number; maxDepth?: number }> {
+  return http.get('/org/departments', { params: inst(institutionId) })
+    .then((r) => unwrap<{ tree: OrgDepartment[]; total?: number; depthLimit?: number; maxDepth?: number }>(r))
 }
-export function listMembers(params?: Record<string, unknown>): Promise<{ items: OrgMember[]; total?: number }> {
-  return http.get('/org/members', { params }).then((r) => unwrap<{ items: OrgMember[]; total?: number }>(r))
+export function createDepartment(body: Partial<OrgDepartment>, institutionId?: number | null): Promise<OrgDepartment> {
+  return http.post('/org/departments', body, { params: inst(institutionId) }).then((r) => unwrap<OrgDepartment>(r))
 }
-export function createMember(body: Partial<OrgMember>): Promise<OrgMember> {
-  return http.post('/org/members', body).then((r) => unwrap<OrgMember>(r))
+export function updateDepartment(id: number, body: Partial<OrgDepartment>, institutionId?: number | null): Promise<OrgDepartment> {
+  return http.put('/org/departments/' + id, body, { params: inst(institutionId) }).then((r) => unwrap<OrgDepartment>(r))
 }
-export function updateMember(id: number, body: Partial<OrgMember>): Promise<OrgMember> {
-  return http.put('/org/members/' + id, body).then((r) => unwrap<OrgMember>(r))
+export function deleteDepartment(id: number, institutionId?: number | null): Promise<unknown> {
+  return http.delete('/org/departments/' + id, { params: inst(institutionId) }).then((r) => unwrap<unknown>(r))
 }
-export function importMembers(rows: Record<string, unknown>[]): Promise<Record<string, unknown>> {
-  return http.post('/org/members/import', { rows }).then((r) => unwrap<Record<string, unknown>>(r))
+export function moveDepartment(id: number, parentId: number, institutionId?: number | null): Promise<OrgDepartment> {
+  return http.post('/org/departments/' + id + '/move', { parentId }, { params: inst(institutionId) })
+    .then((r) => unwrap<OrgDepartment>(r))
 }
-export function listDeptQuotas(period: string): Promise<Record<string, unknown>[]> {
-  return http.get('/org/dept-quotas', { params: { period } }).then((r) => unwrap<Record<string, unknown>[]>(r))
+export function listMembers(params?: Record<string, unknown>, institutionId?: number | null): Promise<{ items: OrgMember[]; total?: number }> {
+  return http.get('/org/members', { params: { ...inst(institutionId), ...(params || {}) } })
+    .then((r) => unwrap<{ items: OrgMember[]; total?: number }>(r))
 }
-export function createDeptQuota(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return http.post('/org/dept-quotas', body).then((r) => unwrap<Record<string, unknown>>(r))
+export function createMember(body: Partial<OrgMember>, institutionId?: number | null): Promise<OrgMember> {
+  return http.post('/org/members', body, { params: inst(institutionId) }).then((r) => unwrap<OrgMember>(r))
 }
-export function getOrgQuota(period: string): Promise<OrgQuota> {
-  return http.get('/org/org-quota', { params: { period } }).then((r) => unwrap<OrgQuota>(r))
+export function updateMember(id: number, body: Partial<OrgMember>, institutionId?: number | null): Promise<OrgMember> {
+  return http.put('/org/members/' + id, body, { params: inst(institutionId) }).then((r) => unwrap<OrgMember>(r))
 }
-export function getOrgUsage(period: string): Promise<Record<string, unknown>> {
-  return http.get('/org/usage', { params: { period } }).then((r) => unwrap<Record<string, unknown>>(r))
+export function deleteMember(id: number, institutionId?: number | null): Promise<unknown> {
+  return http.delete('/org/members/' + id, { params: inst(institutionId) }).then((r) => unwrap<unknown>(r))
 }
-export function applyQuotaExpand(tokens: number, reason: string): Promise<Record<string, unknown>> {
-  return http.post('/org/applications/quota-expand', { tokens, reason }).then((r) => unwrap<Record<string, unknown>>(r))
+export function importMembers(rows: Record<string, unknown>[], institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.post('/org/members/import', { rows }, { params: inst(institutionId) }).then((r) => unwrap<Record<string, unknown>>(r))
 }
-export function applyResourceOpen(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return http.post('/org/applications/resource-open', body).then((r) => unwrap<Record<string, unknown>>(r))
+export function listDeptQuotas(period: string, institutionId?: number | null): Promise<Record<string, unknown>[]> {
+  return http.get('/org/dept-quotas', { params: { period, ...inst(institutionId) } }).then((r) => unwrap<Record<string, unknown>[]>(r))
 }
-export function getOrgGrants(): Promise<{ items: ResourceGrant[]; total?: number; byType?: Record<string, unknown> }> {
-  return http.get('/org/grants').then((r) => unwrap<{ items: ResourceGrant[]; total?: number; byType?: Record<string, unknown> }>(r))
+export function createDeptQuota(body: Record<string, unknown>, institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.post('/org/dept-quotas', body, { params: inst(institutionId) }).then((r) => unwrap<Record<string, unknown>>(r))
 }
-export function upsertLeaveBalance(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return http.post('/org/leave/balances', body).then((r) => unwrap<Record<string, unknown>>(r))
+export function getOrgQuota(period: string, institutionId?: number | null): Promise<OrgQuota> {
+  return http.get('/org/org-quota', { params: { period, ...inst(institutionId) } }).then((r) => unwrap<OrgQuota>(r))
+}
+export function getOrgUsage(period: string, institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.get('/org/usage', { params: { period, ...inst(institutionId) } }).then((r) => unwrap<Record<string, unknown>>(r))
+}
+export function applyQuotaExpand(tokens: number, reason: string, institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.post('/org/applications/quota-expand', { tokens, reason }, { params: inst(institutionId) })
+    .then((r) => unwrap<Record<string, unknown>>(r))
+}
+export function applyResourceOpen(body: Record<string, unknown>, institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.post('/org/applications/resource-open', body, { params: inst(institutionId) })
+    .then((r) => unwrap<Record<string, unknown>>(r))
+}
+export function getOrgGrants(institutionId?: number | null): Promise<{ items: ResourceGrant[]; total?: number; byType?: Record<string, unknown> }> {
+  return http.get('/org/grants', { params: inst(institutionId) })
+    .then((r) => unwrap<{ items: ResourceGrant[]; total?: number; byType?: Record<string, unknown> }>(r))
+}
+export function upsertLeaveBalance(body: Record<string, unknown>, institutionId?: number | null): Promise<Record<string, unknown>> {
+  return http.post('/org/leave/balances', body, { params: inst(institutionId) })
+    .then((r) => unwrap<Record<string, unknown>>(r))
 }
 
 // ================================================================== 审批工作流

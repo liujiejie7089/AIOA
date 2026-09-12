@@ -9,7 +9,46 @@
       style="margin-bottom: 12px"
     />
 
-    <el-row :gutter="12">
+    <!-- 机构作用域：机构成员固定本单位；租户管理员 / 平台管理员可切换 -->
+    <div class="scope-bar">
+      <span class="scope-label">当前机构</span>
+      <el-select
+        v-if="instOptions.length > 1"
+        v-model="instId"
+        size="small"
+        style="width: 280px"
+        placeholder="选择机构"
+        @change="reloadAll"
+      >
+        <el-option
+          v-for="i in instOptions"
+          :key="i.id"
+          :label="i.name ? `${i.name}（${i.code || i.id}）` : `机构 ${i.id}`"
+          :value="i.id"
+        />
+      </el-select>
+      <el-tag v-else-if="instOptions.length === 1" size="small" effect="plain" type="info">
+        {{ instOptions[0].name }}（{{ instOptions[0].code || instOptions[0].id }}）
+      </el-tag>
+      <span v-else class="muted small">暂无可用机构</span>
+
+      <el-tag v-if="scopeKind === 'TENANT'" size="small" effect="plain" type="warning">
+        租户管理员视角：可查看并维护本租户全部机构
+      </el-tag>
+      <el-tag v-else-if="scopeKind === 'PLATFORM'" size="small" effect="plain" type="info">
+        平台管理员视角：跨租户只读
+      </el-tag>
+      <el-tag v-else-if="!canWrite" size="small" effect="plain" type="info">
+        只读：组织维护由企业管理员执行
+      </el-tag>
+    </div>
+
+    <el-empty
+      v-if="noInstitution"
+      description="当前账号尚未关联任何机构，无法展示部门与员工。请联系本租户管理员完成机构入驻。"
+    />
+
+    <el-row v-if="!noInstitution" :gutter="12">
       <!-- 部门树 -->
       <el-col :span="10">
         <el-card shadow="never">
@@ -18,7 +57,7 @@
               <span>部门（{{ deptTotal }}，最深 {{ maxDepth }} 层 / 上限 {{ depthLimit }}）</span>
               <div>
                 <el-button text type="primary" size="small" :loading="loading" @click="reloadAll">刷新</el-button>
-                <el-button type="primary" size="small" @click="openDeptDlg()">新增部门</el-button>
+                <el-button v-if="canWrite" type="primary" size="small" @click="openDeptDlg()">新增部门</el-button>
               </div>
             </div>
           </template>
@@ -37,7 +76,7 @@
                 <span class="muted small">L{{ data.level }}</span>
                 <span class="muted small">{{ data.memberCount ?? 0 }} 人</span>
                 <span class="muted small">负责人：{{ data.leaderName || '未设置' }}</span>
-                <span class="ops">
+                <span v-if="canWrite" class="ops">
                   <el-button text type="primary" size="small" @click.stop="openDeptDlg(data, data.id)">加下级</el-button>
                   <el-button text type="primary" size="small" @click.stop="openDeptDlg(data)">编辑</el-button>
                   <el-button text type="danger" size="small" @click.stop="removeDept(data)">删除</el-button>
@@ -55,9 +94,9 @@
             <div class="card-header">
               <span>员工名册（{{ memberTotal }}）</span>
               <div>
-                <el-button text type="primary" size="small" @click="importDlg = true">批量导入</el-button>
+                <el-button v-if="canWrite" text type="primary" size="small" @click="importDlg = true">批量导入</el-button>
                 <el-button text type="primary" size="small" :loading="mLoading" @click="loadMembers">刷新</el-button>
-                <el-button type="primary" size="small" @click="openMemberDlg()">新增员工</el-button>
+                <el-button v-if="canWrite" type="primary" size="small" @click="openMemberDlg()">新增员工</el-button>
               </div>
             </div>
           </template>
@@ -83,8 +122,9 @@
             <el-table-column label="手机" prop="mobile" width="120" />
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button text type="primary" size="small" @click="openMemberDlg(row)">编辑</el-button>
-                <el-button text type="primary" size="small" @click="openBalanceDlg(row)">假期</el-button>
+                <el-button v-if="canWrite" text type="primary" size="small" @click="openMemberDlg(row)">编辑</el-button>
+                <el-button v-if="canWrite" text type="primary" size="small" @click="openBalanceDlg(row)">假期</el-button>
+                <span v-if="!canWrite" class="muted small">—</span>
               </template>
             </el-table-column>
           </el-table>
@@ -208,9 +248,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getDepartments, createDepartment, updateDepartment, deleteDepartment,
+  getOrgScope, getDepartments, createDepartment, updateDepartment, deleteDepartment,
   listMembers, createMember, updateMember, importMembers, upsertLeaveBalance,
-  type OrgDepartment, type OrgMember
+  type OrgDepartment, type OrgMember, type SelectableInstitution
 } from '@/api/org'
 
 const loading = ref(false)
@@ -227,6 +267,15 @@ const filterDept = ref<number | null>(null)
 const page = ref(1)
 const size = 50
 
+// ---------------------------------------------------------------- 机构作用域
+// 机构成员只有一家机构（选择器隐藏）；租户管理员可在本租户内切换；平台管理员跨租户只读。
+const instOptions = ref<SelectableInstitution[]>([])
+const instId = ref<number | null>(null)
+const canWrite = ref(false)
+const scopeKind = ref<string>('ORG')
+/** 无机构时给出空态提示，而不是抛 403 报错横幅。 */
+const noInstitution = ref(false)
+
 const flatDepts = computed(() => {
   const out: OrgDepartment[] = []
   const walk = (ns: OrgDepartment[]) => (ns || []).forEach((n) => { out.push(n); walk(n.children || []) })
@@ -237,7 +286,7 @@ const flatDepts = computed(() => {
 async function loadDepts() {
   loading.value = true
   try {
-    const d = await getDepartments()
+    const d = await getDepartments(instId.value)
     tree.value = d?.tree || []
     deptTotal.value = d?.total ?? flatDepts.value.length
     depthLimit.value = d?.depthLimit ?? 5
@@ -256,7 +305,7 @@ async function loadMembers() {
       page: page.value, size,
       keyword: keyword.value || undefined,
       departmentId: filterDept.value || undefined
-    })
+    }, instId.value)
     members.value = d?.items || []
     memberTotal.value = d?.total ?? members.value.length
   } catch (e: unknown) {
@@ -267,7 +316,33 @@ async function loadMembers() {
 }
 
 async function reloadAll() { await loadDepts(); await loadMembers() }
-onMounted(reloadAll)
+
+/**
+ * 先解析机构作用域，再拉数据。
+ *
+ * <p>此前直接拉数据，导致「菜单能进、接口全 403」时页面只剩两条错误横幅。
+ * 现在把作用域解析前置：无机构时走空态提示；能写才渲染维护按钮。</p>
+ */
+async function init() {
+  try {
+    const s = await getOrgScope()
+    instOptions.value = s?.items || []
+    canWrite.value = !!s?.canWrite
+    scopeKind.value = s?.scope || 'ORG'
+    noInstitution.value = instOptions.value.length === 0
+    if (instId.value == null) {
+      instId.value = s?.boundInstitutionId ?? instOptions.value[0]?.id ?? null
+    }
+  } catch (e: unknown) {
+    noInstitution.value = true
+    ElMessage.error('机构信息加载失败：' + ((e as Error)?.message || '后端异常'))
+    return
+  }
+  if (noInstitution.value) return
+  await reloadAll()
+}
+
+onMounted(init)
 
 function apiMsg(e: unknown, fallback: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
@@ -365,7 +440,7 @@ async function submitImport() {
     })
   saving.value = true
   try {
-    const r = await importMembers(rows)
+    const r = await importMembers(rows, instId.value)
     const failed = (r?.failed as unknown[]) || []
     ElMessage.success(`导入完成：成功 ${r?.success ?? 0} 条，失败 ${r?.failedCount ?? failed.length} 条`)
     if (failed.length) {
@@ -401,7 +476,7 @@ function openBalanceDlg(row: OrgMember) {
 async function submitBalance() {
   saving.value = true
   try {
-    await upsertLeaveBalance({ ...balanceForm.value })
+    await upsertLeaveBalance({ ...balanceForm.value }, instId.value)
     ElMessage.success('额度已设置')
     balanceDlg.value = false
   } catch (e: unknown) {

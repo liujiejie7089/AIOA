@@ -1,7 +1,9 @@
 package cn.aioa.org.support;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.org.entity.OrgInstitution;
 import cn.aioa.org.entity.OrgMember;
+import cn.aioa.org.mapper.OrgInstitutionMapper;
 import cn.aioa.org.mapper.OrgMemberMapper;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
@@ -9,13 +11,27 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 权限与机构硬边界守卫（规格书第七章「范围纪律」的代码落地）。
  *
  * <p>纪律：租户管理员端管资源与规则，企业管理员端管组织与执行；
  * 企业管理员跨机构访问必须为 0 成功 —— 越界统一返回 404（不泄露存在性）。</p>
+ *
+ * <h3>三级作用域模型（V32 修订）</h3>
+ * <p>此前只区分「机构成员」与「非机构成员」，导致租户管理员和平台管理员
+ * 在组织与员工页全员 403（菜单/路由对它们开放，接口却拒之门外——三层口径打架）。
+ * 现按数据的<b>作用域</b>分三档：</p>
+ * <table>
+ *   <tr><th>角色</th><th>可读范围</th><th>可写范围</th></tr>
+ *   <tr><td>机构成员（企业管理员 / 部门负责人 / 成员）</td><td>本机构（硬绑定）</td><td>企业管理员可写本机构</td></tr>
+ *   <tr><td>租户管理员</td><td>本租户全部机构（可切换）</td><td>本租户全部机构</td></tr>
+ *   <tr><td>平台管理员</td><td>跨租户（可切换，运维视角）</td><td>只读</td></tr>
+ * </table>
  */
 @Component
 @RequiredArgsConstructor
@@ -28,6 +44,7 @@ public class OrgGuard {
     public static final String ROLE_MEMBER = "ROLE_MEMBER";
 
     private final OrgMemberMapper memberMapper;
+    private final OrgInstitutionMapper institutionMapper;
 
     public AuthUser user() {
         return AuthUserContext.require();
@@ -62,13 +79,36 @@ public class OrgGuard {
         return u;
     }
 
-    /** 机构成员（含企业管理员 / 部门负责人）：任何机构内用户角色。 */
+    /**
+     * 组织数据读取者：机构成员（企业管理员 / 部门负责人 / 成员）+ 租户管理员 + 平台管理员。
+     *
+     * <p><b>为何租户管理员与平台管理员也放行</b>：组织与员工页的菜单与路由对这两类角色开放，
+     * 且数字员工的「按部门分发」（{@code visible_scope=DEPT}）必须先读得到部门树。
+     * 若接口只认机构成员，就会出现「进得去页面、接口全 403」的三层口径不一致
+     * （用户实测报错「部门加载失败 / 员工加载失败 403」即源于此）。
+     * 读权限放开的同时，写权限由 {@link #requireOrgWriter()} 收紧，越界由
+     * {@link #resolveScopeInstitution(Long)} 兜底。</p>
+     */
     public AuthUser requireOrgUser() {
         AuthUser u = AuthUserContext.require();
-        if (!hasRole(u, ROLE_ORG_ADMIN) && !hasRole(u, ROLE_DEPT_LEADER) && !hasRole(u, ROLE_MEMBER)) {
-            throw BizException.forbidden("仅机构成员可执行该操作");
+        if (hasRole(u, ROLE_ADMIN) || hasRole(u, ROLE_TENANT_ADMIN) || hasRole(u, ROLE_ORG_ADMIN)
+                || hasRole(u, ROLE_DEPT_LEADER) || hasRole(u, ROLE_MEMBER)) {
+            return u;
         }
-        return u;
+        throw BizException.forbidden("仅机构成员、租户管理员或平台管理员可查看组织与员工数据");
+    }
+
+    /**
+     * 组织数据写入者：企业管理员（限本机构）或租户管理员（限本租户）。
+     *
+     * <p>平台管理员为<b>只读</b>运维视角，不参与企业组织的日常维护。</p>
+     */
+    public AuthUser requireOrgWriter() {
+        AuthUser u = AuthUserContext.require();
+        if (hasRole(u, ROLE_TENANT_ADMIN) || hasRole(u, ROLE_ORG_ADMIN)) {
+            return u;
+        }
+        throw BizException.forbidden("仅企业管理员或租户管理员可维护组织与员工；平台管理员为只读视角");
     }
 
     /**
@@ -104,13 +144,116 @@ public class OrgGuard {
         return rows.isEmpty() ? null : rows.get(0).getInstitutionId();
     }
 
+    /**
+     * 解析本次请求应作用的机构——组织数据作用域的唯一判定点。
+     *
+     * <ol>
+     *   <li><b>机构成员</b>（企业管理员 / 部门负责人 / 成员）：硬绑定本机构，
+     *       忽略入参（防止通过 {@code ?institutionId=} 探测他机构）；</li>
+     *   <li><b>租户管理员</b>：可在本租户内指定机构；未指定取本租户首个启用机构；</li>
+     *   <li><b>平台管理员</b>：可跨租户指定机构；未指定取全局首个启用机构（运维视角）。</li>
+     * </ol>
+     *
+     * @param requested 显式请求的机构 id（可空）
+     * @return 本次请求实际作用的机构 id
+     */
+    public Long resolveScopeInstitution(Long requested) {
+        AuthUser u = AuthUserContext.require();
+        Long own = resolveInstitutionId(u.getUserId());
+        if (own != null) {
+            // 机构成员：机构是硬边界，不接受任何入参覆盖；
+            // 显式指向他机构一律 404（不泄露存在性，满足「跨机构访问 0 成功」门禁），
+            // 而不是静默回退本机构——静默回退会让调用方误以为操作作用在目标机构上。
+            if (requested != null && !requested.equals(own)) {
+                throw BizException.notFound("机构不存在或无权访问：" + requested);
+            }
+            return own;
+        }
+        if (hasRole(u, ROLE_ADMIN)) {
+            return requested == null ? firstActiveInstitution(null) : requireActiveInstitution(requested, null);
+        }
+        if (hasRole(u, ROLE_TENANT_ADMIN)) {
+            Long tenant = u.getTenantId();
+            return requested == null ? firstActiveInstitution(tenant) : requireActiveInstitution(requested, tenant);
+        }
+        throw BizException.forbidden("当前账号未绑定任何机构，无法访问企业端数据");
+    }
+
     /** 由 org_member 解析登录用户所属机构（不存在则 403）。 */
     public Long requireInstitutionId() {
-        Long id = resolveInstitutionId(AuthUserContext.require().getUserId());
-        if (id == null) {
-            throw BizException.forbidden("当前账号未绑定任何机构，无法访问企业端数据");
+        return resolveScopeInstitution(null);
+    }
+
+    /** 解析机构（支持显式指定，供租户管理员 / 平台管理员切换机构）。 */
+    public Long requireInstitutionId(Long requested) {
+        return resolveScopeInstitution(requested);
+    }
+
+    /**
+     * 当前登录用户可查看的机构清单 + 写入能力，供前端渲染机构选择器与按钮显隐。
+     *
+     * <p>机构成员只返回自己那一家（选择器自动隐藏）；租户管理员返回本租户全部启用机构；
+     * 平台管理员返回全局全部启用机构。</p>
+     */
+    public Map<String, Object> selectableInstitutions() {
+        AuthUser u = AuthUserContext.require();
+        requireOrgUser();
+        Long own = resolveInstitutionId(u.getUserId());
+
+        LambdaQueryWrapper<OrgInstitution> q = new LambdaQueryWrapper<OrgInstitution>()
+                .eq(OrgInstitution::getStatus, OrgInstitution.STATUS_ACTIVE)
+                .orderByAsc(OrgInstitution::getId);
+        if (own != null) {
+            q.eq(OrgInstitution::getId, own);
+        } else if (hasRole(u, ROLE_TENANT_ADMIN) && !hasRole(u, ROLE_ADMIN)) {
+            q.eq(OrgInstitution::getTenantId, u.getTenantId());
         }
-        return id;
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (OrgInstitution ins : institutionMapper.selectList(q)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", ins.getId());
+            row.put("name", ins.getName());
+            row.put("code", ins.getCode());
+            row.put("tenantId", ins.getTenantId());
+            row.put("status", ins.getStatus());
+            items.add(row);
+        }
+
+        boolean canWrite = hasRole(u, ROLE_TENANT_ADMIN) || hasRole(u, ROLE_ORG_ADMIN);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", items);
+        out.put("total", items.size());
+        out.put("canWrite", canWrite);
+        out.put("boundInstitutionId", own);
+        out.put("scope", own != null ? "ORG"
+                : (hasRole(u, ROLE_ADMIN) ? "PLATFORM" : "TENANT"));
+        return out;
+    }
+
+    /** 校验机构存在、启用，且（可选的）租户归属匹配；跨租户一律 404（不泄露存在性）。 */
+    private Long requireActiveInstitution(Long institutionId, Long tenantId) {
+        OrgInstitution ins = institutionMapper.selectById(institutionId);
+        if (ins == null || !OrgInstitution.STATUS_ACTIVE.equals(ins.getStatus())) {
+            throw BizException.notFound("机构不存在或已停用：" + institutionId);
+        }
+        if (tenantId != null && !tenantId.equals(ins.getTenantId())) {
+            throw BizException.notFound("机构不存在或已停用：" + institutionId);
+        }
+        return ins.getId();
+    }
+
+    /** 取（某租户或全局）首个启用机构；一家都没有时给出可读的提示。 */
+    private Long firstActiveInstitution(Long tenantId) {
+        List<OrgInstitution> rows = institutionMapper.selectList(new LambdaQueryWrapper<OrgInstitution>()
+                .eq(OrgInstitution::getStatus, OrgInstitution.STATUS_ACTIVE)
+                .eq(tenantId != null, OrgInstitution::getTenantId, tenantId)
+                .orderByAsc(OrgInstitution::getId)
+                .last("limit 1"));
+        if (rows.isEmpty()) {
+            throw BizException.notFound(tenantId == null ? "平台下暂无启用机构" : "本租户暂无启用机构");
+        }
+        return rows.get(0).getId();
     }
 
     /** 取该机构管理员成员行（用于姓名 / 部门等展示）。 */
