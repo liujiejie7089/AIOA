@@ -19,7 +19,7 @@
 ## Flyway（重要）
 - 本库 `flyway_schema_history` 长期只有一条失败记录，靠 `-Dspring.flyway.validate-on-migrate=false` 起；不带该 flag → `Detected failed migration to version 1` 起不来。
 - 修复用 `scripts/repair_flyway_history.py`（重建历史表，V1–Vn 插成 success=1）。**不要**靠 baseline-on-migrate 重放（V1 无 IF NOT EXISTS，V2+ 是 ALTER，必撞表）。
-- **新增迁移前先 `ls db/migration` 取最大版本 +1**（当前到 V32）；已执行迁移只增不改。
+- **新增迁移前先 `ls db/migration` 取最大版本 +1**（当前到 V34）；已执行迁移只增不改。
 - `rm -rf <target>` 会被 safe-delete 拦并短路 `&&`；后端已停时直接原地 `mvnw package` 覆盖即可。
 
 ## 接口 / E2E 约定
@@ -27,6 +27,11 @@
 - **业务错误 = HTTP 200 + `code != 0`**；只有 401/403/404 改 HTTP 状态。断言写 `st in (200,400,403,404) and code != 0`，**不要**写 `st == 400`。
 - 企业端控制器基路径 `/api/v1/org`（租户端 `/api/v1/tenant`）。漏 `/org` → 404 `NoResourceFoundException`，看着像 500。
 - 审计链 `GET /api/v1/tenant/audit/verify` → 需 `verifiedRows==count && legacyRows==0` 才叫「真校验」。
+- **租户端作用域（V33）**：`/api/v1/tenant/*` 用 `OrgGuard.resolveRequestTenant(u)`——租户管理员硬绑本租户（跨租户 404），平台管理员按 `?tenantId=` 切换、缺省落「机构数最多」的租户。`GET /api/v1/tenant/scope` 返回可切换清单；前端 `api/tenantScope.ts` 拦截器自动带参。
+- 请假域在 **`/api/v1/leave/*`**（不是 `/workflow/leave/*`）；提交体字段 `leaveTypeCode`（不是 leaveTypeId），返回 `{leaveRequestId, orderId, timeline[0].taskId}`；额度 `POST /org/leave/balances` 同样用 `leaveTypeCode`。
+- 审批动作 `POST /api/v1/workflow/tasks/{taskId}/decide`，决策字段 `decision`（APPROVE/REJECT 或 approve:true）。待办 `GET /workflow/tasks?scope=todo|mine`。
+- **`/api/v1/tenant/grants` 必须带 `institutionId`**：授权以机构为落点，不存在纯租户级授权。
+- 公开配置读取 `GET /api/v1/configs?keys=`（白名单，非白名单 403），回落顺序 租户 → 平台(0) → 空。
 - 脚本用 `httpx` 必须 **`trust_env=False`**（否则走系统代理 → ConnectError）。
 - Playwright 脚本必须用 `.../python/envs/default/Scripts/python.exe`（装了 playwright），`channel="msedge"` 免下载浏览器；`3.13.12` 那个没装。
 
@@ -40,8 +45,24 @@
 - 审计 before/after：V32 加 `before_value/after_value`，只存配置类快照（不含运行输出）。
 - 用户端 H5 权限分档：`isAdmin`(审批) 与 `canManageWorker`(worker:manage 角色) 两个独立标志，勿混用。
 
+## 权限模型（V33/V34 增补）
+- `worker:create` **已下放全体登录用户**（普通成员可自建 AI 助理）；新增 `worker:edit:self`（创建者改自己的）。
+- 非管理者创建的数字员工强制 `visible_scope=SELF`（**源头就不接收前端 scope 入参**，改包也提不上去）；
+  列表过滤 SELF 他人数据；**删除仍只认 `worker:manage`**（能建≠能删）。
+- 新增权限码 `expert:manage`（ADMIN/TENANT_ADMIN/ORG_ADMIN）→ `ExpertConfigController` 改按权限码判定。
+- `WorkerView` 带 `createdBy/mine/editable/auditStatus`，前端逐卡 `canEdit`（不再是整页 canManage）。
+- **V34 内容审核**：租户管理员（非平台管理员）创建的数字员工/专家落 `audit_status=PENDING`，
+  需平台管理员经 `GET/POST /api/v1/admin/content-reviews[/{type}/{id}/review]` 放行；
+  开关 `sys_config.approval.tenant.content`（默认 true）。待审对普通成员不可见、不参与调度，
+  创建者本人与管理员可见；**驳回强制填意见**；「从模板创建」同口径（防旁路）。
+  管理端页面 `/content-reviews`（仅平台管理员，菜单+路由守卫同步）。
+- 前端权限常量唯一入口 `web/apps/shell/src/constants/permissions.ts`，与后端 `PermissionCatalog` 必须同源同步
+  （菜单/路由/接口三处不一致会导致「菜单能进但 403」或「接口开了菜单藏起来」）。
+
 ## 关键坑（已修，勿回退）
 1. `aioa-common` 不引 spring-security → `@RestControllerAdvice(Exception)` 会吞 AccessDeniedException 成 500。统一 `BizException.forbidden()` → 403。
+   同源问题：`NoResourceFoundException`（路径不存在）也落该兜底 → 500。已在 `GlobalExceptionHandler` 补显式 **404**，
+   拼错路径不会再被误诊成「后端崩了」。
 2. 前端 `api/index.ts` 的 `unwrap` 需在 body 含 `code`+`data` 时**再剥一层**取 `body.data`，否则 token 存成 `"undefined"` → 登录后 401 卡 `/login`。
 3. `repackage` 时后端 JVM 必须停，否则 fat-jar 被 rename 成 20KB stripped-jar → 运行中 JVM 立刻 NoClassDefFoundError 崩。
 4. **改 Python agent 代码后必须重启 uvicorn**（非 --reload），否则跑旧代码 → 「E2E 全绿但 scope 未生效」假绿。
@@ -56,12 +77,16 @@
 
 ## E2E 套件矩阵（`scripts/` 与仓库根）
 - V32 组织作用域：`scripts/e2e_v32_org_scope.py`（48，含 reset_fixture 物理删 E2E-V32% 机构 + 时间戳编码防撞）、`scripts/check_org_structure_render.py`（4，Playwright）。
-- 权限回归：`e2e_worker_permission.py`（12）。
+- V33/V34（2026-09-13）：`scripts/e2e_v33_roles.py`（41，多角色全流程）、`scripts/h5_v33_render.py`（15，H5 空态折叠/场景/AI解读）、`scripts/admin_v34_review_render.py`（8，审核台渲染）、`scripts/smoke_v33.py`（配置+AI解读+自建自改）、`scripts/restart_backend.py`（停→打包→校验 jar≥20MB）。
+- 权限回归：`e2e_worker_permission.py`（16；V33 起断言已改：普通成员可建但强制 SELF、他人不可见、不能删除；并在创建后补「平台放行」步骤）。
+- **改权限模型后必须全局搜索既有套件里的旧口径断言**（否则旧断言把新行为报成 FAIL）。
 - V24 入驻/请假：`scripts/reset_v24_demo.py` 可用；**`e2e_v24_onboarding.py` / `e2e_v24_leave_flow.py` 磁盘上已不存在**（未 git-tracked），需重跑时先确认。
 - 用户端：`e2e_ux_fixes.py`(29) / `e2e_ux_fixes_b2.py`(30) / 批次三(32) / `e2e_worker_chat_scope.py` / `e2e_expert_employee_tabs.py` / `e2e_user_leave_intake.py`。
 - 固定顺序：先 reset 再跑（阶段间有依赖）。三批次+既有 5 套历史总验收 180/180。
 
 ## Git 远端
 - `origin` = 内网 Gitea `http://172.16.8.249:3000/liujiejie/AIOA_System.git`：沙箱不可达，且 Push-to-create 关闭（403）。
-- 推 GitHub 用 `github` remote：`git -c http.sslVerify=false -c http.lowSpeedLimit=1 -c http.lowSpeedTime=60 push github main`（**无需 PAT**，失败根因是 Schannel 吊销检查 `CRYPT_E_NO_REVOCATION_CHECK`）。
+- 推 GitHub 用 `github` remote，且**必须绕开沙箱代理**（环境变量 `https_proxy=http://127.0.0.1:60448` 会让 git 连接超时）：
+  `git -c http.proxy= -c https.proxy= -c http.sslVerify=false push github main`
+  （**无需 PAT**，失败根因是 Schannel 吊销检查 `CRYPT_E_NO_REVOCATION_CHECK`）。`ls-remote` 同样要带这几个 `-c`。
 - 提交若索引里有无关的预暂存删除，用 `git commit -m msg -- <我的路径...>` 只提交指定路径。
