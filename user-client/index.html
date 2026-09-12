@@ -952,7 +952,7 @@
    1. 状态
    ============================================================================ */
 const state = {
-  token:null, user:null, isAdmin:false, model:'default',
+  token:null, user:null, isAdmin:false, canManageWorker:false, model:'default',
   quota:0, used:0, free:0, left:null, quotaInfo:null,
   chatExpert:null, chatWorker:null, kbOn:true, busy:false,
   roleTypes:[],
@@ -963,6 +963,36 @@ const state = {
   workers:[], results:[], currentResult:null, editingWorker:null,
   lastAnswer:'', lastQuery:''
 };
+
+/* ============================================================================
+   1.1 角色分档（与后端 PermissionCatalog / OrgGuard 口径对齐）
+   ----------------------------------------------------------------------------
+   历史缺陷：此前只认 ROLE_ADMIN（平台管理员）为「管理员」，导致**租户管理员**在
+   用户端被降级成普通成员 —— 看不到创建入口、点「调整任务」被 toast 拦住，
+   与后端已放行 ROLE_TENANT_ADMIN 的口径打架（用户实测「以租户账号登录后无法创建
+   数字员工」即源于此）。现拆成两档，各自对齐后端：
+
+     isAdmin          租户级管理（审批口径）= ROLE_ADMIN | ROLE_TENANT_ADMIN
+     canManageWorker  worker:manage 口径    = 上面 + ROLE_ORG_ADMIN | ROLE_DEPT_LEADER
+   ============================================================================ */
+const ADMIN_ROLES = ['ROLE_ADMIN', 'ROLE_TENANT_ADMIN'];
+const WORKER_MANAGER_ROLES = ['ROLE_ADMIN', 'ROLE_TENANT_ADMIN', 'ROLE_ORG_ADMIN', 'ROLE_DEPT_LEADER'];
+
+function applyRoles(roles){
+  const rs = roles || [];
+  state.isAdmin = rs.some(function(r){ return ADMIN_ROLES.indexOf(r) >= 0; });
+  state.canManageWorker = rs.some(function(r){ return WORKER_MANAGER_ROLES.indexOf(r) >= 0; });
+}
+
+/** 当前账号在数字员工域的身份描述（用于提示文案，避免把角色码裸露给用户）。 */
+function workerRoleText(roles){
+  const rs = roles || (state.user && state.user.roles) || [];
+  if(rs.indexOf('ROLE_ADMIN') >= 0) return '系统管理员';
+  if(rs.indexOf('ROLE_TENANT_ADMIN') >= 0) return '租户管理员';
+  if(rs.indexOf('ROLE_ORG_ADMIN') >= 0) return '企业管理员';
+  if(rs.indexOf('ROLE_DEPT_LEADER') >= 0) return '部门负责人';
+  return '普通成员';
+}
 
 /* ============================================================================
    2. API 适配层（经 serve.py 同域代理到 :8080，规避 CORS）
@@ -1251,7 +1281,7 @@ async function doLogin(){
     const d = await API.login(u, p);
     state.token = d.accessToken;
     state.user = d.user || {username:u, nickname:d.nickname || u};
-    state.isAdmin = !!(((state.user && state.user.roles) || []).includes('ROLE_ADMIN'));
+    applyRoles((state.user && state.user.roles) || []);
     try{ localStorage.setItem('aioa_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
     document.body.classList.add('auth');
     go('page-home'); setTitle('page-home');
@@ -1314,7 +1344,9 @@ function renderGreet(){
   const n = (state.user && (state.user.nickname || state.user.username)) || '同学';
   $('greet').textContent = '你好，' + n;
   $('meName').textContent = n;
-  $('meRole').textContent = state.isAdmin ? '企业管理员 · 可审批与管理' : '企业成员身份';
+  $('meRole').textContent = state.canManageWorker
+    ? (workerRoleText() + ' · 可管理与使用数字员工')
+    : '企业成员身份';
   const h = new Date().getHours();
   $('greetSub').textContent = h < 12 ? '早上好，今天想让我帮你做点什么？'
     : (h < 18 ? '下午好，有什么可以交给我的？' : '晚上好，要不要看看今天的产出？');
@@ -2055,7 +2087,7 @@ function renderAgents(){
   const box = $('agentList');
   const list = state.workers||[];
   // 权限分档：使用（对话/提交申请/看运行记录）对所有成员开放；管理（创建/修改/启停/立即执行/删除）仅租户管理员
-  const canManage = !!state.isAdmin;
+  const canManage = !!state.canManageWorker;
   // 创建入口与「仅管理员可管理」提示按角色显隐（后端 requireAdmin 仍会兜底 403）
   const act = $('agentActions'), admHint = $('agentAdminHint');
   if(act) act.style.display = canManage ? '' : 'none';
@@ -2243,7 +2275,7 @@ function useDemo(q){
 /* 一句话创建/编辑数字员工：配置内化到对话流 */
 function createAgentFlow(worker){
   // 创建/修改属管理员敏感操作：此处前置拦截（后端 POST/PUT 亦会 403 兜底）
-  if(!state.isAdmin){ toast('数字员工的创建与修改仅租户管理员可执行'); return; }
+  if(!state.canManageWorker){ toast('数字员工的创建与修改需管理权限（租户管理员 / 企业管理员 / 部门负责人）；当前身份：'+workerRoleText()); return; }
   state.editingWorker = worker || null;
   state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
   state.conversationId = null;
@@ -2281,7 +2313,7 @@ function agentTaskTextFrom(q){
 
 function agentDemo(q){
   if(state.busy) return;
-  if(!state.isAdmin){ toast('数字员工的创建与修改仅租户管理员可执行'); return; }
+  if(!state.canManageWorker){ toast('数字员工的创建与修改需管理权限（租户管理员 / 企业管理员 / 部门负责人）；当前身份：'+workerRoleText()); return; }
   const m = $('msgs');
   m.insertAdjacentHTML('beforeend',
     '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
@@ -2314,7 +2346,7 @@ function agentDemo(q){
 
 async function confirmAgent(btn, name, plan){
   const editing = state.editingWorker;
-  if(!state.isAdmin){ toast('数字员工的创建与修改仅租户管理员可执行'); return; }
+  if(!state.canManageWorker){ toast('数字员工的创建与修改需管理权限（租户管理员 / 企业管理员 / 部门负责人）；当前身份：'+workerRoleText()); return; }
   if(btn){ btn.textContent = editing?'保存中…':'创建中…'; btn.disabled = true; }
   try{
     const scheduleTime = parseAgentTime(plan);
@@ -2919,7 +2951,7 @@ function handleApprovalError(e, action){
 
 /* 权限不足弹窗：统一淡色弹窗样式，手机端居中 */
 function showPermissionDialog(action, detail){
-  const roleTxt = state.isAdmin ? '租户管理员' : '普通成员';
+  const roleTxt = workerRoleText();
   const mask = document.createElement('div');
   mask.className = 'notif-mask show';
   mask.innerHTML =
@@ -3019,8 +3051,8 @@ function tickClock(){
       // 用 /auth/me 判断角色
       try{
         const me = await API.req('/v1/auth/me');
-        state.isAdmin = (me.roles||[]).indexOf('ROLE_ADMIN') >= 0;
-        state.user = {id: me.id, username:me.username, nickname:me.nickname || me.username};
+        applyRoles(me.roles || []);
+        state.user = {id: me.id, username:me.username, nickname:me.nickname || me.username, roles: me.roles || []};
       }catch(e){ /* 令牌过期则退回登录页 */ throw e; }
       document.body.classList.add('auth');
       go('page-home'); setTitle('page-home');
