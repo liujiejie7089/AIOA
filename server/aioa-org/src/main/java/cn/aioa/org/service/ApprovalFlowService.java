@@ -144,6 +144,8 @@ public class ApprovalFlowService {
         out.put("status", "PENDING");
         out.put("nodeCount", nodes.size());
         out.put("currentApproverId", firstApprover);
+        // 「当前流转到谁」：提交回执直接给出审批人姓名，用户端无需再查一次
+        out.put("currentApproverName", nameOf(firstApprover));
         out.put("timeline", timeline(orderId));
         return out;
     }
@@ -292,37 +294,77 @@ public class ApprovalFlowService {
             m.put("taskId", t.getId());
             m.put("seq", t.getSeq());
             m.put("approverType", t.getApproverType());
+            m.put("approverName", displayApprover(t.getApproverName(), t.getApproverId()));
             m.put("taskNote", t.getNote());
-            m.put("totalNodes", taskMapper.selectCount(new LambdaQueryWrapper<ApprovalTask>()
-                    .eq(ApprovalTask::getOrderId, t.getOrderId())));
+            m.put("totalNodes", statMapper.countTasksOfOrder(t.getOrderId()));
+            // 流转路径：前端据此渲染「当前流转到谁 / 各节点由谁审核、状态与时间」
+            m.put("timeline", timeline(t.getOrderId()));
+            m.put("currentSeq", t.getSeq());
             out.add(m);
         }
         return out;
     }
 
+    /**
+     * 我发起的审批（全业务类型：请假 / 额度扩容 / 成果 / 公文…）。
+     *
+     * <p>带全字段（form_data / attachment）与流转路径：用户端「我的申请」要回显表单、
+     * 附件，并展示单据当前流转到哪个节点、各节点由谁审核。</p>
+     */
     public List<Map<String, Object>> mine(AuthUser actor) {
-        return statMapper.selectApprovalOrders(actor.getTenantId(), actor.getUserId(), null);
+        Long tenantId = actor.getTenantId() == null ? 0L : actor.getTenantId();
+        List<Map<String, Object>> rows = statMapper.selectApprovalOrdersOfUser(tenantId, actor.getUserId());
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> r : rows) {
+            Object idObj = r.get("id");
+            if (!(idObj instanceof Number n)) {
+                out.add(r);
+                continue;
+            }
+            long orderId = n.longValue();
+            Map<String, Object> m = new LinkedHashMap<>(r);
+            m.put("mine", true);
+            m.put("creatorName", r.get("applicantName"));
+            m.put("totalNodes", statMapper.countTasksOfOrder(orderId));
+            m.put("timeline", timeline(orderId));
+            Map<String, Object> cur = statMapper.selectCurrentTaskOfOrder(orderId);
+            if (cur != null) {
+                m.put("currentSeq", cur.get("seq"));
+                m.put("currentApproverName", displayApprover(
+                        (String) cur.get("approverName"), lng(cur.get("approverId"))));
+                m.put("currentApproverType", cur.get("approverType"));
+            }
+            out.add(m);
+        }
+        return out;
     }
 
     public List<Map<String, Object>> timeline(Long orderId) {
-        List<ApprovalTask> tasks = taskMapper.selectList(new LambdaQueryWrapper<ApprovalTask>()
-                .eq(ApprovalTask::getOrderId, orderId)
-                .orderByAsc(ApprovalTask::getSeq));
-        List<Map<String, Object>> out = new ArrayList<>(tasks.size());
-        for (ApprovalTask t : tasks) {
+        List<Map<String, Object>> rows = statMapper.selectTasksOfOrder(orderId);
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> r : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("taskId", t.getId());
-            m.put("seq", t.getSeq());
-            m.put("approverType", t.getApproverType());
-            m.put("approverId", t.getApproverId());
-            m.put("approverName", t.getApproverName());
-            m.put("status", t.getStatus());
-            m.put("note", t.getNote());
-            m.put("skipReason", t.getSkipReason());
-            m.put("decidedAt", t.getDecidedAt() == null ? null : t.getDecidedAt().toString());
+            m.put("taskId", lng(r.get("id")));
+            m.put("seq", r.get("seq"));
+            m.put("approverType", r.get("approverType"));
+            m.put("approverId", lng(r.get("approverId")));
+            m.put("approverName", displayApprover((String) r.get("approverName"), lng(r.get("approverId"))));
+            m.put("status", r.get("status"));
+            m.put("note", r.get("note"));
+            m.put("skipReason", r.get("skipReason"));
+            Object decidedAt = r.get("decidedAt");
+            m.put("decidedAt", decidedAt == null ? null : String.valueOf(decidedAt));
             out.add(m);
         }
         return out;
+    }
+
+    /** 审批人显示名：任务上已快照则直接用，否则回查 sys_user，最后退化为「用户#id」。 */
+    private String displayApprover(String snapshot, Long approverId) {
+        if (snapshot != null && !snapshot.isBlank()) {
+            return snapshot;
+        }
+        return nameOf(approverId);
     }
 
     // ================================================================== 决策

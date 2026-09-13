@@ -72,8 +72,11 @@ public class ApprovalController {
     public ApiResponse<List<ApprovalView>> list(@RequestParam(name = "scope", defaultValue = "mine") String scope) {
         AuthUser user = AuthUserContext.require();
         boolean todo = "todo".equalsIgnoreCase(scope);
-        // 审批中心（待我审批）仅租户管理员可见；我的审批对所有登录用户开放
-        if (todo && !user.getRoles().contains("ROLE_ADMIN")) {
+        // 审批中心（待我审批）面向租户管理员与平台管理员。
+        // 历史缺陷：这里只认 ROLE_ADMIN，而本系统的租户管理员持有 ROLE_TENANT_ADMIN，
+        // 于是「租户管理员」在自己的审批中心里被 403 挡在门外（用户实测「收不到待办」的一环）。
+        // 机构管理员的待办不在这里 —— 那条链路走多级审批引擎 /workflow/tasks（按节点指派人）。
+        if (todo && !isTenantLevelAdmin(user)) {
             throw BizException.forbidden("审批中心仅租户管理员可访问");
         }
         List<ApprovalOrder> orders = todo
@@ -82,13 +85,19 @@ public class ApprovalController {
         return ApiResponse.ok(orders.stream().map(o -> ApprovalView.from(o, user.getUserId())).toList());
     }
 
+    private static boolean isTenantLevelAdmin(AuthUser user) {
+        return user.getRoles() != null
+                && (user.getRoles().contains("ROLE_ADMIN") || user.getRoles().contains("ROLE_TENANT_ADMIN"));
+    }
+
     @PostMapping("/{id}/decision")
     public ApiResponse<ApprovalView> decide(@PathVariable Long id,
                                             @RequestBody(required = false) DecisionBody body) {
         AuthUser user = AuthUserContext.require();
-        // 通过/驳回：仅租户管理员可操作（不使用 @PreAuthorize，避免 AOP 抛 AccessDeniedException
-        // 被 GlobalExceptionHandler 兜底为 500；BizException(403) 由 handleBiz 映射为 HTTP 403）。
-        if (!user.getRoles().contains("ROLE_ADMIN")) {
+        // 通过/驳回：租户管理员与平台管理员可操作（不使用 @PreAuthorize，避免 AOP 抛
+        // AccessDeniedException 被 GlobalExceptionHandler 兜底为 500；BizException(403)
+        // 由 handleBiz 映射为 HTTP 403）。口径与上面的 list(todo) 保持一致。
+        if (!isTenantLevelAdmin(user)) {
             throw BizException.forbidden("仅租户管理员可通过/驳回审批");
         }
         String decision = body == null || body.decision() == null ? "APPROVE" : body.decision();

@@ -47,6 +47,18 @@ public class WorkflowController {
         return ApiResponse.ok(flowService.todo(u));
     }
 
+    /**
+     * 我发起的审批（含请假 / 额度扩容 / 成果 / 公文，带流转路径）。
+     *
+     * <p>与 {@code /workflow/tasks?scope=mine} 的区别：本入口只要求「已登录」，
+     * 不要求审批人角色 —— 任何员工都要能查看自己提交的申请进度，这是自助能力，
+     * 不该被审批人角色门槛挡住。</p>
+     */
+    @GetMapping("/workflow/mine")
+    public ApiResponse<List<Map<String, Object>>> myApplications() {
+        return ApiResponse.ok(flowService.mine(cn.aioa.security.AuthUserContext.require()));
+    }
+
     /** 审批决策（通过 / 驳回 + 意见）。 */
     @PostMapping("/workflow/tasks/{id}/decide")
     public ApiResponse<Map<String, Object>> decide(@PathVariable Long id,

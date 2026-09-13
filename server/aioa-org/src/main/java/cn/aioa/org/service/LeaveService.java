@@ -378,6 +378,9 @@ public class LeaveService implements ApprovalCallback {
         out.put("availableAfterPending", quotaTracked ? available.subtract(days) : null);
         out.put("nodeCount", flow.get("nodeCount"));
         out.put("timeline", flow.get("timeline"));
+        // 「当前流转到谁」：请假回执要能直接告诉申请人下一步找谁
+        out.put("currentApproverId", flow.get("currentApproverId"));
+        out.put("currentApproverName", flow.get("currentApproverName"));
         return out;
     }
 

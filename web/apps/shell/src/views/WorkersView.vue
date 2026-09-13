@@ -148,7 +148,12 @@
             </el-tag>
             <span v-if="r.model" class="muted" style="margin-left: 6px">{{ r.model }}</span>
           </div>
-          <div v-if="r.output" class="run-body">{{ r.output }}</div>
+          <template v-if="r.output">
+            <div class="run-body" :class="{ clamped: !expandedRuns.includes(r.id) }">{{ r.output }}</div>
+            <button v-if="isLongText(r.output)" class="clamp-toggle" type="button" @click="toggleRun(r.id)">
+              {{ expandedRuns.includes(r.id) ? '收起 ▲' : '展开全文 ▼' }}
+            </button>
+          </template>
           <div v-else-if="r.errorMsg" class="run-body run-err">{{ r.errorMsg }}</div>
         </el-timeline-item>
       </el-timeline>
@@ -186,6 +191,21 @@ const runsDlg = ref(false)
 const runsWorker = ref<AgentWorker | null>(null)
 const runs = ref<WorkerRun[]>([])
 const runLoading = ref<number | null>(null)
+
+/**
+ * 产出折叠：数字员工一次执行可能输出整篇公文，全部铺开会把时间线撑成几屏。
+ * 超过阈值高度时默认收起，按条独立记忆展开态（id 进数组即展开）。
+ */
+const expandedRuns = ref<number[]>([])
+function toggleRun(id: number) {
+  const i = expandedRuns.value.indexOf(id)
+  if (i >= 0) expandedRuns.value.splice(i, 1)
+  else expandedRuns.value.push(id)
+}
+/** 输出短于阈值时不渲染折叠按钮，避免「展开」点了没变化 */
+function isLongText(t?: string | null) {
+  return (t || '').trim().length > 260
+}
 
 /** 平台模板：租户下无数字员工时，可从模板一键创建，避免面对空白页无从下手 */
 const tplDlg = ref(false)
@@ -384,6 +404,38 @@ onMounted(reload)
   background: var(--el-fill-color-light);
   border-radius: 6px;
   padding: 8px 10px;
+}
+
+/* 产出折叠：收起时裁到 ~7 行，底部渐隐提示还有内容 */
+.run-body.clamped {
+  position: relative;
+  max-height: 132px;
+  overflow: hidden;
+}
+.run-body.clamped::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34px;
+  background: linear-gradient(rgba(255, 255, 255, 0), var(--el-fill-color-light));
+  pointer-events: none;
+}
+.clamp-toggle {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--el-color-primary);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 4px 0 0;
+  cursor: pointer;
+  text-align: center;
+}
+.clamp-toggle:hover {
+  color: var(--el-color-primary-dark-2);
 }
 
 .run-err {

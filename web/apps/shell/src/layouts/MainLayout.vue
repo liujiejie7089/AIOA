@@ -159,8 +159,16 @@
           租户端页面按「当前租户」重新挂载：平台管理员切换租户后，
           机构/入驻/授权/分摊四个页面必须重新取数，否则会留着上一个租户的数据。
           作用域就绪前不放行子路由，避免首帧用「空租户」打一次注定为空的请求。
+
+          sessionActive 是登出闸门：退出登录会先清空登录态，此时必须立即卸下当前页面，
+          否则登录态清空会让 showTenantMenu 翻转、:key 又随租户清空而改变，
+          两者叠加会把「已登出」的页面重新挂载一次并打出一发注定 401 的请求
+          （用户实测「管理端退出登录时报 401」的根因）。
         -->
-        <router-view v-if="!showTenantMenu || tenantScopeLoaded" v-slot="{ Component }">
+        <router-view
+          v-if="sessionActive && (!showTenantMenu || tenantScopeLoaded)"
+          v-slot="{ Component }"
+        >
           <component :is="Component" :key="`${route.path}@${currentTenantId ?? 0}`" />
         </router-view>
       </el-main>
@@ -223,6 +231,8 @@ const initial = computed(() => auth.displayName.slice(0, 1).toUpperCase())
  * 且 V24 的租户端 / 企业端能力没有任何入口 —— 菜单既能见又点不开，是典型的数据锚点缺陷。
  */
 const roles = computed(() => auth.roles)
+/** 登录态闸门：登出瞬间即卸下当前页面，避免其在无令牌状态下重新挂载并打 401。 */
+const sessionActive = computed(() => auth.isLogin)
 const isPlatformAdmin = computed(() => hasAnyRole(roles.value, [ROLE.ADMIN]))
 const showTenantMenu = computed(() => hasAnyRole(roles.value, TENANT_SCOPE_ROLES))
 /**
@@ -242,10 +252,14 @@ const showExpertMenu = computed(() => hasAnyRole(roles.value, EXPERT_MANAGER_ROL
 
 async function onCommand(command: string | number | object) {
   if (command === 'logout') {
-    await auth.logout()
+    // auth.logout() 同步清空本地会话（触发上面的 sessionActive 闸门卸下当前页面），
+    // 随后才 best-effort 通知后端；因此这里不 await 远端往返 —— 后端不通时
+    // 最长要等 30s 超时，登出流程不能被它阻塞，本地登出必须立即生效。
+    const remote = auth.logout()
     resetTenantScope()
     ElMessage.success('已退出登录')
-    router.replace('/login')
+    void router.replace('/login')
+    await remote
   } else if (command === 'profile') {
     router.push('/profile')
   }

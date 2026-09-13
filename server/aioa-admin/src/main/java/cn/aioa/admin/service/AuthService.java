@@ -236,12 +236,30 @@ public class AuthService {
     }
 
     private void loginLog(Long userId, String ip, String ua, boolean ok, String failReason) {
+        writeLog(userId, ip, ua, ok, failReason, "LOGIN");
+    }
+
+    /**
+     * 退出登录留痕（V35）。
+     *
+     * <p>本系统使用无状态 JWT，服务端不持有会话，因此登出的「失效」动作发生在客户端
+     * （丢弃 localStorage 中的令牌）；这里的职责是把登出事件写进审计链，便于按
+     * userId + 时间还原一次完整会话。接口幂等：即便令牌缺失 / 已失效也按成功返回，
+     * 避免登出过程本身报错——登出永远不应该失败。</p>
+     */
+    public void logout(String ip, String ua) {
+        AuthUser auth = AuthUserContext.get();
+        writeLog(auth == null ? null : auth.getUserId(), ip, ua, true, null, "LOGOUT");
+    }
+
+    private void writeLog(Long userId, String ip, String ua, boolean ok, String failReason, String action) {
         try {
             SysLoginLog entry = new SysLoginLog();
             entry.setUserId(userId);
             entry.setIp(ip);
             entry.setUa(ua == null || ua.length() > 512 ? (ua == null ? null : ua.substring(0, 512)) : ua);
             entry.setResult(ok);
+            entry.setAction(action);
             entry.setFailReason(failReason);
             entry.setLoginAt(LocalDateTime.now());
             loginLogMapper.insert(entry);

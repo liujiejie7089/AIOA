@@ -57,11 +57,20 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async logout(): Promise<void> {
+      const token = this.token
+      // 先清本地会话，再best-effort 通知后端 —— 顺序不能反：
+      // MainLayout 的 router-view 以登录态为渲染闸门，令牌一旦清空当前页面立即卸载，
+      // 不会再在「无令牌」状态下重新挂载并打出一发注定 401 的请求（退出登录时报 401 的根因）。
+      this.clearSession()
       try {
-        await authApi.logout()
+        await authApi.logout(token)
       } catch {
-        // 后端不可用时也要清理本地态
+        // 后端不可用时也要完成登出（本地态已清）
       }
+    },
+
+    /** 清空登录态（登出、令牌失效时共用）。 */
+    clearSession(): void {
       this.token = ''
       this.refreshToken = ''
       this.user = null

@@ -256,6 +256,10 @@
   .kpi:hover{border-color:var(--blue-line);background:var(--blue-soft)}
   .kpi .k-label{font-size:10.5px;color:var(--text-2);display:flex;justify-content:space-between}
   .kpi .k-num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:17px;font-weight:600;margin-top:3px;letter-spacing:-.02em}
+  /* V36：只读统计卡（不跳转）——去掉 hover 反馈，避免被误认为可点击 */
+  .kpi.plain{cursor:default}
+  .kpi.plain:hover{border-color:var(--border);background:var(--surface)}
+  .kpi .k-unit{font-size:10.5px;font-weight:500;color:var(--text-3);margin-left:3px;letter-spacing:0}
   .delta{font-family:var(--font-mono);font-size:9.5px;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:2px;font-weight:600}
   .delta.up{color:var(--green);background:var(--green-soft)}
   .delta.down{color:var(--red);background:var(--red-soft)}
@@ -483,6 +487,27 @@
     background:none;border:none;color:var(--blue);font-size:11px;
     padding:2px 0;margin-left:2px;cursor:pointer;font-family:inherit;
   }
+  /* V36：产出过多时的折叠展示 —— 对话回答 / 成果正文 / 审批正文统一收起，
+     默认只露 maxHeight 高度，点「展开全文」看完整内容；短内容不加按钮。 */
+  .clampable{position:relative;overflow:hidden}
+  .clampable.clamped::after{
+    content:'';position:absolute;left:0;right:0;bottom:0;height:38px;
+    background:linear-gradient(rgba(255,255,255,0),var(--surface));
+    pointer-events:none;
+  }
+  .clamp-toggle{
+    display:block;width:100%;background:none;border:none;cursor:pointer;
+    color:var(--blue);font-family:inherit;font-size:11.5px;padding:7px 0 2px;
+    text-align:center;letter-spacing:.01em;
+  }
+  .clamp-toggle:hover{color:var(--blue-dark)}
+  /* V36：「我的数据」统计卡 —— 标题行 + 来源标注（写明数据源与生成时刻） */
+  .stat-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .stat-src{
+    font-size:10px;color:var(--text-3);line-height:1.65;margin-top:10px;
+    border-top:1px dashed var(--border);padding-top:8px;
+  }
+  .stat-src b{color:var(--text-2);font-weight:600}
   /* 批次三·D-3：卡片「⋯」溢出菜单 */
   .agent-menu{
     display:none;position:absolute;right:0;top:100%;margin-top:4px;z-index:30;
@@ -530,6 +555,21 @@
   .tda-item{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--blue);
     text-decoration:none;background:var(--blue-soft);border:1px solid var(--blue-line);border-radius:14px;padding:3px 10px}
   .tda-item:hover{filter:brightness(.97)}
+  /* ---------- 审批流转路径（#211）：当前流转到谁 / 各节点由谁审核 ---------- */
+  .td-flow-title{font-size:11px;color:var(--text-2);margin-bottom:6px;font-weight:600}
+  .tl{display:flex;flex-direction:column;gap:0;margin-bottom:10px}
+  .tl-node{display:flex;gap:9px;position:relative;padding:0 0 10px 0}
+  .tl-node:last-child{padding-bottom:0}
+  .tl-node::before{content:'';position:absolute;left:10px;top:22px;bottom:0;width:1px;background:var(--border)}
+  .tl-node:last-child::before{display:none}
+  .tl-seq{width:21px;height:21px;border-radius:50%;flex-shrink:0;z-index:1;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;
+    background:var(--surface-3);color:var(--text-2);border:1px solid var(--border)}
+  .tl-node.cur .tl-seq{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .tl-body{flex:1;min-width:0;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+  .tl-node.cur .tl-body{border-color:var(--blue-line);background:var(--blue-soft)}
+  .tl-head{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .tl-note{font-size:11px;color:var(--text-2);margin-top:3px;line-height:1.5;word-break:break-word}
   .agent-tip{
     margin-top:9px;font-size:11px;line-height:1.5;color:var(--amber-ink);
     background:var(--amber-soft);border:1px solid var(--amber-line);
@@ -818,6 +858,19 @@
         </div>
       </div>
 
+      <!-- V36：我的数据统计 —— 全部为库表实时计数（GET /api/v1/stats/me），不写死、不 mock -->
+      <div class="card reveal" id="cardMyStats" data-page-node-id="MyStatsV36Card01">
+        <div class="stat-head" data-page-node-id="MyStatsV36Head01">
+          <div class="sec-title" style="margin:0" data-page-node-id="MyStatsV36Title1">
+            <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="MyStatsV36Icon01"><use href="#i-chart" data-page-node-id="MyStatsV36Icon02"/></svg>
+            我的数据
+          </div>
+          <span class="muted" id="myStatsAt" style="font-size:10.5px" data-page-node-id="MyStatsV36At0001">—</span>
+        </div>
+        <div class="kpi-grid" id="myStatsGrid" data-page-node-id="MyStatsV36Grid01"></div>
+        <div class="stat-src" id="myStatsSrc" data-page-node-id="MyStatsV36Src001"></div>
+      </div>
+
       <div class="card reveal" data-page-node-id="fblXMIq46je6TadraEEgeo">
         <div class="sec-title" data-page-node-id="tgBD1MflW58QvTjkcafxsU">
           <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="c0dVS4PJZlMihRV5xRp0Cr"><use href="#i-wallet" data-page-node-id="O1gthekjTp3XXY7HZG5FZm"/></svg>
@@ -975,6 +1028,7 @@ const state = {
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
   kpi:{month:null, quarter:null}, kpiMode:'month',
   workers:[], results:[], currentResult:null, editingWorker:null,
+  myStats:null,
   lastAnswer:'', lastQuery:''
 };
 
@@ -988,14 +1042,22 @@ const state = {
 
      isAdmin          租户级管理（审批口径）= ROLE_ADMIN | ROLE_TENANT_ADMIN
      canManageWorker  worker:manage 口径    = 上面 + ROLE_ORG_ADMIN | ROLE_DEPT_LEADER
+     canApprove       审批人口径（OrgGuard.requireApprover）= 机构成员 + 租户/平台管理员
+
+   canApprove 是「待我审批」的可见性依据：请假/扩容等单据的审批节点由审批流解析出的
+   审批人决定，机构管理员与企业管理员都是合法审批人。此前用户端把它等同于 isAdmin，
+   导致机构管理员提交/被指派后根本没有待办入口（用户实测「机构管理员收不到请求」）。
    ============================================================================ */
 const ADMIN_ROLES = ['ROLE_ADMIN', 'ROLE_TENANT_ADMIN'];
 const WORKER_MANAGER_ROLES = ['ROLE_ADMIN', 'ROLE_TENANT_ADMIN', 'ROLE_ORG_ADMIN', 'ROLE_DEPT_LEADER'];
+/* 与后端 OrgGuard.requireApprover() 严格一致：机构成员（企业管理员/部门负责人/成员）+ 租户/平台管理员 */
+const APPROVER_ROLES = ['ROLE_ADMIN', 'ROLE_TENANT_ADMIN', 'ROLE_ORG_ADMIN', 'ROLE_DEPT_LEADER', 'ROLE_MEMBER'];
 
 function applyRoles(roles){
   const rs = roles || [];
   state.isAdmin = rs.some(function(r){ return ADMIN_ROLES.indexOf(r) >= 0; });
   state.canManageWorker = rs.some(function(r){ return WORKER_MANAGER_ROLES.indexOf(r) >= 0; });
+  state.canApprove = rs.some(function(r){ return APPROVER_ROLES.indexOf(r) >= 0; });
 }
 
 /** 当前账号在数字员工域的身份描述（用于提示文案，避免把角色码裸露给用户）。 */
@@ -1077,6 +1139,18 @@ const API = {
   fileUrl(id){ return this.base+'/v1/files/'+id; },
   approvalList(scope){ return this.req('/v1/approvals?scope='+(scope||'mine')); },
   approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
+  /* 多级审批引擎（V24）：待我审批按「节点指派人」返回；我发起的带完整流转路径 */
+  workflowTodo(){ return this.req('/v1/workflow/tasks?scope=todo'); },
+  workflowMine(){ return this.req('/v1/workflow/mine'); },
+  workflowTimeline(orderId){ return this.req('/v1/workflow/orders/'+orderId+'/timeline'); },
+  workflowDecide(taskId, decision, note){
+    return this.req('/v1/workflow/tasks/'+taskId+'/decide',{method:'POST',body:JSON.stringify({decision,note})});
+  },
+  /* 请假闭环：假种 / 余额 / 提交（服务端全量校验 + 多级审批） */
+  leaveTypes(){ return this.req('/v1/leave/types'); },
+  leaveBalance(){ return this.req('/v1/leave/balance'); },
+  leaveMine(){ return this.req('/v1/leave/requests'); },
+  leaveSubmit(body){ return this.req('/v1/leave/requests',{method:'POST',body:JSON.stringify(body)}); },
   /* 权限不足时展示可联系的管理员（后端按租户返回管理员账号） */
   adminContacts(){ return this.req('/v1/approvals/admin-contacts'); },
   notificationList(){ return this.req('/v1/notifications?limit=20'); },
@@ -1098,6 +1172,8 @@ const API = {
   /* V33：经营数据 AI 解读 —— 后端按真实指标调用模型生成，非预置文案 */
   kpiInsight(period){ return this.req('/v1/kpi/board/insight?period='+(period||'month'),{method:'POST'}); },
   results(){ return this.req('/v1/results'); },
+  /* V36：我的数据统计 —— 服务端按库表实时计数（与各业务列表同口径），前端不再拼装 */
+  myStats(){ return this.req('/v1/stats/me'); },
   createResult(body){ return this.req('/v1/results',{method:'POST',body:JSON.stringify(body)}); },
   resultDetail(id){ return this.req('/v1/results/'+id); },
   updateResult(id, body){ return this.req('/v1/results/'+id,{method:'PUT',body:JSON.stringify(body)}); },
@@ -1320,13 +1396,30 @@ function doLogout(){
 /* ============================================================================
    6. 数据加载（全部真实接口，失败降级为空态）
    ============================================================================ */
+/* 审批记录统一视图：多级审批引擎的行带 source='workflow' + taskId + timeline；
+   历史单级审批（成果 / 公文）带 source='legacy'，没有流程节点。 */
+function tagSource(list, source){
+  return asArray(list).map(function(o){ return Object.assign({}, o, {source:source}); });
+}
+/* 待我审批 = 多级审批引擎的节点待办 ∪ 租户管理员的单级待办。
+   机构管理员只有前一份（节点指派人），租户管理员两份都有 —— 前者此前完全没有入口。 */
+async function loadTodoApprovals(){
+  const merged = [];
+  if(state.canApprove){
+    try{ merged.push.apply(merged, tagSource(await API.workflowTodo(), 'workflow')); }catch(e){}
+  }
+  // 单级待办仅租户/平台管理员可读，其它角色 403 属预期，静默跳过
+  try{ merged.push.apply(merged, tagSource(await API.approvalList('todo'), 'legacy')); }catch(e){}
+  return merged;
+}
 async function loadLiveData(){
   const tasks = [
     ['experts', ()=>API.experts()], ['skills', ()=>API.skills()], ['kbDocs', ()=>API.kbDocs()],
     ['quotaInfo', ()=>API.quota()], ['bill', ()=>API.ledger()], ['log', ()=>API.logs()],
-    ['approvals', ()=>API.approvalList('mine')], ['notifs', ()=>API.notificationList()],
+    ['notifs', ()=>API.notificationList()],
     ['packages', ()=>API.packages()], ['workers', ()=>API.workers()], ['results', ()=>API.results()],
     ['roleTypes', ()=>API.roleTypes()],
+    ['myStats', ()=>API.myStats()],
     ['kpiMonth', ()=>API.kpiBoard('month')], ['kpiQuarter', ()=>API.kpiBoard('quarter')]
   ];
   await Promise.all(tasks.map(async ([k, fn])=>{
@@ -1335,14 +1428,18 @@ async function loadLiveData(){
       if(k === 'kpiMonth') state.kpi.month = v;
       else if(k === 'kpiQuarter') state.kpi.quarter = v;
       else if(k === 'quotaInfo') state.quotaInfo = v;          // 对象，单独存放避免与额度数字混淆
+      else if(k === 'myStats') state.myStats = v;              // 对象：我的数据统计（服务端实时计数）
       else if(k === 'notifs') state.notifs = v;                // {items, unread}，渲染时再解包
       else state[k] = asArray(v);
     }catch(e){ /* 单项失败不影响整体 */ }
   }));
-  // 管理员额外拉待我审批
-  if(state.isAdmin){
-    try{ state.todoApprovals = await API.approvalList('todo') || []; }catch(e){}
-  }
+  // 我的申请走多级审批引擎：它是 approval_order 的超集（含请假），且带完整流转路径
+  try{ state.approvals = tagSource(await API.workflowMine(), 'workflow'); }catch(e){ state.approvals = []; }
+  // 待我审批（机构管理员 / 租户管理员 / 部门负责人）
+  state.todoApprovals = await loadTodoApprovals();
+  // 请假闭环元数据（假种 + 我的余额），供请假表单与统计使用
+  try{ state.leaveTypes = asArray(await API.leaveTypes()); }catch(e){ state.leaveTypes = []; }
+  if(state.canApprove){ try{ state.leaveBalances = asArray(await API.leaveBalance()); }catch(e){} }
   renderAll();
   // 适用场景是配置驱动的独立请求，失败不阻塞首屏（页面其他部分已渲染完）
   renderPkgScenes();
@@ -1368,7 +1465,7 @@ function collapseHomeFallback(){
 /* 逐块渲染并隔离异常：任一区块出错只影响自身，不会让整页变空白 */
 function renderAll(){
   const steps = [renderGreet, renderKPI, renderToday, renderSkills, renderExperts,
-                 renderTodo, renderAgents, renderResults, renderMe, renderBill,
+                 renderTodo, renderAgents, renderResults, renderMyStats, renderMe, renderBill,
                  renderLog, renderKb, renderPackages, updateQuotaUI, collapseHomeFallback];
   steps.forEach(fn=>{
     try{ fn(); }
@@ -1782,30 +1879,29 @@ function approvalIcon(a){
 }
 function renderTodo(){
   const pending = $('todoPending'), done = $('todoDone'), mine = $('todoMine');
-  const todoList = state.isAdmin ? asArray(state.todoApprovals) : [];
+  // 待我审批：审批人（机构管理员 / 部门负责人 / 租户管理员）看指派到自己节点的单据；
+  // 普通成员没有指派节点，这一栏回落为知会消息（标签同步显示「消息」）。
+  const pendingTasks = (state.canApprove ? asArray(state.todoApprovals) : []).filter(a=>a.status==='PENDING');
   const mineList = asArray(state.approvals);
   const notifList = asArray(state.notifs).slice(0,3);
 
-  // 标签语义按角色确定（走查发现 A-2）：管理员这里是真待办；普通成员收到的是
-  // 审批结果 / 数字员工产出的「知会」消息，故标为「消息」，不再把知会当待处理。
   const lblPending = $('todoPendingLabel'), lblDone = $('todoDoneLabel');
-  if(lblPending) lblPending.textContent = state.isAdmin ? '待我处理' : '消息';
+  if(lblPending) lblPending.textContent = state.canApprove ? '待我处理' : '消息';
   if(lblDone) lblDone.textContent = '数字员工产出';
 
-  // 待我处理：管理员=待审单（需我操作）；普通用户=未读知会消息（仅知会）
-  let rows = '';
-  if(state.isAdmin){
-    rows = todoList.filter(a=>a.status==='PENDING').map(a=>{
-      const ic = approvalIcon(a);
-      return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge go">待审批</span>',
-        esc(approvalBrief(a)), "openTodoDetail("+a.id+",'todo')", ic[1], fullTime(a.createdAt));
-    }).join('');
-  }else{
-    rows = notifItems().filter(n=>!n.readAt).slice(0,10).map(n=>
-      todoRow('bell', esc(n.title||'新通知')+' <span class="badge info">知会</span>',
-        esc((n.content||'').slice(0,50)), 'openNotifDetail('+n.id+')')).join('');
-  }
-  if(!rows) rows = emptyBox(state.isAdmin ? '没有待你审批的单据' : '暂无未读消息');
+  let rows = pendingTasks.map(a=>{
+    const ic = approvalIcon(a);
+    // 副标题带「当前流转到谁」，审批人一眼知道这单卡在哪一级、由谁处理
+    const who = currentFlowText(a);
+    return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge go">待审批</span>',
+      esc(approvalBrief(a)) + (who ? '<br>' + who : ''),
+      "openTodoDetail("+a.id+",'todo')", ic[1], fullTime(a.createdAt));
+  }).join('');
+  // 未读知会消息对所有人可见（审批人也需要看到「你的申请已通过」这类回执）
+  rows += notifItems().filter(n=>!n.readAt).slice(0,10).map(n=>
+    todoRow('bell', esc(n.title||'新通知')+' <span class="badge info">知会</span>',
+      esc((n.content||'').slice(0,50)), 'openNotifDetail('+n.id+')')).join('');
+  if(!rows) rows = emptyBox(state.canApprove ? '没有待你审批的单据' : '暂无未读消息');
   pending.innerHTML = rows;
 
   // 数字员工产出：只列真正执行过（有 lastRunAt）的；徽标由「已送达」改「已执行」——
@@ -1827,17 +1923,78 @@ function renderTodo(){
         const ic = approvalIcon(a);
         const tail = a.decisionNote ? ('意见：'+esc(a.decisionNote)) : esc(approvalBrief(a));
         return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
-          tail, "openTodoDetail("+a.id+",'mine')", ic[1], fullTime(a.createdAt));
+          tail + currentFlowInline(a), "openTodoDetail("+a.id+",'mine')", ic[1], fullTime(a.createdAt));
       }).join('') + mineMore
     : emptyBox('暂无申请记录');
 
-  // 角标口径：管理员=待审单数（需我操作）；普通成员=未读消息数（该标签已改「消息」，非待办）
-  const cnt = state.isAdmin
-    ? todoList.filter(a=>a.status==='PENDING').length
-    : notifItems().filter(n=>!n.readAt).length;
+  // 角标口径：审批人=待审单数（需我操作）+ 未读知会；普通成员=未读消息数
+  const unread = notifItems().filter(n=>!n.readAt).length;
+  const cnt = state.canApprove ? pendingTasks.length + unread : unread;
   $('todoCnt').textContent = cnt;
   const tab = $('tabCnt');
   if(cnt > 0){ tab.style.display = 'block'; tab.textContent = cnt; } else tab.style.display = 'none';
+}
+
+/* ---- 流转路径（#211）：把 timeline 渲染成「当前流转到谁 / 各节点由谁审核」 ---- */
+const APPROVER_TYPE_LABEL = {
+  DEPT_LEADER: '部门负责人', ORG_ADMIN: '企业管理员',
+  TENANT_ADMIN: '租户管理员', SPECIFIC: '指定审批人'
+};
+const TASK_STATUS_LABEL = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', SKIPPED: '已跳过' };
+
+function approverTypeLabel(t){ return APPROVER_TYPE_LABEL[t] || (t || '审批人'); }
+function taskStatusBadge(s){
+  return s==='APPROVED' ? ['ok','已通过'] : (s==='REJECTED' ? ['danger','已驳回']
+       : (s==='SKIPPED' ? ['info','已跳过'] : ['wait','待审批']));
+}
+/* 当前待审节点（timeline 里第一个 PENDING） */
+function currentNode(a){
+  const tl = asArray(a && a.timeline);
+  return tl.filter(function(n){ return n.status === 'PENDING'; })[0] || null;
+}
+/* 行内副标题：当前流转到谁 */
+function currentFlowText(a){
+  const tl = asArray(a && a.timeline);
+  if(!tl.length) return '';                       // 历史单级单据没有节点
+  const cur = currentNode(a) || tl[tl.length-1];
+  const total = a.totalNodes || tl.length;
+  if(a.status && a.status !== 'PENDING'){
+    return '流转路径：'+total+' 级 · 流程已结束';
+  }
+  return '当前流转到：'+esc(cur.approverName || '—')+'（'+approverTypeLabel(cur.approverType)+
+         '）· 第 '+cur.seq+'/'+total+' 级';
+}
+/* 我的申请行内的紧凑流转提示 */
+function currentFlowInline(a){
+  if(!a || a.status !== 'PENDING') return '';
+  const cur = currentNode(a);
+  if(!cur) return '';
+  return '<br>当前流转到：'+esc(cur.approverName || '—')+'（'+approverTypeLabel(cur.approverType)+'）';
+}
+/* 完整流转路径块（详情页） */
+function renderTimeline(a){
+  const tl = asArray(a && a.timeline);
+  if(!tl.length) return '';
+  const cur = currentNode(a);
+  const rows = tl.map(function(n){
+    const sb = taskStatusBadge(n.status);
+    const isCur = cur && cur.taskId === n.taskId;
+    const when = n.decidedAt ? (' · ' + esc(String(n.decidedAt).replace('T',' ').slice(0,16))) : '';
+    const note = n.note ? ('<div class="tl-note">意见：'+esc(n.note)+'</div>') : '';
+    const skip = n.skipReason ? ('<div class="tl-note">跳过原因：'+esc(n.skipReason)+'</div>') : '';
+    return '<div class="tl-node'+(isCur ? ' cur' : '')+'">'+
+      '<span class="tl-seq">'+(n.seq)+'</span>'+
+      '<div class="tl-body">'+
+        '<div class="tl-head">'+esc(n.approverName || '—')+
+          '（'+approverTypeLabel(n.approverType)+'）'+
+          '<span class="badge '+sb[0]+'">'+sb[1]+'</span>'+
+          (isCur ? '<span class="badge go">当前</span>' : '')+
+        '</div>'+
+        (n.status !== 'PENDING' ? '<div class="tl-note">'+(when ? when.replace(' · ','处理时间：') : '')+'</div>' : '')+
+        note + skip +
+      '</div></div>';
+  }).join('');
+  return '<div class="td-flow-title">流转路径（共 '+tl.length+' 级）</div><div class="tl">'+rows+'</div>';
 }
 /* 「我的申请」查看全部（走查发现 A-5）：原实现只显示前 5 条、且没有任何入口看全量 */
 function openAllMine(){
@@ -1967,21 +2124,31 @@ function openTodoDetail(id, scope){
   const badge = $('tdBadge');
   badge.textContent = st[1]; badge.className = 'badge '+st[0];
   $('tdType').textContent = '类型：' + (a.bizType==='RESULT' ? '成果审批' : (a.bizType==='DOC' ? '文稿审批' : (a.bizType||'—')));
+  const cur = currentNode(a);
   $('tdMeta').innerHTML =
-    '发起人：'+esc(a.creatorName||('用户 '+(a.createdBy||'—')))+'<br>'+
+    '发起人：'+esc(a.creatorName||a.applicantName||('用户 '+(a.createdBy||'—')))+'<br>'+
     '提交时间：'+esc((a.createdAt||'').replace('T',' ').slice(0,16))+
     (a.approver ? '<br>审批人：'+esc(a.approver) : '')+
-    (a.decidedAt ? '<br>审批时间：'+esc((a.decidedAt||'').replace('T',' ').slice(0,16)) : '');
+    (a.decidedAt ? '<br>审批时间：'+esc((a.decidedAt||'').replace('T',' ').slice(0,16)) : '')+
+    (a.status==='PENDING' && cur
+      ? '<br>当前流转到：<b>'+esc(cur.approverName||'—')+'</b>（'+approverTypeLabel(cur.approverType)+
+        '，第 '+cur.seq+'/'+(a.totalNodes||asArray(a.timeline).length)+' 级）'
+      : '');
+  resetClamp($('tdContent'));   // 换单据时清掉上一单的折叠残留
   $('tdContent').textContent = a.content || '（无正文）';
   const extra = renderApprovalDetailExtra(a);
-  $('tdExtra').innerHTML = extra ? ('<div class="td-extra-title">申请详情</div>' + extra) : '';
+  const flow = renderTimeline(a);
+  // 流转路径（#211）：放在申请详情之前，让审批人先看到「卡在哪一级、由谁审」
+  $('tdExtra').innerHTML =
+    (flow ? flow : '') +
+    (extra ? ('<div class="td-extra-title">申请详情</div>' + extra) : '');
   const dec = $('tdDecision');
   if(a.status!=='PENDING'){
     dec.style.display='block';
     $('tdNote').textContent = a.decisionNote || '（未填写意见）';
   } else dec.style.display='none';
   const acts = $('tdActions');
-  if(scope==='todo' && a.status==='PENDING' && state.isAdmin){
+  if(scope==='todo' && a.status==='PENDING' && state.canApprove){
     acts.innerHTML = '<button class="btn ghost small" onclick="go(\'page-todo\')">返回</button>'+
                      '<button class="btn danger small" onclick="decideTodo(\'REJECT\')">驳回</button>'+
                      '<button class="btn small" onclick="decideTodo(\'APPROVE\')">通过</button>';
@@ -1989,6 +2156,8 @@ function openTodoDetail(id, scope){
     acts.innerHTML = '<button class="btn ghost small" onclick="go(\'page-todo\')">返回列表</button>';
   }
   go('page-todo-detail'); setTitle('page-todo-detail');
+  // V36：正文过长时折叠（须在页面显示之后量测，隐藏元素 scrollHeight 为 0）
+  autoClamp($('tdContent'), 320, 280);
 }
 /* 审批意见常用语（按通过/驳回分档，减少移动端输入成本） */
 const APPROVAL_PRESETS = {
@@ -2109,14 +2278,21 @@ function askAlert(message, opts){
   }, opts || {})));
 }
 
-/* 提交审批决定（原 decideTodo 中的业务逻辑抽出，供弹层回调复用） */
+/* 提交审批决定（原 decideTodo 中的业务逻辑抽出，供弹层回调复用）。
+   两条链路的决策入口不同：多级审批引擎按 taskId 决策（会推进到下一节点并通知，
+   或终审触发业务后置动作），单级审批按单据 id 决策。 */
 async function commitApprovalDecision(id, decision, note){
   const isApprove = decision === 'APPROVE';
+  const row = findApproval(id, state.todoDetail && state.todoDetail.scope) || {};
   try{
-    await API.approvalDecide(id, decision, note);
+    if(row.source === 'workflow' && row.taskId){
+      await API.workflowDecide(row.taskId, decision, note);
+    }else{
+      await API.approvalDecide(id, decision, note);
+    }
     toast(isApprove ? '已通过，已通知发起人并留痕' : '已驳回，已通知发起人并留痕');
-    state.todoApprovals = await API.approvalList('todo') || [];
-    state.approvals = await API.approvalList('mine') || [];
+    state.todoApprovals = await loadTodoApprovals();
+    state.approvals = tagSource(await API.workflowMine(), 'workflow');
     renderTodo();
     go('page-todo');
   }catch(e){ handleApprovalError(e, isApprove ? '通过审批' : '驳回审批'); }
@@ -2277,6 +2453,40 @@ function toggleOut(i){
   const open = el.classList.toggle('open');
   const btn = document.getElementById('outBtn-'+i);
   if(btn) btn.textContent = open ? '收起' : '展开';
+}
+/* V36：数字员工产出 / 成果正文 / 审批正文的折叠展示。
+   只在「确实超过 maxPx 高度」且「文本足够长」时才折，短内容不加按钮、不留白。
+   maxPx 用 max-height 而非 -webkit-line-clamp —— 对话回答里有 div/span 混排，
+   line-clamp 对块级子元素不生效，max-height 对任意结构都成立。 */
+function autoClamp(el, maxPx, minChars){
+  if(!el || el.dataset.clampDone === '1') return false;
+  const txt = (el.textContent || '').trim();
+  if(txt.length < (minChars || 200)) return false;
+  if(el.scrollHeight <= maxPx + 10) return false;   // 没超过阈值，不折
+  el.dataset.clampDone = '1';
+  el.classList.add('clampable','clamped');
+  el.style.maxHeight = maxPx + 'px';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'clamp-toggle';
+  btn.textContent = '展开全文 ▾';
+  btn.addEventListener('click', function(){
+    const collapsed = el.classList.toggle('clamped');
+    el.style.maxHeight = collapsed ? maxPx + 'px' : 'none';
+    btn.textContent = collapsed ? '展开全文 ▾' : '收起 ▴';
+  });
+  el.insertAdjacentElement('afterend', btn);
+  return true;
+}
+/* 切换内容（换成果 / 换审批单 / 新一次回答）时复位折叠态并回收旧按钮，
+   否则上一次的折叠按钮会残留、max-height 会把新内容也裁掉。 */
+function resetClamp(el){
+  if(!el) return;
+  const next = el.nextElementSibling;
+  if(next && next.classList && next.classList.contains('clamp-toggle')) next.remove();
+  el.classList.remove('clampable','clamped');
+  el.style.maxHeight = '';
+  delete el.dataset.clampDone;
 }
 /* D-3：员工卡片「⋯」溢出菜单（同时只开一个；点页面其他位置自动关闭） */
 function toggleAgentMenu(i, ev){
@@ -2510,6 +2720,39 @@ async function confirmAgent(btn, name, plan){
 /* ============================================================================
    12. 成果沉淀（V1.2）
    ============================================================================ */
+/* V36：我的数据统计 —— 数据全部来自 GET /api/v1/stats/me（服务端按库表实时计数，
+   与「待办 / 我的成果 / 我的知识库 / 用量账单」各页同口径），前端只做展示，
+   不二次拼装、也不兜底任何假数字。
+   审批视角的「待我处理」只对审批人展示：普通成员恒 0 会被误读成功能坏了。 */
+function renderMyStats(){
+  const grid = $('myStatsGrid');
+  if(!grid) return;
+  const s = state.myStats;
+  if(!s){
+    grid.innerHTML = '<div class="muted" style="grid-column:1/-1">统计数据加载中…</div>';
+    return;
+  }
+  const cells = [];
+  if(state.canApprove) cells.push(['待我处理', s.todoApprovals, '件']);
+  cells.push(['我的申请', s.myApplications, '件']);
+  cells.push(['AI 会话', s.conversations, '次']);
+  cells.push(['AI 运行', s.aiRuns, '次']);
+  cells.push(['我的成果', s.results, '份']);
+  cells.push(['我的知识库', s.kbDocs, '份']);
+  cells.push(['我创建的员工', s.myWorkers, '个']);
+  cells.push(['本月已用词元', s.quotaUsed, '词元']);
+  grid.innerHTML = cells.map(c=>
+    '<div class="kpi plain">'+
+      '<div class="k-label"><span>'+esc(c[0])+'</span></div>'+
+      '<div class="k-num">'+esc(fmt(c[1]))+'<span class="k-unit">'+esc(c[2])+'</span></div>'+
+    '</div>').join('');
+  const at = s.generatedAt ? String(s.generatedAt).replace('T',' ').slice(0,16) : '—';
+  $('myStatsAt').textContent = '生成于 ' + at;
+  $('myStatsSrc').innerHTML =
+    '<b>数据来源</b>：本平台数据库实时统计（单一权威源），与「待办 / 我的成果 / 我的知识库 / 用量账单」同口径；' +
+    '词元数直接取自额度服务，非前端估算。';
+}
+
 function renderResults(){
   const box = $('resultList');
   const list = state.results||[];
@@ -2526,6 +2769,7 @@ async function openResult(i){
   $('resultTitle').textContent = r.title;
   $('resultMeta').textContent = r.meta || '';
   $('resultBody').textContent = '加载中…';
+  resetClamp($('resultBody'));   // 换成果时先清掉上一篇的折叠残留
   const btn = $('resultSubmitBtn');
   if(r.status === 'SUBMITTED' || r.status === 'APPROVED'){
     btn.textContent = r.status === 'APPROVED' ? '已通过' : '审批中';
@@ -2541,6 +2785,8 @@ async function openResult(i){
     if(state.currentResult === r){
       $('resultBody').textContent = d.body || '（暂无正文）';
       $('resultMeta').textContent = d.meta || '';
+      // V36：长正文默认收起，避免整屏都是正文把「发起审批」按钮顶到看不见
+      autoClamp($('resultBody'), 360, 300);
     }
   }catch(e){
     if(state.currentResult === r) $('resultBody').textContent = '正文加载失败：' + (e.message||'');
@@ -2852,11 +3098,14 @@ function isLeaveCapable(){
 /* 产出收口：公文类触发审批卡点，并提供「存为成果」 */
 function afterAnswer(bubble, text){
   const wrap = bubble.parentNode;
+  // V36：产出过长时折叠展示（约 12 行），先给「收起 + 展开全文」，其余收口按钮仍然可见
+  autoClamp(bubble, 300, 260);
   // 用户请求请假 → 由请假类数字员工发放《请假申请》（未请求、或非请假类数字员工则完全不出现）
   if (isLeaveRequest(state.lastQuery) && isLeaveCapable() && !document.getElementById('leaveForm')) {
     wrap.closest('.msg').insertAdjacentHTML('afterend',
       '<div class="msg"><div class="avatar">' + icon('clock') + '</div>' +
       '<div class="bubble">已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml() + '</div></div>');
+    ensureLeaveTypes();
     const box = $('msgs'); box.scrollTop = box.scrollHeight;
   }
   const isDoc = /通知|请示|报告|函/.test(text) && text.indexOf('各有关企业') > -1;
@@ -2911,13 +3160,28 @@ function openLeaveFlow(){
   m.scrollTop = m.scrollHeight;
 }
 
+/* 假种下拉：来自后端 /v1/leave/types（真实假种），不再写死「事假/病假/年假」。
+   写死的类型无法映射到 leaveTypeCode，提交必然打不到真实请假链路。 */
+function leaveTypeOptions(){
+  const types = asArray(state.leaveTypes);
+  if(!types.length) return '<option value="">（暂无可用假种，请联系管理员配置）</option>';
+  return types.map(function(t){
+    const quota = Number(t.quotaDaysPerYear || 0);
+    return '<option value="'+esc(t.code)+'">'+esc(t.name)+(quota > 0 ? '' : '（不占额度）')+'</option>';
+  }).join('');
+}
+async function ensureLeaveTypes(){
+  if(asArray(state.leaveTypes).length) return;
+  try{
+    state.leaveTypes = asArray(await API.leaveTypes());
+    const sel = document.getElementById('lfType');
+    if(sel) sel.innerHTML = leaveTypeOptions();
+  }catch(e){ /* 保持占位提示 */ }
+}
+
 function leaveFormHtml(){
   return '<div class="leave-form" id="leaveForm">'+
-    '<div class="lf-row"><label>请假类型</label><select id="lfType">'+
-      '<option value="事假">事假</option><option value="病假">病假</option>'+
-      '<option value="年假">年假</option><option value="调休">调休</option>'+
-      '<option value="婚假">婚假</option><option value="产假">产假</option>'+
-      '<option value="其他">其他</option></select></div>'+
+    '<div class="lf-row"><label>请假类型</label><select id="lfType">'+leaveTypeOptions()+'</select></div>'+
     '<div class="lf-row"><label>开始日期</label><input id="lfStart" type="date"></div>'+
     '<div class="lf-row"><label>结束日期</label><input id="lfEnd" type="date"></div>'+
     '<div class="lf-row"><label>请假事由</label><textarea id="lfReason" rows="2" placeholder="请简要说明请假原因"></textarea></div>'+
@@ -2954,7 +3218,8 @@ async function leaveOnFiles(e){
   for(const f of files){
     try{
       const rec = await API.fileUpload(f);
-      leaveAttachments.push({name:rec.name, url:rec.url});
+      // 保留 file id：请假提交要把它作为 proofFileId 带给后端（需证明的假种强制校验）
+      leaveAttachments.push({id:rec.id, name:rec.name, url:rec.url});
     }catch(err){ toast('附件上传失败：'+err.message); }
   }
   renderLeaveFiles();
@@ -2970,21 +3235,30 @@ function leaveRemoveFile(i){ leaveAttachments.splice(i,1); renderLeaveFiles(); }
 
 function gotoTodo(){ go('page-todo'); activateTodoTab(); }
 
-/* 提交结果确认卡（走查发现 A-7）：原实现「toast + 立即跳转」，用户来不及看清单号与状态 */
+/* 提交结果确认卡（走查发现 A-7）：原实现「toast + 立即跳转」，用户来不及看清单号与状态。
+   多级审批上线后补上「当前流转到谁」——申请人不必再猜这单卡在哪一级（#211）。 */
 function showLeaveResultCard(order, info){
   const box = $('msgs');
   if(!box){ gotoTodo(); return; }
   const o = order || {};
-  const no = o.orderNo || o.no || (o.id != null ? ('#' + o.id) : '—');
-  const days = daysBetween(info.start, info.end);
+  const no = o.orderId != null ? ('#' + o.orderId)
+           : (o.leaveRequestId != null ? ('#' + o.leaveRequestId)
+           : (o.orderNo || o.no || (o.id != null ? ('#' + o.id) : '—')));
+  const days = (o.days != null && Number(o.days) > 0) ? Number(o.days) : daysBetween(info.start, info.end);
+  const cur = o.currentApproverName
+    ? esc(o.currentApproverName) + '（第 1/'+(o.nodeCount || 1)+' 级）'
+    : '待审批';
   const card = document.createElement('div');
   card.className = 'msg';
   card.innerHTML = '<div class="avatar">'+icon('clock')+'</div>'+
     '<div class="bubble"><div class="result-card">'+
       '<div class="rc-head">'+icon('check-circle','rc-ok')+'<b>请假申请已提交</b></div>'+
       '<div class="rc-row"><span>申请单号</span><b>'+esc(String(no))+'</b></div>'+
-      '<div class="rc-row"><span>请假类型</span><b>'+esc(info.type || '—')+'</b></div>'+
+      '<div class="rc-row"><span>请假类型</span><b>'+esc(o.leaveTypeName || info.type || '—')+'</b></div>'+
       '<div class="rc-row"><span>请假时段</span><b>'+esc(info.start)+' 至 '+esc(info.end)+'（'+(days > 0 ? days + ' 天' : '—')+'）</b></div>'+
+      (o.quotaTracked === false ? '' :
+        '<div class="rc-row"><span>剩余可用</span><b>'+(o.availableAfterPending != null ? esc(String(o.availableAfterPending))+' 天' : '—')+'</b></div>')+
+      '<div class="rc-row"><span>当前流转到</span><b>'+cur+'</b></div>'+
       '<div class="rc-row"><span>当前状态</span><b><span class="badge wait">待审批</span></b></div>'+
       '<div class="rc-ops">'+
         '<button class="btn small" onclick="openAllMine()">查看我的申请</button>'+
@@ -2996,7 +3270,7 @@ function showLeaveResultCard(order, info){
 }
 
 async function submitLeave(btn){
-  const type = $('lfType').value;
+  const code = $('lfType').value;
   const start = $('lfStart').value;
   const end = $('lfEnd').value;
   const reason = $('lfReason').value.trim();
@@ -3006,6 +3280,8 @@ async function submitLeave(btn){
     toast(msg);
   };
   if(errBox) errBox.style.display = 'none';
+  // 假种必须来自后端配置：写死类型无法映射 leaveTypeCode，提交会打不到真实请假链路
+  if(!code){ fail('暂无可用的请假类型，请联系管理员在「假种配置」中启用'); return; }
   if(!start || !end){ fail('请选择开始与结束日期'); return; }
   // A-8：原实现无区间校验，可提交「结束早于开始」的非法区间
   if(daysBetween(start, end) <= 0){ fail('结束日期不能早于开始日期'); return; }
@@ -3018,39 +3294,47 @@ async function submitLeave(btn){
     if(!okBack) return;
   }
   if(btn){ btn.textContent = '提交中…'; btn.disabled = true; }
-  const formData = {leaveType:type, start, end, reason};
-  const content = '请假申请 · '+type+'（'+start+' 至 '+end+'）\n事由：'+reason;
-  const title = '请假申请 · '+type+'（'+start+'~'+end+'）';
+  const typeName = (asArray(state.leaveTypes).find(t=>t.code===code) || {}).name || code;
+  // 天数不传：由后端按假种单位（工作日/自然日）计算，避免前端口径与服务端不一致
+  const body = {leaveTypeCode:code, startDate:start, endDate:end, reason:reason};
+  if(leaveAttachments.length) body.proofFileId = leaveAttachments[0].id;
   try{
-    const order = await API.approvalSubmitForm('请假', title, content, formData, leaveAttachments);
+    const res = await API.leaveSubmit(body);
     leaveAttachments = [];
-    state.approvals = await API.approvalList('mine') || [];
+    // 结果回执：单号 + 天数 + 当前流转到谁（#211 让申请人知道下一步找谁）
+    showLeaveResultCard(res, {type:typeName, start:start, end:end});
+    const fresh = await API.workflowMine().catch(()=>null);
+    if(fresh) state.approvals = tagSource(fresh, 'workflow');
     renderTodo();
-    // A-7：先在会话流内给结果确认卡（含单号），由用户决定何时离开当前页
-    showLeaveResultCard(order, {type:type, start:start, end:end});
     if(btn){ btn.textContent = '已提交'; btn.disabled = true; }
   }catch(err){
     if(btn){ btn.textContent = '提交请假申请'; btn.disabled = false; }
-    handleApprovalError(err, '提交请假');
+    // 服务端校验（余额不足 / 需证明 / 提前天数 / 最长连续天数）原样回显，前端不重复实现
+    fail((err && err.message) || '提交失败，请稍后重试');
   }
 }
 
-/* 审批详情：渲染请假结构化字段与附件（请假数字人回显） */
+/* 审批详情：渲染请假结构化字段与附件（请假数字人回显）。
+   兼容两种 formData：多级请假单（startDate/endDate/days/leaveTypeName）
+   与历史单级单（start/end/leaveType）。 */
 function renderApprovalDetailExtra(a){
   let html = '';
   if(a.formData){
     try{
       const f = JSON.parse(a.formData);
       const rows = [];
-      if(f.leaveType) rows.push(['请假类型', f.leaveType]);
-      if(f.start || f.end) rows.push(['请假时段', (f.start||'')+' 至 '+(f.end||'')]);
+      const typeName = f.leaveTypeName || f.leaveType;
+      const start = f.startDate || f.start, end = f.endDate || f.end;
+      if(typeName) rows.push(['请假类型', typeName]);
+      if(start || end) rows.push(['请假时段', (start||'')+' 至 '+(end||'')]);
+      if(f.days != null && Number(f.days) > 0) rows.push(['请假天数', Number(f.days) + ' 天']);
       if(f.reason) rows.push(['请假事由', f.reason]);
       if(rows.length) html += '<div class="td-form">'+rows.map(r=>'<div class="tdf-row"><span>'+esc(r[0])+'</span><b>'+esc(r[1])+'</b></div>').join('')+'</div>';
     }catch(_){}
   }
   if(a.attachment){
     try{
-      const arr = JSON.parse(a.attachment);
+      const arr = typeof a.attachment === 'string' ? JSON.parse(a.attachment) : a.attachment;
       if(Array.isArray(arr) && arr.length){
         html += '<div class="td-attach"><span class="tda-label">附件</span>'+
           arr.map(x=>'<a class="tda-item" href="'+esc(x.url)+'" target="_blank">'+icon('doc')+esc(x.name)+'</a>').join('')+'</div>';

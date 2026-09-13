@@ -29,6 +29,13 @@
             <artifactId>aioa-resource</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
+        <!-- 首页/我的统计需要读多级审批引擎（approval_task 的「待我处理」计数），
+             该引擎在 aioa-org；org 不反向依赖 chat，无循环。 -->
+        <dependency>
+            <groupId>cn.aioa</groupId>
+            <artifactId>aioa-org</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>

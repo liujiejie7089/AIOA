@@ -20,6 +20,9 @@ public class SysLoginLog {
 
     private Boolean result;
 
+    /** 事件类型：LOGIN 登录 / LOGOUT 登出（V35）。 */
+    private String action;
+
     private String failReason;
 
     private LocalDateTime loginAt;
@@ -62,6 +65,14 @@ public class SysLoginLog {
 
     public void setResult(Boolean result) {
         this.result = result;
+    }
+
+    public String getAction() {
+        return action;
+    }
+
+    public void setAction(String action) {
+        this.action = action;
     }
 
     public String getFailReason() {

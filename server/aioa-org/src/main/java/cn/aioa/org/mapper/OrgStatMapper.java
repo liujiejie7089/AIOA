@@ -174,6 +174,37 @@ public interface OrgStatMapper {
                                                    @Param("userId") Long userId,
                                                    @Param("status") String status);
 
+    /**
+     * 「我发起的」全字段列表（含 form_data / attachment）。
+     *
+     * <p>与 {@link #selectApprovalOrders} 的区别：后者只取列表页需要的窄字段，
+     * 用户端「我的申请」详情要回显请假表单与附件，因此必须带全字段。</p>
+     */
+    @Select("SELECT id, tenant_id AS tenantId, user_id AS userId, applicant_name AS applicantName, "
+            + "biz_type AS bizType, title, content, form_data AS formData, attachment, status, "
+            + "approver, decision_note AS decisionNote, decided_at AS decidedAt, created_at AS createdAt "
+            + "FROM approval_order WHERE deleted_at IS NULL AND tenant_id = #{tenantId} "
+            + "AND user_id = #{userId} ORDER BY id DESC LIMIT 200")
+    List<Map<String, Object>> selectApprovalOrdersOfUser(@Param("tenantId") Long tenantId,
+                                                         @Param("userId") Long userId);
+
+    /** 单据当前待审节点（seq 最小的 PENDING 任务）——「当前流转到谁」。 */
+    @Select("SELECT t.id, t.seq, t.approver_type AS approverType, t.approver_id AS approverId, "
+            + "t.approver_name AS approverName, t.status FROM approval_task t "
+            + "WHERE t.order_id = #{orderId} AND t.status = 'PENDING' "
+            + "ORDER BY t.seq ASC LIMIT 1")
+    Map<String, Object> selectCurrentTaskOfOrder(@Param("orderId") Long orderId);
+
+    /** 单据全部节点（按 seq 升序）——流转路径。 */
+    @Select("SELECT t.id, t.seq, t.approver_type AS approverType, t.approver_id AS approverId, "
+            + "t.approver_name AS approverName, t.status, t.note, t.skip_reason AS skipReason, "
+            + "t.decided_at AS decidedAt FROM approval_task t "
+            + "WHERE t.order_id = #{orderId} ORDER BY t.seq ASC")
+    List<Map<String, Object>> selectTasksOfOrder(@Param("orderId") Long orderId);
+
+    @Select("SELECT COUNT(*) FROM approval_task WHERE order_id = #{orderId}")
+    long countTasksOfOrder(@Param("orderId") Long orderId);
+
     @Select("SELECT u.id FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id "
             + "JOIN sys_user u ON u.id = ur.user_id "
             + "WHERE ur.deleted_at IS NULL AND r.deleted_at IS NULL AND u.deleted_at IS NULL "

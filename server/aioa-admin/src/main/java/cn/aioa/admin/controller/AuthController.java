@@ -46,6 +46,18 @@ public class AuthController {
         return ApiResponse.ok(Map.of("accessToken", access));
     }
 
+    /**
+     * 退出登录。
+     *
+     * <p>无状态 JWT：令牌吊销由客户端丢弃完成，这里只做审计留痕（V35）。端点必须
+     * 幂等且永不失败——令牌缺失 / 过期时也应返回成功，否则前端登出流程会被 401 打断。</p>
+     */
+    @PostMapping("/auth/logout")
+    public ApiResponse<Map<String, Object>> logout(HttpServletRequest request) {
+        authService.logout(clientIp(request), request.getHeader("User-Agent"));
+        return ApiResponse.ok(Map.of("loggedOut", true));
+    }
+
     @GetMapping("/auth/me")
     public ApiResponse<AuthService.MeData> me() {
         return ApiResponse.ok(authService.me());

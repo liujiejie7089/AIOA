@@ -89,7 +89,8 @@ public class ConversationService {
 
     public ChatConversation getOwned(Long conversationId) {
         ChatConversation conversation = conversationMapper.selectById(conversationId);
-        if (conversation == null) {
+        // 已删会话等同不存在（同一处 delete 写的是 deleted_at，见 ownedWrapper 注释）
+        if (conversation == null || conversation.getDeletedAt() != null) {
             throw BizException.notFound("会话不存在");
         }
         if (!Objects.equals(conversation.getUserId(), AuthUserContext.requireUserId())) {
@@ -156,9 +157,17 @@ public class ConversationService {
         conversationMapper.updateById(patch);
     }
 
+    /**
+     * 本人会话的查询条件（分页/计数共用，保证「列表里的条数」与「统计里的数字」同口径）。
+     *
+     * <p>{@code ChatConversation} 未挂 {@code @TableLogic}——{@link #delete(Long)} 是手写
+     * {@code deleted_at = now()}，因此这里必须显式过滤已删行；否则「删除会话」后
+     * 列表与统计都还把它算进去，删除按钮等于失灵。</p>
+     */
     private LambdaQueryWrapper<ChatConversation> ownedWrapper(String keyword) {
         LambdaQueryWrapper<ChatConversation> wrapper = new LambdaQueryWrapper<ChatConversation>()
-                .eq(ChatConversation::getUserId, AuthUserContext.requireUserId());
+                .eq(ChatConversation::getUserId, AuthUserContext.requireUserId())
+                .isNull(ChatConversation::getDeletedAt);
         if (StringUtils.hasText(keyword)) {
             wrapper.like(ChatConversation::getTitle, keyword);
         }

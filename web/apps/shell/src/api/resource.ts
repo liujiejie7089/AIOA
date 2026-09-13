@@ -32,6 +32,73 @@ export function decideApproval(id: number, decision: 'APPROVE' | 'REJECT', note?
   return http.post(`/approvals/${id}/decision`, { decision, note }).then((r) => unwrap<ApprovalOrder>(r))
 }
 
+/* ============ 多级审批引擎（aioa-org WorkflowController） ============
+ *
+ * 与上面单级审批的分工：
+ *   · 多级引擎按「审批流定义」把单据展开成 N 个节点（部门负责人 → 企业管理员 → …），
+ *     待办按「节点指派人」返回 —— 机构管理员的待办只能从这里拿到；
+ *   · 单级审批（历史）的待办池是同租户全部 PENDING，只有租户/平台管理员可见，
+ *     目前承载成果 / 公文这类没有多级流程的业务。
+ */
+
+/** 审批流节点（流转路径上的一级）。 */
+export interface ApprovalTaskNode {
+  taskId: number
+  seq: number
+  /** DEPT_LEADER / ORG_ADMIN / TENANT_ADMIN / SPECIFIC */
+  approverType: string
+  approverId: number | null
+  approverName: string | null
+  /** PENDING / APPROVED / REJECTED / SKIPPED */
+  status: string
+  note: string | null
+  skipReason: string | null
+  decidedAt: string | null
+}
+
+/** 待我审批 / 我发起的（多级引擎）。带 timeline 与「当前流转到谁」。 */
+export interface WorkflowTask {
+  id: number
+  taskId: number
+  bizType: string
+  title: string
+  content?: string | null
+  formData?: string | null
+  attachment?: string | null
+  status: string
+  applicantName?: string
+  creatorName?: string
+  userId?: number
+  approver?: string | null
+  decisionNote?: string | null
+  decidedAt?: string | null
+  createdAt: string
+  seq?: number
+  approverType?: string
+  approverName?: string
+  totalNodes?: number
+  currentSeq?: number
+  currentApproverName?: string | null
+  timeline?: ApprovalTaskNode[]
+}
+
+export function listWorkflowTodo(): Promise<WorkflowTask[]> {
+  return http.get('/workflow/tasks', { params: { scope: 'todo' } }).then((r) => unwrap<WorkflowTask[]>(r))
+}
+
+/** 我发起的（含请假 / 扩容 / 成果 / 公文），任何登录用户可读，带完整流转路径。 */
+export function listMyApplications(): Promise<WorkflowTask[]> {
+  return http.get('/workflow/mine').then((r) => unwrap<WorkflowTask[]>(r))
+}
+
+export function decideWorkflowTask(
+  taskId: number,
+  decision: 'APPROVE' | 'REJECT',
+  note?: string
+): Promise<{ taskId: number; orderId: number; finalDone: boolean; orderStatus: string }> {
+  return http.post(`/workflow/tasks/${taskId}/decide`, { decision, note }).then((r) => unwrap(r))
+}
+
 /* ---------- 通用文件上传（请假证明等附件） ---------- */
 
 export interface UploadedFile {

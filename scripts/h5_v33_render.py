@@ -29,8 +29,31 @@ def login(u, p):
     return d["data"]["accessToken"], d["data"]
 
 
+def ensure_self_worker(token):
+    """前置夹具：普通成员自建的「仅我可见」数字员工是本套件的验证对象。
+
+    该数据过去由 smoke_v33.py 创建、并在退出时清理，于是本套件**单独跑**时会因
+    「zhangsan 名下没有 SELF 员工」而红——属测试夹具缺失，不是产品缺陷。
+    这里改为自愈：没有就现造一个（后端会把越权传的 scope 强制降级为 SELF）。
+    """
+    c = httpx.Client(timeout=30, trust_env=False)
+    h = {"Authorization": "Bearer " + token}
+    ws = (c.get(f"{API}/workers", headers=h).json().get("data") or [])
+    if any(w.get("visibleScope") == "SELF" for w in ws):
+        return None
+    d = c.post(f"{API}/workers", headers=h, json={
+        "name": "H5渲染校验-自建助理", "icon": "bot",
+        "description": "h5_v33_render 前置夹具：验证自建卡片带「仅我可见」标记",
+        "runMode": "ON_DEMAND", "taskPrompt": "整理今日待办",
+    }).json()
+    wid = (d.get("data") or {}).get("id") if d.get("code") == 0 else None
+    print(f"[fixture] 已创建自建数字员工 id={wid}（SELF，供「仅我可见」断言）")
+    return wid
+
+
 def main():
     token, me = login("zhangsan", "User@123")
+    ensure_self_worker(token)
     session = json.dumps({"token": token, "user": me.get("user", me)}, ensure_ascii=False)
 
     with sync_playwright() as pw:
