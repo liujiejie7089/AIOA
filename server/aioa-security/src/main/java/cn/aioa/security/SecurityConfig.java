@@ -36,6 +36,12 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/v1/auth/**",
+            // Gitee Webhook 由 Gitee 服务端调用，不可能带平台 JWT；
+            // 其自身安全由「项目级共享密钥 X-Gitee-Token + event_key 幂等」保证
+            "/api/v1/gitee/webhook/**",
+            // OAuth2 回调是浏览器从 Gitee 跳回，同样无 JWT；
+            // 身份由发起时下发的一次性 state 承载（防 CSRF + 防重放）
+            "/api/v1/gitee/bind/callback",
             "/actuator/health",
             "/actuator/health/**",
             "/v3/api-docs/**",

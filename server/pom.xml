@@ -27,6 +27,7 @@
     <module>aioa-tool-sdk</module>
     <module>aioa-resource</module>
     <module>aioa-org</module>
+    <module>aioa-gitee</module>
     <module>aioa-boot</module>
   </modules>
 
@@ -91,6 +92,11 @@
       <dependency>
         <groupId>cn.aioa</groupId>
         <artifactId>aioa-org</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cn.aioa</groupId>
+        <artifactId>aioa-gitee</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

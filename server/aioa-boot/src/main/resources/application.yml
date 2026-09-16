@@ -64,6 +64,37 @@ aioa:
   kb:
     # 知识库存储实现：mysql（默认，LIKE 检索）/ vector（预留，切换向量数据库时启用）
     store: ${AIOA_KB_STORE:mysql}
+  gitee:
+    # 总开关：关闭时所有 Gitee 任务不入队、Webhook 不处理（用于无外网的部署环境）
+    enabled: ${AIOA_GITEE_ENABLED:true}
+    # V5 OpenAPI 与网页域：base-url 可指向本地桩服务以做端到端回归（无需真实 Gitee）
+    base-url: ${AIOA_GITEE_BASE_URL:https://gitee.com/api/v5}
+    web-base-url: ${AIOA_GITEE_WEB_URL:https://gitee.com}
+    # OAuth2 应用（在 Gitee「设置 → 第三方应用」创建；回调地址须与本处 redirect-uri 完全一致）
+    client-id: ${AIOA_GITEE_CLIENT_ID:}
+    client-secret: ${AIOA_GITEE_CLIENT_SECRET:}
+    redirect-uri: ${AIOA_GITEE_REDIRECT_URI:http://localhost:8080/api/v1/gitee/bind/callback}
+    scope: ${AIOA_GITEE_SCOPE:user_info projects pull_requests issues notes}
+    # Gitee 组织 login：部门项目仓库都建在它下面；留空则建在绑定用户自己的命名空间下
+    org: ${AIOA_GITEE_ORG:}
+    # Webhook 回调基址：必须是 Gitee 能访问到的公网地址（127.0.0.1 无效）
+    webhook-base-url: ${AIOA_GITEE_WEBHOOK_BASE_URL:}
+    # 留空 = 每个仓库随机生成密钥（推荐）；填了则所有仓库共用同一密钥
+    webhook-secret: ${AIOA_GITEE_WEBHOOK_SECRET:}
+    # 令牌加密密钥（AES-256）：生产必须通过环境变量覆盖，否则授权令牌可被离线解密
+    token-enc-key: ${AIOA_GITEE_TOKEN_ENC_KEY:aioa-dev-gitee-token-key-please-change}
+    # 授权完成后的前端回跳地址
+    bind-return-url: ${AIOA_GITEE_BIND_RETURN_URL:http://localhost:5173/}
+    # 速率控制：全局限流 + 队列批量 + 退避重试（Gitee 高频请求会返回 403 Rate Limit Exceeded）
+    min-request-interval-ms: 120
+    task-batch-size: 5
+    max-attempts: 5
+    http-timeout-seconds: 30
+    # 周期性轻量校准：默认每小时 17 分（避开整点高峰）
+    sync-enabled: ${AIOA_GITEE_SYNC_ENABLED:true}
+    sync-cron: ${AIOA_GITEE_SYNC_CRON:0 17 * * * *}
+    # 删除项目时是否连带删除 Gitee 仓库：默认 false（误删代码不可恢复）
+    purge-repo-on-delete: false
 
 management:
   endpoints:

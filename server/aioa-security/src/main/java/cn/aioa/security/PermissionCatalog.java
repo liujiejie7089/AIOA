@@ -73,6 +73,31 @@ public final class PermissionCatalog {
      */
     public static final String EXPERT_MANAGE = "expert:manage";
 
+    // ---- Gitee 项目与代码仓库（V48）----
+    /**
+     * 查看「项目与代码仓库」。
+     *
+     * <p>全体登录用户可读，但**可见范围由部门作用域收紧**（见 {@code GiteeProjectService}）：
+     * 权限点决定「能不能进这个页面」，数据范围决定「进去能看见哪些项目」。
+     * 二者缺一不可 —— 只判权限点会让任意成员看见全租户项目。</p>
+     */
+    public static final String PROJECT_VIEW = "project:view";
+    /**
+     * 创建 / 管理项目（建仓、改配置、加成员、软删）。
+     *
+     * <p>对全体登录用户开放**创建权**，因为需求就是「不同部门用户自己建项目」；
+     * 风险由作用域兜底：普通成员只能在自己所属部门下建，且只能管理自己创建的项目
+     * （或本部门项目，若其为部门负责人）。要求「人人找管理员代建」既不现实也不可运维。</p>
+     */
+    public static final String PROJECT_MANAGE = "project:manage";
+    /**
+     * 绑定自己的 Gitee 账号。
+     *
+     * <p>必须人人可用：建仓与网页提交都以**操作者自己的 Gitee 身份**发起，
+     * 绑定是使用前置条件而非管理特权。</p>
+     */
+    public static final String GITEE_BIND = "gitee:bind";
+
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
     public static final String ROLE_USER = "ROLE_USER";
@@ -107,16 +132,20 @@ public final class PermissionCatalog {
             ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN);
 
     /** 权限码 → 允许的角色。 */
-    private static final Map<String, Set<String>> GRANTS = Map.of(
-            CHAT_BASIC, ALL,
-            KB_READ, ALL,
-            DOC_DRAFT, ALL,
-            WORKER_USE, ALL,
-            WORKER_CREATE, ALL,
-            WORKER_EDIT_SELF, ALL,
-            WORKER_MANAGE, WORKER_MANAGERS,
-            EXPERT_MANAGE, EXPERT_MANAGERS,
-            APPROVAL_LEAVE, TENANT_ADMINS);
+    private static final Map<String, Set<String>> GRANTS = Map.ofEntries(
+            Map.entry(CHAT_BASIC, ALL),
+            Map.entry(KB_READ, ALL),
+            Map.entry(DOC_DRAFT, ALL),
+            Map.entry(WORKER_USE, ALL),
+            Map.entry(WORKER_CREATE, ALL),
+            Map.entry(WORKER_EDIT_SELF, ALL),
+            Map.entry(WORKER_MANAGE, WORKER_MANAGERS),
+            Map.entry(EXPERT_MANAGE, EXPERT_MANAGERS),
+            Map.entry(APPROVAL_LEAVE, TENANT_ADMINS),
+            // Gitee 项目与代码仓库：查看/管理/绑定对全体登录用户开放，范围由部门作用域收紧
+            Map.entry(PROJECT_VIEW, ALL),
+            Map.entry(PROJECT_MANAGE, ALL),
+            Map.entry(GITEE_BIND, ALL));
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
     private static final Map<String, String> ROLE_NAMES = Map.of(
@@ -131,16 +160,19 @@ public final class PermissionCatalog {
     }
 
     /** 权限码 → 中文名（用于申请单与目录展示，避免把英文码裸露给用户）。 */
-    private static final Map<String, String> PERMISSION_NAMES = Map.of(
-            CHAT_BASIC, "通用对话",
-            KB_READ, "知识库检索",
-            DOC_DRAFT, "公文起草",
-            WORKER_USE, "使用数字员工",
-            WORKER_CREATE, "创建数字员工",
-            WORKER_EDIT_SELF, "修改自己的数字员工",
-            WORKER_MANAGE, "管理数字员工",
-            EXPERT_MANAGE, "专家管理",
-            APPROVAL_LEAVE, "请假审批");
+    private static final Map<String, String> PERMISSION_NAMES = Map.ofEntries(
+            Map.entry(CHAT_BASIC, "通用对话"),
+            Map.entry(KB_READ, "知识库检索"),
+            Map.entry(DOC_DRAFT, "公文起草"),
+            Map.entry(WORKER_USE, "使用数字员工"),
+            Map.entry(WORKER_CREATE, "创建数字员工"),
+            Map.entry(WORKER_EDIT_SELF, "修改自己的数字员工"),
+            Map.entry(WORKER_MANAGE, "管理数字员工"),
+            Map.entry(EXPERT_MANAGE, "专家管理"),
+            Map.entry(APPROVAL_LEAVE, "请假审批"),
+            Map.entry(PROJECT_VIEW, "项目与代码仓库（查看）"),
+            Map.entry(PROJECT_MANAGE, "项目与代码仓库（管理）"),
+            Map.entry(GITEE_BIND, "Gitee 账号绑定"));
 
     /**
      * 权限码 → 对应数字员工类型（申请单「目的」展示用）。

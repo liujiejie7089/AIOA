@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>cn.aioa</groupId>
+    <artifactId>aioa-server</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>aioa-gitee</artifactId>
+  <name>aioa-gitee</name>
+  <description>Gitee V5 联动域：OAuth2 账号绑定与令牌自动续期 / 部门团队与仓库映射 / 自动配置 Webhook / 仓库成员权限同步 / 网页提交 / Webhook 事件回传与操作台账 / 异步任务队列与定时校准</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-security</artifactId>
+    </dependency>
+    <!-- 依赖组织域：部门（部门隔离）、员工（成员同步）、机构（作用域）均在此 -->
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-org</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>
