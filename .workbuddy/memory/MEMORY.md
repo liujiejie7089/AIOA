@@ -56,5 +56,17 @@
 
 ## 6. Git 远端
 - `origin`=内网 Gitea `172.16.8.249:3000`：沙箱不可达 + push-to-create 关闭(403)，本地无解。
-- 推 GitHub：`git -c http.sslVerify=false push github main`（**无需 PAT**，失败根因是 Schannel `CRYPT_E_NO_REVOCATION_CHECK`）。约 5 分钟，**用后台任务**。
-- 收口校验不靠 push 返回码：比对 `git rev-parse HEAD` 与 `git -c http.sslVerify=false ls-remote github refs/heads/main`。
+- **推 GitHub 只有 SSH over 443 这一条路（2026-09-16 实测修正）**：
+  - HTTPS（`github` remote = `https://github.com/liujiejie7089/AIOA.git`）**现在需要凭证且当前无可用凭证**
+    → `remote: Invalid username or token. Password authentication is not supported`。旧记录「无需 PAT」**已证伪**，不要再照抄。
+  - SSH **22 端口被拒**（`Connection refused`）；**443 可用**：`ssh.github.com:443`（实测 `Hi liujiejie7089! You've successfully authenticated`）。
+  - **必须显式 `-i` 指定私钥**：默认路径会因 HOME 中文用户名被 ssh 展开成乱码
+    （`/c/Users/\301\365\274\342\274\342/.ssh`）而找不到 key → 误报 `Permission denied (publickey)`。
+  ```bash
+  GIT_SSH_COMMAND='ssh -i "C:/Users/刘尖尖/.ssh/id_rsa" -o IdentitiesOnly=yes \
+    -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no' \
+    git push ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git main
+  ```
+- 约 5–8 分钟，**用后台任务**跑，别放前台等。
+- 收口校验不靠 push 返回码：比对 `git rev-parse HEAD` 与 `git -c http.sslVerify=false ls-remote github refs/heads/main`
+  （`ls-remote` 是读操作，**无需凭证**）。

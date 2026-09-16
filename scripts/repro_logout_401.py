@@ -12,6 +12,8 @@ from playwright.sync_api import sync_playwright
 BASE = "http://127.0.0.1:5173"
 USER = "admin"
 PWD = "Admin@123"
+# 平台账号不参与后端租户名校验，但管理端登录表单是必填，按界面提示填「默认租户」。
+TENANT = "默认租户"
 
 
 def main() -> int:
@@ -35,6 +37,7 @@ def main() -> int:
 
         # 登录
         page.goto(f"{BASE}/login", wait_until="networkidle")
+        page.fill('input[autocomplete="organization"]', TENANT)
         page.fill("input[placeholder='admin']", USER)
         page.fill("input[type=password]", PWD)
         page.click(".login-btn")
