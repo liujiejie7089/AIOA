@@ -1,17 +1,17 @@
 # AIOA 长期记忆（精简版；日期细节见同目录 YYYY-MM-DD.md）
 
 ## 1. 项目与运行
-- AIOA=地级市 AI 公共服务平台。Vue3 管理端 shell(`web/apps/shell`) + SpringBoot 单体(`server/` 8 Maven 模块) + MySQL8(库`aioa`,root 无密码) + FastAPI agent(:8000) + 用户端单文件 H5(`user-client/index.html`)。方向：**改代码对齐设计文档**（五层架构）。
-- 规格源：`docs/10` 职责边界 · `docs/14` 账号 · `docs/15` 权限矩阵 · `docs/16` 组织作用域 · `docs/19` 七项优先事项(**进度只回写此文**) · `docs/20` 全链路 E2E · `docs/21` 层级流转 · `docs/22` 登录口径 · `docs/23` 权限审批与组织关联改造。
+- AIOA=地级市 AI 公共服务平台。Vue3 管理端 shell(`web/apps/shell`) + SpringBoot 单体(`server/` **9** Maven 模块) + MySQL8(库`aioa`,root 无密码) + FastAPI agent(:8000) + 用户端单文件 H5(`user-client/index.html`)。方向：**改代码对齐设计文档**（五层架构）。
+- 规格源：`docs/10` 职责边界 · `docs/14` 账号 · `docs/15` 权限矩阵 · `docs/16` 组织作用域 · `docs/19` 七项优先事项(**进度只回写此文**) · `docs/20` 全链路 E2E · `docs/21` 层级流转 · `docs/22` 登录口径 · `docs/23` 权限审批与组织关联改造 · **`docs/28` 未开工项规划与实施计划（"未开工项"唯一进度权威，收口记录在 §6）**。
 - 重打包：**先停 :8080** → `cd server && bash mvnw -DskipTests -q clean package` → `C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java -Dspring.flyway.validate-on-migrate=false -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar`。系统 `mvn` 损坏只能用 `mvnw`；**勿 `rm -rf target`**（用 `mvnw clean`）。
 - 改 `agent/app/**` 必须重启 uvicorn（非 `--reload`）。`bash start-all.sh` 一键起（幂等，日志 `logs/`）。
 - 端口 8080/8000/5173；H5 :5181 **只绑 127.0.0.1**。探端口 `netstat -ano|grep LISTENING|grep ":<port> "`，**不接 `| head`**。**长驻服务必须用后台常驻任务**（`nohup &` 被沙箱回收→ConnectError）。
 - 口令：租户侧全 `User@123`（含 `dsj_admin`）；平台 `admin/Admin@123`。账号：`zhangsan`(t0) · `dsj_admin`(t2 租户管理员) · `fagai_admin`(t2 inst1 机构管理员) · `fagai_liu`(t2 dept10 负责人) · `fagai_li`(t2 **dept11** 成员) · t9 全链 `znkj_admin`(3142)/`znkjyf_admin`(3143)/`znsfb_ldr`(3144)。
-- Flyway：新增前 `ls .../db/migration | sort -V | tail -3` 取实际最大+1（**当前 V44**）。已应用迁移**不可改**（checksum），只能追加。文档里的版本号只是预测。
+- Flyway：新增前 `ls .../db/migration | sort -V | tail -3` 取实际最大+1（**当前 V47**）。已应用迁移**不可改**（checksum），只能追加。文档里的版本号只是预测。
 
 ## 2. 接口与权限
 - 基址 `/api/v1`。登录 `POST /api/v1/auth/login` `{username,password,tenantName?}` → `data.accessToken`（**不是** `token`）。少写 `v1`→401，易误诊为密码错。
-- **业务错误=HTTP200+`code!=0`**；仅 401/403/404 改状态。**跨租户一律 404**（不泄露存在性），同租户越权才 403。`/auth/logout` 只留审计、**不吊销令牌**。
+- **业务错误=HTTP200+`code!=0`**；仅 401/403/404 改状态。**跨租户一律 404**（不泄露存在性），同租户越权才 403。`/auth/logout` **V46 起会服务端吊销令牌**（access+refresh 的 `jti` 写 `revoked_token`，旧 token 立即 401）——登出时必须**两个令牌都带上**，只带 access 则 refresh 仍能换新令牌 = 没登出。
 - 企业端 `/api/v1/org`，租户端 `/api/v1/tenant`（漏 `/org`→404 `NoResourceFoundException`，日志像 500）。
 - 审批：`POST /api/v1/workflow/tasks/{taskId}/decide` `{decision:APPROVE|REJECT}`；待办 `GET /workflow/tasks?scope=todo|mine|cc`，行 `id` 当单据号；计数 `GET /workflow/tasks/summary`。
 - 脚本 `httpx` 必须 `trust_env=False`。Playwright 用 `envs/default/Scripts/python.exe`+`channel="msedge"`（`versions/3.13.12` 无 playwright）。
@@ -33,19 +33,36 @@
 11. `aioa-resource` 与 `aioa-org` **互不依赖**；只有 `aioa-chat` 同时依赖二者。需同时读「权限/计费/工具」与「组织/审批/假种/知识库」的功能只能落 `aioa-chat`。
 12. **审批链递推(V39)**：`ApprovalFlowService.expandNodes()` 遇 `APPLICANT_SUPERIOR` **不展开固定 steps_json**，改用 `superiorLadder()` 从「申请人层级+1」起逐级展开，跳过 null/申请人本人(自审防护)/重复人。兜底分支必须把 `effectiveType` 置为**实际生效类型**。
 13. **V41/V42 职务与知会**：`org_duty`(租户级职务字典 DEPT_PRINCIPAL/DEPT_DEPUTY/ORG_LEADER/STAFF)+`org_member.duty_code` 是「谁是部门负责人」的**唯一权威口径**（原 27/8/3 三口径已收敛）。steps_json 新增 `levels`(1=只批一级) 与 `cc`(知会→生成 `task_role='CC'` 任务，**不阻塞**流程、不进 todo、不可 decide)。
-16. **V43 二期/三期（部门申请 + 知会已读）**：`approval_order.applicant_type`(`USER`|`DEPARTMENT`)+`applicant_department_id`、`permission_grant.applicant_type`、`approval_task.cc_read_at`。口径：① 部门申请起点 = **`ORG_ADMIN`**（跳过 DEPT_LEADER，保留自审防护与 levels 截断）；② 负责人判定**只认 `duty_code='DEPT_PRINCIPAL'`**，`job_title` 不作权限依据；③ 跨机构/跨租户/平台 → **404**、同机构非正职 → **403** 且**均不落库**；④ `summary.cc` 固定为**总条数**（不因已读减少），未读另开 `ccUnread`；⑤ **底部「待办」角标不计入 CC 的站内通知**（`tab = 待审数 + 未读通知数(剔除 refId ∈ 我的抄送单)`，仅 `user-client/index.html` 前端一处）；⑥ 授权仍发给**提交人本人**（部门共享权限未排期）。知会引擎侧无需改动——`expandCcNodes` 与 `bizType` 无关且四重过滤齐备。
-14. **同类播种器必须实测**：`ApprovalFlowProvisioner(@EventListener(TenantProvisionedEvent))` 只在建机构时触发 + 内部 try/catch 吞异常 = **失败静默**。
-15. **软删+唯一键**：`sys_user.username` 唯一键**覆盖软删行**，`AccountProvisioner.resolveOrCreate` 须先查软删行再 `reviveUser`，否则重建同名管理员 500。
+14. **V43 二期/三期（部门申请 + 知会已读）**：`approval_order.applicant_type`(`USER`|`DEPARTMENT`)+`applicant_department_id`、`permission_grant.applicant_type`、`approval_task.cc_read_at`。口径：① 部门申请起点 = **`ORG_ADMIN`**（跳过 DEPT_LEADER，保留自审防护与 levels 截断）；② 负责人判定**只认 `duty_code='DEPT_PRINCIPAL'`**，`job_title` 不作权限依据；③ 跨机构/跨租户/平台 → **404**、同机构非正职 → **403** 且**均不落库**；④ `summary.cc` 固定为**总条数**（不因已读减少），未读另开 `ccUnread`；⑤ **底部「待办」角标不计入 CC 的站内通知**（`tab = 待审数 + 未读通知数(剔除 refId ∈ 我的抄送单)`，仅 `user-client/index.html` 前端一处）；⑥ 授权仍发给**提交人本人**（部门共享权限未排期）。知会引擎侧无需改动——`expandCcNodes` 与 `bizType` 无关且四重过滤齐备。
+15. **V45 四期/五期（策略族 + 节点组）**：审批人解析改走 `cn.aioa.org.support.approver` 策略族（`ApproverResolver` 门面 + `DutyApproverStrategy` 抽象 + `DeptDuty`/`UnitDuty`/`DeptLeader` 三实现 + 4 个固定口径 Bean）。**策略返回「有序候选列表」**，消费层才决定用几个 ⇒ 这是会签/抢占的基础。同 `seq` = 同一「级」，`isCurrentNode` **按 `seq` 比较**（不是 id）、`countTasksOfOrder` 用 `COUNT(DISTINCT seq)`（前端「共 N 级」同理，**不能用时间线行数**）。`mode`=single/parallel/grab；`when`={field,op,value} 条件路由 —— **运行期宽容**（未知模式退 single、坏条件不拦）、**保存期严格**（`writeSteps` 校验 mode/when/cc，非法 400），且**永远至少留一个生效节点**（回落首个无条件节点→末级，并写「流程提示」）。`cc` 支持对象形态 `{"type":"SPECIFIC","user_id":N}`。
+16. **V46 令牌吊销**：`revoked_token` 表 + JWT 带 `jti`；`JwtAuthenticationFilter` 在**验签与过期通过之后**再查吊销表（顺序不能反，否则每请求多一次无效查询）。`TokenRevocationChecker` 是接口、`DbTokenRevocationChecker` 是实现（放在 `aioa-admin`，安全模块只依赖接口）。
+17. **V47 回填 + 新租户播种**：① `LeaveTypeProvisioner` 只对**零 `leave_type`** 的租户播种 6 类标准假种（常量与 tenant 2 逐字节一致），避免覆盖已有配置；② `cc` 回填**机构级**定义（V44 只做了租户级）；③ `org_member.duty_code` 回填**不触碰 `job_title` 含「负责人」的行**（保 A1/A2 零差异）、也不把局长/总经理强升 `ORG_LEADER`；④ 无负责人部门补人。
+18. **同类播种器必须实测**：`ApprovalFlowProvisioner` / `LeaveTypeProvisioner`(`@EventListener(TenantProvisionedEvent)`) 只在建机构时触发 + 内部 try/catch 吞异常 = **失败静默**。
+19. **软删+唯一键**：`sys_user.username` 唯一键**覆盖软删行**，`AccountProvisioner.resolveOrCreate` 须先查软删行再 `reviveUser`，否则重建同名管理员 500。
+20. **`decide()` 判定顺序**：CC 任务 `status='CC'`（不是 PENDING），所以**必须先判 `task_role=CC` 再判状态**；反过来会让「知会无需审批」分支**永不可达**，用户看到误导性的「该审批节点已处理（CC）」。
+21. **管理端配置页 = 能力的唯一入口**：引擎支持的能力若配置页配不出来，等于**能力事实上不可用**（只能直接打接口）。`web/apps/shell/src/constants/permissions.ts` 是审批人类型/职务/模式/条件字段的**唯一常量入口**，视图里不得再抄一份字面量（曾导致 `DEPT_DUTY`/`UNIT_DUTY` 在下拉里显示成裸码）。配置页须做 `_extra` **无损往返**：未建模键原样带回，否则管理员每次「打开-保存」都会悄悄丢配置。
 
-## 4. 已知缺口（docs/20 发现；勿当回归，也不要用放宽断言掩盖）
-- D-1 无状态 JWT 无服务端吊销（logout 后旧 token 仍可用）。D-2 路径参数类型不匹配→500（应 400）。D-3 H5 对 `/approvals?scope=todo` 无条件调用致成员 403（已 try/catch）。D-4 无 favicon → 每次 404。
-- D-5/6/7 孤儿与残留（`leave_balance` 3 行、`org_department` 6 条越权残留、`leave_type` 9 条 `V33ANNUAL*` 假种），均 tenant 4。D-8 新租户初始化缺口（审批流已由 Provisioner 修复，假种播种待补）。D-9 审批链固定模板**已 V39 修复**；残留 cosmetic：3142/3143 昵称均「傅宸」。
+## 4. 已知缺口（docs/20 发现）—— **2026-09-16 已全量收口，当前为空**
+`docs/28` 是「未开工项」的唯一进度权威，收口记录见其 §6。现状速查：
+- D-1 令牌吊销 **已修**(V46) · D-2 路径参数类型不匹配 **已修**(→400) · D-3 H5 待办 403 **已修**(按角色前置闸门) · D-4 favicon **已修**(两端内联 SVG) · D-8 新租户播种 **已修**(`LeaveTypeProvisioner`) · G-1 无负责人部门 **已修** · G-3 `duty_code` **已修**(27/116→116/116)。
+- **判定「有效数据，不改」**：D-5/6/7 —— tenant 4（教育局演示租户）`V33ANNUAL*` 假种被 17 条余额 + 35 条申请**引用**，删除会让既有单据失去类型定义；tenant 2 的 6 条越权部门**已软删**（=审计留痕）。G-2 —— tenant 9 重复昵称经 `seed_multi_tenant.py` 溯源 = **同一自然人兼多角色**（同一 `sys_user`），强改与 `docs/14` 冲突。
+- 结论：`e2e_full_system` 的 `GAP` 桶**当前为空**；`kchk()` 保留仅供将来新缺口使用。**修好缺口后必须同步删/升这些分桶**（否则报告会持续输出与事实相反的话）。
 
 ## 5. E2E 套件矩阵（`scripts/e2e_*.py` 已 gitignore，不入库）
-- `e2e_full_system.py` **152/152**（13 段跨层串联；`--no-browser` 跳渲染段）——**每轮收口必跑**。内置 `kchk()` 把「已知缺口」与「跑红」分桶（`GAP` 不计失败）。
-- 最近实测（V44 收口）：`e2e_v43_dept_applicant` 41/41 · `e2e_v43_cc_read` 40/40 · `e2e_v41_duty_levels` 48/48 · `e2e_v39_applicant_superior` 49/49 · `e2e_v36_grant_expert_review` 64/64 · `e2e_admin_personnel_scope` 57/57 · `e2e_v32_org_scope` 51/51 · `e2e_v36_stats_clamp` 66/66 · `e2e_v33_roles` 41/41 · `e2e_p0a_worker_intake` 41/41 · `e2e_worker_permission` 16/16 · `e2e_leave_flow_notify` 19/19 · `verify_v39_provisioner` 11/11 · `verify_config_effect` 11/11 · `e2e_login_tenant_name` 15/15 · `h5_v33_render` 28/28 · `admin_v39_todo_badge` 17/17 · `admin_v34_review_render` 8/8 · `check_org_structure_render` ALL PASS · `agent/tests/` 42 passed。
+- `e2e_full_system.py` **155/155**（13 段跨层串联；`--no-browser` 跳渲染段）——**每轮收口必跑**。
+  当前 **已知缺口 0 / 观察项 0**。内置 `kchk()` 把「已知缺口」与「跑红」分桶（`GAP` 不计失败）；
+  D-1/D-2/D-4 修好后 `S1-15`/`S5-13` 已**由 `kchk` 升为硬 `chk`**、favicon 观察项改为真断言 `S12-10`。
+- 最近实测（V45–V47 收口，2026-09-16）：`e2e_v45_approver_modes` **44/44** · `e2e_v45_misc_fixes` **27/27** ·
+  `e2e_v45_config_ui` **25/25**（API 往返 + 保存期严格性 + 浏览器渲染 + 无损往返）· `e2e_v43_dept_applicant` 41/41 ·
+  `e2e_v43_cc_read` 41/41 · `e2e_v41_duty_levels` 48/48 · `e2e_v39_applicant_superior` 49/49 ·
+  `e2e_v36_grant_expert_review` 64/64 · `e2e_admin_personnel_scope` 57/57 · `e2e_v32_org_scope` 51/51 ·
+  `e2e_v36_stats_clamp` 66/66 · `e2e_v33_roles` 41/41 · `e2e_p0a_worker_intake` 41/41 · `e2e_worker_permission` 16/16 ·
+  `e2e_leave_flow_notify` 19/19 · `verify_v39_provisioner` 11/11 · `verify_config_effect` 11/11 ·
+  `e2e_login_tenant_name` 15/15 · `h5_v33_render` 28/28 · `admin_v39_todo_badge` 17/17 ·
+  `admin_v34_review_render` 8/8 · `check_org_structure_render` ALL PASS · `agent/tests/` 42 passed。
 - **`h5_v33_render` 假红排查**：其「AI 解读」段依赖 agent。若用 `agent/.venv` + `127.0.0.1` 起 agent，请求体被丢弃 → 422 → 假红；**必须按 `start-all.sh` 口径**（`envs/default` python + `--host 0.0.0.0`）重启 agent 后再判。
 - **套件会凭空消失**（gitignore）→ 跑前先 `ls scripts/ | grep -E "^e2e_"`，别照抄本表。只改前端也必须跑 `vue-tsc --noEmit`（少 import 常量表现为页面空白）。
+- **本地哨兵**（非 e2e 命名，也是本地工具）：`scripts/_syntax_h5.js`（H5 语法）、`scripts/_refaudit_h5.js`（**H5 内联 `onX="fn()"` 的悬空函数引用** —— 单文件 H5 无打包器无类型检查，`activateTodoTab` 曾「从未定义」却天天被调用）。改 H5 后顺手跑一次。
 
 ### 断言纪律（写新套件必读）
 - **禁固定页长/绝对条数**：用 `len(items)==min(total,size)`。判据：数据涨 10 倍、清库后该断言还成立吗？
@@ -53,6 +70,8 @@
 - **配额类套件必须自治**：`fagai_li` 年假仅 10 天；段首顶到「已用+10」；撤销链路用**不占额度**的事假；不传 `days` 且落周日返回「申请天数为 0」。
 - **分清「口令/选择器改动」与「真回归」**：1001=口令错，1004=租户名不匹配。**按 `password_hash` 反查真实口令**再断言。
 - **改权限/可见性/生效态/登录口径后必须全局搜既有套件旧口径断言并连跑两次**。历史遗留行≠代码 bug：可回填就**加 Flyway 回填迁移修数据、断言原样保留**，不可回填才限定本次运行数据并记因。**绝不为转绿而放宽断言。**
+- **动真实租户级配置的验收，`finally` 必须按「原字节」还原**：先登记 `(id, 原 steps_json)` 再改，不要用「内置兜底版本」猜着还原（会把演示数据改坏）。
+- **管理端配置页验收要「渲染 + 往返」**：只断言接口能存不够 —— 必须浏览器渲染出控件（用 **label 文本**匹配，别绑 `el-select` 内部 DOM），并做「**打开弹窗后不改动直接保存**，断言 `steps_json` 与保存前完全一致」，再种一个**页面没建模的键**确认它活下来（`_extra` 无损）。范本 `scripts/e2e_v45_config_ui.py`。
 
 ## 6. Git 远端
 - `origin`=内网 Gitea `172.16.8.249:3000`：沙箱不可达 + push-to-create 关闭(403)，本地无解。
@@ -68,5 +87,12 @@
     git push ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git main
   ```
 - 约 5–8 分钟，**用后台任务**跑，别放前台等。
-- 收口校验不靠 push 返回码：比对 `git rev-parse HEAD` 与 `git -c http.sslVerify=false ls-remote github refs/heads/main`
-  （`ls-remote` 是读操作，**无需凭证**）。
+- 收口校验**不靠 push 返回码**：比对本地 `git rev-parse HEAD` 与远端
+  ```bash
+  GIT_SSH_COMMAND='ssh -i "C:/Users/刘尖尖/.ssh/id_rsa" -o IdentitiesOnly=yes \
+    -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no' \
+    git ls-remote ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git refs/heads/main
+  ```
+  两个 SHA 一致才算推成功。（**勿**用 `git ls-remote github refs/heads/main` —— 那是 HTTPS，需凭证必失败。）
+- 收口前必查**无跟踪脏文件**：`git status --porcelain | grep -v '^??'` 应为空。
+  `.gitignore` 只忽略 `e2e_*.py`，`h5_v33_render.py` 等**老脚本是跟踪文件**，改了不提交就留脏。
