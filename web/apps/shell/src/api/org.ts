@@ -307,7 +307,9 @@ export function advanceOnboardingAll(institutionId: number): Promise<Record<stri
   return http.post('/tenant/onboarding/' + institutionId + '/advance-all').then((r) => unwrap<Record<string, unknown>>(r))
 }
 export function listApprovalFlowDefs(institutionId?: number): Promise<ApprovalFlowDef[]> {
-  return http.get('/tenant/approval-flow-defs', { params: institutionId ? { institutionId } : {} })
+  // 注意：用 `!= null` 而非真值判断 —— institutionId=0 是**租户级**默认流的合法取值，
+  // 用真值判断会把 0 丢掉而返回全部（含机构级）流程。
+  return http.get('/tenant/approval-flow-defs', { params: institutionId != null ? { institutionId } : {} })
     .then((r) => unwrap<ApprovalFlowDef[]>(r))
 }
 export function saveApprovalFlowDef(body: Record<string, unknown>): Promise<ApprovalFlowDef> {

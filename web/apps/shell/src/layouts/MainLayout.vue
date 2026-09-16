@@ -68,9 +68,42 @@
               <template #title>{{ item.appName }}</template>
             </el-menu-item>
           </el-sub-menu>
-          <el-menu-item index="/approvals">
+          <!--
+            审批中心：菜单右上角红点 = 「待我处理」条数。
+            口径与后端 /workflow/tasks?scope=todo 一致（指派给我 + 已轮到我这一级的 PENDING 节点），
+            只取计数不下发明细（见 api/resource.ts workflowTodoSummary）。
+          -->
+          <el-menu-item index="/approvals" style="position: relative">
             <el-icon><Tickets /></el-icon>
             <template #title>审批中心</template>
+            <span
+              v-if="todoCount > 0"
+              :title="`${todoCount} 条待你处理`"
+              style="
+                position: absolute;
+                right: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                min-width: 16px;
+                height: 16px;
+                line-height: 16px;
+                padding: 0 4px;
+                border-radius: 8px;
+                background: #e24b4a;
+                color: #fff;
+                font-size: 11px;
+                text-align: center;
+              "
+              >{{ collapsed ? '' : todoCount > 99 ? '99+' : todoCount }}</span
+            >
+          </el-menu-item>
+          <!--
+            审批流配置（三期 C-02/A3-9）：租户端可视化配置各业务审批流的「知会对象」。
+            可见范围与后端 /tenant/approval-flow-defs（requireTenantAdmin）一致 = TENANT_SCOPE_ROLES。
+          -->
+          <el-menu-item v-if="showTenantMenu" index="/approval-flows">
+            <el-icon><SetUp /></el-icon>
+            <template #title>审批流配置</template>
           </el-menu-item>
           <el-menu-item index="/kb">
             <el-icon><Collection /></el-icon>
@@ -143,13 +176,17 @@
             <el-icon><Stamp /></el-icon>
             <template #title>内容审核</template>
           </el-menu-item>
+          <el-menu-item v-if="showReviewRecordMenu" index="/review-records">
+            <el-icon><DocumentChecked /></el-icon>
+            <template #title>审核记录</template>
+          </el-menu-item>
           <el-menu-item v-if="isPlatformAdmin" index="/tenants">
             <el-icon><OfficeBuilding /></el-icon>
             <template #title>租户管理</template>
           </el-menu-item>
-          <el-menu-item v-if="isPlatformAdmin" index="/admin">
+          <el-menu-item v-if="showAdminMenu" index="/admin">
             <el-icon><Setting /></el-icon>
-            <template #title>系统管理</template>
+            <template #title>{{ isPlatformAdmin ? '系统管理' : '人员管理' }}</template>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -179,10 +216,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AssistantDrawer from '@/components/assistant/AssistantDrawer.vue'
+import { workflowTodoSummary } from '@/api/resource'
 import { useAppsStore } from '@/stores/apps'
 import { useAuthStore } from '@/stores/auth'
 import { useAssistantStore } from '@/stores/assistant'
@@ -196,6 +234,8 @@ import {
 import {
   EXPERT_MANAGER_ROLES,
   ORG_VIEW_ROLES,
+  PERSONNEL_VIEW_ROLES,
+  REVIEW_RECORD_ROLES,
   ROLE,
   TENANT_SCOPE_ROLES,
   WORKER_MANAGER_ROLES,
@@ -249,6 +289,38 @@ const showOrgMenu = computed(() => hasAnyRole(roles.value, ORG_VIEW_ROLES))
  */
 const showWorkerMenu = computed(() => hasAnyRole(roles.value, WORKER_MANAGER_ROLES))
 const showExpertMenu = computed(() => hasAnyRole(roles.value, EXPERT_MANAGER_ROLES))
+/** 审核记录（V36 需求④）：平台管理员看全量，租户管理员看本租户。 */
+const showReviewRecordMenu = computed(() => hasAnyRole(roles.value, REVIEW_RECORD_ROLES))
+/**
+ * 系统管理入口：四级管理者都能进（里面是「人员管理」）。
+ * 平台级配置卡片（角色 / 权限点 / 功能管理 / 模型管理）由 AdminView 内部按
+ * isPlatformAdmin 收起 —— 菜单层不再一刀切，否则机构管理员连数据都看不到。
+ */
+const showAdminMenu = computed(() => hasAnyRole(roles.value, PERSONNEL_VIEW_ROLES))
+
+/**
+ * 「审批中心」未处理红点。
+ *
+ * <p>只取计数、不拉整棵待办树：红点要轮询，回明细（每单还带 timeline）代价过高。
+ * 后端 {@code /workflow/tasks/summary} 与 {@code ?scope=todo} 同口径 ——
+ * 「指派给我 + 已轮到我这一级的 PENDING 节点 + 单据未终态」。</p>
+ *
+ * <p>失败一律熄灭而不是弹错：非审批人拿到 403 属预期，后端不可达也不该打断工作。</p>
+ */
+const todoCount = ref(0)
+let todoTimer: number | undefined
+
+async function refreshTodo() {
+  try {
+    const s = await workflowTodoSummary()
+    todoCount.value = Number(s?.todo || 0)
+  } catch {
+    todoCount.value = 0
+  }
+}
+
+// 处理完一单跳回列表时要立刻回落，不能等下一次轮询（否则红点看着像没消）
+watch(() => route.fullPath, () => void refreshTodo())
 
 async function onCommand(command: string | number | object) {
   if (command === 'logout') {
@@ -268,6 +340,9 @@ async function onCommand(command: string | number | object) {
 onMounted(async () => {
   initBridge()
   void apps.list()
+  // 红点：进入即拉一次，之后每 60s 兜底刷新（另有路由切换时的即时刷新）
+  void refreshTodo()
+  todoTimer = window.setInterval(() => void refreshTodo(), 60000)
   // 租户端页面（机构/入驻/授权/分摊）依赖作用域，先解析再放行子路由
   if (showTenantMenu.value) {
     try {
@@ -275,6 +350,12 @@ onMounted(async () => {
     } catch {
       tenantState.loaded.value = true // 失败也要放行，避免页面永久空白
     }
+  }
+})
+
+onUnmounted(() => {
+  if (todoTimer !== undefined) {
+    window.clearInterval(todoTimer)
   }
 })
 </script>

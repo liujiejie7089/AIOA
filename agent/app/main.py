@@ -112,6 +112,50 @@ async def complete(req: CompleteRequest) -> dict:
     }
 
 
+@app.post("/internal/v1/worker-intent")
+async def worker_intent(payload: dict) -> dict:
+    """数字员工「意图识别」：自然语言诉求 → 数字员工类型（内部端点，不调 LLM）。
+
+    调用方：Java 侧 `POST /api/v1/workers/intent`。
+    Java 收到类型后再补权限码、可申请性与申请路径 —— 权限映射属治理事实，只在 Java 侧定义一份。
+    """
+    from app.core.worker_intake import classify
+
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise GuardError("BAD_REQUEST", "text 不能为空")
+    result = classify(text)
+    logger.info("worker-intent role=%s confidence=%s", result.get("role"), result.get("confidence"))
+    return result
+
+
+@app.post("/internal/v1/answer-shape")
+async def answer_shape(payload: dict) -> dict:
+    """数字员工「回答结构」契约：确定性边界卡 + 结构规则 + 可选的自检。
+
+    调用方：Java 侧 `GET /api/v1/workers/role-types` 的补充、以及需要展示「能力边界卡」的页面。
+    三件事互相独立，因此一个端点同时返回：
+
+      * ``card``   —— 不经模型的固定边界文案（角色类型元数据），前端可直接渲染成卡片；
+      * ``rules``  —— 注入系统提示的六段结构规则（生成侧软约束）；
+      * ``audit``  —— 传入 ``answer`` 时，对回答做结构自检（判定侧硬结果）。
+
+    ``card`` 之所以不走模型：边界必须与「创建前预览」「会话中提示」两处完全一致，
+    而任何经模型的改写都会让两处口径漂移。
+    """
+    from app.core.answer_shape import audit, audit_hint, card, rules
+
+    role = str(payload.get("role") or "GENERAL")
+    out = {"card": card(role), "rules": rules(payload.get("scope") or None)}
+    answer = payload.get("answer")
+    if answer is not None and str(answer).strip():
+        result = audit(str(answer))
+        result["hint"] = audit_hint(result)
+        out["audit"] = result
+    logger.info("answer-shape role=%s audit=%s", role, "audit" in out)
+    return out
+
+
 @app.exception_handler(RequestValidationError)
 async def on_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.warning("bad request %s: %s", request.url.path, json.dumps(exc.errors(), ensure_ascii=False, default=str))

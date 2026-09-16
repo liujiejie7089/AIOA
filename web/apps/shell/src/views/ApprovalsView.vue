@@ -28,8 +28,15 @@
             <el-tag size="small" effect="plain">{{ bizLabel(row.bizType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="标题" min-width="220" show-overflow-tooltip>
+        <el-table-column label="标题" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
+            <!-- 二期 P-1/A2-6：部门申请单显示「部门申请 · {部门名}」徽标，主体与提交人可区分 -->
+            <el-tag
+              v-if="row.applicantType === 'DEPARTMENT'"
+              size="small"
+              effect="plain"
+              style="margin-right: 6px"
+            >部门申请{{ row.applicantDepartmentName ? ' · ' + row.applicantDepartmentName : '' }}</el-tag>
             <span>{{ row.title || row.bizType || '（无标题）' }}</span>
           </template>
         </el-table-column>
@@ -81,6 +88,13 @@
           <el-descriptions-item label="单号">{{ detailRow.id }}</el-descriptions-item>
           <el-descriptions-item label="类型">{{ bizLabel(detailRow.bizType) }}</el-descriptions-item>
           <el-descriptions-item label="标题" :span="2">{{ detailRow.title || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="申请主体" :span="2">
+            <el-tag v-if="detailRow.applicantType === 'DEPARTMENT'" size="small" effect="plain">
+              部门申请{{ detailRow.applicantDepartmentName ? ' · ' + detailRow.applicantDepartmentName : '' }}
+            </el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">个人申请</el-tag>
+            <span class="text-sub" style="margin-left: 8px">提交人：{{ detailRow.applicantName || detailRow.creatorName || '—' }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="发起人">{{ detailRow.applicantName || detailRow.creatorName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="statusTag(detailRow.status)" effect="plain">{{ statusLabel(detailRow.status) }}</el-tag>
@@ -230,6 +244,8 @@ const APPROVER_TYPE_LABEL: Record<string, string> = {
   DEPT_LEADER: '部门负责人',
   ORG_ADMIN: '企业管理员',
   TENANT_ADMIN: '租户管理员',
+  PLATFORM_ADMIN: '平台管理员',
+  APPLICANT_SUPERIOR: '申请人的上级',
   SPECIFIC: '指定审批人'
 }
 

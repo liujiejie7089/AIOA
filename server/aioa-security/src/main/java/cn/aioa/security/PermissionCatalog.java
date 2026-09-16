@@ -1,6 +1,5 @@
-package cn.aioa.resource.support;
+package cn.aioa.security;
 
-import cn.aioa.security.AuthUser;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +19,7 @@ import java.util.Set;
  * </ul>
  * 二者必须同时校验：有权限点才谈得上范围，有范围才不会越界。
  *
- * <p>{@code AuthUser.permissions} 目前始终为空（JWT 不携带细粒度权限），故以角色判定；
+ * <p>{@code AuthUser.permissions} 的来源见 {@link PermissionResolver}（V36 起可由权限申请审批链路发放）；
  * 将来接入 {@code sys_permission} 只需在 {@link #holds} 优先判断 permissions，调用方无需改动。</p>
  */
 public final class PermissionCatalog {
@@ -131,6 +130,60 @@ public final class PermissionCatalog {
     private PermissionCatalog() {
     }
 
+    /** 权限码 → 中文名（用于申请单与目录展示，避免把英文码裸露给用户）。 */
+    private static final Map<String, String> PERMISSION_NAMES = Map.of(
+            CHAT_BASIC, "通用对话",
+            KB_READ, "知识库检索",
+            DOC_DRAFT, "公文起草",
+            WORKER_USE, "使用数字员工",
+            WORKER_CREATE, "创建数字员工",
+            WORKER_EDIT_SELF, "修改自己的数字员工",
+            WORKER_MANAGE, "管理数字员工",
+            EXPERT_MANAGE, "专家管理",
+            APPROVAL_LEAVE, "请假审批");
+
+    /**
+     * 权限码 → 对应数字员工类型（申请单「目的」展示用）。
+     *
+     * <p>只有真正对应某类越权数字员工的权限码才在此登记，其余返回 null。
+     * 用 {@code Map.of} 不能存 null，故只登记有映射的项。</p>
+     */
+    private static final Map<String, String> WORKER_TYPE_OF = Map.of(
+            APPROVAL_LEAVE, "LEAVE_APPROVER");
+
+    /** 权限码中文名；未知返回权限码本身。 */
+    public static String nameOf(String permission) {
+        if (permission == null) {
+            return null;
+        }
+        return PERMISSION_NAMES.getOrDefault(permission, permission);
+    }
+
+    /** 权限码对应的数字员工类型；无映射返回 null。 */
+    public static String workerTypeOf(String permission) {
+        return permission == null ? null : WORKER_TYPE_OF.get(permission);
+    }
+
+    /**
+     * 可申请权限码清单。
+     *
+     * <p>排除 {@code ALL} 类权限（全体登录用户天然持有，申请无意义），
+     * 只保留需要审批发放的「稀缺权限」。排序固定，便于前端稳定渲染。</p>
+     */
+    public static List<String> applicablePermissions() {
+        return GRANTS.entrySet().stream()
+                .filter(e -> !ALL.equals(e.getValue()))
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    /** 该权限码是否可申请（既存在定义、又非全员持有）。 */
+    public static boolean applicable(String permission) {
+        return permission != null && GRANTS.containsKey(permission)
+                && !ALL.equals(GRANTS.get(permission));
+    }
+
     /** 权限码 → 允许的角色集合；未知权限码返回空集合（默认拒绝）。 */
     public static Set<String> rolesOf(String permission) {
         return GRANTS.getOrDefault(permission, Set.of());
@@ -155,6 +208,21 @@ public final class PermissionCatalog {
         }
         if (user.getPermissions() != null && user.getPermissions().contains(permission)) {
             return true;
+        }
+        return holdsByRole(user, permission);
+    }
+
+    /**
+     * 仅按<b>角色</b>判定是否持有该权限（不含细粒度授权）。
+     *
+     * <p>为什么要单独一个方法：{@link #holds} 是「角色 ∪ 授权」的并集，无法回答
+     * 「这个权限到底是怎么来的」。权限来源对用户是有意义的信息 ——
+     * 角色内置的权限收回需要改角色，而申请来的授权可以自己回收，
+     * 前端必须区分展示，否则会把「可回收」误显示成「不可变」。</p>
+     */
+    public static boolean holdsByRole(AuthUser user, String permission) {
+        if (user == null || permission == null || permission.isBlank()) {
+            return false;
         }
         Set<String> allowed = rolesOf(permission);
         if (allowed.isEmpty()) {

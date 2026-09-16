@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { TOKEN_KEY } from '@/api'
-import { EXPERT_MANAGER_ROLES, PLATFORM_ONLY_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
+import { EXPERT_MANAGER_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -22,6 +22,13 @@ const routes: RouteRecordRaw[] = [
         name: 'approvals',
         component: () => import('@/views/ApprovalsView.vue'),
         meta: { title: '审批中心' }
+      },
+      {
+        // 三期 C-02/A3-9：租户端审批流配置（可视化配「知会对象」）
+        path: 'approval-flows',
+        name: 'approval-flows',
+        component: () => import('@/views/ApprovalFlowConfigView.vue'),
+        meta: { title: '审批流配置', allowRoles: TENANT_SCOPE_ROLES }
       },
       { path: 'kb', name: 'kb', component: () => import('@/views/KbView.vue'), meta: { title: '知识库' } },
       {
@@ -97,12 +104,21 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/CostAllocView.vue'),
         meta: { title: '费用分摊', minTier: 'tenant'  }
       },
-      { path: 'admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { title: '系统管理', minTier: 'platform'  } },
+      {
+        path: 'admin',
+        name: 'admin',
+        component: () => import('@/views/AdminView.vue'),
+        // 人员管理对四级管理者开放（数据范围由后端按档位收窄）；
+        // 平台级配置（角色/权限点/功能管理/模型管理）在页面内按 isPlatformAdmin 收起。
+        meta: { title: '系统管理', allowRoles: PERSONNEL_VIEW_ROLES }
+      },
       { path: 'tenants', name: 'tenants', component: () => import('@/views/TenantAdminView.vue'), meta: { title: '租户管理', minTier: 'platform'  } },
       { path: 'experts', name: 'experts', component: () => import('@/views/ExpertConfigView.vue'), meta: { title: '专家配置', allowRoles: EXPERT_MANAGER_ROLES } },
       { path: 'tools', name: 'tools', component: () => import('@/views/ToolRegistryView.vue'), meta: { title: '业务工具', minTier: 'tenant' } },
       // V34：租户管理员创建的数字员工/专家需平台管理员审核后生效
       { path: 'content-reviews', name: 'content-reviews', component: () => import('@/views/ContentReviewView.vue'), meta: { title: '内容审核', allowRoles: PLATFORM_ONLY_ROLES } },
+      // V36 需求④：审核记录中心（平台管理员全量 / 租户管理员本租户）
+      { path: 'review-records', name: 'review-records', component: () => import('@/views/ReviewRecordsView.vue'), meta: { title: '审核记录', allowRoles: REVIEW_RECORD_ROLES } },
       { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { title: '个人信息' } }
     ]
   },

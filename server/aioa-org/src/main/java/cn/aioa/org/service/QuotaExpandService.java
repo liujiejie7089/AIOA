@@ -66,7 +66,7 @@ public class QuotaExpandService implements ApprovalCallback {
                         "额度扩容申请：" + it.getName() + " 申请增加 " + tokens + " 词元",
                         Vals.str(body, "reason", "机构配额不足，申请扩容"),
                         formData, institutionId, null, null, actor.getUserId(),
-                        AuditRecorder.displayName(actor), null));
+                        AuditRecorder.displayName(actor), null, null, null));
         return flow;
     }
 

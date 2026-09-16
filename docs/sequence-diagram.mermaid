@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    participant H5 as H5(用户端)
+    participant GC as PermissionGrantController
+    participant GS as PermissionGrantService
+    participant G as OrgGuard
+    participant FS as ApprovalFlowService
+    participant WC as WorkflowController
+    participant M as OrgStatMapper
+
+    Note over H5,M: 序列 1 · 部门名义申请（二期 P3）
+    H5->>GC: POST /org/permissions/apply {applyAsDepartment:true, departmentId:9}
+    GC->>GS: apply(tenantId, actor, req)
+    GS->>G: requireDeptLeader(9)
+    G->>G: resolveInstitutionId(user) 校验归属（跨机构/平台 → 404）
+    G->>G: duty_code='DEPT_PRINCIPAL' 判定（非正职 → 403）
+    G-->>GS: 通过
+    GS->>GS: 幂等分账 (dept=D, code, applicant_type='DEPARTMENT')
+    GS->>M: insertPermissionGrant(applicant_type='DEPARTMENT')
+    GS->>FS: submit(SubmitReq(..., APPLICANT_DEPARTMENT, 9))
+    FS->>M: insertApprovalOrder(applicant_type, applicant_department_id)
+    FS->>FS: expandNodes → superiorLadder(start=1 起算 ORG_ADMIN)
+    FS->>M: insertApprovalTask(seq=1, approver=机构管理员)
+    FS->>M: insertApprovalTask(task_role='CC', seq=900+)
+    FS->>M: insertNotification(知会/待办)
+    FS-->>GS: {orderId, timeline, currentApproverName}
+    GS-->>H5: 200 {orderId, applicantType:'DEPARTMENT', applicantDepartmentId:9}
+
+    Note over H5,M: 序列 2 · 知会点开自动已读（三期 P4）
+    H5->>WC: POST /workflow/cc/{taskId}/read
+    WC->>FS: markCcRead(taskId, actor)
+    FS->>M: selectCcTask(taskId)
+    alt task 不存在 / 非本人
+        FS-->>H5: 404（不泄露存在性）
+    else task_role='APPROVE'
+        FS-->>H5: 200 code!=0「审批任务无需标记已读」
+    else 本人 CC 任务
+        FS->>M: markCcRead(id, now) 仅当 cc_read_at IS NULL（幂等）
+        FS->>M: markNotificationsReadOfOrder(userId, orderId)
+        FS->>M: countMyUnreadCcTasks(userId)
+        FS-->>H5: 200 {read:true, readAt, ccUnread}
+        H5->>H5: 本地 read=true；ccUnread-1；renderTodo()
+    end

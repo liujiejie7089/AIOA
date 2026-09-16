@@ -52,8 +52,38 @@ public class ExpertConfig {
     private Long createdBy;
 
     /**
+     * 审核态（V36）：{@code PENDING} / {@code APPROVED} / {@code REJECTED}。
+     *
+     * <p>需求⑤「专家配置应支持租户自行配置，但必须经过审核」：租户管理员写团队层
+     * （TENANT/INSTITUTION/DEPT/GLOBAL）配置时落 {@code PENDING}，需平台管理员放行；
+     * {@code USER} 层只影响本人，直接 {@code APPROVED}。</p>
+     *
+     * <p>历史行（V27/V28 及本次迁移前）默认 {@code APPROVED}，行为不变。</p>
+     */
+    private String auditStatus;
+
+    /** 审核意见（驳回必填）。 */
+    private String auditNote;
+
+    /** 审核人（平台管理员）。 */
+    private Long reviewedBy;
+
+    /** 审核时间。 */
+    private LocalDateTime reviewedAt;
+
+    /**
      * 配置片段采用「物理删除」语义（覆盖规则的删除 = 恢复继承低层级），
      * 不保留软删历史，避免唯一键 (tenant_id,scope_type,scope_id,expert_key) 被软删残留占用。
      */
     private LocalDateTime deletedAt;
+
+    /** 审核态常量（与 {@code ContentReviewService} 同源字符串）。 */
+    public static final String AUDIT_PENDING = "PENDING";
+    public static final String AUDIT_APPROVED = "APPROVED";
+    public static final String AUDIT_REJECTED = "REJECTED";
+
+    /** 是否为「已生效」态：NULL 视为 APPROVED，兼容历史行。 */
+    public static boolean effective(String auditStatus) {
+        return auditStatus == null || auditStatus.isBlank() || AUDIT_APPROVED.equalsIgnoreCase(auditStatus);
+    }
 }

@@ -3,6 +3,7 @@ package cn.aioa.org.controller;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.org.entity.LeaveRequest;
+import cn.aioa.org.mapper.OrgStatMapper;
 import cn.aioa.org.service.ApprovalFlowService;
 import cn.aioa.org.service.LeaveService;
 import cn.aioa.org.support.OrgGuard;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,16 +36,45 @@ public class WorkflowController {
     private final OrgGuard guard;
     private final ApprovalFlowService flowService;
     private final LeaveService leaveService;
+    private final OrgStatMapper statMapper;
 
     // ================================================================== 审批
 
-    /** 待我审批（scope=todo 默认）或我发起的（scope=mine）。 */
+    /**
+     * 待办计数 —— 管理端菜单红点的唯一数据源。
+     *
+     * <p>与 {@code /workflow/tasks?scope=todo} <b>同口径</b>（见
+     * {@code OrgStatMapper.countMyTodoTasks} 的四个条件），只是不下发明细：
+     * 红点会被每 60 秒轮询一次，回整棵待办树（含每单 timeline）代价过高。</p>
+     *
+     * <p>返回 {@code todo} = 待我处理（点亮红点），{@code mine} = 我发起且仍在途，
+     * {@code cc} = 抄送我的（知会 / 待阅，<b>不点亮待办红点</b> —— 它不阻塞流转，
+     * 单独一档避免与「要我动手」混淆）。</p>
+     */
+    @GetMapping("/workflow/tasks/summary")
+    public ApiResponse<Map<String, Object>> taskSummary() {
+        AuthUser u = guard.requireApprover();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("todo", statMapper.countMyTodoTasks(u.getUserId()));
+        out.put("mine", statMapper.countMyPendingOrders(u.getUserId()));
+        // cc = 抄送我的**总条数**（一期语义，硬约束：不得因已读而减少）；
+        // ccUnread = 未读知会数（三期 C-06，随标记已读递减）。
+        out.put("cc", statMapper.countMyCcTasks(u.getUserId()));
+        out.put("ccUnread", statMapper.countMyUnreadCcTasks(u.getUserId()));
+        out.put("generatedAt", LocalDateTime.now().toString());
+        return ApiResponse.ok(out);
+    }
+
+    /** 待我审批（scope=todo 默认）、我发起的（scope=mine）或抄送我的（scope=cc）。 */
     @GetMapping("/workflow/tasks")
     public ApiResponse<List<Map<String, Object>>> tasks(
             @RequestParam(name = "scope", defaultValue = "todo") String scope) {
         AuthUser u = guard.requireApprover();
         if ("mine".equalsIgnoreCase(scope)) {
             return ApiResponse.ok(flowService.mine(u));
+        }
+        if ("cc".equalsIgnoreCase(scope)) {
+            return ApiResponse.ok(flowService.cc(u));
         }
         return ApiResponse.ok(flowService.todo(u));
     }
@@ -78,6 +110,19 @@ public class WorkflowController {
     public ApiResponse<List<Map<String, Object>>> timeline(@PathVariable Long orderId) {
         guard.requireApprover();
         return ApiResponse.ok(flowService.timeline(orderId));
+    }
+
+    /**
+     * 标记知会（抄送）条目为已读 —— 三期 C-04。
+     *
+     * <p>幂等：重复调用成功且 {@code readAt} 不倒退；非本人任务 404（不泄露存在性）；
+     * {@code task_role='APPROVE'} 的审批任务返回业务错误。点开知会详情即调用本接口，
+     * 并联动置该单推给本人的站内通知已读（C-09）。</p>
+     */
+    @PostMapping("/workflow/cc/{taskId}/read")
+    public ApiResponse<Map<String, Object>> markCcRead(@PathVariable Long taskId) {
+        AuthUser u = guard.requireApprover();
+        return ApiResponse.ok(flowService.markCcRead(taskId, u));
     }
 
     // ================================================================== 请假

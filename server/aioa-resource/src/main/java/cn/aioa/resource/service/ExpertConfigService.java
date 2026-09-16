@@ -85,10 +85,14 @@ public class ExpertConfigService {
         long tid = tenantId == null ? 0L : tenantId;
 
         // 一次取回「全局 + 本租户」下与该专家相关的所有片段，内存里按层过滤
+        // V36 需求⑤：待审（PENDING）/ 已驳回（REJECTED）的片段**不参与解析**，
+        // 自然回落上一层（继承语义），否则「审核」形同虚设。
         List<ExpertConfig> rows = configMapper.selectList(new LambdaQueryWrapper<ExpertConfig>()
                 .in(ExpertConfig::getTenantId, List.of(0L, tid))
                 .in(ExpertConfig::getExpertKey, List.of(ExpertConfig.WILDCARD, expertKey))
-                .isNull(ExpertConfig::getDeletedAt));
+                .isNull(ExpertConfig::getDeletedAt)
+                .and(w -> w.eq(ExpertConfig::getAuditStatus, ExpertConfig.AUDIT_APPROVED)
+                        .or().isNull(ExpertConfig::getAuditStatus)));
 
         ExpertSettings merged = defaults();
         Map<String, String> sources = new LinkedHashMap<>();
@@ -146,10 +150,22 @@ public class ExpertConfigService {
     /**
      * 写入/更新一条配置片段（幂等 upsert）。
      *
-     * @param onlyKeys 非空时只保留这些键（用于局部更新），为空表示整体替换
+     * <p>审核态（V36 需求⑤）由调用方给出 {@code auditStatus}：</p>
+     * <ul>
+     *   <li>{@code APPROVED} —— 平台管理员写入，或 {@code USER} 层（只影响本人）写入，直接生效；</li>
+     *   <li>{@code PENDING} —— 租户 / 企业管理员写团队层，需平台管理员放行；
+     *       若同键已有待审行则**就地更新**，不新建第二行（避免唯一键冲突与草稿堆叠），
+     *       且清空上一轮审核意见，避免「用旧驳回理由看待新内容」；</li>
+     *   <li>{@code null} —— 保持原有审核态（历史调用方兼容；新行为 {@code APPROVED}）。</li>
+     * </ul>
      */
     public ExpertConfig save(Long tenantId, String scopeType, Long scopeId, String expertKey,
                              Map<String, Object> patch, boolean merge, Long operatorId) {
+        return save(tenantId, scopeType, scopeId, expertKey, patch, merge, operatorId, null);
+    }
+
+    public ExpertConfig save(Long tenantId, String scopeType, Long scopeId, String expertKey,
+                             Map<String, Object> patch, boolean merge, Long operatorId, String auditStatus) {
         if (scopeType == null || !LAYER_ORDER.contains(scopeType)) {
             throw BizException.badRequest("scopeType 必须是 GLOBAL/TENANT/INSTITUTION/DEPT/USER");
         }
@@ -194,13 +210,24 @@ public class ExpertConfigService {
         } catch (Exception e) {
             throw BizException.badRequest("配置序列化失败");
         }
+        if (auditStatus != null) {
+            row.setAuditStatus(auditStatus);
+            if (ExpertConfig.AUDIT_PENDING.equalsIgnoreCase(auditStatus)) {
+                // 内容已变 → 旧审核结论失效，避免用上一轮的意见看待新内容
+                row.setAuditNote(null);
+                row.setReviewedBy(null);
+                row.setReviewedAt(null);
+            }
+        } else if (row.getAuditStatus() == null || row.getAuditStatus().isBlank()) {
+            row.setAuditStatus(ExpertConfig.AUDIT_APPROVED);
+        }
         if (row.getId() == null) {
             configMapper.insert(row);
         } else {
             configMapper.updateById(row);
         }
-        log.info("expert_config saved: tenant={} {}/{} expert={} keys={}",
-                tid, scopeType, sid, expertKey, next.keySet());
+        log.info("expert_config saved: tenant={} {}/{} expert={} keys={} audit={}",
+                tid, scopeType, sid, expertKey, next.keySet(), row.getAuditStatus());
         return row;
     }
 

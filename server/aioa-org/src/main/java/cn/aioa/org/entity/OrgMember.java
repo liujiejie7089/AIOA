@@ -40,7 +40,25 @@ public class OrgMember {
 
     private String employeeNo;
 
+    /** 展示文案职务（自由文本，如「算法部负责人」）。 */
     private String jobTitle;
+
+    /**
+     * 机器可读职务码（对应 {@code org_duty.code}）—— 对标 O2OA 的 Duty。
+     *
+     * <p>与 {@link #jobTitle} <b>并存</b>：本字段是引擎与权限求值的唯一口径，
+     * jobTitle 仅作展示。此前二者混用，导致「谁是部门负责人」有三套互不一致的口径
+     * （job_title 27 人 / leader_user_id 8 个部门 / ROLE_DEPT_LEADER 3 人）。</p>
+     */
+    private String dutyCode;
+
+    /**
+     * 主身份标记（对标 O2OA 的 Identity）。
+     *
+     * <p>本表一行 = 「人 × 机构」的关系行，因此一人可在多机构各持一个身份（兼职 / 借调）；
+     * 其中唯一的那个主身份 isPrimary=1，跨机构求值（如「他到底属于谁」）以它为准。</p>
+     */
+    private Boolean isPrimary;
 
     private Boolean isOrgAdmin;
 

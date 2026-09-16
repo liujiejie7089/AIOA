@@ -1,0 +1,96 @@
+classDiagram
+    class ApprovalFlowService {
+        +String APPLICANT_USER
+        +String APPLICANT_DEPARTMENT
+        +record SubmitReq(bizType,title,content,formData,institutionId,departmentId,days,applicantUserId,applicantName,specificApproverId,applicantType,applicantDepartmentId)
+        +submit(tenantId,actor,req) Map
+        +cc(actor) List
+        +markCcRead(taskId,actor) Map
+        +decide(taskId,actor,approve,note) Map
+        -expandNodes(tenantId,institutionId,req) ExpandResult
+        -superiorLadder(tenantId,institutionId,req,levels,deptLeaderId,orgAdminId,tenantAdminId,platformAdminId) Ladder
+        -expandCcNodes(steps,req,deptLeaderId,orgAdminId,tenantAdminId,platformAdminId,approverIds) List
+        -resolveDeptLeader(institutionId,departmentId,allowCrossDeptFallback) Long
+        -parseSteps(json) List
+    }
+    class PermissionGrantService {
+        +String BIZ_TYPE
+        +record ApplyReq(permissionCode,targetWorkerType,reason,validDays,applyAsDepartment,departmentId)
+        +apply(tenantId,actor,req) Map
+        +mine(actor) List
+        +catalog(actor) Map
+        -toView(g) Map
+    }
+    class OrgGuard {
+        +ROLE_ORG_ADMIN
+        +ROLE_DEPT_LEADER
+        +requireApprover() AuthUser
+        +requireDeptLeader(departmentId) void
+        +resolveInstitutionId(userId) Long
+        +memberOf(institutionId,userId) OrgMember
+    }
+    class OrgStatMapper {
+        +insertApprovalOrder(row) int
+        +selectApprovalOrder(id) Map
+        +selectApprovalOrdersOfUser(tenantId,userId) List
+        +selectCcTasksOfUser(userId) List
+        +selectCcTask(id) Map
+        +markCcRead(id,now) int
+        +countMyUnreadCcTasks(userId) long
+        +countMyCcTasks(userId) long
+        +markNotificationsReadOfOrder(userId,orderId) int
+    }
+    class ApprovalOrder {
+        +Long id
+        +Long userId
+        +String applicantName
+        +String applicantType
+        +Long applicantDepartmentId
+        +String status
+        +String bizType
+    }
+    class ApprovalTask {
+        +String ROLE_APPROVE
+        +String ROLE_CC
+        +String STATUS_CC
+        +Long id
+        +Long orderId
+        +Integer seq
+        +String taskRole
+        +LocalDateTime ccReadAt
+        +String status
+    }
+    class PermissionGrant {
+        +Long id
+        +Long userId
+        +Long departmentId
+        +String applicantName
+        +String applicantType
+        +String permissionCode
+        +String status
+    }
+    class ApprovalFlowProvisioner {
+        +List~Seed~ DEFAULTS
+        +provisionIfAbsent(tenantId) int
+    }
+    class WorkflowController {
+        +tasks(scope) ApiResponse
+        +taskSummary() ApiResponse
+        +markCcRead(taskId) ApiResponse
+    }
+    class PermissionGrantController {
+        +apply(req) ApiResponse
+        +mine() ApiResponse
+        +catalog() ApiResponse
+    }
+    ApprovalFlowService --> ApprovalTask : creates
+    ApprovalFlowService --> OrgStatMapper : reads/writes
+    ApprovalFlowService ..> OrgGuard : ROLE_* consts
+    PermissionGrantService --> ApprovalFlowService : submit(SubmitReq)
+    PermissionGrantService --> OrgGuard : requireDeptLeader
+    WorkflowController --> ApprovalFlowService
+    WorkflowController --> OrgStatMapper
+    PermissionGrantController --> PermissionGrantService
+    ApprovalFlowProvisioner --> ApprovalFlowService : seeds steps_json(cc)
+    ApprovalOrder "1" -- "*" ApprovalTask : order_id
+    PermissionGrant "1" -- "0..1" ApprovalOrder : order_id

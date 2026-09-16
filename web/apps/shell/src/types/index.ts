@@ -27,11 +27,20 @@ export interface UserInfo {
   tenantId?: number
   /** 机构 ID（企业端数据锚点，仅机构成员有） */
   institutionId?: number
+  /** 机构名称（企业端展示用） */
+  institutionName?: string
 }
 
 export interface LoginPayload {
   username: string
   password: string
+  /**
+   * 租户名称（管理端登录必填）。
+   *
+   * <p>用于防止「账号密码正确但登错租户」：平台/运维同时持有多个租户账号时容易看错。
+   * 后端为兼容用户端 H5 与自动化脚本，字段缺省时跳过校验（详见 AuthService.login）。</p>
+   */
+  tenantName?: string
 }
 
 export interface LoginResult {

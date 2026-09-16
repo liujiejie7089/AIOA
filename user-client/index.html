@@ -353,6 +353,12 @@
     box-shadow:inset 0 -2px 0 var(--blue);
   }
   .todo-tab .num{font-family:var(--font-mono)}
+  /* 待办页有四个标签（待我处理 / 数字员工产出 / 我的申请 / 抄送我的），
+     窄屏下按 flex:1 均分会把「（0）」挤到换行 —— 只对 #todoTabs 收窄字号与内边距，
+     并允许横向滑动兜底；「专家与员工」页的两标签布局不受影响。 */
+  #todoTabs{overflow-x:auto; overflow-y:hidden; scrollbar-width:none}
+  #todoTabs::-webkit-scrollbar{display:none}
+  #todoTabs .todo-tab{flex:1 0 auto; min-width:76px; padding:8px 5px; font-size:11.5px}
   .todo-panel{display:none}
   .todo-panel.active{display:block; animation:fadeUp var(--dur) var(--ease)}
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -434,6 +440,22 @@
   .trow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dashed var(--border)}
   .trow:last-of-type{border-bottom:none}
   .trow b{font-weight:600;text-align:right}
+  /* 会话内的能力边界块：来自后端类型元数据，与创建前的准入卡同源同文 */
+  .bubble-boundary{margin-top:8px;padding:7px 8px;background:var(--surface-3);border-radius:8px;
+    font-size:11.5px;line-height:1.6;color:var(--text-2);text-align:left}
+  .bubble-boundary .bb-t{font-weight:700;color:var(--text);margin-bottom:3px}
+  /* P0-a 前置检查：创建确认卡里的六项准入清单 */
+  .intake-box{margin-top:8px;border-top:1px dashed var(--border);padding-top:8px}
+  .intake-head{font-size:11.5px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+  .intake-row{display:flex;align-items:flex-start;gap:6px;padding:3px 0;font-size:11.5px;line-height:1.5}
+  .intake-row .ik{flex:0 0 auto;font-weight:700;color:var(--text-2);min-width:44px}
+  .intake-row .im{flex:1;min-width:0;color:var(--text-2);word-break:break-word}
+  .intake-block{margin-top:7px;background:var(--red-soft);border-radius:8px;padding:7px 8px;font-size:11.5px;line-height:1.6}
+  .intake-block.warn{background:var(--amber-soft)}
+  .intake-block .ib-t{font-weight:700;color:var(--red);margin-bottom:3px}
+  .intake-block.warn .ib-t{color:var(--amber-ink)}
+  .intake-script{margin-top:5px;background:var(--surface);border-radius:6px;padding:6px 7px;color:var(--text-2);
+    border:1px dashed var(--border);user-select:text;-webkit-user-select:text}
 
   .quota-warn{
     display:none;background:var(--accent-soft);color:#8a5a06;font-size:11px;padding:7px 12px;
@@ -780,6 +802,7 @@
         <div class="todo-tab active" data-tab="pending" id="todoTabPending" onclick="switchTodoTab('pending')"><span id="todoPendingLabel" data-page-node-id="TarGlktYTwTwa6kFKTAFPQ">待我处理</span>（<span id="todoCnt" class="num">0</span>）</div>
         <div class="todo-tab" data-tab="done" id="todoTabDone" onclick="switchTodoTab('done')"><span id="todoDoneLabel">数字员工已代办</span></div>
         <div class="todo-tab" data-tab="mine" onclick="switchTodoTab('mine')">我的申请</div>
+        <div class="todo-tab" data-tab="cc" onclick="switchTodoTab('cc')"><span id="todoCcLabel" data-page-node-id="TodoCcLbl8Zq3Wm5Yb2Nc">抄送我的</span>（<span id="todoCcCnt" class="num">0</span>）<span id="todoCcUnreadBadge" class="badge danger" style="display:none;margin-left:2px" data-page-node-id="TodoCcUnreadBdg3V4">未读 0</span></div>
       </div>
 
       <div class="todo-panel active" data-panel="pending">
@@ -790,6 +813,10 @@
       </div>
       <div class="todo-panel" data-panel="mine">
         <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoMine" data-page-node-id="WXR6kSnIPuglNyYAnY6FdY"></div>
+      </div>
+      <div class="todo-panel" data-panel="cc">
+        <div class="muted" style="margin-bottom:8px" data-page-node-id="TodoCcTip7Vq2Mx4Ka9Lp">知会 / 抄送事项：无需你审批，仅供知悉与督办</div>
+        <div class="card reveal" style="padding-top:4px;padding-bottom:4px" id="todoCc" data-page-node-id="TodoCcList9Zq4Wm6Yb3Nc"></div>
       </div>
 
       <div class="muted" style="margin-top:8px" data-page-node-id="UDXxNpbKN5r0HPQshE0aJ1">待办与消息通知实时联动，处理记录全程留痕可查</div>
@@ -900,7 +927,7 @@
       <div class="card reveal" data-page-node-id="XK6F42OGplvIk1GdxyvuP2">
         <div class="sec-title" data-page-node-id="qRLi2h4XyQy3F2RammXzIY">
           <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="i5PmOdFIW5Z4ZG8Wszn7cT"><use href="#i-db" data-page-node-id="6o92wau0L1XphhQk3cbW3P"/></svg>
-          我的知识库
+          我的知识库 <span class="sub" id="kbCount" data-page-node-id="KbCountV3901">· 共 0 份</span>
         </div>
         <div id="kbList" data-page-node-id="yCaNPEYUCBeBa9cs3hbiE1"></div>
         <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap" data-page-node-id="U0ziuuzRCIFlil0moF6drw">
@@ -914,6 +941,10 @@
         <div class="sec-title" data-page-node-id="fCEezjuI9b3Zbb1yXjwHQZ">
           <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="57DbmrtiyQdTL5RPjYCTAq"><use href="#i-shield" data-page-node-id="glirU0sCkD3XCmB6xODeRF"/></svg>
           安全与设置
+        </div>
+        <div class="row click" onclick="go('page-perm');setTitle('page-perm');renderPermission()" data-page-node-id="PermEntryRowV3601">
+          <span style="display:flex;align-items:center;gap:8px" data-page-node-id="PermEntryLabelV36"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="PermEntryIconV360"><use href="#i-lock" data-page-node-id="PermEntryIconV361"/></svg>权限申请</span>
+          <span class="muted" id="permEntryHint" data-page-node-id="PermEntryHintV36">›</span>
         </div>
         <div class="row click" onclick="go('page-log')" data-page-node-id="RwRPAvqIU0AuB1wXdpu69X">
           <span style="display:flex;align-items:center;gap:8px" data-page-node-id="CMajVz80yWPHVn6NldFdA9"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="rEHcCm2GYhZ8w7r4253A8F"><use href="#i-log" data-page-node-id="t1TIMBU4D2ZGQeZlngWHcG"/></svg>我的操作记录</span>
@@ -991,6 +1022,53 @@
       </div>
       <div style="display:flex;gap:8px" id="tdActions" data-page-node-id="q18qIdcuvgJn4CRRs1MVsR"></div>
     </div>
+
+    <!-- ========== 权限申请（V36 需求①） ========== -->
+    <div class="page" id="page-perm" data-page-node-id="PermApplyPageV3601">
+      <div class="sec-title reveal" data-page-node-id="PermApplyHeadV360">权限申请</div>
+
+      <div class="card reveal" data-page-node-id="PermApplyIntroC36">
+        <div class="muted" style="line-height:1.75;font-size:11.5px" data-page-node-id="PermApplyTipV036">
+          部分数字员工类型需额外权限（如「请假审批」需 <b>approval:leave</b>）。提交后流程为
+          <b>本地存档 → 逐级上报（部门负责人 → 企业管理员 → 租户管理员，从你的上一级起）</b>，
+          通过后<b>立即生效</b>、无需重新登录。
+          也可以直接对 AI 说「帮我申请 approval:leave 权限」。
+        </div>
+      </div>
+
+      <!-- 二期：以部门名义申请（仅部门负责人可用；非负责人置灰并给提示） -->
+      <div class="card reveal" id="permDeptCard" style="display:none" data-page-node-id="PermDeptCardV36">
+        <div class="sec-title" style="margin-bottom:8px" data-page-node-id="PermDeptTitleV36">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="PermDeptIconV36"><use href="#i-bank" data-page-node-id="PermDeptIconV37"/></svg>
+          以部门名义申请
+        </div>
+        <div id="permDeptToggle" data-page-node-id="PermDeptToggleV36"></div>
+      </div>
+
+      <div class="card reveal" data-page-node-id="PermApplyListC360">
+        <div class="sec-title" style="margin-bottom:8px" data-page-node-id="PermApplyListT360">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="PermApplyListI36"><use href="#i-shield" data-page-node-id="PermApplyListI37"/></svg>
+          可申请权限
+        </div>
+        <div id="permCatalogList" data-page-node-id="PermApplyCatalog36"></div>
+      </div>
+
+      <div class="card reveal" id="permHoldCard" data-page-node-id="PermHoldCardV3601">
+        <div class="sec-title" style="margin-bottom:8px" data-page-node-id="PermHoldTitleV36">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="PermHoldIconV360"><use href="#i-check" data-page-node-id="PermHoldIconV361"/></svg>
+          我已持有的权限
+        </div>
+        <div id="permHoldList" data-page-node-id="PermHoldListV3601"></div>
+      </div>
+
+      <div class="card reveal" id="permApplyCard" data-page-node-id="PermApplyMineC360">
+        <div class="sec-title" style="margin-bottom:8px" data-page-node-id="PermApplyMineT36">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="PermApplyMineI36"><use href="#i-log" data-page-node-id="PermApplyMineI37"/></svg>
+          我的申请
+        </div>
+        <div id="permApplyList" data-page-node-id="PermApplyMineL360"></div>
+      </div>
+    </div>
   </div>
 
   <div class="tabbar" data-page-node-id="woBmHG36LFtYwDI6Uyd49i">
@@ -1023,9 +1101,17 @@ const state = {
   quota:0, used:0, free:0, left:null, quotaInfo:null,
   chatExpert:null, chatWorker:null, kbOn:true, busy:false,
   roleTypes:[],
+  /* V36 需求①：权限申请 */
+  permCatalog:null, permHoldings:[], permGrants:[],
+  /* 二期：以部门名义申请（开关 / 我负责的部门 / 选中的主体部门）；字段名与后端同源，避免二次映射 */
+  applyAsDepartment:false, ledDepartments:[], selectedDeptId:null,
+  /* 三期：未读知会数（summary.ccUnread 与本地列表同源；只减 tab 内未读数，不动「待办」角标） */
+  ccUnread:0,
   conversationId:null, runId:null, controller:null,
   experts:[], skills:[], kbDocs:[], bill:[], log:[],
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
+  /* 抄送我的（知会 / 待阅）：与 approvals（我发起的）分账 —— 前者是我要知情的，后者是我发起的 */
+  ccApprovals:[],
   kpi:{month:null, quarter:null}, kpiMode:'month',
   workers:[], results:[], currentResult:null, editingWorker:null,
   myStats:null,
@@ -1141,6 +1227,12 @@ const API = {
   approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
   /* 多级审批引擎（V24）：待我审批按「节点指派人」返回；我发起的带完整流转路径 */
   workflowTodo(){ return this.req('/v1/workflow/tasks?scope=todo'); },
+  /* 抄送我的（知会 / 待阅）：不阻塞流转、不占待办红点，只做知悉与督办 */
+  workflowCc(){ return this.req('/v1/workflow/tasks?scope=cc'); },
+  /* 待办计数（红点 + 未读知会 ccUnread）—— 抄送语义不变（cc=总条数），仅新增未读数 */
+  workflowSummary(){ return this.req('/v1/workflow/tasks/summary'); },
+  /* 三期 C-04：标记知会条目已读（幂等；点开详情即调用） */
+  workflowCcRead(taskId){ return this.req('/v1/workflow/cc/'+taskId+'/read',{method:'POST',body:'{}'}); },
   workflowMine(){ return this.req('/v1/workflow/mine'); },
   workflowTimeline(orderId){ return this.req('/v1/workflow/orders/'+orderId+'/timeline'); },
   workflowDecide(taskId, decision, note){
@@ -1159,14 +1251,24 @@ const API = {
   /* V1.2 新增域 */
   kpiBoard(period){ return this.req('/v1/kpi/board?period='+period); },
   workers(){ return this.req('/v1/workers'); },
-  /* 数字员工类型目录 + 当前用户是否具备创建/承担该类型所需权限（granted） */
+  /* 数字员工类型目录 + 当前用户是否具备创建/承担该类型所需权限（granted / canApply） */
   roleTypes(){ return this.req('/v1/workers/role-types'); },
+
+  /* V36 需求①：权限申请与审批（本地存档 → 部门审批 → 租户管理员发放 → 实时生效） */
+  permissionCatalog(){ return this.req('/v1/org/permissions/catalog'); },
+  permissionHoldings(){ return this.req('/v1/org/permissions/holdings'); },
+  permissionMine(){ return this.req('/v1/org/permissions/mine'); },
+  permissionApply(body){ return this.req('/v1/org/permissions/apply',{method:'POST',body:JSON.stringify(body)}); },
+  permissionRevoke(id){ return this.req('/v1/org/permissions/'+id+'/revoke',{method:'POST',body:'{}'}); },
   createWorker(body){ return this.req('/v1/workers',{method:'POST',body:JSON.stringify(body)}); },
   updateWorker(id, body){ return this.req('/v1/workers/'+id,{method:'PUT',body:JSON.stringify(body)}); },
   toggleWorker(id){ return this.req('/v1/workers/'+id+'/toggle',{method:'POST'}); },
   workerRuns(id){ return this.req('/v1/workers/'+id+'/runs?limit=20'); },
   runWorkerNow(id){ return this.req('/v1/workers/'+id+'/run',{method:'POST'}); },
   deleteWorker(id){ return this.req('/v1/workers/'+id,{method:'DELETE'}); },
+  /* P0-a 准入链路：意图识别（自然语言→类型→推荐权限）+ 创建前六项前置检查（不落库） */
+  workerIntent(text){ return this.req('/v1/workers/intent',{method:'POST',body:JSON.stringify({text})}); },
+  workerPrecheck(body){ return this.req('/v1/workers/precheck',{method:'POST',body:JSON.stringify(body)}); },
   /* V33：白名单配置读取（如词元包适用场景，后端 sys_config 可编辑） */
   configs(keys){ return this.req('/v1/configs?keys='+encodeURIComponent((keys||[]).join(','))); },
   /* V33：经营数据 AI 解读 —— 后端按真实指标调用模型生成，非预置文案 */
@@ -1313,7 +1415,8 @@ function go(id){
 }
 const TITLES = {
   'page-home':'AIOA 智能工作台','page-todo':'待办','page-agent':'专家与员工','page-chat':'会话',
-  'page-me':'我的','page-bill':'用量账单','page-buy':'购买词元包','page-log':'我的操作记录','page-result':'成果详情'
+  'page-me':'我的','page-bill':'用量账单','page-buy':'购买词元包','page-log':'我的操作记录','page-result':'成果详情',
+  'page-perm':'权限申请'
 };
 function setTitle(pid){
   const name = (pid === 'page-chat' && state.chatExpert) ? state.chatExpert.name : (TITLES[pid] || 'AIOA 智能工作台');
@@ -1420,6 +1523,10 @@ async function loadLiveData(){
     ['packages', ()=>API.packages()], ['workers', ()=>API.workers()], ['results', ()=>API.results()],
     ['roleTypes', ()=>API.roleTypes()],
     ['myStats', ()=>API.myStats()],
+    /* V36 需求①：权限申请（目录为对象，申请/持有为数组） */
+    ['permCatalog', ()=>API.permissionCatalog()],
+    ['permGrants', ()=>API.permissionMine()],
+    ['permHoldings', ()=>API.permissionHoldings()],
     ['kpiMonth', ()=>API.kpiBoard('month')], ['kpiQuarter', ()=>API.kpiBoard('quarter')]
   ];
   await Promise.all(tasks.map(async ([k, fn])=>{
@@ -1429,6 +1536,7 @@ async function loadLiveData(){
       else if(k === 'kpiQuarter') state.kpi.quarter = v;
       else if(k === 'quotaInfo') state.quotaInfo = v;          // 对象，单独存放避免与额度数字混淆
       else if(k === 'myStats') state.myStats = v;              // 对象：我的数据统计（服务端实时计数）
+      else if(k === 'permCatalog') state.permCatalog = v;      // 对象：权限目录（含我是否持有 / 在途）
       else if(k === 'notifs') state.notifs = v;                // {items, unread}，渲染时再解包
       else state[k] = asArray(v);
     }catch(e){ /* 单项失败不影响整体 */ }
@@ -1437,6 +1545,17 @@ async function loadLiveData(){
   try{ state.approvals = tagSource(await API.workflowMine(), 'workflow'); }catch(e){ state.approvals = []; }
   // 待我审批（机构管理员 / 租户管理员 / 部门负责人）
   state.todoApprovals = await loadTodoApprovals();
+  // 抄送我的（知会 / 待阅）：与待办完全分账 —— 一级审批后机构管理员靠这里「知情」
+  try{
+    const cc = asArray(await API.workflowCc());
+    state.ccApprovals = cc;
+    // 未读数：默认由列表推导；以服务端 summary.ccUnread 为准（与后端同源），失败则保留推导值
+    state.ccUnread = cc.filter(function(a){ return !a.read; }).length;
+    try{
+      const s = await API.workflowSummary();
+      if(s && typeof s.ccUnread === 'number') state.ccUnread = s.ccUnread;
+    }catch(e){}
+  }catch(e){ state.ccApprovals = []; state.ccUnread = 0; }
   // 请假闭环元数据（假种 + 我的余额），供请假表单与统计使用
   try{ state.leaveTypes = asArray(await API.leaveTypes()); }catch(e){ state.leaveTypes = []; }
   if(state.canApprove){ try{ state.leaveBalances = asArray(await API.leaveBalance()); }catch(e){} }
@@ -1465,7 +1584,7 @@ function collapseHomeFallback(){
 /* 逐块渲染并隔离异常：任一区块出错只影响自身，不会让整页变空白 */
 function renderAll(){
   const steps = [renderGreet, renderKPI, renderToday, renderSkills, renderExperts,
-                 renderTodo, renderAgents, renderResults, renderMyStats, renderMe, renderBill,
+                 renderTodo, renderAgents, renderResults, renderPermission, renderMyStats, renderMe, renderBill,
                  renderLog, renderKb, renderPackages, updateQuotaUI, collapseHomeFallback];
   steps.forEach(fn=>{
     try{ fn(); }
@@ -1656,6 +1775,10 @@ function gotoWorkerByName(name){
 function renderKb(){
   const box = $('kbList');
   const list = state.kbDocs||[];
+  // 标题旁直接给出知识库数量（与下方列表同源，均取自 GET /v1/kb/documents），
+  // 空态下也照样显示「共 0 份」，避免用户只能靠空态文案猜有没有资料。
+  const cnt = $('kbCount');
+  if(cnt) cnt.textContent = '· 共 ' + list.length + ' 份';
   if(!list.length){ box.innerHTML = emptyBox('还没有资料，上传 PDF/Word/Excel 后可在会话中被引用'); return; }
   const meId = state.user && state.user.id;
   box.innerHTML = list.slice(0,6).map(d=>{
@@ -1878,7 +2001,7 @@ function approvalIcon(a){
   return ['doc', 'gen'];
 }
 function renderTodo(){
-  const pending = $('todoPending'), done = $('todoDone'), mine = $('todoMine');
+  const pending = $('todoPending'), done = $('todoDone'), mine = $('todoMine'), cc = $('todoCc');
   // 待我审批：审批人（机构管理员 / 部门负责人 / 租户管理员）看指派到自己节点的单据；
   // 普通成员没有指派节点，这一栏回落为知会消息（标签同步显示「消息」）。
   const pendingTasks = (state.canApprove ? asArray(state.todoApprovals) : []).filter(a=>a.status==='PENDING');
@@ -1927,8 +2050,44 @@ function renderTodo(){
       }).join('') + mineMore
     : emptyBox('暂无申请记录');
 
+  /* 抄送我的（知会 / 待阅）——对标 O2OA 的「待阅」。
+     一级审批（levels=1）后机构管理员不再位于审批链上，正是靠这里做到
+     「不审批但可见、可督办」；它不占「待我处理」计数，避免与「要我动手」混淆。 */
+  const ccList = asArray(state.ccApprovals);
+  if(cc) cc.innerHTML = ccList.length
+    ? ccList.slice(0,10).map(a=>{
+        const ic = approvalIcon(a);
+        const st = a.status==='PENDING' ? ['wait','审批中']
+          : (a.status==='APPROVED' ? ['ok','已通过']
+          : (a.status==='REJECTED' ? ['danger','已驳回'] : ['info','已结束']));
+        const cur = currentNode(a);
+        const who = cur ? ('当前流转到：'+esc(cur.approverName||'—')+'（'+approverTypeLabel(cur.approverType)+'）') : '';
+        // 三期 C-07：未读加红点；已读显示「已阅」并置灰（已读仍可回查，非「读过即消失」）
+        const readMark = a.read
+          ? ' <span class="badge off">已阅</span>'
+          : ' <span title="未读" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);vertical-align:middle"></span>';
+        return todoRow(ic[0],
+          esc(approvalTitle(a))+' <span class="badge info">抄送</span> <span class="badge '+st[0]+'">'+st[1]+'</span>'+readMark,
+          '发起人：'+esc(a.applicantName||'—')+' · '+esc(relTime(a.createdAt||a.ccAt))+(who?('<br>'+who):''),
+          "openTodoDetail("+a.id+",'cc')", ic[1], fullTime(a.createdAt));
+      }).join('')
+    : emptyBox('暂无抄送知会事项');
+  const ccCnt = $('todoCcCnt');
+  if(ccCnt) ccCnt.textContent = ccList.length;
+  // 三期 C-07：Tab 内展示未读数（仅「抄送我的」Tab 内；**不点亮**底部「待办」角标）
+  const ccUnread = (typeof state.ccUnread === 'number') ? state.ccUnread : ccList.filter(a=>!a.read).length;
+  const ccUnreadBadge = $('todoCcUnreadBadge');
+  if(ccUnreadBadge){
+    if(ccUnread > 0){ ccUnreadBadge.style.display = ''; ccUnreadBadge.textContent = '未读 ' + ccUnread; }
+    else { ccUnreadBadge.style.display = 'none'; }
+  }
+
   // 角标口径：审批人=待审单数（需我操作）+ 未读知会；普通成员=未读消息数
-  const unread = notifItems().filter(n=>!n.readAt).length;
+  // 抄送（CC）**不计入**：它不阻塞流转、不需要操作，点亮它会让「待办」失去「要我动手」的语义。
+  // 抄送（CC）不点亮底部角标：CC 只需在「抄送我的」Tab 内提示未读（#todoCcUnreadBadge）。
+  // 若其站内通知（refId=单据号）计入 cnt，「待办」就失去「要我动手」的语义（PRD §4.1）。
+  const ccOrderIds = new Set(ccList.map(x=>String(x.id)));
+  const unread = notifItems().filter(n=>!n.readAt && !ccOrderIds.has(String(n.refId))).length;
   const cnt = state.canApprove ? pendingTasks.length + unread : unread;
   $('todoCnt').textContent = cnt;
   const tab = $('tabCnt');
@@ -1938,7 +2097,8 @@ function renderTodo(){
 /* ---- 流转路径（#211）：把 timeline 渲染成「当前流转到谁 / 各节点由谁审核」 ---- */
 const APPROVER_TYPE_LABEL = {
   DEPT_LEADER: '部门负责人', ORG_ADMIN: '企业管理员',
-  TENANT_ADMIN: '租户管理员', SPECIFIC: '指定审批人'
+  TENANT_ADMIN: '租户管理员', PLATFORM_ADMIN: '平台管理员',
+  APPLICANT_SUPERIOR: '申请人的上级', SPECIFIC: '指定审批人'
 };
 const TASK_STATUS_LABEL = { PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', SKIPPED: '已跳过' };
 
@@ -2112,13 +2272,16 @@ function dismissNotifPopup(){
 }
 /* ---- 待办/审批详情（V1.2.1）：完整信息 + 通过/驳回 + 状态回写 ---- */
 function findApproval(id, scope){
-  const src = scope==='todo' ? state.todoApprovals : state.approvals;
+  const src = scope==='todo' ? state.todoApprovals
+            : (scope==='cc' ? state.ccApprovals : state.approvals);
   return asArray(src).find(a=>a.id===id);
 }
 function openTodoDetail(id, scope){
   const a = findApproval(id, scope);
   if(!a){ toast('审批单不存在或已刷新'); return; }
   state.todoDetail = {id:id, scope:scope};
+  // 三期 C-07：点开「知会详情」即自动置已读（降噪优先），未读数减 1；条目仍可回查。
+  if(scope==='cc' && a.read !== true && a.taskId){ markCcReadLocal(a); }
   const st = a.status==='PENDING' ? ['wait','待审批'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
   $('tdTitle').textContent = a.title || '审批详情';
   const badge = $('tdBadge');
@@ -2133,7 +2296,9 @@ function openTodoDetail(id, scope){
     (a.status==='PENDING' && cur
       ? '<br>当前流转到：<b>'+esc(cur.approverName||'—')+'</b>（'+approverTypeLabel(cur.approverType)+
         '，第 '+cur.seq+'/'+(a.totalNodes||asArray(a.timeline).length)+' 级）'
-      : '');
+      : '')+
+    // 抄送（知会）语境必须明确「你不需要做什么」——否则收件人会以为这是待办
+    (scope==='cc' ? '<br><b>抄送知会</b>：无需你审批，仅供知悉与督办' : '');
   resetClamp($('tdContent'));   // 换单据时清掉上一单的折叠残留
   $('tdContent').textContent = a.content || '（无正文）';
   const extra = renderApprovalDetailExtra(a);
@@ -2158,6 +2323,18 @@ function openTodoDetail(id, scope){
   go('page-todo-detail'); setTitle('page-todo-detail');
   // V36：正文过长时折叠（须在页面显示之后量测，隐藏元素 scrollHeight 为 0）
   autoClamp($('tdContent'), 320, 280);
+}
+/* 三期 C-04/C-07：置知会已读（幂等）。成功后本地标记 read、未读数以服务端 ccUnread 为准（兜底减 1）。
+   失败静默 —— 置已读是降噪增强，不应打断用户查看详情。 */
+async function markCcReadLocal(a){
+  try{
+    const res = await API.workflowCcRead(a.taskId);
+    a.read = true;
+    a.readAt = (res && res.readAt) || new Date().toISOString();
+    if(res && typeof res.ccUnread === 'number') state.ccUnread = res.ccUnread;
+    else if(typeof state.ccUnread === 'number') state.ccUnread = Math.max(0, state.ccUnread - 1);
+    renderTodo();
+  }catch(e){ /* 静默 */ }
 }
 /* 审批意见常用语（按通过/驳回分档，减少移动端输入成本） */
 const APPROVAL_PRESETS = {
@@ -2585,6 +2762,8 @@ function useAgent(i){
   $('msgs').innerHTML = '<div class="msg"><div class="avatar">'+icon(iconKey(w.icon))+'</div>'+
     '<div class="bubble">你好，我是「'+esc(w.name)+'」（'+esc(w.roleName||'通用办公助手')+'）。'+
     (w.description ? esc(w.description)+'。' : '')+'直接说出你的需求即可。'+
+    // 能力边界由后端类型元数据直出（不经模型改写），保证「创建前预览」与「会话中提示」逐字一致
+    (w.boundary ? '<div class="bubble-boundary"><div class="bb-t">能力边界</div>'+esc(w.boundary)+'</div>' : '')+
     '<div class="chips">'+chips+'</div></div></div>';
   $('chatInput').focus();
 }
@@ -2603,6 +2782,7 @@ function createAgentFlow(worker){
     toast('该数字员工由他人创建，调整需管理员权限；当前身份：'+workerRoleText()); return;
   }
   state.editingWorker = worker || null;
+  state.intakeGate = null;   // P0-a：每次进入创建/调整流程都重置准入结论，避免沿用上一次的阻断
   state.chatExpert = {name:'数字员工管家', icon:'bot', intro:'', recs:[]};
   state.conversationId = null;
   // 绑定该数字员工：此后本会话内 AI 只在其职责边界内作答
@@ -2642,7 +2822,10 @@ function canEditWorker(w){
   if(!w) return true;                       // 新建：全员可建
   return !!state.canManageWorker || w.editable === true || w.mine === true;
 }
-function agentDemo(q){
+/* 一句话创建/编辑数字员工：配置内化到对话流。
+   P0-a：确认卡里必须先跑一次服务端「六项前置检查」（权限/能力/审批人/表单/审批流/计费），
+   阻断项要给出「找谁办 + 说什么」，而不是等创建接口报 403 才让用户猜。 */
+async function agentDemo(q){
   if(state.busy) return;
   if(state.editingWorker && !canEditWorker(state.editingWorker)){
     toast('该数字员工由他人创建，调整需管理员权限；当前身份：'+workerRoleText()); return;
@@ -2657,9 +2840,12 @@ function agentDemo(q){
   const plan = describeAgentPlan(q, q);
   const hint = time ? '' :
     '<div class="tc-hint">未识别到执行时刻，请补充（例如「每天8点」），否则该员工不会自动运行。</div>';
+  const cid = 'tc' + Date.now() + Math.floor(Math.random()*1000);
+  const qArg = esc(q).replace(/'/g,"\\'");
+  const nameArg = esc(name).replace(/'/g,"\\'");
   m.insertAdjacentHTML('beforeend',
     '<div class="msg"><div class="avatar">'+icon('bot')+'</div>'+
-    '<div class="task-card">'+
+    '<div class="task-card" id="'+cid+'">'+
       '<div class="tc-title">'+icon('clock')+(editing?'调整数字员工任务确认':'新数字员工任务确认')+'</div>'+
       '<div class="trow"><span>名称</span><b>'+esc(name)+'</b></div>'+
       '<div class="trow"><span>执行时刻</span><b>'+(time?('每天 '+time):'未设置（不会自动执行）')+'</b></div>'+
@@ -2668,19 +2854,121 @@ function agentDemo(q){
       '<div class="trow"><span>动作</span><b>执行后结果推送至待办与消息</b></div>'+
       '<div class="trow"><span>留痕</span><b>每次运行写入操作日志</b></div>'+
       hint+
-      '<div style="display:flex;gap:8px;margin-top:10px">'+
-        '<button class="btn small" onclick="confirmAgent(this,\''+esc(name).replace(/'/g,"\\'")+'\',\''+esc(q).replace(/'/g,"\\'")+'\')">'+
+      '<div class="intake-box" id="'+cid+'-intake">'+
+        '<div class="intake-head">'+icon('shield')+'<span>准入检查中…</span></div>'+
+        '<div class="muted" style="font-size:11px">正在核对职责边界、权限与审批配置</div>'+
+      '</div>'+
+      '<div id="'+cid+'-act" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+        '<button class="btn small" id="'+cid+'-ok" data-role="confirm" disabled '+
+          'onclick="confirmAgent(this,\''+nameArg+'\',\''+qArg+'\')">'+
           (editing?'保存修改':'确认创建')+'</button>'+
         '<button class="btn ghost small" onclick="toast(\'已取消\')">取消</button>'+
       '</div>'+
     '</div></div>');
   m.scrollTop = m.scrollHeight;
+
+  let pc = null;
+  try{
+    pc = await API.workerPrecheck({text:q, name:name, description:(task||q),
+      scheduleTime:(time||''), taskPrompt:(task||q), workerType:(editing&&editing.workerType)||null});
+  }catch(e){
+    const box = $(cid+'-intake');
+    if(box) box.innerHTML = '<div class="intake-head">'+icon('warn')+'<span>准入检查未能完成</span></div>'+
+      '<div class="muted" style="font-size:11px">'+esc(e.message)+'；可继续创建，服务端会在创建时再校验一次。</div>';
+    const ok = $(cid+'-ok'); if(ok) ok.disabled = false;
+    state.intakeGate = null;
+    m.scrollTop = m.scrollHeight;
+    return;
+  }
+  state.intakeGate = pc;
+  renderIntakeCard(cid, pc, name, q);
+  m.scrollTop = m.scrollHeight;
+}
+
+/* 渲染确认卡里的准入清单（六项状态 + 阻断话术 + 唯一下一步） */
+function renderIntakeCard(cid, pc, name, q){
+  const box = $(cid+'-intake'); if(!box) return;
+  const okBtn = $(cid+'-ok');
+  const checks = asArray(pc && pc.checks);
+  const ico = pc.role==='LEAVE_APPROVER' ? 'inbox' : (pc.role==='KB_ASSISTANT' ? 'db' : (pc.role==='DOC_DRAFTER' ? 'doc' : 'spark'));
+  const badge = s => s==='PASS' ? '<span class="badge ok">通过</span>'
+                 : s==='WARN' ? '<span class="badge warn">提醒</span>'
+                 : '<span class="badge danger">阻断</span>';
+  let html = '<div class="intake-head">'+icon('shield')+'<span>职责边界与准入检查</span></div>'+
+    '<div class="intake-row"><span class="ik">类型</span><span class="im">'+
+      icon(ico)+' <b>'+esc(pc.roleName||'通用办公助手')+'</b>'+
+      (pc.confidence>0 ? '（识别置信度 '+Math.round(pc.confidence*100)+'%）' : '')+
+      '<br>职责：'+esc(pc.duty||'')+
+      '<br>边界：'+esc(pc.boundary||'在职责范围内处理')+
+    '</span></div>'+
+    '<div class="intake-row"><span class="ik">权限</span><span class="im">'+
+      esc(pc.permissionName||'') + '（' + esc(pc.requiredPermission||'') + '）' +
+      '<br>允许角色：'+esc(pc.allowedRoles||'—')+
+    '</span></div>';
+  html += '<div class="intake-row"><span class="ik">前置</span><span class="im">'+
+    checks.map(c=>'<div style="display:flex;gap:6px;align-items:flex-start;padding:2px 0">'+
+      badge(c.status)+'<span style="flex:1">'+esc(c.label)+'：'+esc(c.message)+'</span></div>').join('')+
+    '</span></div>';
+
+  const warnItems = checks.filter(c=>c.status==='WARN');
+  if(warnItems.length){
+    // 措辞必须跟着结论走：阻断时还说「可以创建」会自相矛盾（实测被用户当 bug 报过）
+    const title = pc.ok ? ('可以创建，但有 '+warnItems.length+' 项提醒') : ('另有 '+warnItems.length+' 项提醒（不阻断，可稍后处理）');
+    html += '<div class="intake-block warn" data-kind="warn"><div class="ib-t">'+title+'</div>'+
+      warnItems.map(c=>'· '+esc(c.message)+'<br>建议：'+esc(c.nextAction||'按提示处理')).join('<br>')+'</div>';
+  }
+
+  if(pc.ok){
+    html += '<div class="intake-block" data-kind="pass" style="background:var(--green-soft)">'+
+      '<div class="ib-t" style="color:var(--green)">六项检查全部通过</div>'+
+      esc(pc.nextAction||'确认配置后创建')+'</div>';
+    if(okBtn){ okBtn.disabled = false; }
+  }else{
+    const lead = asArray(pc.blockers)[0] || {};
+    html += '<div class="intake-block" data-kind="block"><div class="ib-t">创建被阻断：'+esc(lead.label||'')+'</div>'+
+      esc(lead.message||'')+
+      '<div style="margin-top:5px"><b>你现在的下一步：</b>'+esc(lead.nextAction||pc.nextAction||'请先处理上述问题')+'</div>'+
+      (pc.adminScript ? '<div class="intake-script"><b>可转述给管理员：</b><br>'+esc(pc.adminScript)+'</div>' : '')+
+      '</div>';
+    if(okBtn){
+      okBtn.disabled = true; okBtn.textContent = '暂不可创建'; okBtn.className = 'btn small done';
+    }
+    // 权限可申请时，直接给一条自助通道（不走创建接口，避免必然 403）
+    const act = $(cid+'-act');
+    const canApply = asArray(pc.blockedCodes).indexOf('PERMISSION') >= 0;
+    if(act && canApply && pc.applicable !== false){
+      act.innerHTML = '<button class="btn small" data-role="confirm" disabled>暂不可创建</button>'+
+        '<button class="btn small" onclick="go(\'page-perm\');setTitle(\'page-perm\');renderPermission()">去申请权限</button>'+
+        '<button class="btn ghost small" onclick="copyScript(\''+esc(pc.adminScript||'').replace(/'/g,"\\'").replace(/\n/g,' ')+'\')">复制管理员话术</button>';
+    }else if(act && pc.adminScript){
+      act.innerHTML = '<button class="btn small" data-role="confirm" disabled>暂不可创建</button>'+
+        '<button class="btn ghost small" onclick="copyScript(\''+esc(pc.adminScript).replace(/'/g,"\\'").replace(/\n/g,' ')+'\')">复制管理员话术</button>';
+    }
+  }
+  box.innerHTML = html;
+}
+
+/* 复制话术：优先 clipboard API，非安全上下文降级为提示 */
+function copyScript(text){
+  if(!text) return;
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(()=>toast('已复制，可直接发给管理员'),()=>toast('复制失败，请长按选择文本'));
+      return;
+    }
+  }catch(e){}
+  toast('请长按下方话术文本自行复制');
 }
 
 async function confirmAgent(btn, name, plan){
   const editing = state.editingWorker;
   if(editing && !canEditWorker(editing)){
     toast('该数字员工由他人创建，调整需管理员权限；当前身份：'+workerRoleText()); return;
+  }
+  // P0-a：准入检查未通过时不允许从卡片直接创建（后端创建接口仍会独立再校验一次，此处只是不给死路）
+  if(state.intakeGate && state.intakeGate.ok === false){
+    toast('前置检查未通过：'+(state.intakeGate.nextAction || '请先处理阻断项'));
+    return;
   }
   if(btn){ btn.textContent = editing?'保存中…':'创建中…'; btn.disabled = true; }
   try{
@@ -2706,6 +2994,7 @@ async function confirmAgent(btn, name, plan){
       state.workers.unshift(w);
       renderAgents(); renderTodo();
     }
+    state.intakeGate = null;
     if(btn){ btn.textContent = editing?'已保存':'已创建'; btn.className = 'btn done small'; }
     toast(scheduleTime
       ? (editing?'已保存，配置即时生效':'数字员工已创建并在每天 '+scheduleTime+' 自动运行')
@@ -2720,10 +3009,11 @@ async function confirmAgent(btn, name, plan){
 /* ============================================================================
    12. 成果沉淀（V1.2）
    ============================================================================ */
-/* V36：我的数据统计 —— 数据全部来自 GET /api/v1/stats/me（服务端按库表实时计数，
-   与「待办 / 我的成果 / 我的知识库 / 用量账单」各页同口径），前端只做展示，
-   不二次拼装、也不兜底任何假数字。
-   审批视角的「待我处理」只对审批人展示：普通成员恒 0 会被误读成功能坏了。 */
+/* V36：我的数据统计 —— 数据全部来自 GET /api/v1/stats/me（服务端按库表实时计数），
+   前端只做展示，不二次拼装、也不兜底任何假数字。
+   V39 精简：只保留「我创建的员工 / AI 会话 / 我的申请 / AI 运行」四项 ——
+   其余口径（待我处理、我的成果、我的知识库、本月已用词元）都已各有独立页面承接，
+   在这里重复展示只会让首屏更长、口径更散。统计接口本身仍在返回这些字段，未做后端改动。 */
 function renderMyStats(){
   const grid = $('myStatsGrid');
   if(!grid) return;
@@ -2733,14 +3023,10 @@ function renderMyStats(){
     return;
   }
   const cells = [];
-  if(state.canApprove) cells.push(['待我处理', s.todoApprovals, '件']);
-  cells.push(['我的申请', s.myApplications, '件']);
-  cells.push(['AI 会话', s.conversations, '次']);
-  cells.push(['AI 运行', s.aiRuns, '次']);
-  cells.push(['我的成果', s.results, '份']);
-  cells.push(['我的知识库', s.kbDocs, '份']);
   cells.push(['我创建的员工', s.myWorkers, '个']);
-  cells.push(['本月已用词元', s.quotaUsed, '词元']);
+  cells.push(['AI 会话', s.conversations, '次']);
+  cells.push(['我的申请', s.myApplications, '件']);
+  cells.push(['AI 运行', s.aiRuns, '次']);
   grid.innerHTML = cells.map(c=>
     '<div class="kpi plain">'+
       '<div class="k-label"><span>'+esc(c[0])+'</span></div>'+
@@ -2749,8 +3035,266 @@ function renderMyStats(){
   const at = s.generatedAt ? String(s.generatedAt).replace('T',' ').slice(0,16) : '—';
   $('myStatsAt').textContent = '生成于 ' + at;
   $('myStatsSrc').innerHTML =
-    '<b>数据来源</b>：本平台数据库实时统计（单一权威源），与「待办 / 我的成果 / 我的知识库 / 用量账单」同口径；' +
-    '词元数直接取自额度服务，非前端估算。';
+    '<b>数据来源</b>：本平台数据库实时统计（单一权威源），与「我的申请 / 数字员工 / 会话」各页同口径；' +
+    '成果与知识库见「我的成果 / 我的知识库」，词元用量见「额度与账单」，均非前端估算。';
+}
+
+/* V36 需求①：权限申请页渲染。
+   三块：可申请权限（目录 + 申请按钮）、我已持有的权限（标注来源）、我的申请（含流转路径）。
+   全部数据来自 /api/v1/org/permissions/*，与 AI 工具 apply_permission 走同一后端校验。 */
+const PERM_STATUS_TEXT = {PENDING:'待审批', ACTIVE:'已生效', REJECTED:'已驳回', REVOKED:'已回收'};
+const PERM_STATUS_CLASS = {PENDING:'wait', ACTIVE:'ok', REJECTED:'danger', REVOKED:'off'};
+function permStatusText(s){ return PERM_STATUS_TEXT[s] || s || '—'; }
+function permStatusClass(s){ return PERM_STATUS_CLASS[s] || 'wait'; }
+
+function renderPermission(){
+  const cat = state.permCatalog;
+  // 可申请权限
+  const cbox = $('permCatalogList');
+  if(cbox){
+    const items = (cat && asArray(cat.items)) || [];
+    if(!items.length){
+      cbox.innerHTML = '<div class="muted" style="padding:4px 0">暂无可申请的权限项</div>';
+    }else{
+      cbox.innerHTML = items.map(function(it){
+        let right;
+        if(it.held){
+          right = '<span class="badge ok">已持有</span>';
+        }else if(it.pending){
+          right = '<span class="badge wait">审批中</span>';
+        }else{
+          right = '<button class="btn small" onclick="applyPermission(\''+esc(it.permissionCode)+'\')">申请</button>';
+        }
+        return '<div class="row">'+
+          '<span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">'+
+            '<span style="font-weight:600">'+esc(it.permissionName||it.permissionCode)+'</span>'+
+            '<span class="muted" style="font-size:10.5px">'+esc(it.permissionCode)+
+              (it.workerType ? ' · 用于 '+esc(it.workerType) : '')+
+              ' · 审批角色：'+esc(it.requiredRoles||'—')+'</span>'+
+          '</span>'+ right +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  // 我已持有的权限
+  const hbox = $('permHoldList');
+  const holds = asArray(state.permHoldings);
+  if(hbox){
+    if(!holds.length){
+      hbox.innerHTML = '<div class="muted" style="padding:4px 0">暂无额外权限；通用能力（对话 / 知识库检索 / 创建数字员工）默认已开通</div>';
+    }else{
+      hbox.innerHTML = holds.map(function(h){
+        const src = h.byGrant ? (h.byRole ? '角色 + 授权' : '授权发放') : '角色内置';
+        const exp = h.expireAt ? (' · 到期 ' + String(h.expireAt).slice(0,10)) : '';
+        const btn = h.byGrant && h.grantId
+          ? '<button class="btn ghost small" onclick="revokePermission('+h.grantId+')">回收</button>' : '';
+        return '<div class="row">'+
+          '<span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">'+
+            '<span style="font-weight:600">'+esc(h.permissionName||h.permissionCode)+'</span>'+
+            '<span class="muted" style="font-size:10.5px">来源：'+esc(src)+exp+'</span>'+
+          '</span>'+ (btn || '<span class="badge ok">有效</span>') +
+        '</div>';
+      }).join('');
+    }
+    // 专用页保留空态说明（比整块折叠更可读），故不调用 collapse()
+  }
+
+  // 我的申请
+  const abox = $('permApplyList');
+  const applies = asArray(state.permGrants);
+  if(abox){
+    if(!applies.length){
+      abox.innerHTML = '<div class="muted" style="padding:4px 0">还没有提交过权限申请</div>';
+    }else{
+      abox.innerHTML = applies.map(function(g){
+        const path = permPathText(g);
+        const note = g.auditNote ? '<div class="muted" style="font-size:10.5px">意见：'+esc(g.auditNote)+'</div>' : '';
+        const unit = g.institutionId ? (' · 存档单位 #'+g.institutionId) : '';
+        // 二期 E-06/A2-6：部门申请显示「部门申请」徽标 + 部门名（徽标用 sprite 真实图标 #i-bank）
+        const dept = (g.applicantType === 'DEPARTMENT')
+          ? ('<span class="badge go" style="margin-left:6px">'+icon('bank')+' 部门申请'+
+              (g.applicantDepartmentName ? (' · '+esc(g.applicantDepartmentName)) : '')+'</span>')
+          : '';
+        return '<div class="row click" onclick="openPermDetail('+g.id+')">'+
+          '<span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">'+
+            '<span style="font-weight:600">'+esc(g.permissionName||g.permissionCode)+
+              '<span class="badge '+permStatusClass(g.status)+'" style="margin-left:6px">'+esc(permStatusText(g.status))+'</span>'+
+              dept+'</span>'+
+            '<span class="muted" style="font-size:10.5px">'+esc(path)+unit+'</span>'+
+            note +
+          '</span><span class="muted">›</span>'+
+        '</div>';
+      }).join('');
+    }
+  }
+
+  // 「我的」页入口提示：有待审 / 可申请时给出红点感提示
+  const hint = $('permEntryHint');
+  if(hint){
+    const pendingCount = asArray(state.permGrants).filter(function(g){ return g.status==='PENDING'; }).length;
+    hint.textContent = pendingCount ? (pendingCount + ' 条审批中 ›') : '›';
+  }
+
+  // 二期 E-07：以部门名义申请开关（末尾渲染，数据源 = permCatalog.canApplyAsDepartment / ledDepartments）
+  renderDeptApplyToggle();
+}
+
+/* 二期 E-07：以部门名义申请开关。
+   负责人：开关可用、只能选本人负责的部门（ledDepartments）；非负责人：置灰 + 提示「仅部门负责人可代表部门申请」。
+   数据源来自 GET /org/permissions/catalog（N-3：扩展 catalog，零新增端点）。 */
+function renderDeptApplyToggle(){
+  const card = $('permDeptCard'), box = $('permDeptToggle');
+  if(!card || !box) return;
+  const cat = state.permCatalog || {};
+  const led = asArray(cat.ledDepartments);
+  const can = !!cat.canApplyAsDepartment && led.length > 0;
+  card.style.display = '';
+  if(!can){
+    // 非负责人：置灰 + 提示（保留入口可见，避免「入口凭空消失」的困惑）
+    state.applyAsDepartment = false;
+    state.selectedDeptId = null;
+    box.innerHTML =
+      '<label class="row" style="cursor:not-allowed;opacity:.6">'+
+        '<span style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0">'+
+          '<span style="font-weight:600">以部门名义申请</span>'+
+          '<span class="muted" style="font-size:10.5px">仅部门负责人可代表部门申请</span>'+
+        '</span>'+
+        '<input type="checkbox" disabled style="width:18px;height:18px">'+
+      '</label>';
+    return;
+  }
+  if(state.selectedDeptId == null || !led.some(function(d){ return d.id === state.selectedDeptId; })){
+    state.selectedDeptId = led[0].id;
+  }
+  state.ledDepartments = led;
+  const opts = led.map(function(d){
+    return '<option value="'+d.id+'"'+(d.id === state.selectedDeptId ? ' selected' : '')+'>'+
+      esc(d.name || ('部门 #'+d.id))+'</option>';
+  }).join('');
+  box.innerHTML =
+    '<label class="row" style="cursor:pointer">'+
+      '<span style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0">'+
+        '<span style="font-weight:600">以部门名义申请</span>'+
+        '<span class="muted" style="font-size:10.5px">单据主体记为部门，审批从机构管理员起算</span>'+
+      '</span>'+
+      '<input type="checkbox" id="permDeptToggleBox" '+(state.applyAsDepartment ? 'checked' : '')+' style="width:18px;height:18px">'+
+    '</label>'+
+    '<div id="permDeptPick" style="margin-top:8px;'+(state.applyAsDepartment ? '' : 'display:none')+'">'+
+      '<div class="muted" style="font-size:10.5px;margin-bottom:4px">申请主体部门</div>'+
+      '<select id="permDeptSelect" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text)">'+opts+'</select>'+
+    '</div>';
+  const chk = $('permDeptToggleBox');
+  if(chk) chk.onchange = function(){
+    state.applyAsDepartment = !!chk.checked;
+    const pick = $('permDeptPick');
+    if(pick) pick.style.display = state.applyAsDepartment ? '' : 'none';
+  };
+  const sel = $('permDeptSelect');
+  if(sel) sel.onchange = function(){ state.selectedDeptId = +sel.value; };
+}
+
+/* 流转路径文案：从 timeline 里挑出「当前 / 已完成」的节点摘要 */
+function permPathText(g){
+  const tl = asArray(g.timeline);
+  if(tl.length){
+    const parts = tl.map(function(t){
+      const nm = t.approverName || ('#'+(t.approverId||''));
+      return nm + '·' + ({PENDING:'待审',APPROVED:'已通过',REJECTED:'已驳回',SKIPPED:'跳过'}[t.status]||t.status||'');
+    });
+    return parts.join(' → ');
+  }
+  return g.orderId ? ('审批单 #'+g.orderId) : '本地已存档';
+}
+
+/* 提交权限申请：理由为必填（审批人需要依据），走与 AI 工具完全相同的后端校验 */
+function applyPermission(code){
+  const item = (asArray(state.permCatalog && state.permCatalog.items)||[])
+    .find(function(x){ return x.permissionCode === code; }) || {};
+  const asDept = !!state.applyAsDepartment && !!state.selectedDeptId;
+  const deptName = asDept
+    ? ((asArray(state.ledDepartments).find(function(d){ return d.id === state.selectedDeptId; })||{}).name || ('部门 #'+state.selectedDeptId))
+    : '';
+  askDialog({
+    title:'申请权限',
+    message:'权限：' + (item.permissionName||code) + '（' + code + '）\n'
+      + (asDept
+          ? ('申请主体：' + deptName + '（以部门名义申请，审批从机构管理员起算）')
+          : '审批流程：从你的上一级起逐级上报（部门负责人 → 企业管理员 → 租户管理员），通过后立即生效。'),
+    mode:'input', placeholder:'请说明申请理由（会展示给审批人）', required:true,
+    okText:'提交申请',
+    onOk: async function(reason){
+      const r = String(reason||'').trim();
+      if(!r) return false;
+      const body = { permissionCode: code, targetWorkerType: item.workerType || null, reason: r };
+      // 二期 E-02/E-07：仅当开关开启且选中部门时附主体字段；缺省（不传）完全走一期路径
+      if(asDept){ body.applyAsDepartment = true; body.departmentId = state.selectedDeptId; }
+      try{
+        const res = await API.permissionApply(body);
+        toast('已提交，当前流转到：' + ((res && res.currentApproverName) || '审批人'));
+        await refreshPermissions();
+      }catch(e){
+        toast('提交失败：' + (e && e.message ? e.message : '后端异常'));
+      }
+      return true;
+    }
+  });
+}
+
+function revokePermission(id){
+  askDialog({
+    title:'回收权限', message:'回收后该权限立即失效；如仍需使用需重新申请。',
+    okText:'确认回收', danger:true,
+    onOk: async function(){
+      try{
+        await API.permissionRevoke(id);
+        toast('已回收');
+        await refreshPermissions();
+      }catch(e){
+        toast('回收失败：' + (e && e.message ? e.message : '后端异常'));
+      }
+      return true;
+    }
+  });
+}
+
+/* 申请 / 回收后静默刷新三块数据 —— 不整页重载，避免打断用户当前位置 */
+async function refreshPermissions(){
+  try{ state.permCatalog = await API.permissionCatalog(); }catch(e){}
+  try{ state.permHoldings = asArray(await API.permissionHoldings()); }catch(e){}
+  try{ state.permGrants = asArray(await API.permissionMine()); }catch(e){}
+  try{ state.roleTypes = asArray(await API.roleTypes()); }catch(e){}
+  renderPermission();
+  try{ renderMyStats(); }catch(e){}
+}
+
+/* 权限申请详情：复用「待办详情」页的容器，避免再开一个页面 */
+function openPermDetail(id){
+  const g = asArray(state.permGrants).find(function(x){ return x.id === id; });
+  if(!g) return;
+  $('tdTitle').textContent = g.permissionName || g.permissionCode;
+  const badge = $('tdBadge');
+  if(badge){ badge.textContent = permStatusText(g.status); badge.className = 'badge ' + permStatusClass(g.status); }
+  $('tdType').textContent = '权限申请';
+  $('tdMeta').innerHTML =
+    '权限码：' + esc(g.permissionCode||'') +
+    (g.targetWorkerType ? '<br>用途：' + esc(g.targetWorkerType) : '') +
+    '<br>存档单位：' + (g.institutionId ? ('#'+g.institutionId) : '—') +
+    '<br>提交时间：' + esc(String(g.createdAt||'').replace('T',' ').slice(0,19)) +
+    (g.orderId ? '<br>审批单：# ' + esc(String(g.orderId)) : '');
+  $('tdContent').textContent = g.reason || '（未填写理由）';
+  resetClamp($('tdContent'));   // 清掉上一单的折叠残留（成果/待办详情共用同一容器）
+  $('tdExtra').innerHTML = '<div style="font-weight:600;margin-bottom:6px">流转路径</div>' +
+    asArray(g.timeline).map(function(t){
+      return '<div class="muted" style="font-size:11.5px;margin-bottom:3px">第 '+esc(String(t.seq||''))+' 级 · '+
+        esc(t.approverName||('#'+(t.approverId||'')))+' · '+esc(permStatusText(t.status))+
+        (t.decidedAt ? (' · '+esc(String(t.decidedAt).replace('T',' ').slice(0,16))) : '')+'</div>';
+    }).join('');
+  const dec = $('tdDecision');
+  if(g.auditNote){ dec.style.display=''; $('tdNote').textContent = g.auditNote; } else { dec.style.display='none'; }
+  $('tdActions').innerHTML = '<button class="btn ghost small" onclick="go(\'page-perm\');setTitle(\'page-perm\')">返回</button>' +
+    (g.status==='ACTIVE' ? '<button class="btn ghost small danger" onclick="revokePermission('+g.id+')">回收权限</button>' : '');
+  go('page-todo-detail'); setTitle('page-todo-detail');
 }
 
 function renderResults(){

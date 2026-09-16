@@ -20,6 +20,11 @@ public class ApprovalOrder {
     public static final String STATUS_APPROVED = "APPROVED";
     public static final String STATUS_REJECTED = "REJECTED";
 
+    /** 申请主体：个人（默认，与历史行 / 一期接口逐字等价）。 */
+    public static final String APPLICANT_USER = "USER";
+    /** 申请主体：部门（二期 E-01，「以部门名义发起」）。 */
+    public static final String APPLICANT_DEPARTMENT = "DEPARTMENT";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
@@ -30,6 +35,17 @@ public class ApprovalOrder {
 
     /** 发起人姓名（提交时快照，管理端审批中心展示） */
     private String applicantName;
+
+    /**
+     * 申请主体：{@link #APPLICANT_USER}（个人）或 {@link #APPLICANT_DEPARTMENT}（部门）。
+     *
+     * <p>V43 新增，DB 默认 {@code 'USER'} —— 历史行与一期接口读取行为不变。
+     * 二期「以部门名义发起」只改主体与审批链起点，不改授权发放对象（授权仍发给提交人本人）。</p>
+     */
+    private String applicantType;
+
+    /** 部门申请时的主体部门 id（仅 {@code applicantType=DEPARTMENT} 时非空）。 */
+    private Long applicantDepartmentId;
 
     private String runId;
 

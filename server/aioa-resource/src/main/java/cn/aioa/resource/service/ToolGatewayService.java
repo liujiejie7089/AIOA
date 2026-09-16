@@ -5,6 +5,7 @@ import cn.aioa.resource.entity.ApprovalOrder;
 import cn.aioa.resource.entity.KbDocument;
 import cn.aioa.resource.entity.TenantQuota;
 import cn.aioa.resource.store.KnowledgeStore;
+import cn.aioa.resource.support.ExternalToolHandler;
 import cn.aioa.security.AuthUser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,6 +41,11 @@ public class ToolGatewayService {
     private final KbService kbService;
     private final BillingService billingService;
     private final SqlQueryToolService sqlQueryToolService;
+    /**
+     * 外部模块注册的工具（V36）：如 {@code apply_permission} 属审批域，实现在 {@code aioa-org}。
+     * 用 {@code ObjectProvider} 惰性取用，避免与业务模块形成编译期依赖，也便于测试时替换。
+     */
+    private final org.springframework.beans.factory.ObjectProvider<ExternalToolHandler> externalTools;
 
     /** 单个工具定义：name / description / parameters(JSON Schema) / requiredRoles。 */
     public record ToolDef(String name, String description, String parametersJson, Set<String> requiredRoles) {
@@ -77,45 +83,67 @@ public class ToolGatewayService {
         ObjectMapper mapper = new ObjectMapper();
         List<Map<String, Object>> out = new ArrayList<>();
         for (ToolDef def : REGISTRY) {
-            Map<String, Object> parameters;
-            try {
-                parameters = mapper.readValue(def.parametersJson(),
-                        new TypeReference<Map<String, Object>>() {
-                        });
-            } catch (Exception e) {
-                parameters = Map.of("type", "object", "properties", Map.of());
+            out.add(toTool(mapper, def.name(), def.description(), def.parametersJson()));
+        }
+        // 外部模块注册的工具（V36）；与静态注册表重名时以静态为准
+        Set<String> staticNames = REGISTRY.stream().map(ToolDef::name).collect(java.util.stream.Collectors.toSet());
+        for (ExternalToolHandler h : externalTools) {
+            if (staticNames.contains(h.name())) {
+                log.warn("external tool name conflicts with registry, ignored: {}", h.name());
+                continue;
             }
-            Map<String, Object> fn = new LinkedHashMap<>();
-            fn.put("name", def.name());
-            fn.put("description", def.description());
-            fn.put("parameters", parameters);
-            Map<String, Object> tool = new LinkedHashMap<>();
-            tool.put("type", "function");
-            tool.put("function", fn);
-            out.add(tool);
+            out.add(toTool(mapper, h.name(), h.description(), h.parametersJson()));
         }
         return out;
+    }
+
+    private static Map<String, Object> toTool(ObjectMapper mapper, String name, String description,
+                                              String parametersJson) {
+        Map<String, Object> parameters;
+        try {
+            parameters = mapper.readValue(parametersJson,
+                    new TypeReference<Map<String, Object>>() {
+                    });
+        } catch (Exception e) {
+            parameters = Map.of("type", "object", "properties", Map.of());
+        }
+        Map<String, Object> fn = new LinkedHashMap<>();
+        fn.put("name", name);
+        fn.put("description", description);
+        fn.put("parameters", parameters);
+        Map<String, Object> tool = new LinkedHashMap<>();
+        tool.put("type", "function");
+        tool.put("function", fn);
+        return tool;
     }
 
     /** 执行工具：以当前登录用户身份；返回 {ok, data|error}，业务失败不抛异常（错误交给模型组织回答）。 */
     public Map<String, Object> invoke(String name, Map<String, Object> args, AuthUser user) {
         ToolDef def = REGISTRY.stream().filter(t -> t.name().equals(name)).findFirst().orElse(null);
-        if (def == null) {
+        ExternalToolHandler ext = def == null ? externalHandler(name) : null;
+        if (def == null && ext == null) {
             return Map.of("ok", false, "error", "未知工具：" + name);
         }
-        if (!def.requiredRoles().isEmpty()
-                && (user.getRoles() == null || !user.getRoles().containsAll(def.requiredRoles()))) {
+        Set<String> needRoles = def != null ? def.requiredRoles() : ext.requiredRoles();
+        if (!needRoles.isEmpty()
+                && (user.getRoles() == null || !user.getRoles().containsAll(needRoles))) {
             return Map.of("ok", false, "error", "该工具需要租户管理员角色");
         }
         try {
-            Object data = switch (name) {
-                case "list_my_approvals" -> myApprovals(user);
-                case "list_todo_approvals" -> todoApprovals(user);
-                case "search_kb_documents" -> searchKb(user, args);
-                case "get_my_quota" -> myQuota(user);
-                case "sql_query" -> sqlQuery(user, args);
-                default -> null;
-            };
+            Object data = def == null
+                    ? ext.invoke(args, user)
+                    : switch (name) {
+                        case "list_my_approvals" -> myApprovals(user);
+                        case "list_todo_approvals" -> todoApprovals(user);
+                        case "search_kb_documents" -> searchKb(user, args);
+                        case "get_my_quota" -> myQuota(user);
+                        case "sql_query" -> sqlQuery(user, args);
+                        default -> null;
+                    };
+            // 外部工具自行返回 {ok,...}，不再二次包装，避免出现 {ok:true,data:{ok:false,...}}
+            if (def == null) {
+                return data instanceof Map<?, ?> m ? castMap(m) : Map.of("ok", true, "data", data);
+            }
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("ok", true);
             out.put("data", data);
@@ -124,6 +152,20 @@ public class ToolGatewayService {
             log.warn("tool {} invoke failed: {}", name, e.getMessage());
             return Map.of("ok", false, "error", String.valueOf(e.getMessage()));
         }
+    }
+
+    private ExternalToolHandler externalHandler(String name) {
+        for (ExternalToolHandler h : externalTools) {
+            if (h.name().equals(name)) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Map<?, ?> m) {
+        return (Map<String, Object>) m;
     }
 
     private List<Map<String, Object>> myApprovals(AuthUser user) {

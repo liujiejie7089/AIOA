@@ -43,6 +43,20 @@ public class AccountProvisioner {
         if (username == null) {
             throw BizException.badRequest("请提供账号（username 或 userId）");
         }
+        // username 上有唯一键且覆盖软删行：若存在同名「已软删」账号，复活它而不是再插一条。
+        // 否则重复建机构 / 换绑同名管理员会撞唯一键，直接 500（原缺陷）。
+        Map<String, Object> deleted = statMapper.selectDeletedUserByUsername(username);
+        if (deleted != null) {
+            Long deletedId = idOf(deleted);
+            String reviveNick = name == null || name.isBlank() ? username : name;
+            statMapper.reviveUser(deletedId, tenantId == null ? 0L : tenantId, reviveNick,
+                    mobile, email, DEMO_PASSWORD_HASH);
+            Map<String, Object> revived = statMapper.selectUserByUsername(username);
+            if (revived == null) {
+                throw BizException.badRequest("账号恢复失败：" + username);
+            }
+            return revived;
+        }
         Map<String, Object> row = new HashMap<>();
         row.put("tenantId", tenantId == null ? 0L : tenantId);
         row.put("username", username);

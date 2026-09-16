@@ -7,7 +7,7 @@ import cn.aioa.resource.entity.ExpertConfig;
 import cn.aioa.resource.mapper.AiExpertMapper;
 import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.ExpertConfigService;
-import cn.aioa.resource.support.PermissionCatalog;
+import cn.aioa.security.PermissionCatalog;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -122,7 +122,13 @@ public class ExpertConfigController {
                 tid, user.getInstitutionId(), user.getDepartmentId(), user.getUserId(), key);
         Map<String, Object> m = new LinkedHashMap<>(rc.toPayload());
         m.put("layers", rc.layers());
-        m.put("fragments", configService.list(tid, key));
+        // V36 需求⑤：待审 / 已驳回的片段只对「有专家管理权的人」展示，
+        // 普通用户看到的是真实生效的配置（resolve 已过滤），避免未审内容外泄。
+        List<ExpertConfig> fragments = configService.list(tid, key);
+        if (!canManageExperts(user)) {
+            fragments = fragments.stream().filter(f -> ExpertConfig.effective(f.getAuditStatus())).toList();
+        }
+        m.put("fragments", fragments);
         return ApiResponse.ok(m);
     }
 
@@ -159,10 +165,10 @@ public class ExpertConfigController {
     public ApiResponse<Map<String, Object>> save(@PathVariable("key") String key,
                                                  @RequestBody ConfigBody body) {
         AuthUser user = requireAdmin();
+        String audit = reviewService.configInitialStatus(user, body.scopeType());
         ExpertConfig row = configService.save(user.getTenantId(), body.scopeType(), body.scopeId(),
-                key, body.config(), false, user.getUserId());
-        return ApiResponse.ok(Map.of("id", row.getId(), "scopeType", row.getScopeType(),
-                "scopeId", row.getScopeId(), "expertKey", row.getExpertKey()));
+                key, body.config(), false, user.getUserId(), audit);
+        return ApiResponse.ok(configSaved(row, audit));
     }
 
     /** 局部更新某层配置片段（只覆盖传入的键）。 */
@@ -170,10 +176,10 @@ public class ExpertConfigController {
     public ApiResponse<Map<String, Object>> patch(@PathVariable("key") String key,
                                                   @RequestBody ConfigBody body) {
         AuthUser user = requireAdmin();
+        String audit = reviewService.configInitialStatus(user, body.scopeType());
         ExpertConfig row = configService.save(user.getTenantId(), body.scopeType(), body.scopeId(),
-                key, body.config(), true, user.getUserId());
-        return ApiResponse.ok(Map.of("id", row.getId(), "scopeType", row.getScopeType(),
-                "scopeId", row.getScopeId(), "expertKey", row.getExpertKey()));
+                key, body.config(), true, user.getUserId(), audit);
+        return ApiResponse.ok(configSaved(row, audit));
     }
 
     /** 删除某层配置片段。 */
@@ -241,6 +247,26 @@ public class ExpertConfigController {
     }
 
     // ---------- 内部 ----------
+
+    /**
+     * 保存回执。
+     *
+     * <p>必须回 {@code auditStatus}：租户管理员保存后看到 {@code PENDING} 才知道
+     * 「配置还没生效、等人审」，否则会误判为保存失败而反复重试（需求⑤）。</p>
+     */
+    private static Map<String, Object> configSaved(ExpertConfig row, String auditStatus) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", row.getId());
+        out.put("scopeType", row.getScopeType());
+        out.put("scopeId", row.getScopeId());
+        out.put("expertKey", row.getExpertKey());
+        out.put("auditStatus", row.getAuditStatus() == null ? auditStatus : row.getAuditStatus());
+        out.put("effective", ExpertConfig.effective(row.getAuditStatus()));
+        out.put("hint", ExpertConfig.effective(row.getAuditStatus())
+                ? "配置已生效"
+                : "已提交平台管理员审核，审核通过后生效（当前仍使用原配置）");
+        return out;
+    }
 
     private AuthUser requireUser() {
         AuthUser user = AuthUserContext.get();

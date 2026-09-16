@@ -31,27 +31,41 @@
           <el-radio-button value="PENDING">待审核</el-radio-button>
           <el-radio-button value="APPROVED">已通过</el-radio-button>
           <el-radio-button value="REJECTED">已驳回</el-radio-button>
+          <el-radio-button value="ALL">全部</el-radio-button>
         </el-radio-group>
+        <el-select v-model="type" size="small" style="width: 140px; margin-left: 12px" @change="load">
+          <el-option label="全部类型" value="all" />
+          <el-option label="数字员工" value="worker" />
+          <el-option label="AI 专家" value="expert" />
+          <el-option label="专家配置" value="expert_config" />
+        </el-select>
         <el-button size="small" :loading="loading" @click="load" style="margin-left: auto">
           <el-icon><Refresh /></el-icon><span style="margin-left: 4px">刷新</span>
         </el-button>
       </div>
 
-      <el-empty v-if="!loading && !items.length" :description="statusLabel + '（暂无）'" :image-size="80" />
+      <el-empty v-if="!loading && !items.length" :description="emptyLabel" :image-size="80" />
 
       <el-table v-else v-loading="loading" :data="items" size="small" border>
-        <el-table-column prop="type" label="类型" width="90">
+        <el-table-column prop="type" label="类型" width="96">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.type === 'worker' ? 'primary' : 'warning'">
-              {{ row.type === 'worker' ? '数字员工' : '专家' }}
-            </el-tag>
+            <el-tag size="small" :type="typeTagType(row.type)">{{ typeLabel(row.type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="tenantId" label="租户" width="80" />
-        <el-table-column prop="summary" label="说明" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="createdAt" label="创建时间" width="160">
+        <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="tenantId" label="租户" width="70" />
+        <el-table-column prop="summary" label="说明" min-width="190" show-overflow-tooltip />
+        <el-table-column label="提交人" width="110">
+          <template #default="{ row }">{{ row.createdByName || ('#' + (row.createdBy ?? '—')) }}</template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="提交时间" width="150">
           <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="审核人" width="110">
+          <template #default="{ row }">{{ row.reviewerName || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="reviewedAt" label="审核时间" width="150">
+          <template #default="{ row }">{{ fmt(row.reviewedAt) }}</template>
         </el-table-column>
         <el-table-column prop="auditNote" label="审核意见" min-width="140" show-overflow-tooltip />
         <el-table-column label="操作" width="170" fixed="right">
@@ -60,7 +74,7 @@
               <el-button text type="success" size="small" @click="doReview(row, true)">通过</el-button>
               <el-button text type="danger" size="small" @click="doReview(row, false)">驳回</el-button>
             </template>
-            <span v-else class="muted">{{ row.auditStatus === 'APPROVED' ? '已通过' : '已驳回' }}</span>
+            <span v-else class="muted">{{ statusText(row.auditStatus) }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -77,11 +91,37 @@ const items = ref<ContentReviewItem[]>([])
 const loading = ref(false)
 const forbidden = ref(false)
 const status = ref('PENDING')
+const type = ref('all')
 const switchOn = ref(true)
 
 const statusLabel = computed(
-  () => ({ PENDING: '待审核', APPROVED: '已通过', REJECTED: '已驳回' })[status.value] || status.value
+  () =>
+    ({ PENDING: '待审核', APPROVED: '已通过', REJECTED: '已驳回', ALL: '全部' })[status.value] ||
+    status.value
 )
+
+const emptyLabel = computed(() => (status.value === 'ALL' ? '暂无审核数据' : statusLabel.value + '（暂无）'))
+
+/** 状态 → 中文（含权限授权的 ACTIVE/REVOKED，两类数据在审核台共用一列）。 */
+function statusText(s?: string) {
+  return (
+    {
+      PENDING: '待审核',
+      APPROVED: '已通过',
+      REJECTED: '已驳回',
+      ACTIVE: '已生效',
+      REVOKED: '已回收'
+    }[s || ''] || s || '—'
+  )
+}
+
+function typeLabel(t?: string) {
+  return ({ worker: '数字员工', expert: 'AI 专家', expert_config: '专家配置', permission_grant: '权限授权' } as Record<string, string>)[t || ''] || t || '—'
+}
+
+function typeTagType(t?: string) {
+  return t === 'worker' ? 'primary' : t === 'expert_config' ? 'success' : 'warning'
+}
 
 function fmt(v?: string) {
   return v ? String(v).replace('T', ' ').slice(0, 16) : '—'
@@ -90,7 +130,7 @@ function fmt(v?: string) {
 async function load() {
   loading.value = true
   try {
-    const r = await listContentReviews(status.value)
+    const r = await listContentReviews(status.value, type.value)
     items.value = r.items || []
     switchOn.value = r.switchOn !== false
     forbidden.value = false

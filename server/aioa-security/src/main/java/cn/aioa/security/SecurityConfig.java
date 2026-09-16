@@ -50,8 +50,10 @@ public class SecurityConfig {
                                            ObjectMapper objectMapper,
                                            AuthenticationEntryPoint authenticationEntryPoint,
                                            AccessDeniedHandler accessDeniedHandler,
-                                           org.springframework.beans.factory.ObjectProvider<RoleResolver> roleResolver) throws Exception {
-        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtTokenProvider, roleResolver.getIfAvailable());
+                                           org.springframework.beans.factory.ObjectProvider<RoleResolver> roleResolver,
+                                           org.springframework.beans.factory.ObjectProvider<PermissionResolver> permissionResolver) throws Exception {
+        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtTokenProvider,
+                roleResolver.getIfAvailable(), permissionResolver.getIfAvailable());
         ServiceTokenFilter serviceTokenFilter = new ServiceTokenFilter(serviceTokenProvider, objectMapper);
 
         return http

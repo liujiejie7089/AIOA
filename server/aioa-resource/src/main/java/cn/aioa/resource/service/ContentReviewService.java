@@ -2,7 +2,7 @@ package cn.aioa.resource.service;
 
 import cn.aioa.resource.entity.SysConfig;
 import cn.aioa.resource.mapper.SysConfigMapper;
-import cn.aioa.resource.support.PermissionCatalog;
+import cn.aioa.security.PermissionCatalog;
 import cn.aioa.security.AuthUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +67,31 @@ public class ContentReviewService {
     /** 创建时按判定结果给出初始审核态。 */
     public String initialStatus(AuthUser user) {
         return needsReview(user) ? PENDING : APPROVED;
+    }
+
+    /**
+     * 专家配置片段是否需送审（V36 需求⑤：租户自行配置，但必须经过审核）。
+     *
+     * <p>判定 = 开关开启 且 非平台管理员 且 <b>作用域不是 {@code USER}</b>。</p>
+     *
+     * <p>为什么按「作用域」而不是按角色：{@code USER} 层配置只作用于本人，属个人偏好，
+     * 要求上级复核纯属噪音；{@code TENANT / INSTITUTION / DEPT / GLOBAL} 层会影响他人，
+     * 必须过审。这与「配置片段逐层 merge」的语义天然契合 —— 待审片段被跳过时，
+     * 解析自动回落到下一层，不存在「配置空窗」。</p>
+     */
+    public boolean needsReviewForConfig(AuthUser user, String scopeType) {
+        if (user == null || !enabled()) {
+            return false;
+        }
+        if (PermissionCatalog.isPlatformAdmin(user)) {
+            return false;
+        }
+        return scopeType != null && !"USER".equalsIgnoreCase(scopeType);
+    }
+
+    /** 配置片段的初始审核态。 */
+    public String configInitialStatus(AuthUser user, String scopeType) {
+        return needsReviewForConfig(user, scopeType) ? PENDING : APPROVED;
     }
 
     /**

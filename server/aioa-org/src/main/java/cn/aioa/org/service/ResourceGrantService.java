@@ -245,7 +245,7 @@ public class ResourceGrantService implements ApprovalCallback {
                         "资源开通申请：" + resName,
                         Vals.str(body, "reason", "企业端申请开通未授权资源"),
                         formData, institutionId, null, null, actor.getUserId(),
-                        AuditRecorder.displayName(actor), null));
+                        AuditRecorder.displayName(actor), null, null, null));
         return flow;
     }
 

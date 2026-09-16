@@ -26,7 +26,14 @@ public class AuthController {
         this.appService = appService;
     }
 
-    public record LoginRequest(String username, String password) {
+    /**
+     * 登录请求体。
+     *
+     * <p>{@code tenantName} 为管理端登录页的「租户名称」字段：前端必填，用于防止
+     * 「账号密码正确但登错租户」。为兼容既有客户端（用户端 H5、自动化脚本）该字段可为空，
+     * 为空时后端跳过校验（详见 {@code AuthService.login} 的注释）。</p>
+     */
+    public record LoginRequest(String username, String password, String tenantName) {
     }
 
     public record RefreshRequest(String refreshToken) {
@@ -36,7 +43,8 @@ public class AuthController {
     public ApiResponse<AuthService.LoginData> login(@RequestBody LoginRequest body,
                                                     HttpServletRequest request) {
         AuthService.LoginData data = authService.login(
-                body.username(), body.password(), clientIp(request), request.getHeader("User-Agent"));
+                body.username(), body.password(), body.tenantName(),
+                clientIp(request), request.getHeader("User-Agent"));
         return ApiResponse.ok(data);
     }
 

@@ -1,8 +1,11 @@
 package cn.aioa.org.support;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.org.entity.OrgDepartment;
+import cn.aioa.org.entity.OrgDuty;
 import cn.aioa.org.entity.OrgInstitution;
 import cn.aioa.org.entity.OrgMember;
+import cn.aioa.org.mapper.OrgDepartmentMapper;
 import cn.aioa.org.mapper.OrgInstitutionMapper;
 import cn.aioa.org.mapper.OrgMemberMapper;
 import cn.aioa.security.AuthUser;
@@ -49,6 +52,7 @@ public class OrgGuard {
 
     private final OrgMemberMapper memberMapper;
     private final OrgInstitutionMapper institutionMapper;
+    private final OrgDepartmentMapper deptMapper;
     private final JdbcTemplate jdbc;
 
     public AuthUser user() {
@@ -85,6 +89,83 @@ public class OrgGuard {
     }
 
     /**
+     * 部门负责人闸门（二期 E-03/E-05）—— 「仅部门负责人可代表部门发起申请」。
+     *
+     * <p>判定顺序（<b>不可颠倒</b>）：</p>
+     * <ol>
+     *   <li><b>机构归属</b>：跨机构 / 跨租户 / 平台账号（无 org_member）→ <b>404</b>（不泄露存在性）；</li>
+     *   <li><b>职务</b>：同机构但非本部门负责人 → <b>403</b>。</li>
+     * </ol>
+     *
+     * <p>判定口径<b>只认</b> {@code org_member.duty_code='DEPT_PRINCIPAL'}（同部门任一正职即可），
+     * 其次回落 {@code org_department.leader_user_id}。<b>绝不使用 {@code job_title}</b>
+     * —— 它是自由文本展示字段，历史上正是它制造了 27/8/3 三口径分裂（见 docs/23）。</p>
+     */
+    public void requireDeptLeader(Long departmentId) {
+        AuthUser u = AuthUserContext.require();
+        if (departmentId == null || departmentId <= 0) {
+            throw BizException.notFound("部门不存在或无权访问");
+        }
+        OrgDepartment dept = deptMapper.selectById(departmentId);
+        if (dept == null || dept.getDeletedAt() != null) {
+            throw BizException.notFound("部门不存在或无权访问");
+        }
+        Long ownInst = resolveInstitutionId(u.getUserId());
+        if (ownInst == null || !ownInst.equals(dept.getInstitutionId())) {
+            // 跨机构 / 跨租户 / 平台账号：一律 404，不泄露部门是否存在
+            throw BizException.notFound("部门不存在或无权访问");
+        }
+        if (isPrincipalOf(u.getUserId(), departmentId)) {
+            return;
+        }
+        if (dept.getLeaderUserId() != null && dept.getLeaderUserId().equals(u.getUserId())) {
+            return;
+        }
+        throw BizException.forbidden("仅部门负责人可代表部门申请");
+    }
+
+    /**
+     * 我负责的部门清单（部门申请开关的数据源，口径与 {@link #requireDeptLeader} 一致）。
+     *
+     * <p>判定：① 我在该部门持 {@code duty_code='DEPT_PRINCIPAL'}（同部门任一正职）；
+     * ② 回落 {@code org_department.leader_user_id} 指向我。{@code job_title} 不作依据。</p>
+     */
+    public List<OrgDepartment> ledDepartments(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        List<Long> dutyDeptIds = memberMapper.selectList(new LambdaQueryWrapper<OrgMember>()
+                        .eq(OrgMember::getUserId, userId)
+                        .eq(OrgMember::getDutyCode, OrgDuty.DEPT_PRINCIPAL)
+                        .eq(OrgMember::getStatus, OrgMember.STATUS_ACTIVE))
+                .stream().map(OrgMember::getDepartmentId)
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        LambdaQueryWrapper<OrgDepartment> q = new LambdaQueryWrapper<OrgDepartment>()
+                .orderByAsc(OrgDepartment::getId);
+        if (dutyDeptIds.isEmpty()) {
+            q.eq(OrgDepartment::getLeaderUserId, userId);
+        } else {
+            q.and(w -> w.eq(OrgDepartment::getLeaderUserId, userId)
+                    .or().in(OrgDepartment::getId, dutyDeptIds));
+        }
+        return deptMapper.selectList(q);
+    }
+
+    /** 我在该部门是否持「部门正职」职务（{@code duty_code='DEPT_PRINCIPAL'}）。 */
+    private boolean isPrincipalOf(Long userId, Long departmentId) {
+        if (userId == null || departmentId == null) {
+            return false;
+        }
+        return memberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
+                .eq(OrgMember::getUserId, userId)
+                .eq(OrgMember::getDepartmentId, departmentId)
+                .eq(OrgMember::getDutyCode, OrgDuty.DEPT_PRINCIPAL)
+                .eq(OrgMember::getStatus, OrgMember.STATUS_ACTIVE)) > 0;
+    }
+
+    /**
      * 组织数据读取者：机构成员（企业管理员 / 部门负责人 / 成员）+ 租户管理员 + 平台管理员。
      *
      * <p><b>为何租户管理员与平台管理员也放行</b>：组织与员工页的菜单与路由对这两类角色开放，
@@ -117,15 +198,19 @@ public class OrgGuard {
     }
 
     /**
-     * 审批人：机构成员（企业管理员 / 部门负责人 / 成员）<b>或</b>租户管理员。
+     * 审批人：机构成员（企业管理员 / 部门负责人 / 成员）<b>或</b>租户管理员 / 平台管理员。
      *
      * <p>额度扩容、资源开通的末级审批节点是租户管理员，而租户管理员不属于任何机构的成员。
      * 若沿用 {@link #requireOrgUser()}，租户管理员既看不到待办也无法决策，
      * 该类单据会永久卡在二级节点 —— 故审批相关入口必须放行租户管理员。</p>
+     *
+     * <p>平台管理员同样必须放行：它是「申请人的上一级」链的<b>终极一级</b>
+     * （{@code ApprovalTask.TYPE_PLATFORM_ADMIN}）。租户管理员之上再无本租户的上级，
+     * 若平台管理员进不来，租户管理员发起的申请就无人能批。</p>
      */
     public AuthUser requireApprover() {
         AuthUser u = AuthUserContext.require();
-        if (hasRole(u, ROLE_TENANT_ADMIN) || hasRole(u, ROLE_ORG_ADMIN)
+        if (hasRole(u, ROLE_ADMIN) || hasRole(u, ROLE_TENANT_ADMIN) || hasRole(u, ROLE_ORG_ADMIN)
                 || hasRole(u, ROLE_DEPT_LEADER) || hasRole(u, ROLE_MEMBER)) {
             return u;
         }

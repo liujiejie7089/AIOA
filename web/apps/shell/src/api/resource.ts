@@ -45,7 +45,7 @@ export function decideApproval(id: number, decision: 'APPROVE' | 'REJECT', note?
 export interface ApprovalTaskNode {
   taskId: number
   seq: number
-  /** DEPT_LEADER / ORG_ADMIN / TENANT_ADMIN / SPECIFIC */
+  /** DEPT_LEADER / ORG_ADMIN / TENANT_ADMIN / PLATFORM_ADMIN / SPECIFIC */
   approverType: string
   approverId: number | null
   approverName: string | null
@@ -54,6 +54,19 @@ export interface ApprovalTaskNode {
   note: string | null
   skipReason: string | null
   decidedAt: string | null
+}
+
+/** 待办计数（菜单红点用，不下发明细）。 */
+export interface WorkflowTaskSummary {
+  /** 待我处理（点亮红点） */
+  todo: number
+  /** 我发起且仍在途 */
+  mine: number
+  /** 抄送我的**总条数**（一期语义，不因已读减少） */
+  cc?: number
+  /** 未读知会数（三期 C-06） */
+  ccUnread?: number
+  generatedAt: string
 }
 
 /** 待我审批 / 我发起的（多级引擎）。带 timeline 与「当前流转到谁」。 */
@@ -67,6 +80,13 @@ export interface WorkflowTask {
   attachment?: string | null
   status: string
   applicantName?: string
+  /** 二期主体：USER 个人 / DEPARTMENT 部门 */
+  applicantType?: string
+  applicantDepartmentId?: number | null
+  applicantDepartmentName?: string | null
+  /** 三期：知会已读态（仅 scope=cc 有意义） */
+  read?: boolean
+  readAt?: string | null
   creatorName?: string
   userId?: number
   approver?: string | null
@@ -86,9 +106,35 @@ export function listWorkflowTodo(): Promise<WorkflowTask[]> {
   return http.get('/workflow/tasks', { params: { scope: 'todo' } }).then((r) => unwrap<WorkflowTask[]>(r))
 }
 
+/** 抄送我的（知会 / 待阅）。已读条目仍在列表，仅 read=true / readAt 有值（可回查）。 */
+export function listWorkflowCc(): Promise<WorkflowTask[]> {
+  return http.get('/workflow/tasks', { params: { scope: 'cc' } }).then((r) => unwrap<WorkflowTask[]>(r))
+}
+
+/** 标记知会已读（幂等；点开知会详情即调用）。 */
+export function markWorkflowCcRead(taskId: number): Promise<{
+  taskId: number
+  orderId: number
+  read: boolean
+  readAt: string | null
+  ccUnread: number
+}> {
+  return http.post(`/workflow/cc/${taskId}/read`, {}).then((r) => unwrap(r))
+}
+
 /** 我发起的（含请假 / 扩容 / 成果 / 公文），任何登录用户可读，带完整流转路径。 */
 export function listMyApplications(): Promise<WorkflowTask[]> {
   return http.get('/workflow/mine').then((r) => unwrap<WorkflowTask[]>(r))
+}
+
+/**
+ * 待办计数 —— 管理端菜单红点的唯一数据源。
+ *
+ * <p>刻意不复用 {@link listWorkflowTodo}：红点会被轮询，回整棵待办树（含每单 timeline）
+ * 代价过高；后端用一条聚合 SQL 给出同口径的数字。</p>
+ */
+export function workflowTodoSummary(): Promise<WorkflowTaskSummary> {
+  return http.get('/workflow/tasks/summary').then((r) => unwrap<WorkflowTaskSummary>(r))
 }
 
 export function decideWorkflowTask(
@@ -245,6 +291,74 @@ export interface PageResult<T> {
 
 export function listUsers(page = 1, size = 20): Promise<PageResult<SysUser>> {
   return http.get('/admin/users', { params: { page, size } }).then((r) => unwrap<PageResult<SysUser>>(r))
+}
+
+/* ---------- 人员管理：按权限作用域取数 + 自动分类（V37） ---------- */
+
+/** 人员档位：与后端 PersonnelService 的 scopeClass 一一对应。 */
+export type PersonnelClass = 'PLATFORM' | 'TENANT' | 'ORG' | 'DEPT' | 'MEMBER'
+
+export interface PersonnelMember {
+  id: number
+  username: string
+  nickname: string
+  mobile?: string | null
+  email?: string | null
+  status: string
+  tenantId?: number | null
+  tenantName?: string | null
+  institutionId?: number | null
+  institutionName?: string | null
+  departmentId?: number | null
+  departmentName?: string | null
+  jobTitle?: string | null
+  employeeNo?: string | null
+  lastLoginAt?: string | null
+  createdAt?: string | null
+  roles: string[]
+  scopeClass: PersonnelClass
+  scopeLabel: string
+  /** 花名册标记的机构管理员（org_member.is_org_admin） */
+  orgAdmin: boolean
+  /** 是否担任某部门负责人（org_department.leader_user_id） */
+  deptLeader: boolean
+}
+
+export interface PersonnelGroup {
+  key: string
+  label: string
+  count: number
+  members: PersonnelMember[]
+}
+
+export interface PersonnelView {
+  /** 调用者作用域：平台 / 租户 / 机构 / 部门 */
+  scope: 'PLATFORM' | 'TENANT' | 'ORG' | 'DEPT'
+  /** 作用域名称（租户全称 / 机构全称 / 部门名称） */
+  scopeName: string
+  /** 自动分类维度：平台=租户，租户=机构，机构/部门=档位 */
+  groupBy: 'TENANT' | 'INSTITUTION' | 'TIER'
+  total: number
+  groups: PersonnelGroup[]
+  classCounts: Record<string, number>
+  /** 写操作能力（角色分配 / 账号启停仅平台管理员）；readOnly=true 时前端应收起操作列 */
+  capability: { canAssignRole: boolean; canChangeStatus: boolean; readOnly: boolean }
+  tenantId?: number | null
+  institutionId?: number | null
+  departmentId?: number | null
+  keyword: string
+  /** 面向当前账号的范围说明（直接展示给用户，避免「为什么我只能看到这些人」的疑问） */
+  hint: string
+}
+
+/**
+ * 人员管理列表（已按调用者权限作用域过滤并按档位 / 机构 / 租户分组）。
+ *
+ * @param keyword  用户名或昵称模糊搜索
+ * @param tenantId 仅平台管理员有效：把结果收窄到指定租户
+ */
+export function listPersonnel(params?: { keyword?: string; tenantId?: number }): Promise<PersonnelView> {
+  return http.get('/admin/personnel', { params }).then((r) => unwrap<PersonnelView>(r))
 }
 
 export function listRoles(): Promise<SysRole[]> {
@@ -422,8 +536,10 @@ export function generateKpiInsight(period: string): Promise<KpiInsightResult> {
 }
 
 /* ============ V34 内容审核台（平台管理员审租户管理员创建的内容） ============ */
+/** V36：类型扩到 expert_config（专家配置片段，需求⑤）。 */
+export type ContentReviewType = 'worker' | 'expert' | 'expert_config'
 export interface ContentReviewItem {
-  type: 'worker' | 'expert'
+  type: ContentReviewType
   id: number
   tenantId: number
   name: string
@@ -431,15 +547,27 @@ export interface ContentReviewItem {
   auditStatus: string
   auditNote?: string
   createdBy?: number
+  createdByName?: string
   createdAt?: string
+  /** V36：处理方双边留痕（需求④） */
+  reviewedBy?: number
+  reviewerName?: string
+  reviewedAt?: string
+  scopeType?: string
+  scopeId?: number
+  expertKey?: string
 }
-export function listContentReviews(status = 'PENDING'): Promise<{
+export function listContentReviews(
+  status = 'PENDING',
+  type = 'all'
+): Promise<{
   items: ContentReviewItem[]
   total: number
   status: string
+  type?: string
   switchOn: boolean
 }> {
-  return http.get('/admin/content-reviews', { params: { status } }).then((r) => unwrap(r))
+  return http.get('/admin/content-reviews', { params: { status, type } }).then((r) => unwrap(r))
 }
 export function reviewContent(
   type: string,
@@ -450,6 +578,48 @@ export function reviewContent(
   return http
     .post(`/admin/content-reviews/${type}/${id}/review`, { approve, note })
     .then((r) => unwrap<Record<string, unknown>>(r))
+}
+
+/* ============ V36 审核记录中心（需求④：提交方 + 处理方双边留痕） ============ */
+export interface ReviewRecord {
+  type: 'worker' | 'expert' | 'expert_config' | 'permission_grant'
+  id: number
+  tenantId: number
+  institutionId?: number
+  name: string
+  summary?: string
+  /** 内容审核为 PENDING/APPROVED/REJECTED；权限授权为 PENDING/ACTIVE/REJECTED/REVOKED */
+  auditStatus: string
+  auditNote?: string
+  createdBy?: number
+  createdByName?: string
+  createdAt?: string
+  reviewedBy?: number
+  reviewerName?: string
+  reviewedAt?: string
+  permissionCode?: string
+  targetWorkerType?: string
+  orderId?: number
+  scopeType?: string
+  expertKey?: string
+}
+export function listReviewRecords(params: {
+  type?: string
+  status?: string
+  keyword?: string
+  tenantId?: number
+  page?: number
+  size?: number
+}): Promise<{
+  items: ReviewRecord[]
+  total: number
+  page: number
+  size: number
+  stats: Record<string, number>
+  scope: string
+  tenantId?: number
+}> {
+  return http.get('/admin/review-records', { params }).then((r) => unwrap(r))
 }
 
 /* ============ 数字员工（V1.2 · 管理端维护） ============ */

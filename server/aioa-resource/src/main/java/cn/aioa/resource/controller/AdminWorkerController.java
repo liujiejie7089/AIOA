@@ -8,7 +8,7 @@ import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.resource.mapper.AgentWorkerRunMapper;
 import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.WorkerScheduleService;
-import cn.aioa.resource.support.PermissionCatalog;
+import cn.aioa.security.PermissionCatalog;
 import cn.aioa.resource.support.ScheduleTimeSupport;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;

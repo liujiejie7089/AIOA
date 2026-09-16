@@ -354,7 +354,7 @@ public class LeaveService implements ApprovalCallback {
                         req.getApplicantName() + " 的" + type.getName() + "申请（" + days + " 天）",
                         "起止：" + start + " ~ " + end + "；事由：" + (req.getReason() == null ? "未填写" : req.getReason()),
                         formData, institutionId, req.getDepartmentId(), days.doubleValue(),
-                        userId, req.getApplicantName(), null));
+                        userId, req.getApplicantName(), null, null, null));
         Long orderId = ((Number) flow.get("orderId")).longValue();
         req.setOrderId(orderId);
         req.setUpdatedAt(LocalDateTime.now());

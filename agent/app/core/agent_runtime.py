@@ -22,6 +22,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from app.core import answer_shape
 from app.core.guards import GuardError, WallClock, check_text_len
 from app.model_gateway import gateway
 from app.schemas import RunRequest, SseEvent
@@ -83,6 +84,9 @@ def _build_messages(req: RunRequest) -> list[dict]:
             "请根据用户所在的业务页面与上下文，给出准确、简洁、可执行的回答。",
             "需要查询用户的审批、知识库、额度等业务数据时，优先调用提供的工具，不要编造。",
         ]
+    # 回答结构（六段）：只划「不能答什么」不够，还要固定「答的时候必须给全什么」。
+    # 关键的三段是「唯一下一步 / 管理员话术 / 通过后续接」—— 用户卡住时缺的正是这三样。
+    sys_parts.extend(answer_shape.rules(scope))
     uc = req.user_context
     if uc.username or uc.roles:
         role_desc = "、".join(uc.roles) if uc.roles else "普通用户"

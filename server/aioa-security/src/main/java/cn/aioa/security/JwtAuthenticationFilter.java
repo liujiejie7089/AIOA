@@ -30,9 +30,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider tokenProvider;
     /** 可选：实时角色解析（角色变更即时生效）；为 null 时退回 JWT 内快照角色。 */
     private final RoleResolver roleResolver;
+    /** 可选：实时权限码解析（V36 授权发放后无需重新登录即可生效）；为 null 时 permissions 保持 JWT 快照。 */
+    private final PermissionResolver permissionResolver;
 
     public JwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
-        this(tokenProvider, null);
+        this(tokenProvider, null, null);
+    }
+
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, RoleResolver roleResolver) {
+        this(tokenProvider, roleResolver, null);
     }
 
     @Override
@@ -65,6 +71,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             user.setRoles(live);
                         } catch (Exception ignore) {
                             // 角色解析失败不影响认证（保持 JWT 快照角色）
+                        }
+                    }
+                    // V36：权限码实时解析。授权单经审批生效后，用户**无需重新登录**即可获得新权限
+                    // —— 这是「申请 → 审批 → 生效」闭环可被验证的前提。
+                    // 解析失败不影响认证（保持 JWT 快照权限，通常是空集合）。
+                    if (permissionResolver != null && user.getUserId() != null) {
+                        try {
+                            List<String> perms = permissionResolver.permissionsOf(user.getUserId());
+                            user.setPermissions(perms == null ? new ArrayList<>() : new ArrayList<>(perms));
+                        } catch (Exception ignore) {
+                            // 忽略：退化为角色判定
                         }
                     }
                     List<GrantedAuthority> authorities = new ArrayList<>();

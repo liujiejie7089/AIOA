@@ -10,7 +10,7 @@ import cn.aioa.resource.mapper.AgentWorkerRunMapper;
 import cn.aioa.resource.mapper.ClientActivityLogMapper;
 import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.WorkerScheduleService;
-import cn.aioa.resource.support.PermissionCatalog;
+import cn.aioa.security.PermissionCatalog;
 import cn.aioa.resource.support.ScheduleTimeSupport;
 import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
@@ -145,7 +145,8 @@ public class WorkerController {
                              String lastOutput, String schedule, String scheduleTime, String runMode,
                              String taskPrompt,
                              String lastRunAt, boolean on,
-                             String workerType, String roleName, String duty, String requiredPermission,
+                             String workerType, String roleName, String duty, String boundary,
+                             String requiredPermission,
                              String visibleScope, String deptIds, Long sourceTemplateId,
                              Long createdBy, boolean mine, boolean editable,
                              String auditStatus, String auditNote) {
@@ -170,7 +171,7 @@ public class WorkerController {
             return new WorkerView(w.getId(), w.getName(), w.getIcon(), w.getDescription(), status,
                     w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getRunMode(), w.getTaskPrompt(),
                     w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on,
-                    role.code(), role.displayName(), role.duty(), role.requiredPermission(),
+                    role.code(), role.displayName(), role.duty(), role.boundary(), role.requiredPermission(),
                     w.getVisibleScope(), w.getDeptIds(), w.getSourceTemplateId(),
                     w.getCreatedBy(), mine, editable, w.getAuditStatus(), w.getAuditNote());
         }
@@ -188,8 +189,9 @@ public class WorkerController {
     }
 
     /** 角色类型目录：前端据此渲染可选类型，并置灰当前用户无权限承担的类型。 */
-    public record RoleTypeView(String code, String name, String duty, String requiredPermission,
-                               String requiredRoles, boolean granted) {
+    public record RoleTypeView(String code, String name, String duty, String boundary,
+                               String requiredPermission,
+                               String requiredRoles, boolean granted, boolean canApply) {
 
         /**
          * {@code granted} = 当前用户**是否可创建/承担该类型角色**。
@@ -197,12 +199,21 @@ public class WorkerController {
          * <p>定为「创建」语义（而不是单纯的「持有权限码」）：创建数字员工属管理员敏感操作，
          * 故普通成员对任何类型都为 false，前端据此置灰类型选择；
          * 管理员则要求同时持有该类型的权限码（如请假类需 {@code approval:leave}）。</p>
+         *
+         * <p>{@code canApply}（V36 需求①）：被置灰时是否<b>可通过权限申请解锁</b>。
+         * 前端据此把「无权限」的死胡同改造成「去申请」的出口 —— 否则用户看到的就是
+         * 一个既不能点、又不知道找谁的灰按钮。</p>
          */
         static RoleTypeView of(WorkerRole role, AuthUser user) {
-            boolean canCreate = PermissionCatalog.holds(user, PermissionCatalog.WORKER_CREATE)
-                    && PermissionCatalog.holds(user, role.requiredPermission());
-            return new RoleTypeView(role.code(), role.displayName(), role.duty(), role.requiredPermission(),
-                    PermissionCatalog.rolesText(role.requiredPermission()), canCreate);
+            boolean hasCreate = PermissionCatalog.holds(user, PermissionCatalog.WORKER_CREATE);
+            boolean hasPerm = PermissionCatalog.holds(user, role.requiredPermission());
+            boolean canCreate = hasCreate && hasPerm;
+            // 可申请 = 有创建权但缺该类型的权限码，且该权限码处于「可申请」白名单内
+            boolean canApply = hasCreate && !hasPerm
+                    && PermissionCatalog.applicable(role.requiredPermission());
+            return new RoleTypeView(role.code(), role.displayName(), role.duty(), role.boundary(),
+                    role.requiredPermission(),
+                    PermissionCatalog.rolesText(role.requiredPermission()), canCreate, canApply);
         }
     }
 
@@ -670,12 +681,20 @@ public class WorkerController {
     /**
      * 权限准入：创建或承担某类型数字人角色，必须持有该类型所需权限。
      * 不满足即 403，属**前置拒绝**——不落库、不产生半成品角色。
+     *
+     * <p>V36 需求①：403 提示必须给出<b>出路</b>。此前只说「请联系本租户管理员」，
+     * 用户既不知道该申请什么、也没有入口。现在明确告知可申请的权限码与办理路径。</p>
      */
     private static void requirePermission(AuthUser user, WorkerRole role) {
         String permission = role.requiredPermission();
         if (!PermissionCatalog.holds(user, permission)) {
+            String tail = PermissionCatalog.applicable(permission)
+                    ? "；你可以在「我的 → 权限申请」中提交申请（流程：部门审批 → 租户管理员发放），"
+                    + "或直接对 AI 说「帮我申请 " + permission + " 权限」"
+                    : "；该权限不开放申请，请联系平台管理员";
             throw BizException.forbidden("该数字人属「" + role.displayName() + "」，需持有权限码 " + permission
-                    + "（" + PermissionCatalog.rolesText(permission) + "）；当前账号无权创建或承担该类型角色");
+                    + "（" + PermissionCatalog.rolesText(permission) + "）；当前账号无权创建或承担该类型角色"
+                    + tail);
         }
     }
 
