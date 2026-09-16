@@ -33,6 +33,17 @@ public class JwtTokenProvider {
     public static final String TYPE_ACCESS = "access";
     public static final String TYPE_REFRESH = "refresh";
 
+    /**
+     * 令牌唯一标识（JWT 标准声明 {@code jti}）—— 服务端吊销的抓手（D-1）。
+     *
+     * <p>没有它就只能靠「用户级失效水位」实现吊销，代价是同用户其它设备一起下线。
+     * 带上 jti 后，登出只让<b>这一个</b>令牌失效。</p>
+     *
+     * <p>兼容性：V46 之前签发的令牌没有 jti，此时吊销检查无从施加，仍按「未吊销」处理
+     * （这类令牌会在最长 2 小时内自然过期）。</p>
+     */
+    public static final String CLAIM_JTI = "jti";
+
     private final JwtProperties properties;
     private final SecretKey key;
 
@@ -56,6 +67,7 @@ public class JwtTokenProvider {
     private String build(AuthUser user, String type, long ttl) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())
                 .subject(user.getUsername())
                 .claim(CLAIM_UID, user.getUserId())
                 .claim(CLAIM_TENANT, user.getTenantId() == null ? 0L : user.getTenantId())
@@ -67,6 +79,13 @@ public class JwtTokenProvider {
                 .expiration(new Date(now + ttl * 1000L))
                 .signWith(key, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    /** 令牌的过期时间（吊销表按此清理历史行）；解析失败返回 null。 */
+    public static java.time.LocalDateTime expiryOf(Claims claims) {
+        Date exp = claims == null ? null : claims.getExpiration();
+        return exp == null ? null
+                : java.time.LocalDateTime.ofInstant(exp.toInstant(), java.time.ZoneId.systemDefault());
     }
 
     public Claims parse(String token) {

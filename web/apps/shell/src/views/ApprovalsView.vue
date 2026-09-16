@@ -45,10 +45,10 @@
           <template #default="{ row }">
             <div v-if="row.status === 'PENDING' && currentNode(row)" class="flow-cur">
               <b>{{ currentNode(row)?.approverName || '—' }}</b>
-              <span class="flow-sub">{{ approverTypeLabel(currentNode(row)?.approverType) }} · 第 {{ currentNode(row)?.seq }}/{{ row.totalNodes || row.timeline?.length || 1 }} 级</span>
+              <span class="flow-sub">{{ approverTypeLabel(currentNode(row)?.approverType) }} · 第 {{ currentNode(row)?.seq }}/{{ levelCount(row.timeline, row.totalNodes) }} 级</span>
             </div>
             <div v-else-if="(row.timeline || []).length" class="flow-cur done">
-              <b>{{ (row.timeline || []).length }} 级流程</b>
+              <b>{{ levelCount(row.timeline, row.totalNodes) }} 级流程</b>
               <span class="flow-sub">{{ statusLabel(row.status) }}</span>
             </div>
             <span v-else class="text-sub">单级审批</span>
@@ -105,7 +105,7 @@
         <!-- #211：完整流转路径 -->
         <template v-if="(detailRow.timeline || []).length">
           <div class="dlg-subtitle">
-            流转路径（共 {{ (detailRow.timeline || []).length }} 级）
+            流转路径（共 {{ levelCount(detailRow.timeline, detailRow.totalNodes) }} 级）
             <span v-if="currentNode(detailRow)" class="cur-hint">
               当前流转到 {{ currentNode(detailRow)?.approverName || '—' }}
             </span>
@@ -120,7 +120,7 @@
             >
               <div class="node-head">
                 <b>第 {{ n.seq }} 级 · {{ n.approverName || '—' }}</b>
-                <span class="node-type">{{ approverTypeLabel(n.approverType) }}</span>
+                <span class="node-type">{{ nodeSubtitle(n) }}</span>
                 <el-tag size="small" :type="statusTag(n.status)" effect="plain">{{ statusLabel(n.status) }}</el-tag>
                 <el-tag v-if="currentNode(detailRow)?.taskId === n.taskId" size="small" effect="dark">当前节点</el-tag>
               </div>
@@ -195,6 +195,7 @@ import {
   type ApprovalTaskNode,
   type WorkflowTask
 } from '@/api/resource'
+import { APPROVER_TYPE_LABEL } from '@/constants/permissions'
 
 /** 统一行模型：多级引擎与历史单级审批在同一个表格里呈现，用 source 区分决策入口。 */
 /**
@@ -240,17 +241,35 @@ const FIELD_LABELS: Record<string, string> = {
   reason: '请假事由'
 }
 
-const APPROVER_TYPE_LABEL: Record<string, string> = {
-  DEPT_LEADER: '部门负责人',
-  ORG_ADMIN: '企业管理员',
-  TENANT_ADMIN: '租户管理员',
-  PLATFORM_ADMIN: '平台管理员',
-  APPLICANT_SUPERIOR: '申请人的上级',
-  SPECIFIC: '指定审批人'
+/**
+ * 节点副标题：职务型节点要让人看出「按哪个职务求的值」，否则「部门职务」太笼统。
+ * 会签 / 抢占也要显式标出 —— 这两类节点同 seq 会有多条任务，不标注会被误读成
+ * 「流程配重复了」。
+ */
+function nodeSubtitle(n: ApprovalTaskNode): string {
+  const parts: string[] = [approverTypeLabel(n.approverType)]
+  if (n.nodeDuty) parts.push(n.dutyName || n.nodeDuty)
+  if (n.nodeMode === 'parallel') parts.push('会签')
+  else if (n.nodeMode === 'grab') parts.push('抢占')
+  return parts.join(' · ')
 }
 
 function approverTypeLabel(t?: string): string {
   return (t && APPROVER_TYPE_LABEL[t]) || t || '审批人'
+}
+
+/**
+ * 「共 N 级」= 节点组数。
+ *
+ * <p>五期引入会签 / 抢占后，一个节点组会有多条**同 seq** 的任务：timeline 行数 &gt; 级数。
+ * 用 {@code timeline.length} 当级数会把「三人会签」这种节点报成 3 级，与流转路径里
+ * 每条都写「第 1 级」自相矛盾。优先用后端下发的 {@code totalNodes}
+ * （SQL 已按 {@code COUNT(DISTINCT seq)} 计），回落时也按 distinct seq 数，绝不用行数。</p>
+ */
+function levelCount(nodes: ApprovalTaskNode[] | undefined, serverTotal?: number): number {
+  if (serverTotal && serverTotal > 0) return serverTotal
+  const set = new Set((nodes || []).map((n) => n.seq))
+  return set.size || 1
 }
 
 function bizLabel(t?: string): string {
@@ -378,7 +397,7 @@ async function reload() {
 async function decide(row: Row, decision: 'APPROVE' | 'REJECT') {
   const node = currentNode(row)
   const tail = row.source === 'workflow' && node
-    ? `\n当前节点：第 ${node.seq}/${row.totalNodes || row.timeline?.length || 1} 级 · ${node.approverName || '—'}`
+    ? `\n当前节点：第 ${node.seq}/${levelCount(row.timeline, row.totalNodes)} 级 · ${node.approverName || '—'}`
     : ''
   try {
     const { value } = await ElMessageBox.prompt(

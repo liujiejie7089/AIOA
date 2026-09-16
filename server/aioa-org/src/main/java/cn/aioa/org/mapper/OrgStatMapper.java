@@ -211,6 +211,27 @@ public interface OrgStatMapper {
     List<Map<String, Object>> selectApprovalOrdersOfUser(@Param("tenantId") Long tenantId,
                                                          @Param("userId") Long userId);
 
+    /**
+     * 「本部门名义发起的申请」（E-10）—— 部门成员对本部门主体单据的只读可见性。
+     *
+     * <p>二期让部门能以自己的名义发起审批，但可见范围只到提交人（部门正职）与审批人，
+     * 部门成员在系统里看不到「我所在部门提过什么」—— 而这是部门申请这一能力应有的含义。
+     * 本查询把它补上：只按<b>精确部门</b>匹配，不含子部门（子部门是另一件事，
+     * 「本部门」在用户认知里就是自己那一格）。</p>
+     *
+     * <p>带 {@code tenant_id} 条件：即便部门 id 全局唯一，也避免任何跨租户串读的可能。</p>
+     */
+    @Select("SELECT o.id, o.tenant_id AS tenantId, o.user_id AS userId, o.applicant_name AS applicantName, "
+            + "o.applicant_type AS applicantType, o.applicant_department_id AS applicantDepartmentId, "
+            + "(SELECT d.name FROM org_department d WHERE d.id = o.applicant_department_id) AS applicantDepartmentName, "
+            + "o.biz_type AS bizType, o.title, o.content, o.form_data AS formData, o.attachment, o.status, "
+            + "o.approver, o.decision_note AS decisionNote, o.decided_at AS decidedAt, o.created_at AS createdAt "
+            + "FROM approval_order o WHERE o.deleted_at IS NULL AND o.tenant_id = #{tenantId} "
+            + "AND o.applicant_type = 'DEPARTMENT' AND o.applicant_department_id = #{departmentId} "
+            + "ORDER BY o.id DESC LIMIT 200")
+    List<Map<String, Object>> selectDeptSubjectOrdersOfDept(@Param("tenantId") Long tenantId,
+                                                            @Param("departmentId") Long departmentId);
+
     /** 单据当前待审节点（seq 最小的 PENDING 任务）——「当前流转到谁」。 */
     @Select("SELECT t.id, t.seq, t.approver_type AS approverType, t.approver_id AS approverId, "
             + "t.approver_name AS approverName, t.status FROM approval_task t "
@@ -226,14 +247,21 @@ public interface OrgStatMapper {
      * （用户端与验收都会按节点数判断审批层级）。知会条目走
      * {@link #selectCcTasksOfUser(Long)}，二者是两条不同的用户界面。</p>
      */
-    @Select("SELECT t.id, t.seq, t.approver_type AS approverType, t.approver_id AS approverId, "
+    @Select("SELECT t.id, t.tenant_id AS tenantId, t.seq, t.approver_type AS approverType, "
+            + "t.approver_id AS approverId, t.node_mode AS nodeMode, t.node_duty AS nodeDuty, "
             + "t.approver_name AS approverName, t.status, t.note, t.skip_reason AS skipReason, "
             + "t.decided_at AS decidedAt FROM approval_task t "
-            + "WHERE t.order_id = #{orderId} AND t.task_role = 'APPROVE' ORDER BY t.seq ASC")
+            + "WHERE t.order_id = #{orderId} AND t.task_role = 'APPROVE' ORDER BY t.seq ASC, t.id ASC")
     List<Map<String, Object>> selectTasksOfOrder(@Param("orderId") Long orderId);
 
-    /** 单据审批评级数（不含知会节点）——「共 N 级」。 */
-    @Select("SELECT COUNT(*) FROM approval_task WHERE order_id = #{orderId} AND task_role = 'APPROVE'")
+    /**
+     * 单据审批评级数（不含知会节点）——「共 N 级」。
+     *
+     * <p>按 <b>distinct seq</b> 计而非任务条数：五期的会签 / 抢占会把一个节点展开成同 seq 的
+     * 多条任务，若按条数计，一个「三人会签」节点会被报成 3 级，与流转路径显示的级次矛盾。
+     * 对单人模式（改造前后的全部既有流程）二者恒等。</p>
+     */
+    @Select("SELECT COUNT(DISTINCT seq) FROM approval_task WHERE order_id = #{orderId} AND task_role = 'APPROVE'")
     long countTasksOfOrder(@Param("orderId") Long orderId);
 
     /**

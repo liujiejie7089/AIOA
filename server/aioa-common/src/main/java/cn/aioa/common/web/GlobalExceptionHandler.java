@@ -47,6 +47,27 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(400, "请求参数错误：" + e.getMessage()));
     }
 
+    /**
+     * 路径 / 查询参数类型不匹配 → 400，而不是 500（已知缺口 D-2）。
+     *
+     * <p>典型场景：把 {@code /api/v1/workflow/tasks/{id}/decide} 的 id 写成非数字（{@code /tasks/abc/decide}），
+     * Spring 在参数绑定阶段抛 {@code MethodArgumentTypeMismatchException}。此前它会落到下面的
+     * {@code Exception} 兜底被包成「服务内部错误」，于是「客户端传错参数」看起来像「后端崩了」——
+     * 排查方向直接被带偏。</p>
+     *
+     * <p>本条与 {@code NoResourceFoundException} 是同一类修正：<b>让错误归它的类</b>。</p>
+     */
+    @ExceptionHandler({
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.beans.TypeMismatchException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(Exception e, HttpServletRequest request) {
+        log.warn("Parameter type mismatch on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail(400, "参数类型不正确：" + e.getMessage()));
+    }
+
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiResponse<Void>> handleMethod(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)

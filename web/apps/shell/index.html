@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 内联 SVG 图标：避免浏览器默认探测 /favicon.ico 而每次 404（已知缺口 D-4）。
+         用 data URI 而非二进制文件，单文件 H5 与 dev/prod 构建都无需额外静态资源。 -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f6bff'/%3E%3Cpath d='M20 46 32 18l12 28' stroke='%23fff' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
     <title>AIOA 智能办公基座</title>
   </head>
   <body>

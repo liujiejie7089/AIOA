@@ -32,13 +32,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final RoleResolver roleResolver;
     /** 可选：实时权限码解析（V36 授权发放后无需重新登录即可生效）；为 null 时 permissions 保持 JWT 快照。 */
     private final PermissionResolver permissionResolver;
+    /**
+     * 可选：令牌吊销校验（D-1 登出即失效）；为 null 时不启用服务端吊销。
+     *
+     * <p>放在签名 / 有效期校验<b>之后</b>：签名不对或已过期的令牌根本不必查库。</p>
+     */
+    private final TokenRevocationChecker revocationChecker;
 
     public JwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
-        this(tokenProvider, null, null);
+        this(tokenProvider, null, null, null);
     }
 
     public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, RoleResolver roleResolver) {
-        this(tokenProvider, roleResolver, null);
+        this(tokenProvider, roleResolver, null, null);
     }
 
     @Override
@@ -57,6 +63,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Claims claims = tokenProvider.parse(token);
                 String type = claims.get(JwtTokenProvider.CLAIM_TYPE, String.class);
                 if (JwtTokenProvider.TYPE_ACCESS.equals(type)) {
+                    // D-1：已登出的令牌立刻失效。命中即放弃本次认证（不设置 SecurityContext），
+                    // 由 authenticationEntryPoint 统一返回 401 —— 与「令牌无效」走同一条出口，
+                    // 前端无需为此新增分支。
+                    if (revocationChecker != null) {
+                        String jti = claims.getId();
+                        if (jti != null && revocationChecker.isRevoked(jti)) {
+                            SecurityContextHolder.clearContext();
+                            chain.doFilter(request, response);
+                            return;
+                        }
+                    }
                     AuthUser user = tokenProvider.toAuthUser(claims);
                     // 角色即时生效：优先取数据库实时角色，异常时退回 JWT 快照
                     if (roleResolver != null && user.getUserId() != null) {

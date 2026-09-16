@@ -14,6 +14,7 @@ import cn.aioa.admin.mapper.SysRolePermissionMapper;
 import cn.aioa.admin.mapper.SysTenantMapper;
 import cn.aioa.admin.mapper.SysUserMapper;
 import cn.aioa.admin.mapper.SysUserRoleMapper;
+import cn.aioa.admin.security.DbTokenRevocationChecker;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
@@ -47,13 +48,16 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     /** 跨模块读取 org_member / org_institution（V24 企业入驻域），用原生 SQL 避免模块耦合。 */
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    /** 令牌吊销（D-1）：登出把 jti 写库，认证过滤器据此让旧令牌立刻失效。 */
+    private final DbTokenRevocationChecker revocationChecker;
 
     public AuthService(SysUserMapper userMapper, SysUserRoleMapper userRoleMapper,
                        SysRoleMapper roleMapper, SysRolePermissionMapper rolePermissionMapper,
                        SysPermissionMapper permissionMapper, SysLoginLogMapper loginLogMapper,
                        SysTenantMapper tenantMapper,
                        PasswordEncoder passwordEncoder, JwtTokenProvider jwtTokenProvider,
-                       org.springframework.jdbc.core.JdbcTemplate jdbc) {
+                       org.springframework.jdbc.core.JdbcTemplate jdbc,
+                       DbTokenRevocationChecker revocationChecker) {
         this.userMapper = userMapper;
         this.userRoleMapper = userRoleMapper;
         this.roleMapper = roleMapper;
@@ -64,6 +68,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.jdbc = jdbc;
+        this.revocationChecker = revocationChecker;
     }
 
     public record LoginData(String accessToken, String refreshToken, long expiresIn, UserBrief user) {
@@ -237,6 +242,10 @@ public class AuthService {
         if (!JwtTokenProvider.TYPE_REFRESH.equals(claims.get(JwtTokenProvider.CLAIM_TYPE, String.class))) {
             throw new BizException(1003, "令牌类型错误");
         }
+        // D-1：登出同时吊销 refresh token —— 否则登出后用 refresh 换一张新 access 即可绕过。
+        if (revocationChecker.isRevoked(claims.getId())) {
+            throw new BizException(1003, "refreshToken 已失效（账号已登出），请重新登录");
+        }
         SysUser user = userMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, claims.getSubject()));
         if (user == null) {
@@ -380,16 +389,51 @@ public class AuthService {
     }
 
     /**
-     * 退出登录留痕（V35）。
+     * 退出登录：<b>服务端吊销令牌</b>（D-1）+ 审计留痕（V35）。
      *
-     * <p>本系统使用无状态 JWT，服务端不持有会话，因此登出的「失效」动作发生在客户端
-     * （丢弃 localStorage 中的令牌）；这里的职责是把登出事件写进审计链，便于按
-     * userId + 时间还原一次完整会话。接口幂等：即便令牌缺失 / 已失效也按成功返回，
-     * 避免登出过程本身报错——登出永远不应该失败。</p>
+     * <p>改造前这里只写审计，令牌在 TTL 内继续有效 —— 用户点「退出登录」后旧 token
+     * 仍能调通受保护接口，与「退出」的语义直接冲突。现在把 access / refresh 两个令牌的
+     * {@code jti} 写入 {@code revoked_token}，认证过滤器会立刻拒绝它们。</p>
+     *
+     * <p><b>为什么两个都要吊销</b>：只吊销 access 的话，客户端手里的 refresh token
+     * 还能换出一张新的 access token，登出等于没登出。</p>
+     *
+     * <p>接口仍然幂等且永不失败：令牌缺失 / 已过期 / 不可解析都按成功返回 ——
+     * 登出流程本身不应该报错（前端此时已经在清会话了）。</p>
      */
-    public void logout(String ip, String ua) {
+    public void logout(String accessToken, String refreshToken, String ip, String ua) {
         AuthUser auth = AuthUserContext.get();
-        writeLog(auth == null ? null : auth.getUserId(), ip, ua, true, null, "LOGOUT");
+        Long uid = auth == null ? null : auth.getUserId();
+        boolean a = revokeQuietly(accessToken, uid, JwtTokenProvider.TYPE_ACCESS);
+        boolean r = revokeQuietly(refreshToken, uid, JwtTokenProvider.TYPE_REFRESH);
+        writeLog(uid, ip, ua, true, null, "LOGOUT");
+        log.info("用户 {} 登出：access 吊销={} refresh 吊销={}", uid, a, r);
+    }
+
+    /**
+     * 尽力吊销一个令牌。
+     *
+     * @return 是否新写入吊销记录（令牌为空 / 已过期 / 不可解析 → false，且不算失败）
+     */
+    private boolean revokeQuietly(String token, Long fallbackUid, String type) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        try {
+            Claims claims = jwtTokenProvider.parse(token);
+            String jti = claims.getId();
+            if (jti == null || jti.isBlank()) {
+                return false; // V46 之前签发的令牌没有 jti，无从吊销
+            }
+            Object rawUid = claims.get(JwtTokenProvider.CLAIM_UID);
+            Long uid = rawUid instanceof Number n ? n.longValue() : fallbackUid;
+            return revocationChecker.revoke(jti, uid, type,
+                    JwtTokenProvider.expiryOf(claims), "LOGOUT");
+        } catch (Exception e) {
+            // 令牌已过期或损坏：它本来就不再有效，无需吊销（也不该让登出报错）
+            log.debug("登出时令牌不可解析，跳过吊销：{}", e.getMessage());
+            return false;
+        }
     }
 
     private void writeLog(Long userId, String ip, String ua, boolean ok, String failReason, String action) {

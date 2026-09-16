@@ -4,6 +4,9 @@
 <meta charset="UTF-8" data-page-node-id="id8bve7d0SnzkBvClBaIAA">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" data-page-node-id="UDv2PXn9ZGHZNf8RII8JF2">
 <title>AIOA 智能工作台 · 客户端 V1.2</title>
+<!-- 内联 SVG 图标：避免浏览器默认探测 /favicon.ico 而每次 404（已知缺口 D-4）。
+     单文件 H5 无法附带静态资源，data URI 是唯一不引入外部依赖的做法。 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f6bff'/%3E%3Cpath d='M20 46 32 18l12 28' stroke='%23fff' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com" data-page-node-id="RTinzNuZ1hO9BnKkx2CbL9">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-page-node-id="LQ70GAd5XrdwZkH0N1TK0M">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" data-page-node-id="CE7vjHOBxX9ylvKIqdwfxs">
@@ -579,6 +582,8 @@
   .tda-item:hover{filter:brightness(.97)}
   /* ---------- 审批流转路径（#211）：当前流转到谁 / 各节点由谁审核 ---------- */
   .td-flow-title{font-size:11px;color:var(--text-2);margin-bottom:6px;font-weight:600}
+  /* 本部门名义发起（E-10）：与「我发起的」区分的小分区标题 */
+  .dept-sub-title{font-size:11px;color:var(--text-2);margin:14px 0 6px;font-weight:600}
   .tl{display:flex;flex-direction:column;gap:0;margin-bottom:10px}
   .tl-node{display:flex;gap:9px;position:relative;padding:0 0 10px 0}
   .tl-node:last-child{padding-bottom:0}
@@ -1112,6 +1117,9 @@ const state = {
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
   /* 抄送我的（知会 / 待阅）：与 approvals（我发起的）分账 —— 前者是我要知情的，后者是我发起的 */
   ccApprovals:[],
+  /* 本部门名义发起的申请（E-10）：部门成员的只读视角。
+     与 approvals 分账：approvals 是「我发起的」，这里是「我所在部门以部门名义发起的」。 */
+  deptOrders:[],
   kpi:{month:null, quarter:null}, kpiMode:'month',
   workers:[], results:[], currentResult:null, editingWorker:null,
   myStats:null,
@@ -1234,6 +1242,8 @@ const API = {
   /* 三期 C-04：标记知会条目已读（幂等；点开详情即调用） */
   workflowCcRead(taskId){ return this.req('/v1/workflow/cc/'+taskId+'/read',{method:'POST',body:'{}'}); },
   workflowMine(){ return this.req('/v1/workflow/mine'); },
+  /* 本部门名义发起的申请（E-10）：部门成员只读可见。无部门归属时后端返回空数组。 */
+  workflowDeptSubject(){ return this.req('/v1/workflow/dept-subject'); },
   workflowTimeline(orderId){ return this.req('/v1/workflow/orders/'+orderId+'/timeline'); },
   workflowDecide(taskId, decision, note){
     return this.req('/v1/workflow/tasks/'+taskId+'/decide',{method:'POST',body:JSON.stringify({decision,note})});
@@ -1435,6 +1445,13 @@ function switchTabById(pid){
 function activateChatTab(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-chat'));
 }
+/* 待办 Tab 高亮。gotoTodo() 一直调用 activateTodoTab()，但这个函数此前从未定义 ——
+   于是「返回待办」按钮与请假结果卡的兜底跳转每次都会抛 ReferenceError
+   （go() 已执行，所以页面能切过去，但 Tab 不被点亮且控制台报错，问题被隐藏得很深）。
+   与 activateChatTab 同一形态补上。 */
+function activateTodoTab(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.page==='page-todo'));
+}
 /* 绑定/解绑当前会话的数字员工：绑定后该会话受其职责边界约束（越界拒答） */
 function setChatWorker(w){
   state.chatWorker = w || null;
@@ -1505,14 +1522,21 @@ function tagSource(list, source){
   return asArray(list).map(function(o){ return Object.assign({}, o, {source:source}); });
 }
 /* 待我审批 = 多级审批引擎的节点待办 ∪ 租户管理员的单级待办。
-   机构管理员只有前一份（节点指派人），租户管理员两份都有 —— 前者此前完全没有入口。 */
+   机构管理员只有前一份（节点指派人），租户管理员两份都有 —— 前者此前完全没有入口。
+
+   D-3：单级待办接口（/approvals?scope=todo）后端只放行**租户级管理员**
+   （ROLE_ADMIN | ROLE_TENANT_ADMIN，见 ApprovalController.isTenantLevelAdmin），
+   而这里此前对所有角色无条件调用 —— 成员与机构管理员每次进入工作台都会撞一次 403。
+   靠 try/catch 吞掉只是「页面不炸」，日志里仍是持续报错，且掩盖了真正的越权尝试。
+   现按与后端**同一口径**（state.isAdmin === ADMIN_ROLES）前置判断，不该发的请求就不发。 */
 async function loadTodoApprovals(){
   const merged = [];
   if(state.canApprove){
     try{ merged.push.apply(merged, tagSource(await API.workflowTodo(), 'workflow')); }catch(e){}
   }
-  // 单级待办仅租户/平台管理员可读，其它角色 403 属预期，静默跳过
-  try{ merged.push.apply(merged, tagSource(await API.approvalList('todo'), 'legacy')); }catch(e){}
+  if(state.isAdmin){
+    try{ merged.push.apply(merged, tagSource(await API.approvalList('todo'), 'legacy')); }catch(e){}
+  }
   return merged;
 }
 async function loadLiveData(){
@@ -1556,6 +1580,9 @@ async function loadLiveData(){
       if(s && typeof s.ccUnread === 'number') state.ccUnread = s.ccUnread;
     }catch(e){}
   }catch(e){ state.ccApprovals = []; state.ccUnread = 0; }
+  // 本部门名义发起的申请（E-10）：部门成员的只读视角。
+  // 与「我的申请」是两件事 —— 这里看的是「我所在部门提过什么」，不是「我提过什么」。
+  try{ state.deptOrders = asArray(await API.workflowDeptSubject()); }catch(e){ state.deptOrders = []; }
   // 请假闭环元数据（假种 + 我的余额），供请假表单与统计使用
   try{ state.leaveTypes = asArray(await API.leaveTypes()); }catch(e){ state.leaveTypes = []; }
   if(state.canApprove){ try{ state.leaveBalances = asArray(await API.leaveBalance()); }catch(e){} }
@@ -2040,7 +2067,7 @@ function renderTodo(){
         '<div class="tmain"><div class="tt">查看全部 '+mineList.length+' 条</div>'+
         '<div class="ts">含历史已通过 / 已驳回的申请记录</div></div></div>'
     : '';
-  mine.innerHTML = mineList.length
+  const mineRows = mineList.length
     ? mineList.slice(0,5).map(a=>{
         const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
         const ic = approvalIcon(a);
@@ -2048,7 +2075,24 @@ function renderTodo(){
         return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
           tail + currentFlowInline(a), "openTodoDetail("+a.id+",'mine')", ic[1], fullTime(a.createdAt));
       }).join('') + mineMore
-    : emptyBox('暂无申请记录');
+    : '';
+  /* 本部门名义发起的申请（E-10）——部门成员的只读视角。
+     ① 已在 mineList 出现的（部门正职本人提交的，他也属于本部门）不重复展示，避免同一单出现两次；
+     ② 单独成块并标注「只读」：与「我发起的」区分语义 —— 能看见、能督办，但决策权在审批人。 */
+  const mineIds = {};
+  mineList.forEach(a=>{ mineIds[String(a.id)] = 1; });
+  const deptList = asArray(state.deptOrders).filter(a=>!mineIds[String(a.id)]);
+  const deptBlock = deptList.length
+    ? '<div class="dept-sub-title">本部门名义发起 · '+deptList.length+' 条（只读）</div>' +
+      deptList.slice(0,5).map(a=>{
+        const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
+        const ic = approvalIcon(a);
+        const tail = '发起人：'+esc(a.creatorName||a.applicantName||'—') + currentFlowInline(a);
+        return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge info">部门申请</span> <span class="badge '+st[0]+'">'+st[1]+'</span>',
+          tail, "openTodoDetail("+a.id+",'dept')", ic[1], fullTime(a.createdAt));
+      }).join('')
+    : '';
+  mine.innerHTML = (mineRows || deptBlock) ? (mineRows + deptBlock) : emptyBox('暂无申请记录');
 
   /* 抄送我的（知会 / 待阅）——对标 O2OA 的「待阅」。
      一级审批（levels=1）后机构管理员不再位于审批链上，正是靠这里做到
@@ -2273,7 +2317,8 @@ function dismissNotifPopup(){
 /* ---- 待办/审批详情（V1.2.1）：完整信息 + 通过/驳回 + 状态回写 ---- */
 function findApproval(id, scope){
   const src = scope==='todo' ? state.todoApprovals
-            : (scope==='cc' ? state.ccApprovals : state.approvals);
+            : (scope==='cc' ? state.ccApprovals
+            : (scope==='dept' ? state.deptOrders : state.approvals));
   return asArray(src).find(a=>a.id===id);
 }
 function openTodoDetail(id, scope){
@@ -2298,7 +2343,9 @@ function openTodoDetail(id, scope){
         '，第 '+cur.seq+'/'+(a.totalNodes||asArray(a.timeline).length)+' 级）'
       : '')+
     // 抄送（知会）语境必须明确「你不需要做什么」——否则收件人会以为这是待办
-    (scope==='cc' ? '<br><b>抄送知会</b>：无需你审批，仅供知悉与督办' : '');
+    (scope==='cc' ? '<br><b>抄送知会</b>：无需你审批，仅供知悉与督办' : '')+
+    // 本部门名义发起（E-10）：成员可见但不可决策，必须说清「这是部门的名义、不是你提的」
+    (scope==='dept' ? '<br><b>本部门名义发起</b>：可见与督办，决策由审批人处理' : '');
   resetClamp($('tdContent'));   // 换单据时清掉上一单的折叠残留
   $('tdContent').textContent = a.content || '（无正文）';
   const extra = renderApprovalDetailExtra(a);

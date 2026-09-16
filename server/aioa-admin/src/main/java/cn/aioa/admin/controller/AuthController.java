@@ -57,13 +57,29 @@ public class AuthController {
     /**
      * 退出登录。
      *
-     * <p>无状态 JWT：令牌吊销由客户端丢弃完成，这里只做审计留痕（V35）。端点必须
-     * 幂等且永不失败——令牌缺失 / 过期时也应返回成功，否则前端登出流程会被 401 打断。</p>
+     * <p>V46 起<b>服务端吊销令牌</b>（D-1）：access 与 refresh 两个令牌的 jti 都会写入
+     * {@code revoked_token}，旧令牌立刻失效（此前只做审计，令牌在 TTL 内继续可用）。
+     * 请求体里的 {@code refreshToken} 可选 —— 缺省时只吊销 Authorization 头携带的 access 令牌。</p>
+     *
+     * <p>端点仍然幂等且永不失败：令牌缺失 / 过期时也返回成功，
+     * 否则前端登出流程会被 401 打断（此时它已经在清会话了）。</p>
      */
     @PostMapping("/auth/logout")
-    public ApiResponse<Map<String, Object>> logout(HttpServletRequest request) {
-        authService.logout(clientIp(request), request.getHeader("User-Agent"));
+    public ApiResponse<Map<String, Object>> logout(HttpServletRequest request,
+                                                   @RequestBody(required = false) RefreshRequest body) {
+        authService.logout(bearerToken(request), body == null ? null : body.refreshToken(),
+                clientIp(request), request.getHeader("User-Agent"));
         return ApiResponse.ok(Map.of("loggedOut", true));
+    }
+
+    /** 从 Authorization 头取 Bearer 令牌（缺失 / 形态不符返回 null）。 */
+    private static String bearerToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = header.substring(7).trim();
+        return token.isEmpty() ? null : token;
     }
 
     @GetMapping("/auth/me")

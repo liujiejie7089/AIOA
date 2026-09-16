@@ -58,12 +58,15 @@ export const useAuthStore = defineStore('auth', {
 
     async logout(): Promise<void> {
       const token = this.token
+      const refresh = this.refreshToken
       // 先清本地会话，再best-effort 通知后端 —— 顺序不能反：
       // MainLayout 的 router-view 以登录态为渲染闸门，令牌一旦清空当前页面立即卸载，
       // 不会再在「无令牌」状态下重新挂载并打出一发注定 401 的请求（退出登录时报 401 的根因）。
+      // 令牌值先取到局部变量：clearSession() 之后 this.token / this.refreshToken 已为空，
+      // 而 D-1 的服务端吊销必须拿到这两个原值（否则登出只清前端、后端令牌照旧有效）。
       this.clearSession()
       try {
-        await authApi.logout(token)
+        await authApi.logout(token, refresh)
       } catch {
         // 后端不可用时也要完成登出（本地态已清）
       }

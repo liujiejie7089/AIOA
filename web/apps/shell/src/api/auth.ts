@@ -10,12 +10,17 @@ export function me(): Promise<UserInfo> {
 }
 
 /**
- * 退出登录（后端仅做审计留痕，令牌吊销由客户端丢弃完成）。
+ * 退出登录。
+ *
+ * <p>V46 起后端会**服务端吊销令牌**（D-1）：把 access / refresh 两个令牌的 jti 写库，
+ * 旧令牌立刻失效。因此两个令牌都要带上 —— 只带 access 的话，refresh 仍能换出新令牌，
+ * 登出等于没登出。</p>
  *
  * <p>`accessToken` 需由调用方显式传入：登出时本地会话已经先被清空，公共请求拦截器
- * 取不到令牌，只能在这里把令牌带上，后端才能把登出事件正确归属到人。</p>
+ * 取不到令牌，只能在这里把令牌带上，后端才能把登出事件正确归属到人并把令牌加入吊销表。</p>
  */
-export function logout(accessToken?: string): Promise<void> {
+export function logout(accessToken?: string, refreshToken?: string): Promise<void> {
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
-  return http.post('/auth/logout', undefined, { headers }).then(() => undefined)
+  const body = refreshToken ? { refreshToken } : undefined
+  return http.post('/auth/logout', body, { headers }).then(() => undefined)
 }

@@ -66,11 +66,15 @@ export function hasAnyRole(roles: string[] | undefined | null, allowed: readonly
 }
 
 /**
- * 审批流「知会对象」可选项（三期 C-02）。
+ * 审批流「知会对象」可选项（三期 C-02 + C-11）。
  *
  * <p>与后端 {@code ApprovalFlowService.expandCcNodes} 支持的 {@code cc} 类型严格一致：
  * 引擎对未知类型 {@code default -> null} 跳过（不报错），故管理端必须在此约束内选择，
- * 非法类型由前端提示（不静默丢弃）。{@code SPECIFIC}（指定人）属 P1，本期不开放入口。</p>
+ * 非法类型由前端提示（不静默丢弃）。</p>
+ *
+ * <p>{@code SPECIFIC}（指定具体人，C-11）没有固定 value —— 它是
+ * {@code {"type":"SPECIFIC","user_id":N}} 形态，人由 <b>user_id</b> 决定，
+ * 因此不放在本下拉里，而由管理端的「指定知会人」选择器单独写入。</p>
  */
 export const CC_TARGET_TYPES = [
   { value: 'ORG_ADMIN', label: '企业管理员' },
@@ -81,3 +85,69 @@ export const CC_TARGET_TYPES = [
 
 /** 合法的知会对象类型码集合（用于保存前的非法值校验）。 */
 export const CC_TARGET_VALUES: readonly string[] = CC_TARGET_TYPES.map((t) => t.value)
+
+// ================================================================== 四期 / 五期：节点配置
+//
+// 以下四组常量是「管理端能配出引擎真正支持的流程」的前提：引擎（V45）支持
+// 职务型审批人、单人/会签/抢占三种处理模式、when 条件路由、指定知会人，
+// 但管理端此前只能配 approver_type + levels + threshold_days + cc(角色)，
+// 于是这些能力只能靠直接打接口使用 —— 配置入口缺失 = 能力事实上不可用。
+// 新增口径时**必须同步改这里**（前端唯一入口，勿在视图里另起一份字面量）。
+
+/** 审批人类型（与后端 {@code ApprovalTask.TYPE_*} 同源）。 */
+export const APPROVER_TYPES = [
+  { value: 'APPLICANT_SUPERIOR', label: '申请人的上级' },
+  { value: 'DEPT_LEADER', label: '部门负责人' },
+  { value: 'DEPT_DUTY', label: '部门职务（按职务动态取人）' },
+  { value: 'UNIT_DUTY', label: '机构职务（按职务动态取人）' },
+  { value: 'ORG_ADMIN', label: '企业管理员' },
+  { value: 'TENANT_ADMIN', label: '租户管理员' },
+  { value: 'PLATFORM_ADMIN', label: '平台管理员' },
+  { value: 'SPECIFIC', label: '指定审批人' }
+] as const
+
+/** 审批人类型 → 中文名（流转路径 / 列表回显用；未收录时原样显示类型码）。 */
+export const APPROVER_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  APPROVER_TYPES.map((t) => [t.value, t.label])
+) as Record<string, string>
+
+/** 职务字典（与后端 {@code OrgDuty.*} 同源），scope 决定它能配在哪种节点上。 */
+export const DUTY_TYPES = [
+  { value: 'DEPT_PRINCIPAL', label: '部门正职', scope: 'DEPT' },
+  { value: 'DEPT_DEPUTY', label: '部门副职', scope: 'DEPT' },
+  { value: 'ORG_LEADER', label: '机构负责人', scope: 'ORG' }
+] as const
+
+/** 按审批人类型给出可选职务：DEPT_DUTY 只列部门域职务，UNIT_DUTY 只列机构域职务。 */
+export function dutiesForApproverType(type: string): readonly { value: string; label: string }[] {
+  if (type === 'DEPT_DUTY') return DUTY_TYPES.filter((d) => d.scope === 'DEPT')
+  if (type === 'UNIT_DUTY') return DUTY_TYPES.filter((d) => d.scope === 'ORG')
+  return []
+}
+
+/** 节点处理模式（与后端 {@code ApprovalTask.MODE_*} 同源）。 */
+export const NODE_MODES = [
+  { value: 'single', label: '单人（取首个候选）' },
+  { value: 'parallel', label: '会签（全部通过才推进）' },
+  { value: 'grab', label: '抢占（任一人处理即完成）' }
+] as const
+
+/** 条件路由的取值字段（与后端 {@code fieldValue()} 同源）。 */
+export const CONDITION_FIELDS = [
+  { value: 'days', label: '申请天数' },
+  { value: 'bizType', label: '业务类型' },
+  { value: 'departmentId', label: '部门 ID' },
+  { value: 'institutionId', label: '机构 ID' },
+  { value: 'applicantType', label: '申请主体（USER / DEPARTMENT）' },
+  { value: 'tokens', label: '额度（额度扩容表单：tokens）' }
+] as const
+
+/** 条件运算符（与后端 {@code compare()} 同源）。 */
+export const CONDITION_OPS = [
+  { value: '<=', label: '≤' },
+  { value: '<', label: '<' },
+  { value: '>=', label: '≥' },
+  { value: '>', label: '>' },
+  { value: '==', label: '=' },
+  { value: '!=', label: '≠' }
+] as const

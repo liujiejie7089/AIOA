@@ -91,6 +91,21 @@ public class WorkflowController {
         return ApiResponse.ok(flowService.mine(cn.aioa.security.AuthUserContext.require()));
     }
 
+    /**
+     * 「本部门名义发起的申请」（E-10）—— 部门成员的只读视角。
+     *
+     * <p>只要求「已登录」：查看本部门提过什么是成员的自助能力，不该被审批人角色挡住。
+     * 无部门归属的账号（平台 / 租户管理员）返回空列表而非 403 —— 那是「这个视角对你
+     * 没有内容」，不是越权。</p>
+     *
+     * <p>为什么单开端点而不并进 {@code /workflow/mine}：后者与「我的数据 · 我的申请」
+     * 统计口径同源（既有套件有一致性断言），混入部门单据会让统计数字与实际含义脱节。</p>
+     */
+    @GetMapping("/workflow/dept-subject")
+    public ApiResponse<List<Map<String, Object>>> deptSubjectOrders() {
+        return ApiResponse.ok(flowService.deptSubjectOrders(cn.aioa.security.AuthUserContext.require()));
+    }
+
     /** 审批决策（通过 / 驳回 + 意见）。 */
     @PostMapping("/workflow/tasks/{id}/decide")
     public ApiResponse<Map<String, Object>> decide(@PathVariable Long id,

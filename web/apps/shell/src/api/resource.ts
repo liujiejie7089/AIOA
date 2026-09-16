@@ -45,10 +45,16 @@ export function decideApproval(id: number, decision: 'APPROVE' | 'REJECT', note?
 export interface ApprovalTaskNode {
   taskId: number
   seq: number
-  /** DEPT_LEADER / ORG_ADMIN / TENANT_ADMIN / PLATFORM_ADMIN / SPECIFIC */
+  /** DEPT_LEADER / DEPT_DUTY / UNIT_DUTY / ORG_ADMIN / TENANT_ADMIN / PLATFORM_ADMIN / SPECIFIC / APPLICANT_SUPERIOR */
   approverType: string
   approverId: number | null
   approverName: string | null
+  /** 五期：节点处理模式 single / parallel / grab（同 seq 多条任务 = 一个节点组） */
+  nodeMode?: string | null
+  /** 四期：职务型节点（DEPT_DUTY / UNIT_DUTY）求值用的职务码 */
+  nodeDuty?: string | null
+  /** 职务码的中文名（由后端按租户职务字典解析，前端不硬编码） */
+  dutyName?: string | null
   /** PENDING / APPROVED / REJECTED / SKIPPED */
   status: string
   note: string | null
