@@ -97,6 +97,34 @@
 - **动真实租户级配置的验收，`finally` 必须按「原字节」还原**：先登记 `(id, 原 steps_json)` 再改，不要用「内置兜底版本」猜着还原（会把演示数据改坏）。
 - **管理端配置页验收要「渲染 + 往返」**：只断言接口能存不够 —— 必须浏览器渲染出控件（用 **label 文本**匹配，别绑 `el-select` 内部 DOM），并做「**打开弹窗后不改动直接保存**，断言 `steps_json` 与保存前完全一致」，再种一个**页面没建模的键**确认它活下来（`_extra` 无损）。范本 `scripts/e2e_v45_config_ui.py`。
 
+### 真机（真实 gitee.com）验证：边界与发现（2026-09-17 首测）
+
+**切接线的机制只是环境变量** —— 三个域名键（`base-url` / `web-base-url` / `oauth-authorize-base-url`）**都不设**即全取默认真站。
+实测真机接线：`authorizeHost=gitee.com`、`sandbox=false`、无警示；真实浏览器打开授权 URL 最终落
+`https://gitee.com/login?redirect_to_url=…`、**标题「登录 - Gitee.com」**；UI 点「绑定 Gitee 账号」新标签落 `gitee.com`（10/10）。
+服务端真打到真站的判据 = 后端日志 `GiteeClient` 的 WARN 行 + **Gitee 英文原文错误**（桩只产中文/自定义文案）：
+`POST /api/v5/orgs/<org>/repos -> HTTP 401 code=0 msg=401 Unauthorized: Access token does not exist`。
+
+**真机「建出仓库」做不了，缺三样**（别重试到天亮，直接如实报）：
+① 库内无真实令牌（`gitee_tenant_config.access_token` 为 NULL）；② `gitee_account` 全是**桩签发的假身份**
+（`gitee_uid` 42083/42279/42366/42489/42511，用户名形如 `gitee_dev_212`）；③ OAuth 应用未在真站注册
+（生产默认 `client-id` 为空）。另加一条环境限制：本机出口 IP 被 Gitee 限流 —— `/api/v5/version` 与无令牌建仓
+均 `403 Forbidden (Rate Limit Exceeded)`。
+
+**真机下验证到的正确行为**（勿当回归）：建仓接口毫秒级返回 `CREATING`（外呼走后台任务）；
+认证类错误**不重试**（`GiteeTaskService` 的 `e.isRetryable()`，401 时 `attempts=1` 即止）；
+失败把上游原文落到 `errorMsg` 与 `gitee_task.last_error`，不静默。
+
+**真机测出的三个待改进项**（已写入交付说明，尚未修）：
+1. `GET /gitee/config` 回显 `enabled/orgConfigured/webhookBaseUrlConfigured/syncEnabled`，
+   **唯独不回显 client-id/secret 是否配置** ⇒ 管理端无法在点击前预判，点了「绑定」才拿 400。
+2. 演示库残留 **61 个桩项目**（`gitee_html_url=http://127.0.0.1:8090/…`；id=58 那条 `gitee.com` 是桩用
+   `/_stub/public-base` 造的**展示值**，非真实仓库）⇒ 生产接线下一进「项目与仓库」就是一屏死链，真假混排。
+3. `webhook-base-url` 生产默认为空 ⇒ Webhook（Gitee→平台 的反向回调）**静默失效**，需公网可达。
+
+**测完必做**：切回桩接线并复跑 `SMOKE_v48` + `e2e_v48_gitee`（实测 32/32、116/116）；
+清理测试建的 `gitee_project` 行用 `DELETE /api/v1/gitee/projects/{id}?purgeRepo=false`（回读应 404）。
+
 ## 6. Git 远端
 - `origin`=内网 Gitea `172.16.8.249:3000`：沙箱不可达 + push-to-create 关闭(403)，本地无解。
 - ⚠️ **2026-09-17 起：本沙箱内推不了** —— 读 `~/.ssh` 被沙箱策略**硬拒**，`dangerouslyDisableSandbox` 对该目录同样无效
