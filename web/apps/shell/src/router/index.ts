@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { TOKEN_KEY } from '@/api'
-import { EXPERT_MANAGER_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
+import { EXPERT_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -89,8 +89,21 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'org-structure',
         name: 'org-structure',
-        component: () => import('@/views/OrgStructureView.vue'),
-        meta: { title: '组织与员工', minTier: 'org'  }
+        component: () => import('@/views/OrgAdminView.vue'),
+        // 合并「组织与员工」与「人员管理 / 系统管理」为单页双页签，菜单只保留一个入口。
+        // 本路由是合并后的**正式入口**：部门树 / 员工名册对机构成员开放（ORG_VIEW_ROLES）；
+        // 「人员管理」页签由 OrgAdminView 内部再按 PERSONNEL_VIEW_ROLES 收起。
+        meta: { title: '组织与员工', allowRoles: ORG_VIEW_ROLES }
+      },
+      {
+        // 旧深链 /admin 保留为**独立路由**而不是 alias：
+        // alias 会继承本路由的 allowRoles（含 ROLE_MEMBER），普通成员深链 /admin 就不再被拦截，
+        // 等于顺手放宽了人员管理的边界。这里沿用原口径 PERSONNEL_VIEW_ROLES，
+        // 使「合并菜单」与「谁能进人员管理」两件事互不牵连。
+        path: 'admin',
+        name: 'admin',
+        component: () => import('@/views/OrgAdminView.vue'),
+        meta: { title: '人员管理', allowRoles: PERSONNEL_VIEW_ROLES }
       },
       {
         path: 'resource-grants',
@@ -105,20 +118,20 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '费用分摊', minTier: 'tenant'  }
       },
       {
-        path: 'admin',
-        name: 'admin',
-        component: () => import('@/views/AdminView.vue'),
-        // 人员管理对四级管理者开放（数据范围由后端按档位收窄）；
-        // 平台级配置（角色/权限点/功能管理/模型管理）在页面内按 isPlatformAdmin 收起。
-        meta: { title: '系统管理', allowRoles: PERSONNEL_VIEW_ROLES }
+        path: 'tenants', name: 'tenants', component: () => import('@/views/TenantAdminView.vue'), meta: { title: '租户管理', minTier: 'platform'  }
       },
-      { path: 'tenants', name: 'tenants', component: () => import('@/views/TenantAdminView.vue'), meta: { title: '租户管理', minTier: 'platform'  } },
       { path: 'experts', name: 'experts', component: () => import('@/views/ExpertConfigView.vue'), meta: { title: '专家配置', allowRoles: EXPERT_MANAGER_ROLES } },
       { path: 'tools', name: 'tools', component: () => import('@/views/ToolRegistryView.vue'), meta: { title: '业务工具', minTier: 'tenant' } },
       // V34：租户管理员创建的数字员工/专家需平台管理员审核后生效
       { path: 'content-reviews', name: 'content-reviews', component: () => import('@/views/ContentReviewView.vue'), meta: { title: '内容审核', allowRoles: PLATFORM_ONLY_ROLES } },
       // V36 需求④：审核记录中心（平台管理员全量 / 租户管理员本租户）
       { path: 'review-records', name: 'review-records', component: () => import('@/views/ReviewRecordsView.vue'), meta: { title: '审核记录', allowRoles: REVIEW_RECORD_ROLES } },
+      { path: 'gitee/projects', name: 'gitee-projects', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '项目与仓库', allowRoles: GITEE_VIEW_ROLES } },
+      { path: 'gitee/projects/:id', name: 'gitee-project-detail', component: () => import('@/views/GiteeProjectDetailView.vue'), meta: { title: '项目详情', allowRoles: GITEE_VIEW_ROLES } },
+      // V5x 消息中心：对所有已登录角色可见（人人都要看自己的通知）。
+      // 通道配置 / 投递记录两个页签在页内按 isTenantAdmin 收起，非管理员不发起其接口请求（否则 403）。
+      // 不加 allowRoles / minTier —— 三层同源：菜单(MainLayout) → 路由 meta → 后端都已对齐「全员可见」。
+      { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationCenterView.vue'), meta: { title: '消息中心' } },
       { path: 'profile', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { title: '个人信息' } }
     ]
   },

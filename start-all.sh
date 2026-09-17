@@ -14,6 +14,19 @@ JAR="server/aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar"
 
 port_up() { netstat -ano | grep -E ":$1[[:space:]]" | grep -q LISTENING; }
 
+# ---- Gitee 接线：默认生产（授权跳转真的去 gitee.com）----
+# 端到端回归需要把服务端接口与授权域指向本地桩 :8090，必须显式 opt-in，
+# 否则「为什么没跳到真实 Gitee」就会变成一个查不出来的谜。
+if [ "${AIOA_GITEE_E2E:-0}" = "1" ]; then
+  # shellcheck disable=SC1091
+  . scripts/gitee-e2e-env.sh
+  echo "[gitee] 端到端回归接线已启用：服务端接口与授权跳转均指向本地桩 :8090"
+  echo "        （用户不会到达真实 Gitee，绑定结果页会显式标注）"
+else
+  echo "[gitee] 使用生产默认：授权跳转 = https://gitee.com"
+  echo "        如需本地桩接线（跑 Gitee 套件）请用：AIOA_GITEE_E2E=1 bash start-all.sh"
+fi
+
 # ---- Java 后端 :8080 ----
 if port_up 8080; then
   echo "[skip] backend :8080 already running"

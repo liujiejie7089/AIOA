@@ -1,5 +1,6 @@
 package cn.aioa.org.service;
 
+import cn.aioa.common.event.NotificationRequested;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.org.entity.ApprovalFlowDef;
 import cn.aioa.org.entity.ApprovalTask;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -100,6 +102,7 @@ public class ApprovalFlowService {
      * 引擎只负责「拿到有序候选之后怎么用」（单人 / 会签 / 抢占）与兜底提示。</p>
      */
     private final ApproverResolver approverResolver;
+    private final ApplicationEventPublisher events;
 
     /** 提交请求（结构化，避免服务间传 Map 丢字段）。 */
     public record SubmitReq(String bizType, String title, String content, String formData,
@@ -1583,8 +1586,25 @@ public class ApprovalFlowService {
             row.put("content", content);
             row.put("refId", refId);
             statMapper.insertNotification(row);
+            // 站内信落库后发布触达事件（自增 id 已回填到 row.get("id")）；
+            // 发布失败绝不影响审批主流程（仅记 warn）。
+            Object idObj = row.get("id");
+            Long notificationId = idObj instanceof Number ? ((Number) idObj).longValue() : null;
+            publishNotification(tenantId, userId, title, content, refId, notificationId);
         } catch (Exception e) {
             log.warn("notify failed: userId={} title={} err={}", userId, title, e.getMessage());
+        }
+    }
+
+    /** 发布 NotificationRequested 事件（尽力而为，actor 不在本方法可见范围内 → null）。 */
+    private void publishNotification(Long tenantId, Long userId, String title, String content,
+                                     Long refId, Long notificationId) {
+        try {
+            events.publishEvent(new NotificationRequested(
+                    tenantId == null ? 0L : tenantId, userId, "APPROVAL", title, content,
+                    refId, null, notificationId));
+        } catch (Exception e) {
+            log.warn("发布通知触达事件失败（不影响审批主流程）userId={} title={}", userId, title, e);
         }
     }
 

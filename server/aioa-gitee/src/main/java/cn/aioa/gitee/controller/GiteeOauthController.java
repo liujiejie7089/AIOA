@@ -93,6 +93,19 @@ public class GiteeOauthController {
                 .append("<title>Gitee 绑定成功</title></head><body style=\"font-family:system-ui;padding:40px\">")
                 .append("<h2>Gitee 绑定成功</h2>")
                 .append("<p>已绑定账号：<b>").append(esc(giteeUsername)).append("</b></p>");
+        // fail-loud：授权域非 gitee.com 时，这一页必须说清楚「未经过真实 Gitee 授权」，
+        // 否则用户会把桩/代理签发的假身份当成真实绑定（截图里的迷惑点正在于此）。
+        String host = nonProdAuthorizeHost();
+        if (host != null) {
+            sb.append("<p style=\"background:#fff7e6;border:1px solid #ffd591;border-radius:6px;")
+                    .append("padding:12px;color:#874d00;max-width:640px\">")
+                    .append("<b>⚠ 本次授权未经过真实 Gitee</b><br>")
+                    .append("授权跳转落地在 <code>").append(esc(host)).append("</code>（非 gitee.com），")
+                    .append("账号由本地桩/代理签发。如需真实 Gitee 授权，请将 ")
+                    .append("<code>aioa.gitee.oauth-authorize-base-url</code>")
+                    .append("（环境变量 <code>AIOA_GITEE_OAUTH_AUTHORIZE_URL</code>）")
+                    .append("配置为 <code>https://gitee.com</code> 后重新发起绑定。</p>");
+        }
         if (back != null && !back.isBlank()) {
             sb.append("<p>正在返回平台…</p>")
                     .append("<script>setTimeout(function(){location.replace(")
@@ -122,6 +135,23 @@ public class GiteeOauthController {
         }
         sb.append("</body></html>");
         return sb.toString();
+    }
+
+    /**
+     * 授权域若不是 gitee.com，返回该域名（用于结果页的 fail-loud 提示）；
+     * 是生产域或无法解析时返回 {@code null}。
+     */
+    private String nonProdAuthorizeHost() {
+        String base = props.getOauthAuthorizeBaseUrl();
+        try {
+            String h = java.net.URI.create(base == null ? "" : base.trim()).getHost();
+            if (h == null || h.isBlank()) {
+                return null;
+            }
+            return ("gitee.com".equalsIgnoreCase(h) || "www.gitee.com".equalsIgnoreCase(h)) ? null : h;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** HTML 文本转义：Gitee 登录名来自外部输入，不能直接拼进页面。 */

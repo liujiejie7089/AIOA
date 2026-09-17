@@ -109,7 +109,29 @@ public class GiteeContentService {
         String token = tokenService.requireAccessTokenForProject(p);
         String safeRef = StringUtils.hasText(ref) ? ref : p.getDefaultBranch();
         String safePath = normPath(path);
-        Object raw = client.getContents(token, p.getGiteeOwner(), p.getGiteeRepo(), safePath, safeRef);
+        Object raw;
+        try {
+            raw = client.getContents(token, p.getGiteeOwner(), p.getGiteeRepo(), safePath, safeRef);
+        } catch (GiteeApiException e) {
+            if (e.getStatus() != 404) {
+                throw e;
+            }
+            // 404 = 该路径在此 ref 上不存在。**这不是故障**：新建仓库还没有任何提交时，
+            // Gitee 对根目录 contents 一律返回 404；分支刚切换、路径已删除也走这里。
+            // 早先直接抛出，会让「文件」页在**每个新项目**上弹红字「Gitee 接口调用失败：Not Found」
+            // —— 空仓库恰恰是新项目的默认状态，把正常态报成错误会让人以为平台坏了。
+            // 这里降级为空目录（empty=true + 说明），由前端渲染空态；与 branches() 的降级口径一致。
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("projectId", p.getId());
+            empty.put("path", safePath);
+            empty.put("ref", safeRef);
+            empty.put("kind", "dir");
+            empty.put("items", List.of());
+            empty.put("total", 0);
+            empty.put("empty", true);
+            empty.put("note", "该路径在 " + safeRef + " 上暂无内容（新建仓库默认为空）");
+            return empty;
+        }
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("projectId", p.getId());

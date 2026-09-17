@@ -364,6 +364,7 @@ public interface OrgStatMapper {
 
     @Insert("INSERT INTO notification (tenant_id, user_id, type, title, content, ref_id, created_at) "
             + "VALUES (#{tenantId}, #{userId}, #{type}, #{title}, #{content}, #{refId}, NOW(6))")
+    @org.apache.ibatis.annotations.Options(useGeneratedKeys = true, keyProperty = "id")
     int insertNotification(Map<String, Object> row);
 
     @Select("<script>SELECT COUNT(*) FROM audit_log WHERE deleted_at IS NULL AND tenant_id = #{tenantId} "

@@ -6,7 +6,9 @@ import cn.aioa.gitee.client.GiteeClient;
 import cn.aioa.gitee.config.GiteeProperties;
 import cn.aioa.gitee.entity.GiteeAccount;
 import cn.aioa.gitee.entity.GiteeProject;
+import cn.aioa.gitee.entity.GiteeTenantConfig;
 import cn.aioa.gitee.mapper.GiteeAccountMapper;
+import cn.aioa.gitee.mapper.GiteeTenantConfigMapper;
 import cn.aioa.gitee.support.GiteeCrypto;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +44,7 @@ public class GiteeTokenService {
     private final GiteeClient client;
     private final GiteeCrypto crypto;
     private final GiteeProperties props;
+    private final GiteeTenantConfigMapper tenantConfigMapper;
 
     /** 按用户串行刷新（防止 refresh_token 轮换竞争）。 */
     private final Map<Long, Object> locks = new ConcurrentHashMap<>();
@@ -96,10 +99,15 @@ public class GiteeTokenService {
      */
     public String requireAccessToken(Long tenantId, Long userId) {
         GiteeAccount acc = findAccount(tenantId, userId);
-        if (acc == null) {
-            throw BizException.badRequest("当前账号尚未绑定 Gitee，请先在「Gitee 账号绑定」完成授权");
+        if (acc != null) {
+            return validToken(acc);
         }
-        return validToken(acc);
+        // 个人未绑定 → 回落企业令牌（组织级）；二者皆无 → 与原异常完全一致（e2e 依赖）
+        String ent = enterpriseToken(tenantId);
+        if (ent != null) {
+            return ent;
+        }
+        throw BizException.badRequest("当前账号尚未绑定 Gitee，请先在「Gitee 账号绑定」完成授权");
     }
 
     /** 取项目的可用令牌：用**项目创建者**的身份（建仓与后续维护都由他发起）。 */
@@ -107,7 +115,42 @@ public class GiteeTokenService {
         if (project.getCreatedBy() == null) {
             throw BizException.badRequest("项目缺少创建者，无法确定用哪个 Gitee 身份操作");
         }
-        return requireAccessToken(project.getTenantId(), project.getCreatedBy());
+        GiteeAccount acc = findAccount(project.getTenantId(), project.getCreatedBy());
+        if (acc != null) {
+            return validToken(acc);
+        }
+        // 个人未绑定 → 回落企业令牌；二者皆无 → 与原异常完全一致（e2e 依赖）
+        String ent = enterpriseToken(project.getTenantId());
+        if (ent != null) {
+            return ent;
+        }
+        throw BizException.badRequest("当前账号尚未绑定 Gitee，请先在「Gitee 账号绑定」完成授权");
+    }
+
+    /**
+     * 企业（组织级）令牌回落源：当 {@code gitee_tenant_config} 有行、{@code init_status='ACTIVE'}、
+     * 且 {@code access_token} 非空时解密返回；否则返回 null。
+     *
+     * <p>企业令牌<b>没有 refresh_token</b>，绝不走 {@link #validToken} 的刷新逻辑，直接返回原值。
+     * 解密失败（密钥变更/损坏）包装为清晰业务错误，由调用方提示重新初始化。</p>
+     */
+    public String enterpriseToken(Long tenantId) {
+        if (tenantId == null) {
+            return null;
+        }
+        GiteeTenantConfig row = tenantConfigMapper.selectOne(new LambdaQueryWrapper<GiteeTenantConfig>()
+                .eq(GiteeTenantConfig::getTenantId, tenantId)
+                .last("limit 1"));
+        if (row == null || !"ACTIVE".equals(row.getInitStatus())
+                || !StringUtils.hasText(row.getAccessToken())) {
+            return null;
+        }
+        try {
+            return crypto.decrypt(row.getAccessToken());
+        } catch (Exception e) {
+            // 解密处包装：首次使用企业令牌即失败，给出明确指引（不改既有个人令牌消息）
+            throw BizException.badRequest("企业访问令牌已失效，请重新初始化");
+        }
     }
 
     /**

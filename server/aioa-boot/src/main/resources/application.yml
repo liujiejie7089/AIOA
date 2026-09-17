@@ -70,6 +70,10 @@ aioa:
     # V5 OpenAPI 与网页域：base-url 可指向本地桩服务以做端到端回归（无需真实 Gitee）
     base-url: ${AIOA_GITEE_BASE_URL:https://gitee.com/api/v5}
     web-base-url: ${AIOA_GITEE_WEB_URL:https://gitee.com}
+    # 用户浏览器「授权页」基址（授权跳转 = {此值}/oauth/authorize）。
+    # 默认真实 Gitee，故生产无需配置。只有做端到端回归、且已把上面两项指向本地桩时，
+    # 才需要把它一并指向桩；否则用户的浏览器会被送进桩，看到假授权页与假账号。
+    oauth-authorize-base-url: ${AIOA_GITEE_OAUTH_AUTHORIZE_URL:https://gitee.com}
     # OAuth2 应用（在 Gitee「设置 → 第三方应用」创建；回调地址须与本处 redirect-uri 完全一致）
     client-id: ${AIOA_GITEE_CLIENT_ID:}
     client-secret: ${AIOA_GITEE_CLIENT_SECRET:}

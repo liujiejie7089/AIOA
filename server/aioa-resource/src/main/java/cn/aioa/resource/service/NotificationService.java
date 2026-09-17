@@ -1,11 +1,13 @@
 package cn.aioa.resource.service;
 
+import cn.aioa.common.event.NotificationRequested;
 import cn.aioa.resource.entity.Notification;
 import cn.aioa.resource.mapper.NotificationMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,6 +26,7 @@ import java.util.List;
 public class NotificationService {
 
     private final NotificationMapper notificationMapper;
+    private final ApplicationEventPublisher events;
 
     public void notifyUser(Long tenantId, Long recipientId, Long actorId,
                            String type, String title, String content, Long refId) {
@@ -41,8 +44,22 @@ public class NotificationService {
             n.setCreatedAt(LocalDateTime.now());
             n.setCreatedBy(actorId);
             notificationMapper.insert(n);
+            // 站内信落库后发布触达事件；发布失败绝不影响落库与调用方（仅记 warn）。
+            publish(tenantId, recipientId, n.getType(), title, content, refId, actorId, n.getId());
         } catch (Exception e) {
             log.warn("通知写入失败（不影响主流程）recipient={} title={}", recipientId, title, e);
+        }
+    }
+
+    /** 发布 NotificationRequested 事件（尽力而为）。 */
+    private void publish(Long tenantId, Long recipientId, String type, String title,
+                         String content, Long refId, Long actorId, Long notificationId) {
+        try {
+            events.publishEvent(new NotificationRequested(
+                    tenantId == null ? 0L : tenantId, recipientId, type, title, content,
+                    refId, actorId, notificationId));
+        } catch (Exception e) {
+            log.warn("发布通知触达事件失败（不影响主流程）recipient={} title={}", recipientId, title, e);
         }
     }
 

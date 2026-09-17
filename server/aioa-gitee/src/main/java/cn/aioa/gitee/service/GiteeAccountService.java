@@ -73,6 +73,17 @@ public class GiteeAccountService {
         m.put("url", client.authorizeUrl(state));
         m.put("state", state);
         m.put("expiresInSeconds", STATE_TTL_SECONDS);
+        // fail-loud：授权域若是本地桩/代理，必须让调用方看得见，否则「绑定成功」会误导人
+        // （用户以为完成了 Gitee 授权，实际是桩签发了一个假身份）。
+        boolean sandbox = client.authorizeHostIsSandbox();
+        m.put("authorizeHost", client.authorizeHost());
+        m.put("sandbox", sandbox);
+        if (sandbox) {
+            m.put("warning", "当前授权域为 " + client.authorizeHost()
+                    + "（非 gitee.com），本次授权不会跳转到真实 Gitee。"
+                    + "如需真实授权，请将 aioa.gitee.oauth-authorize-base-url"
+                    + "（环境变量 AIOA_GITEE_OAUTH_AUTHORIZE_URL）配置为 https://gitee.com 后重试。");
+        }
         m.put("note", "请在浏览器打开该地址完成 Gitee 授权；授权后回到平台即自动完成绑定");
         return m;
     }

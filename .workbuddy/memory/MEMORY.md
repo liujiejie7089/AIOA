@@ -3,11 +3,12 @@
 ## 1. 项目与运行
 - AIOA=地级市 AI 公共服务平台。Vue3 管理端 shell(`web/apps/shell`) + SpringBoot 单体(`server/` **9** Maven 模块) + MySQL8(库`aioa`,root 无密码) + FastAPI agent(:8000) + 用户端单文件 H5(`user-client/index.html`)。方向：**改代码对齐设计文档**（五层架构）。
 - 规格源：`docs/10` 职责边界 · `docs/14` 账号 · `docs/15` 权限矩阵 · `docs/16` 组织作用域 · `docs/19` 七项优先事项(**进度只回写此文**) · `docs/20` 全链路 E2E · `docs/21` 层级流转 · `docs/22` 登录口径 · `docs/23` 权限审批与组织关联改造 · **`docs/28` 未开工项规划与实施计划（"未开工项"唯一进度权威，收口记录在 §6）**。
-- 重打包：**先停 :8080** → `cd server && bash mvnw -DskipTests -q clean package` → `C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java -Dspring.flyway.validate-on-migrate=false -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar`。系统 `mvn` 损坏只能用 `mvnw`；**勿 `rm -rf target`**（用 `mvnw clean`）。
+- 重打包：**先停 :8080** → `cd server && bash mvnw -DskipTests -q clean package` → `C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java -Dspring.flyway.validate-on-migrate=false -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar`。系统 `mvn` 损坏只能用 `mvnw`；**勿 `rm -rf target`**（用 `mvnw clean`）。判据：fat-jar 应 ~82MB；若变 ~20KB **stripped-jar** 说明没停 JVM 就重打包了。
+- **Gitee 接线用 opt-in 脚本，别手抄环境变量**：`AIOA_GITEE_E2E=1 bash start-all.sh`（内部 source `scripts/gitee-e2e-env.sh`，所有变量一处维护）。**默认（不设该变量）授权跳转 = 真实 `https://gitee.com`**；显式 opt-in 才会把**服务端接口 + 用户浏览器授权域**一并指向桩 :8090。漏环境变量则 Gitee 套件全红且原因难查。停后端用 `PowerShell: Get-NetTCPConnection -LocalPort 8080 -State Listen | Stop-Process -Force`（`taskkill //PID` 在 git bash 下被转义成 `//PID` 会失败）。
 - 改 `agent/app/**` 必须重启 uvicorn（非 `--reload`）。`bash start-all.sh` 一键起（幂等，日志 `logs/`）。
 - 端口 8080/8000/5173；H5 :5181 **只绑 127.0.0.1**。探端口 `netstat -ano|grep LISTENING|grep ":<port> "`，**不接 `| head`**。**长驻服务必须用后台常驻任务**（`nohup &` 被沙箱回收→ConnectError）。
 - 口令：租户侧全 `User@123`（含 `dsj_admin`）；平台 `admin/Admin@123`。账号：`zhangsan`(t0) · `dsj_admin`(t2 租户管理员) · `fagai_admin`(t2 inst1 机构管理员) · `fagai_liu`(t2 dept10 负责人) · `fagai_li`(t2 **dept11** 成员) · t9 全链 `znkj_admin`(3142)/`znkjyf_admin`(3143)/`znsfb_ldr`(3144)。
-- Flyway：新增前 `ls .../db/migration | sort -V | tail -3` 取实际最大+1（**当前 V47**）。已应用迁移**不可改**（checksum），只能追加。文档里的版本号只是预测。
+- Flyway：新增前 `ls .../db/migration | sort -V | tail -3` 取实际最大+1（**当前 V52**）。已应用迁移**不可改**（checksum），只能追加。文档里的版本号只是预测。
 
 ## 2. 接口与权限
 - 基址 `/api/v1`。登录 `POST /api/v1/auth/login` `{username,password,tenantName?}` → `data.accessToken`（**不是** `token`）。少写 `v1`→401，易误诊为密码错。
@@ -42,16 +43,39 @@
 20. **`decide()` 判定顺序**：CC 任务 `status='CC'`（不是 PENDING），所以**必须先判 `task_role=CC` 再判状态**；反过来会让「知会无需审批」分支**永不可达**，用户看到误导性的「该审批节点已处理（CC）」。
 21. **管理端配置页 = 能力的唯一入口**：引擎支持的能力若配置页配不出来，等于**能力事实上不可用**（只能直接打接口）。`web/apps/shell/src/constants/permissions.ts` 是审批人类型/职务/模式/条件字段的**唯一常量入口**，视图里不得再抄一份字面量（曾导致 `DEPT_DUTY`/`UNIT_DUTY` 在下拉里显示成裸码）。配置页须做 `_extra` **无损往返**：未建模键原样带回，否则管理员每次「打开-保存」都会悄悄丢配置。
 
+22. **同一决策点必须在**一处**判定，否则视图会说谎**：`GiteeTenantConfigService` 的 `effectiveOrg`（行存在 **且** `enabled=1` **且** org 非空才用租户 org）与 `buildView` 的 `source`（原实现只看 `row != null`）是**两个谓词**，于是「有行但 `enabled=0`」时 `orgName` 已回落平台默认、`source` 仍报 `TENANT` —— 界面显示「企业自配置」却指向**共享**组织。修法：抽出 `tenantSuppliesOrg()` 单一判定供两条路径共用；**不要在展示层打补丁**。此类「新增一个可配置维度 → 造出旧状态机从未有过的组合」是本项目最容易漏的缺陷类型，**必须为该组合补断言**（本例 `e2e_v50` T9）。
+23. **长驻服务绝不能由子代理启动**：子代理被 kill（如 429 限流）时其**子进程随之死亡**，桩/后端会静默消失，后续套件全红且原因难查。桩(8090)、后端(8080)等**一律由主代理以后台常驻任务启动**；子代理只做「改代码 + 拉起自测」。（另：`netstat` 探活确认在跑，比相信启动命令的返回码可靠。）
+24. **tenant 覆盖 + 回落全局默认**是加配置维度时的**首选形态**：不播种任何租户行（本例 V50 **故意不给 tenant 9 播种**）= 回落路径天然被既有数据与既有套件持续验证；强制必填会把所有存量数据变成迁移问题。
+25. **「展示值来自外部接口」的问题必须用对照实验定性，不能靠读代码断言**：Gitee 仓库地址即典型 —— 地址**不是本地拼的**，而是 `GiteeRepoTaskHandler:98-100` 把接口响应的 `html_url/ssh_url/https_url` **原样写库**、`GiteeProjectService:221-227` 原样读出（前端**无兜底域名**）。故"切到真 Gitee 会不会变"只能靠**让桩返回生产形态**来验证：`POST /_stub/public-base {"base":"https://gitee.com"}`（默认 None = 历史行为逐字节不变）。**同类问题一律照此办理**。
+26. **外链类配置共 5 项，改域名必须一起改**：`base-url`（地址唯一来源）· `web-base-url`（**只用于服务端**：`POST /oauth/token` 换码与刷新，**不**决定浏览器授权跳转 —— 见 §3-34）· `redirect-uri` · `webhook-base-url`（**必须公网，否则 webhook 静默失效**）· `bind-return-url`；另 `token-enc-key` 默认值可离线解密令牌，生产必换。**地址是建仓时快照且全库仅一处赋值、无刷新路径** → 存量写坏无法自愈，须回填（`scripts/backfill_gitee_repo_urls.py`，默认干跑）。
+27. **核实关键字命中语义再下结论**：本系统 `schedule` 命中实为**定时任务**（非日程）、`push` 实为 **git push**（非移动推送）、`notification` 表**仅站内单通道**（无 channel）。做功能差距分析前必须先 `SHOW TABLES` + 看命中文件名，否则会把"没有"报成"已有"。
+
+28. **诊断端点必须回「报告」，不能回「错误」**：`POST /gitee/init/verify` 若按业务错误抛出，前端只拿得到一个字符串 `message`，`steps` 明细**随异常一起丢失**，向导无法渲染「卡在哪一步」。契约：诊断端点恒 `HTTP200 + code=0` + 顶层 `passed`/`failedStep` + 全量 `steps`（永不落库）；**动作端点**（`POST /gitee/init`）才失败即抛。`passed` 必须与 `steps` **同源推导**，否则出现「顶层说通过、明细里有红字」的自相矛盾。
+29. **状态字段契约不留 `null`**：`initStatus` 恒 `PENDING|ACTIVE|FAILED`，无配置行/空值一律归一化为 `PENDING`；「是否落过行」由 `configured`/`tokenConfigured` 单独表达，语义不混。留 null 会逼前端各自写兜底分支（曾是"页面空白"类缺陷的温床）。
+30. **MySQL 唯一键不约束 NULL ⇒ `type IS NULL` 的"默认行"绝不能用无 limit 的 `selectOne`**：`notification_preference(tenant_id,user_id,type)` 的 NULL 默认行可被重复插入，`selectOne` 遂抛 `TooManyResultsException`；在 `@Async @EventListener` 里更危险——异常沿 `dispatch` 冒泡、被最外层 `try/catch` 吞掉 ⇒ **整轮分发静默中断（连 INAPP 投递记录都不写）**，现象是「通知有记录但无投递」。一律 `.last("limit 1")`。
+31. **收件人角色必须按租户口径取，且必须实测**：`NotificationMapper.selectTenantAdminIds` 曾硬编码 `role_code='ROLE_ADMIN'`（平台管理员，**全库仅 1 个且挂 tenant 0**）并叠加 `u.tenant_id=#{tenantId}` ⇒ **每个真实租户命中 0 人**，`notifyAdmins` 的「新审批待处理」循环空转、**租户管理员从未收到过该通知**。正确口径 `IN ('ROLE_ADMIN','ROLE_TENANT_ADMIN')`（纯增量、不摘既有收件人，与 `OrgGuard.requireApprover()` 一致）。"给某人的通知"类 SQL 必须逐租户实测命中数，不能只看 SQL 逻辑通顺。
+32. **测试里的「恒真断言」比没有断言更危险**：`chk(name, True, "")` 会让用例永远绿（曾在 C5.1 潜伏）。另有一类**依赖校验顺序**的用例——"不传令牌却断言组织名格式"必然先卡在位数更靠前的 `TOKEN_FORMAT`，解除阻塞后必红。**必须构造前置步骤可通过的输入**，让失败点确定落在被测步骤（本例引入满足正则的占位令牌 `FMT_TOKEN`），否则会把测试自身缺陷误判成产品回归。
+33. **多 worker 并行下的构建串行化**：本地 m2 **不含本仓模块**故 `-pl` 必须带 `-am` ⇒ 两个后端 worker 同时 `mvnw` 会在 `target/` 上撞车。**同一时刻只允许一个 Maven 构建**；纯前端/纯写文件的 worker 可与构建并行。
+34. **浏览器授权域与服务端域必须解耦**：`/oauth/authorize` 是**用户浏览器**去的地方，`/oauth/token` 是**服务器**调的 —— 曾共用一个 `web-base-url`，于是「把服务端接口桩化」的部署顺手把用户也送进桩：用户看不到 Gitee 授权页，被桩签发假身份（如 `gitee_dev_152`）后回跳显示「绑定成功」。修法=独立配置 `aioa.gitee.oauth-authorize-base-url`（默认 `https://gitee.com`，生产无需配置），且**非生产域必须 fail-loud**（`bindUrl` 回 `authorizeHost`/`sandbox`/`warning` + 结果页警示条 + 前端弹窗）—— 静默的假成功比报错难查十倍。验收 `scripts/_probe_authorize_host.py`（同一 jar、只改配置跑两个实例对照）。
+35. **合并两个菜单不能用 `alias`**：`alias` **继承**被别名路由的 `allowRoles`（本例含 `ROLE_MEMBER`）⇒ 普通成员深链旧路径不再被拦截 = 顺手放宽边界。正解=**独立路由**沿用原 `allowRoles`，菜单只留一个入口（标签按角色切换、可见性取**并集**）。页签内容**优先原样复用既有视图组件**（拆成多页签会让"平台卡片与人员名册同页可见"的断言全碎）；两条路由共用同一组件时默认页签须用 `watch(immediate)` 而非 `onMounted`（实例被复用、mount 不再触发），目标页签不可见时**必须回落**（否则整页空白），`:default-active` 要做「旧路径→合并入口」映射（否则旧书签进来菜单一项都不亮）。
+36. **「留空」类语义先查有没有可回落的东西**：`accessToken` 留空只在「本企业已有令牌」时可复用 —— 平台**不存在**共享企业令牌（`enterpriseToken` 只读本租户行），故首次留空**本就应当失败**（`docs/30` §1.3）；正确修法是「必填 + 文案可读 + 前端按 `tokenConfigured` 动态必填」，**不是**让它静默成功。且报错文案**绝不回显 `null`**（`accessToken == null ? "null" : accessToken` 曾产出「…不合法：null」）。
+37. **E2E 反模式（2026-09-17 修了 3 个）**：① **toast 断言必须轮询** —— `ElMessage` 默认 3000ms 自动关，"固定 sleep 后一次性读 `.el-message`"必然读到空数组、成功也判 False；② **禁硬编码项目/单据 id** —— 桩是**内存态**，重启后旧项目仓库消失、上传必 404，而症状是"弹窗不关 + 点击被遮罩拦截"，看着像前端 bug（正解：现建一个项目）；③ **单条检查要 try 兜底** —— 否则一条超时就让整场套件崩溃、零信号。
+38. **子代理被限流中断会留下"半成品"，比没做更危险**：`general-purpose-16` 429 中断时已改好 router 并新建了视图文件，但**菜单没改**，且引入的 `alias` 放宽了权限、"三页签拆分"会碎断言 —— 这些**能通过 `vue-tsc`**，只看编译结果会误判为"已改好"。接手前必须**逐文件核对"改到哪一步"**（`git status` + 读关键文件 + 跑既有套件），不要假设它没动过。
+
 ## 4. 已知缺口（docs/20 发现）—— **2026-09-16 已全量收口，当前为空**
 `docs/28` 是「未开工项」的唯一进度权威，收口记录见其 §6。现状速查：
 - D-1 令牌吊销 **已修**(V46) · D-2 路径参数类型不匹配 **已修**(→400) · D-3 H5 待办 403 **已修**(按角色前置闸门) · D-4 favicon **已修**(两端内联 SVG) · D-8 新租户播种 **已修**(`LeaveTypeProvisioner`) · G-1 无负责人部门 **已修** · G-3 `duty_code` **已修**(27/116→116/116)。
 - **判定「有效数据，不改」**：D-5/6/7 —— tenant 4（教育局演示租户）`V33ANNUAL*` 假种被 17 条余额 + 35 条申请**引用**，删除会让既有单据失去类型定义；tenant 2 的 6 条越权部门**已软删**（=审计留痕）。G-2 —— tenant 9 重复昵称经 `seed_multi_tenant.py` 溯源 = **同一自然人兼多角色**（同一 `sys_user`），强改与 `docs/14` 冲突。
 - 结论：`e2e_full_system` 的 `GAP` 桶**当前为空**；`kchk()` 保留仅供将来新缺口使用。**修好缺口后必须同步删/升这些分桶**（否则报告会持续输出与事实相反的话）。
+- **V50 收口遗留观察项（非缺陷，勿当回归）**：`GET /gitee/tenant-config` 不带操作人 → `view()` 不传 `actorUserId` → 必回 `orgVerified=false` + `verifyMessage=\"未提供操作人\"`。语义上「未探测」与「探测失败」在此字段上不可区分；UI 只在**保存后**读该字段，故无功能影响。若将来要让 GET 也给出可信结论，需引入三态（`null`=未探测）。
 
 ## 5. E2E 套件矩阵（`scripts/e2e_*.py` 已 gitignore，不入库）
 - `e2e_full_system.py` **155/155**（13 段跨层串联；`--no-browser` 跳渲染段）——**每轮收口必跑**。
   当前 **已知缺口 0 / 观察项 0**。内置 `kchk()` 把「已知缺口」与「跑红」分桶（`GAP` 不计失败）；
   D-1/D-2/D-4 修好后 `S1-15`/`S5-13` 已**由 `kchk` 升为硬 `chk`**、favicon 观察项改为真断言 `S12-10`。
+- **仓库地址排查取证（2026-09-16）**：`verify_v51_repo_urls.py` **23/23** · `verify_v51_repo_urls_ui.py` **18/18**（真点击捕获新标签页 URL）· `backfill_gitee_repo_urls.py` 干跑 10 项目→需回填 9。报告 `.workbuddy/artifacts/v51-repo-url-diagnosis.md`（含 o2oa 对标 + P0–P3 清单）。
+- **V51/V52 收口实测（2026-09-17）**：`e2e_v51_gitee_init` **49/49**（企业主动初始化：7 步校验 / verify 诊断报告 / initStatus 归一化 PENDING / 撤销 / 企业令牌回落 / 不泄露令牌；上轮为 4 PASS + 41 BLOCKED）· `e2e_v52_message_center` **47/47**（新建：4 通道顺序 / 保存期强校验 / 测试发送 / 事件接线实测（请假→异步分发）/ 多通道 SENT·FAILED·SKIPPED / 重试语义 / limit≤200 / 本人偏好 / 403·404 鉴权）· `e2e_v48_gitee` 116/116 · `e2e_v50_tenant_org` 54/54 · `e2e_leave_flow_notify` 19/19（**连跑两次**）· `verify_v51_repo_urls` 23/23 · `verify_v51_repo_urls_ui` 18/18 · `verify_v50_ui` 28/28 · `e2e_full_system --no-browser` **145/145（缺口 0）**。交付报告 `.workbuddy/artifacts/p1-delivery.md`。
+- **V50「每租户 Gitee 组织」收口实测（2026-09-16）**：`e2e_v50_tenant_org` **54/54**（含 T0 桩 deny-orgs 控制 + T1–T9 租户级特性）· `e2e_v48_gitee` **116/116**（回落路径未破 = 向后兼容证明）· `e2e_full_system --no-browser` **145/145** · `verify_v50_ui` **28/28**（三角色渲染，见 `scripts/verify_v50_ui.py`，截图 `.workbuddy/artifacts/v50-ui/`）。
 - 最近实测（V45–V47 收口，2026-09-16）：`e2e_v45_approver_modes` **44/44** · `e2e_v45_misc_fixes` **27/27** ·
   `e2e_v45_config_ui` **25/25**（API 往返 + 保存期严格性 + 浏览器渲染 + 无损往返）· `e2e_v43_dept_applicant` 41/41 ·
   `e2e_v43_cc_read` 41/41 · `e2e_v41_duty_levels` 48/48 · `e2e_v39_applicant_superior` 49/49 ·

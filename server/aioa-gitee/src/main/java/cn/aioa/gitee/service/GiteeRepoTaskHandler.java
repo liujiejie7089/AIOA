@@ -42,6 +42,7 @@ public class GiteeRepoTaskHandler implements GiteeTaskHandler {
     private final GiteeTokenService tokenService;
     private final GiteeTaskService taskService;
     private final GiteeMemberService memberService;
+    private final GiteeTenantConfigService tenantConfigService;
 
     @Override
     public List<String> types() {
@@ -74,8 +75,8 @@ public class GiteeRepoTaskHandler implements GiteeTaskHandler {
         try {
             Map<String, Object> repo;
             try {
-                repo = StringUtils.hasText(props.getOrg())
-                        ? client.createOrgRepo(token, props.getOrg(), p.getName(), p.getRepoName(),
+                repo = StringUtils.hasText(owner)
+                        ? client.createOrgRepo(token, owner, p.getName(), p.getRepoName(),
                         p.getDescription(), !"public".equals(p.getVisibility()), true)
                         : client.createUserRepo(token, p.getRepoName(), p.getDescription(),
                         !"public".equals(p.getVisibility()), true);
@@ -282,13 +283,23 @@ public class GiteeRepoTaskHandler implements GiteeTaskHandler {
     // 工具
     // ======================================================================
 
-    /** 目标 owner：优先总组织；未配置组织时退化为创建者个人命名空间。 */
+    /**
+     * 目标 owner（建仓 / 配 Webhook 的归属组织）。
+     *
+     * <p><b>优先级反转</b>（相对旧实现）：优先用项目落库时记录的 {@code giteeOwner}，
+     * 仅在项目未记录时回落到「当前租户生效组织」。
+     * 旧实现优先 {@code props.getOrg()}，在租户改了组织后会给<b>旧项目</b>的 Webhook
+     * 错配到新组织——这是个真 bug。项目创建时已经把当时正确的组织写进了 {@code giteeOwner}，
+     * 旧项目应继续待在它的旧组织里；新项目（改组织之后创建）落到新组织。</p>
+     */
     String targetOwner(GiteeProject p) {
-        if (StringUtils.hasText(props.getOrg())) {
-            return props.getOrg();
+        String stored = p.getGiteeOwner();
+        if (StringUtils.hasText(stored)) {
+            return stored;
         }
-        String owner = p.getGiteeOwner();
-        return StringUtils.hasText(owner) ? owner : props.getOrg();
+        // 仅历史空值 / 新项目未记录时，回落到「当前租户生效组织」
+        String resolved = tenantConfigService.effectiveOrg(p.getTenantId());
+        return StringUtils.hasText(resolved) ? resolved : null;
     }
 
     /** 回调地址：必须能被 Gitee 访问到（127.0.0.1 无效）。 */

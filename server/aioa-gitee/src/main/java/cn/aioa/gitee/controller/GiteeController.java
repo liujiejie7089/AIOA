@@ -7,6 +7,8 @@ import cn.aioa.gitee.service.GiteeContentService;
 import cn.aioa.gitee.service.GiteeMemberService;
 import cn.aioa.gitee.service.GiteeProjectService;
 import cn.aioa.gitee.service.GiteeSyncScheduler;
+import cn.aioa.gitee.service.GiteeTenantConfigService;
+import cn.aioa.gitee.service.GiteeTenantInitService;
 import cn.aioa.gitee.service.GiteeTaskService;
 import cn.aioa.org.support.OrgGuard;
 import cn.aioa.security.AuthUser;
@@ -41,6 +43,8 @@ public class GiteeController {
 
     private final OrgGuard guard;
     private final GiteeProperties props;
+    private final GiteeTenantConfigService tenantConfigService;
+    private final GiteeTenantInitService tenantInitService;
     private final GiteeProjectService projectService;
     private final GiteeMemberService memberService;
     private final GiteeContentService contentService;
@@ -58,10 +62,13 @@ public class GiteeController {
      */
     @GetMapping("/config")
     public ApiResponse<Map<String, Object>> config() {
-        guard.requireOrgUser();
+        AuthUser u = guard.requireOrgUser();
+        // 租户级视角的初始化信息：orgConfigured 与 enabled 都按「当前用户所属租户」判定，
+        // 而非全局 props（全局值只能作为回落默认值，不能决定单个租户是否可用）。
+        Long tenantId = guard.tenantId();
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("enabled", props.isEnabled());
-        m.put("orgConfigured", props.getOrg() != null && !props.getOrg().isBlank());
+        m.put("enabled", props.isEnabled() && tenantConfigService.tenantEnabled(tenantId));
+        m.put("orgConfigured", tenantConfigService.orgConfigured(tenantId));
         m.put("webhookBaseUrlConfigured",
                 props.getWebhookBaseUrl() != null && !props.getWebhookBaseUrl().isBlank());
         m.put("syncEnabled", props.isSyncEnabled());
@@ -71,6 +78,127 @@ public class GiteeController {
                 Map.of("value", "WRITE", "label", "开发者（可推送）"),
                 Map.of("value", "ADMIN", "label", "管理员（可改设置）")));
         return ApiResponse.ok(m);
+    }
+
+    // ======================================================================
+    // 每租户 Gitee 组织配置（多企业各自独立 Gitee 组织）
+    // ======================================================================
+
+    /**
+     * 查看当前（或指定）租户的 Gitee 组织配置视图。
+     *
+     * <p>租户管理员只看本租户；平台管理员可经 {@code ?tenantId=} 指定其他租户
+     * （沿用 /calibrate 的作用域范式）。租户管理员跨租户会被 {@code resolveScopeTenant} 拒绝（404）。</p>
+     */
+    @GetMapping("/tenant-config")
+    public ApiResponse<Map<String, Object>> tenantConfig(@RequestParam(required = false) Long tenantId) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        return ApiResponse.ok(tenantConfigService.view(scope));
+    }
+
+    /**
+     * 保存（upsert）当前（或指定）租户的 Gitee 组织配置。
+     *
+     * <p>body：{@code {orgName, enabled?}}。orgName 经保守正则强校验（防路径注入）。
+     * 保存后做一次 best-effort 可见性探测（不阻塞保存）。</p>
+     */
+    @PostMapping("/tenant-config")
+    public ApiResponse<Map<String, Object>> saveTenantConfig(@RequestParam(required = false) Long tenantId,
+                                                              @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        String orgName = str(body == null ? null : body.get("orgName"));
+        Boolean enabled = bool(body == null ? null : body.get("enabled"));
+        return ApiResponse.ok(tenantConfigService.save(scope, orgName, enabled, u.getUserId()));
+    }
+
+    /**
+     * 清除当前（或指定）租户的组织配置（回落平台全局默认）。
+     */
+    @DeleteMapping("/tenant-config")
+    public ApiResponse<Map<String, Object>> clearTenantConfig(@RequestParam(required = false) Long tenantId) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        return ApiResponse.ok(tenantConfigService.clear(scope));
+    }
+
+    // ======================================================================
+    // 企业主动发起 Gitee 初始化（组织级企业令牌）
+    // ======================================================================
+
+    /**
+     * 初始化状态视图（不触发任何网络校验）。
+     *
+     * <p>沿用 /tenant-config 的作用域范式：租户管理员只看本租户；平台管理员可经
+     * {@code ?tenantId=} 指定其他租户；租户管理员跨租户被 {@code resolveScopeTenant} 拒绝。</p>
+     */
+    @GetMapping("/init")
+    public ApiResponse<Map<String, Object>> initStatus(@RequestParam(required = false) Long tenantId) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        return ApiResponse.ok(tenantInitService.status(u, scope));
+    }
+
+    /**
+     * 仅校验不落库：{@code {accessToken?, orgName}}。跑到步骤 6 为止，永不写库。
+     */
+    @PostMapping("/init/verify")
+    public ApiResponse<Map<String, Object>> initVerify(@RequestParam(required = false) Long tenantId,
+                                                       @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        String accessToken = str(body == null ? null : body.get("accessToken"));
+        String orgName = str(body == null ? null : body.get("orgName"));
+        return ApiResponse.ok(tenantInitService.verify(u, scope, accessToken, orgName));
+    }
+
+    /**
+     * 校验并初始化：{@code {accessToken?, orgName, enabled?, note?, rotateToken?}}。
+     *
+     * <p>rotateToken=false 且已有令牌、本次未传 accessToken 时复用已存令牌（只改组织名/开关）；
+     * 否则 accessToken 必填并覆盖。失败即中止，已存在行仅标 FAILED + last_error，其余字段不变。</p>
+     */
+    @PostMapping("/init")
+    public ApiResponse<Map<String, Object>> initInitialize(@RequestParam(required = false) Long tenantId,
+                                                           @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        String accessToken = str(body == null ? null : body.get("accessToken"));
+        String orgName = str(body == null ? null : body.get("orgName"));
+        Boolean enabled = bool(body == null ? null : body.get("enabled"));
+        String note = str(body == null ? null : body.get("note"));
+        Boolean rotateToken = bool(body == null ? null : body.get("rotateToken"));
+        return ApiResponse.ok(tenantInitService.initialize(u, scope, accessToken, orgName, enabled, note, rotateToken));
+    }
+
+    /**
+     * 撤销企业令牌：清空 access_token/token_owner/token_scope/org_verified，init_status 复位 PENDING；
+     * 保留 org_name 与 enabled（组织归属由 /tenant-config 管辖）。
+     */
+    @DeleteMapping("/init")
+    public ApiResponse<Map<String, Object>> initRevoke(@RequestParam(required = false) Long tenantId) {
+        AuthUser u = guard.requireTenantAdmin();
+        Long scope = guard.resolveScopeTenant(u, tenantId);
+        return ApiResponse.ok(tenantInitService.revoke(u, scope));
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o).trim();
+    }
+
+    private static Boolean bool(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Boolean b) {
+            return b;
+        }
+        String s = String.valueOf(o).trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        return "true".equalsIgnoreCase(s) || "1".equals(s);
     }
 
     /** 可选部门（建项目时选择归属部门；受组织作用域限制）。 */

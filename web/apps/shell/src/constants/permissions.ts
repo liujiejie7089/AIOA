@@ -151,3 +151,109 @@ export const CONDITION_OPS = [
   { value: '==', label: '=' },
   { value: '!=', label: '≠' }
 ] as const
+
+// ================================================================== V48：Gitee 仓库联动
+//
+// 可见性口径与后端 PermissionCatalog 严格对齐：`project:view` / `project:manage` /
+// `gitee:bind` 三个权限码授予**所有角色**，但读取范围由后端按部门作用域收窄
+// （{@code GiteeProjectService.visibleDepartmentIds}）—— 即「人人有入口，只能看本部门」。
+// 因此菜单与路由用 GITEE_VIEW_ROLES（不含 ROLE_USER：后端 {@code requireOrgUser()}
+// 不认无组织归属账号），而「任务统计 / 手动校准」是租户管理员专属，用 TENANT_SCOPE_ROLES。
+//
+// ⚠ 三层必须同源：菜单（MainLayout）→ 路由 meta.allowRoles（router/index.ts）→ 后端。
+// 历史上三处各写一套就出过「菜单能进但接口 403」与「接口放开但菜单藏起来」两类镜像缺陷。
+
+/** 仓库联动可见范围：所有组织内角色（只读边界由后端部门作用域决定）。 */
+export const GITEE_VIEW_ROLES: readonly string[] = [
+  ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN, ROLE.DEPT_LEADER, ROLE.MEMBER
+]
+
+/** 项目状态（与后端 {@code GiteeProject.STATUS_*} 同源）。 */
+export const GITEE_PROJECT_STATUS = [
+  { value: 'CREATING', label: '创建中', tag: 'warning' },
+  { value: 'ACTIVE', label: '可用', tag: 'success' },
+  { value: 'FAILED', label: '创建失败', tag: 'danger' },
+  { value: 'DELETED', label: '已删除', tag: 'info' }
+] as const
+
+export const GITEE_PROJECT_STATUS_LABEL: Record<string, string> = Object.fromEntries(
+  GITEE_PROJECT_STATUS.map((s) => [s.value, s.label])
+) as Record<string, string>
+
+/** 状态 → el-tag type；未收录时回落 info。 */
+export const GITEE_PROJECT_STATUS_TAG: Record<string, string> = Object.fromEntries(
+  GITEE_PROJECT_STATUS.map((s) => [s.value, s.tag])
+) as Record<string, string>
+
+/**
+ * 仓库协作者角色（与后端 {@code GiteeRepoMember.ROLE_*} 同源）。
+ * 兜底文案：后端 {@code /gitee/config} 的 roleOptions 才是权威来源，
+ * 这里只用于列表回显与降级渲染，避免 config 失败时下拉为空。
+ */
+export const GITEE_MEMBER_ROLES = [
+  { value: 'READ', label: '只读（可克隆、可读代码）' },
+  { value: 'WRITE', label: '开发者（可推送）' },
+  { value: 'ADMIN', label: '管理员（可改设置）' }
+] as const
+
+export const GITEE_MEMBER_ROLE_LABEL: Record<string, string> = Object.fromEntries(
+  GITEE_MEMBER_ROLES.map((r) => [r.value, r.label])
+) as Record<string, string>
+
+/** 成员同步状态（与后端 {@code GiteeRepoMember.SYNC_*} 同源）。 */
+export const GITEE_SYNC_STATUS_LABEL: Record<string, string> = {
+  SYNCED: '已同步',
+  PENDING: '待同步',
+  FAILED: '同步失败'
+}
+
+export const GITEE_SYNC_STATUS_TAG: Record<string, string> = {
+  SYNCED: 'success',
+  PENDING: 'warning',
+  FAILED: 'danger'
+}
+
+/** 成员来源：平台授予 vs 在 Gitee 网页直接添加（定时校准会捞回来）。 */
+export const GITEE_MEMBER_SOURCE_LABEL: Record<string, string> = {
+  PLATFORM: '平台授予',
+  GITEE: 'Gitee 侧添加'
+}
+
+/** 提交来源（与后端 {@code GiteeCommit.SOURCE_*} 同源）。 */
+export const GITEE_COMMIT_SOURCE_LABEL: Record<string, string> = {
+  WEB: '网页上传',
+  GIT: '本地推送'
+}
+
+/** 事件类型筛选项（与后端 {@code GiteeEvent.TYPE_*} 同源；空值 = 不筛）。 */
+export const GITEE_EVENT_TYPES = [
+  { value: '', label: '全部事件' },
+  { value: 'PUSH', label: '代码推送' },
+  { value: 'MERGE_REQUEST', label: '合并请求' },
+  { value: 'ISSUE', label: '任务' },
+  { value: 'NOTE', label: '评论' },
+  { value: 'OTHER', label: '其他' }
+] as const
+
+export const GITEE_EVENT_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  GITEE_EVENT_TYPES.filter((t) => t.value).map((t) => [t.value, t.label])
+) as Record<string, string>
+
+/** 事件类型 → el-tag type。 */
+export const GITEE_EVENT_TYPE_TAG: Record<string, string> = {
+  PUSH: 'primary',
+  MERGE_REQUEST: 'success',
+  ISSUE: 'warning',
+  NOTE: 'info',
+  OTHER: 'info'
+}
+
+/** 仓库可见性（与后端 {@code GiteeProject.VISIBILITY_*} 同源）。 */
+export const GITEE_VISIBILITIES = [
+  { value: 'private', label: '私有（仅协作者可见，推荐）' },
+  { value: 'public', label: '公开（任何人可读）' }
+] as const
+
+export const GITEE_VISIBILITY_LABEL: Record<string, string> = Object.fromEntries(
+  GITEE_VISIBILITIES.map((v) => [v.value, v.label])
+) as Record<string, string>

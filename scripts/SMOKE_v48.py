@@ -80,10 +80,27 @@ def main():
 
     st, d = req("POST", "/gitee/bind/authorize", tok_t2)
     biz = d.get("code")
-    chk("未配置 OAuth 应用时返回业务错误（非 500/401）", st == 200 and biz != 0, (st, d))
-    chk("错误信息直接指出缺哪个配置",
-        "client-id" in str(d.get("message", "")) or "client_secret" in str(d.get("message", "")),
-        d.get("message"))
+    if biz != 0:
+        # 未配置 OAuth 应用（本机没设 AIOA_GITEE_CLIENT_ID）→ 必须给出**可执行**的报错
+        chk("未配置 OAuth 应用时返回业务错误（非 500/401）", st == 200, (st, d))
+        chk("错误信息直接指出缺哪个配置",
+            "client-id" in str(d.get("message", "")) or "client_secret" in str(d.get("message", "")),
+            d.get("message"))
+    else:
+        # 已配置（端到端回归的常规接线，见 scripts/gitee-e2e-env.sh）→ 守卫**按设计不触发**。
+        #
+        # 原断言把「未配置」当作前提，但它与所有 Gitee 套件都需要的
+        # AIOA_GITEE_CLIENT_ID 互斥：带接线跑就必然假红，看着像回归、实为断言与运行前提冲突。
+        # 这里改为「守卫不该触发时，就校验它产出的东西是否合格」——两条分支都在验同一个契约
+        # （这个端点要么给可执行报错、要么给可用地址），既不丢覆盖也不产生假红。
+        url = str((d.get("data") or {}).get("url") or "")
+        chk("已配置 OAuth 应用时返回可用授权地址（守卫按设计不触发）",
+            st == 200 and url.startswith("http") and "client_id=" in url
+            and "redirect_uri=" in url and "response_type=code" in url and "state=" in url,
+            url[:140])
+        chk("授权地址的 client_id 与 state 均非空",
+            "client_id=&" not in url and "state=&" not in url and "client_id=" in url,
+            url[:140])
 
     st, d = req("POST", "/gitee/bind/authorize")
     chk("未登录调用绑定授权被拦截（401）", st in (401, 403), st)

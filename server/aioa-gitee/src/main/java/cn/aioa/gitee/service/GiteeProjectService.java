@@ -61,6 +61,7 @@ public class GiteeProjectService {
     private final GiteeTokenService tokenService;
     private final GiteeTaskService taskService;
     private final GiteeProperties props;
+    private final GiteeTenantConfigService tenantConfigService;
 
     // ======================================================================
     // 创建
@@ -78,6 +79,10 @@ public class GiteeProjectService {
         requirePermission(user, PermissionCatalog.PROJECT_MANAGE);
 
         Long tenantId = guard.tenantId();
+        // 租户级开关：该租户被显式关闭 Gitee 联动时，不允许新建项目
+        if (!tenantConfigService.tenantEnabled(tenantId)) {
+            throw BizException.badRequest("本企业已关闭 Gitee 仓库联动，无法新建项目；如需使用请联系租户管理员开启");
+        }
         String name = str(body.get("name"));
         if (!StringUtils.hasText(name)) {
             throw BizException.badRequest("项目名称不能为空");
@@ -107,7 +112,13 @@ public class GiteeProjectService {
         p.setRepoName(repoPath);
         p.setDescription(str(body.get("description")));
         p.setVisibility(parseVisibility(body.get("visibility")));
-        p.setGiteeOwner(StringUtils.hasText(props.getOrg()) ? props.getOrg() : null);
+        // 仓库 owner 由「每租户组织解析器」决定：解析为空说明本企业既没配组织、全局也没配 → 明确拒绝，
+        // 而不是悄悄建一个没有归属组织的空项目。
+        String owner = tenantConfigService.effectiveOrg(tenantId);
+        if (!StringUtils.hasText(owner)) {
+            throw BizException.badRequest("本企业未配置 Gitee 组织，请先在「项目与仓库」中配置");
+        }
+        p.setGiteeOwner(owner);
         p.setGiteeRepo(repoPath);
         p.setDefaultBranch("master");
         p.setStatus(GiteeProject.STATUS_CREATING);
@@ -287,7 +298,8 @@ public class GiteeProjectService {
         GiteeTeam t = new GiteeTeam();
         t.setTenantId(tenantId);
         t.setDepartmentId(dept.getId());
-        t.setOrgName(props.getOrg());
+        // 部门的组织归属走「每租户组织解析器」（优先本租户配置，回落全局默认）
+        t.setOrgName(tenantConfigService.effectiveOrg(tenantId));
         t.setTeamName(dept.getName());
         t.setNamespace(GiteeNaming.namespaceOf(dept.getId()));
         // 开源 gitee.com 无组织级团队 API（实测），故默认走命名空间隔离

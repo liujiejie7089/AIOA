@@ -23,8 +23,29 @@ public class GiteeProperties {
     /** Gitee V5 API 基址（生产 https://gitee.com/api/v5；验收可指向本地桩）。 */
     private String baseUrl = "https://gitee.com/api/v5";
 
-    /** Gitee 网页基址，用于拼授权页与「跳转原仓库」。 */
+    /**
+     * Gitee 网页基址：**服务端**调用的网页域接口（OAuth 换令牌 {@code POST /oauth/token}）
+     * 以及「跳转原仓库」链接。
+     *
+     * <p>它<b>不</b>决定用户浏览器的授权跳转 —— 那一跳由 {@link #oauthAuthorizeBaseUrl} 决定，
+     * 见该字段说明。</p>
+     */
     private String webBaseUrl = "https://gitee.com";
+
+    /**
+     * 用户浏览器授权页基址（授权跳转 = {@code {此值}/oauth/authorize}）。
+     *
+     * <p><b>为什么必须与 {@link #webBaseUrl} 分开</b>：两者受众不同 ——
+     * {@code /oauth/token} 是<b>服务器</b>在调（端到端回归时可指向本地桩），
+     * 而 {@code /oauth/authorize} 是<b>用户的浏览器</b>要去的地方。曾复用同一个键，
+     * 于是「把服务端桩化」的部署顺手把用户也送进了桩：用户看不到 Gitee 的授权同意页，
+     * 而是被桩直接签发一个假身份（如 {@code gitee_dev_152}）并立刻回跳显示「绑定成功」——
+     * 看似绑定成功，实则<b>从未经过真实 Gitee 授权</b>。</p>
+     *
+     * <p>默认即真实 Gitee，故生产无需额外配置；只有在明确要做端到端回归、且已刻意把
+     * {@code base-url}/{@code web-base-url} 指向桩时，才把它一并指向桩。</p>
+     */
+    private String oauthAuthorizeBaseUrl = "https://gitee.com";
 
     /** OAuth2 应用 client_id。 */
     private String clientId = "";

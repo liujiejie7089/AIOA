@@ -75,14 +75,58 @@ public class GiteeClient {
     // OAuth2（注意：token 端点在网页域 /oauth/token，不在 /api/v5 下）
     // ======================================================================
 
-    /** 拼授权页地址（用户浏览器跳转，非服务端调用）。 */
+    /**
+     * 拼授权页地址（**用户浏览器**跳转，非服务端调用）。
+     *
+     * <p>用 {@code oauth-authorize-base-url}（默认 {@code https://gitee.com}）而<b>不是</b>
+     * {@code web-base-url}：后者是服务端域（换令牌 {@code /oauth/token} 用）。
+     * 把两者分开，才能避免「服务端指向本地桩 ⇒ 用户的浏览器也被送进桩、看到假授权页
+     * 与假账号」这类静默假成功。</p>
+     */
     public String authorizeUrl(String state) {
-        return props.getWebBaseUrl() + "/oauth/authorize"
+        return trimSlash(props.getOauthAuthorizeBaseUrl()) + "/oauth/authorize"
                 + "?client_id=" + enc(props.getClientId())
                 + "&redirect_uri=" + enc(props.getRedirectUri())
                 + "&response_type=code"
                 + "&state=" + enc(state)
                 + "&scope=" + enc(props.getScope());
+    }
+
+    private static String trimSlash(String s) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.trim();
+        return t.endsWith("/") ? t.substring(0, t.length() - 1) : t;
+    }
+
+    /** 授权跳转的落地域名（用于界面提示与排障）。 */
+    public String authorizeHost() {
+        return hostOf(props.getOauthAuthorizeBaseUrl());
+    }
+
+    /**
+     * 授权跳转是否指向**非生产**域（本地桩 / 自建代理）。
+     *
+     * <p>true 表示用户浏览器不会到达真实 Gitee，而是被桩或代理直接签发身份。
+     * 调用方必须把它**显式暴露**给用户/运维，而不是让它表现成一次正常的授权成功 ——
+     * 「假成功」比报错更难发现。</p>
+     */
+    public boolean authorizeHostIsSandbox() {
+        String h = authorizeHost();
+        return !h.isEmpty() && !"gitee.com".equalsIgnoreCase(h) && !"www.gitee.com".equalsIgnoreCase(h);
+    }
+
+    private static String hostOf(String url) {
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        try {
+            String h = java.net.URI.create(url.trim()).getHost();
+            return h == null ? "" : h;
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /**
@@ -125,9 +169,19 @@ public class GiteeClient {
         return asList(get(token, "/user/orgs", Map.of()));
     }
 
-    /** 组织信息：{@code GET /orgs/{org}}。 */
+    /** 组织信息：{@code GET /orgs/{org}}（无令牌，仅取公开信息）。 */
     public Map<String, Object> getOrg(String org) {
         return asMap(get(null, "/orgs/" + encPath(org), Map.of()));
+    }
+
+    /**
+     * 组织信息（带令牌）：{@code GET /orgs/{org}}。
+     *
+     * <p>用于校验<b>当前账号</b>对该组织的可见性（成员未必能看到组织）；
+     * 无令牌时回落到公开信息。供 {@code GiteeTenantConfigService} 的 best-effort 可见性探测使用。</p>
+     */
+    public Map<String, Object> getOrg(String token, String org) {
+        return asMap(get(StringUtils.hasText(token) ? token : null, "/orgs/" + encPath(org), Map.of()));
     }
 
     /** 组织成员：{@code GET /orgs/{org}/members}。 */

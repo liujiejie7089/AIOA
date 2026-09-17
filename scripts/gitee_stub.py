@@ -8,15 +8,21 @@
   1. 需要**有效的 OAuth 应用 + 有效令牌**（用户提供的试用令牌实测 401，见 docs/29 风险章节）；
   2. Webhook 回调地址必须是 **Gitee 能访问到的公网地址**，本机 127.0.0.1 不可达。
 
-本桩服务把这两点都变成可控的：平台侧只要把 `aioa.gitee.base-url` / `web-base-url`
-指向它，就走完了与真实 Gitee 完全相同的代码路径（HTTP 调用、错误处理、幂等、
-退避重试），而**不需要任何真实凭据**。平台侧代码里没有任何 if-stub 分支 ——
-换回真实地址即是生产形态。
+本桩服务把这两点都变成可控的：平台侧只要把 `aioa.gitee.base-url` 指向它，就走完了与
+真实 Gitee 完全相同的代码路径（HTTP 调用、错误处理、幂等、退避重试），而**不需要任何
+真实凭据**。平台侧代码里没有任何 if-stub 分支 —— 换回真实地址即是生产形态。
+
+（`aioa.gitee.web-base-url` **不是**死配置，它管两处**服务端**调用：`POST /oauth/token`
+换码与刷新。它**不**决定用户浏览器的授权跳转 —— 那一跳由 `aioa.gitee.oauth-authorize-base-url`
+单独决定（默认 `https://gitee.com`）。曾把两者复用同一个键，于是"服务端桩化"的部署顺手
+把用户也送进了桩，用户看不到 Gitee 授权页却被签发假身份。展示用的仓库地址一律取自接口
+返回的 `html_url`/`ssh_url`/`https_url`；要让桩返回生产形态的地址，用下面的
+`/_stub/public-base`。）
 
 已覆盖的端点（与 GiteeClient 一一对应）
 --------------------------------------
 OAuth：`GET /oauth/authorize`、`POST /oauth/token`（授权码 / 刷新令牌，**模拟 refresh_token 轮换**）
-用户：`GET /api/v5/user`、`/user/orgs`、`/orgs/{org}`、`/orgs/{org}/members`
+用户：`GET /api/v5/user`、`/user/orgs`、`/orgs/{org}`（被拒绝名单命中时返回 404）、`/orgs/{org}/members`
 仓库：`POST /orgs/{org}/repos`、`POST /user/repos`、`GET|DELETE /repos/{o}/{r}`
 钩子：`POST|GET /repos/{o}/{r}/hooks`、`DELETE /repos/{o}/{r}/hooks/{id}`
 内容：`GET|POST|PUT /repos/{o}/{r}/contents/{path}`
@@ -36,6 +42,14 @@ OAuth：`GET /oauth/authorize`、`POST /oauth/token`（授权码 / 刷新令牌�
                                （X-Gitee-Token）—— 因此能验证平台侧的真实校验逻辑
 `POST /_stub/emit-raw`         {"url","token","event","payload"} 指定地址与密钥投递，
                                用于验证「密钥错误必须被拒绝」
+`POST /_stub/deny-orgs`        {"orgs": ["foo"]} 把给定组织登录名加入「拒绝名单」。
+                               名单为空（默认）时一切照旧；非空时 `GET /api/v5/orgs/{org}`
+                               对该组织返回 404（与桩既有的 Not Found 形态一致），
+                               用于演练平台侧「组织可见性探测失败（orgVerified=false）」分支。
+`POST /_stub/public-base`      {"base": "https://gitee.com"} 让桩**按公网域名**返回仓库三地址
+                               （`html_url`/`ssh_url`/`https_url`），`{"base":""}` 清空回默认。
+                               用于演练生产形态：平台侧会把接口返回的地址原样落库并展示，
+                               故「切到真实 Gitee 后地址会变成 gitee.com」只有靠它才能被真实执行验证。
 `GET  /_stub/log`              最近 500 条请求（方法 + 路径 + 认证头是否存在）
 
 启动
@@ -71,6 +85,44 @@ STUB = {
 }
 
 LOCK = threading.Lock()
+
+# 被「拒绝」的组织登录名集合：默认空（一切照旧，包括 e2e_v48_gitee.py）。
+# 通过 `POST /_stub/deny-orgs {"orgs":[...]}` 设置，`{"orgs":[]}` 清空。
+# 命中集合的组织在 `GET /api/v5/orgs/{org}` 处返回 404，用于演练平台侧
+# 「组织可见性探测失败（orgVerified=false）」分支。
+DENY_ORGS = set()
+
+# 仓库地址的「公网基址」：默认 None → 沿用本机桩地址（`http://127.0.0.1:{PORT}` /
+# `git@127.0.0.1:`），**与既有一切行为完全一致**。
+# 通过 `POST /_stub/public-base {"base":"https://gitee.com"}` 设置，`{"base":""}` 清空。
+#
+# 为什么需要它：平台侧的仓库地址**不是本地拼的**，而是把 Gitee 接口返回的
+# `html_url`/`ssh_url`/`https_url` 原样落库（GiteeRepoTaskHandler:98-100）。
+# 因此「换成真实 Gitee 后地址是否会变成 gitee.com」这条链路，只有让桩**返回公网形态的
+# 地址**才可能被真实执行验证；否则只能靠阅读代码断言，等于没验证。
+PUBLIC_BASE: Optional[str] = None
+
+
+def _repo_urls(owner: str, path: str) -> Dict[str, str]:
+    """按当前 `PUBLIC_BASE` 生成仓库三地址，与 Gitee 的返回字段同名同形。
+
+    未设置 `PUBLIC_BASE` 时逐字节等同于历史实现（本机桩地址），
+    以保证既有套件与桩的默认行为零变化。
+    """
+    if PUBLIC_BASE:
+        base = PUBLIC_BASE.rstrip("/")
+        ssh_host = base.split("://", 1)[-1].split("/", 1)[0]
+        return {
+            "html_url": f"{base}/{owner}/{path}",
+            "ssh_url": f"git@{ssh_host}:{owner}/{path}.git",
+            "https_url": f"{base}/{owner}/{path}.git",
+        }
+    return {
+        "html_url": f"http://127.0.0.1:{PORT}/{owner}/{path}",
+        "ssh_url": f"git@127.0.0.1:{owner}/{path}.git",
+        "https_url": f"http://127.0.0.1:{PORT}/{owner}/{path}.git",
+    }
+
 
 ORG_MEMBERS = [
     {"id": 90001, "login": "znkjyf_admin", "name": "机构管理员"},
@@ -221,6 +273,9 @@ def user_orgs(request: Request):
 
 @app.get("/api/v5/orgs/{org}")
 def get_org(org: str):
+    if org in DENY_ORGS:
+        # 与桩既有的 404 形态一致（`get_repo`/`delete_repo` 等用的就是 _fail(404,...)）
+        return _fail(404, "Not Found")
     return {"id": 1, "login": org, "name": org}
 
 
@@ -258,12 +313,11 @@ def _mk_repo(owner: str, name: str, path: str, description: str, private: bool) 
         "full_name": f"{owner}/{path or name}",
         "description": description or "",
         "private": bool(private),
-        "html_url": f"http://127.0.0.1:{PORT}/{owner}/{path or name}",
-        "ssh_url": f"git@127.0.0.1:{owner}/{path or name}.git",
-        "https_url": f"http://127.0.0.1:{PORT}/{owner}/{path or name}.git",
         "default_branch": "master",
         "owner": {"login": owner, "id": 1},
     }
+    # 三地址由 `_repo_urls` 统一生成：默认 = 本机桩地址；设了 `/_stub/public-base` = 公网形态
+    repo.update(_repo_urls(owner, repo["path"]))
     key = _repo_key(owner, repo["path"])
     with LOCK:
         STUB["repos"][key] = repo
@@ -561,6 +615,8 @@ def stub_state():
         "tokens": list(STUB["tokens"].keys()),
         "refresh": list(STUB["refresh"].keys()),
         "rate_limit_left": STUB["rate_limit_left"],
+        "deny_orgs": sorted(DENY_ORGS),
+        "public_base": PUBLIC_BASE,
     }
 
 
@@ -583,6 +639,7 @@ def stub_grant(body: Dict[str, Any] = Body(default={})):
 
 @app.post("/_stub/reset")
 def stub_reset():
+    global PUBLIC_BASE
     with LOCK:
         for d in ("repos", "hooks", "collabs", "files", "branches", "commits", "tokens", "refresh"):
             STUB[d] = {}
@@ -590,7 +647,31 @@ def stub_reset():
         STUB["rate_limit_left"] = 0
         STUB["token_ttl"] = 7200
         STUB["log"] = []
+    DENY_ORGS.clear()
+    PUBLIC_BASE = None
     return {"reset": True}
+
+
+@app.post("/_stub/deny-orgs")
+def stub_deny_orgs(body: Dict[str, Any] = Body(default={})):
+    """把给定组织登录名加入「拒绝名单」以触发 404（演练 orgVerified=false）。"""
+    orgs = body.get("orgs", [])
+    DENY_ORGS.clear()
+    DENY_ORGS.update(orgs)
+    return {"deny_orgs": sorted(DENY_ORGS)}
+
+
+@app.post("/_stub/public-base")
+def stub_public_base(body: Dict[str, Any] = Body(default={})):
+    """设置仓库地址的「公网基址」，用于演练生产形态（如 https://gitee.com）。
+
+    `{"base": ""}` 或省略即清空 → 回到本机桩地址（默认行为）。
+    """
+    global PUBLIC_BASE
+    base = (body.get("base") or "").strip()
+    PUBLIC_BASE = base or None
+    return {"public_base": PUBLIC_BASE,
+            "sample": _repo_urls("some-org", "some-repo")}
 
 
 @app.post("/_stub/ratelimit")

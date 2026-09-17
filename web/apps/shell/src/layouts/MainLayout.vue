@@ -50,7 +50,7 @@
       <el-aside class="layout-aside" :width="collapsed ? '64px' : '200px'">
         <el-menu
           class="layout-menu"
-          :default-active="route.path"
+          :default-active="menuActive"
           :default-openeds="['apps']"
           :collapse="collapsed"
           router
@@ -109,6 +109,23 @@
             <el-icon><Collection /></el-icon>
             <template #title>知识库</template>
           </el-menu-item>
+          <!--
+            消息中心（V5x）：对所有已登录角色可见（人人都要看自己的通知），
+            故不加 v-if 守卫。通道配置 / 投递记录两个页签由页内 isTenantAdmin 收起，
+            菜单 / 路由 meta / 后端三层同源（均不限制角色）。
+          -->
+          <el-menu-item index="/notifications">
+            <el-icon><Bell /></el-icon>
+            <template #title>消息中心</template>
+          </el-menu-item>
+          <!--
+            项目与仓库（V48 Gitee 联动）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
+            三处共用 GITEE_VIEW_ROLES —— 只读边界由后端按部门作用域收窄（人人有入口，只能看本部门）。
+          -->
+          <el-menu-item v-if="showGiteeMenu" index="/gitee/projects">
+            <el-icon><Link /></el-icon>
+            <template #title>项目与仓库</template>
+          </el-menu-item>
 
           <!-- 租户域：仅平台管理员 / 租户管理员可见 -->
           <el-sub-menu v-if="showTenantMenu" index="tenant">
@@ -130,10 +147,22 @@
             </el-menu-item>
           </el-sub-menu>
 
-          <!-- 企业域：机构成员（企业管理员 / 部门负责人 / 成员）可见 -->
+          <!--
+            组织与员工 / 系统管理（单入口，多页签）：
+            原「组织与员工」(/org-structure) 与「人员管理 / 系统管理」(/admin) 两个菜单
+            指向同一批人、同一批数据（前者部门树+员工名册，后者人事操作+平台配置），
+            并列展示会让用户在两处反复横跳。现合并为一个入口：
+
+            - 可见范围用 ORG_VIEW_ROLES（并集）：普通成员原本就能进「组织与员工」，
+              合并后不能反而丢掉入口；PERSONNEL_VIEW_ROLES 是它的真子集，无需另判。
+            - 标签按角色切换：平台管理员要的是「系统管理」（含角色/权限点/模型管理），
+              其余管理者要的是「组织与员工」。
+            - 页内是「组织与部门 | 人员管理」两个页签，后者由 OrgAdminView 按
+              PERSONNEL_VIEW_ROLES 收起 —— 普通成员看不到它，也就不会打出注定 403 的平台级接口。
+          -->
           <el-menu-item v-if="showOrgMenu" index="/org-structure">
             <el-icon><UserFilled /></el-icon>
-            <template #title>组织与员工</template>
+            <template #title>{{ isPlatformAdmin ? '系统管理' : '组织与员工' }}</template>
           </el-menu-item>
 
           <el-menu-item v-if="showTenantMenu" index="/kpi">
@@ -184,10 +213,6 @@
             <el-icon><OfficeBuilding /></el-icon>
             <template #title>租户管理</template>
           </el-menu-item>
-          <el-menu-item v-if="showAdminMenu" index="/admin">
-            <el-icon><Setting /></el-icon>
-            <template #title>{{ isPlatformAdmin ? '系统管理' : '人员管理' }}</template>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -233,8 +258,8 @@ import {
 } from '@/api/tenantScope'
 import {
   EXPERT_MANAGER_ROLES,
+  GITEE_VIEW_ROLES,
   ORG_VIEW_ROLES,
-  PERSONNEL_VIEW_ROLES,
   REVIEW_RECORD_ROLES,
   ROLE,
   TENANT_SCOPE_ROLES,
@@ -278,6 +303,10 @@ const showTenantMenu = computed(() => hasAnyRole(roles.value, TENANT_SCOPE_ROLES
 /**
  * 机构成员（企业管理员 / 部门负责人 / 成员）看本机构；租户管理员与平台管理员
  * 也开放入口——前者需按部门分发数字员工、后者需运维巡检，均为只读或本租户范围。
+ *
+ * 合并「组织与员工」与「人员管理 / 系统管理」后，本判据同时兼作合并入口的可见性：
+ * PERSONNEL_VIEW_ROLES ⊂ ORG_VIEW_ROLES，故取并集即 ORG_VIEW_ROLES。
+ * 细粒度的「人员与账号 / 平台配置」页签由 OrgAdminView 内部再按角色收起。
  */
 const showOrgMenu = computed(() => hasAnyRole(roles.value, ORG_VIEW_ROLES))
 
@@ -291,12 +320,17 @@ const showWorkerMenu = computed(() => hasAnyRole(roles.value, WORKER_MANAGER_ROL
 const showExpertMenu = computed(() => hasAnyRole(roles.value, EXPERT_MANAGER_ROLES))
 /** 审核记录（V36 需求④）：平台管理员看全量，租户管理员看本租户。 */
 const showReviewRecordMenu = computed(() => hasAnyRole(roles.value, REVIEW_RECORD_ROLES))
+/** 项目与仓库（V48 Gitee 联动）：与路由 meta.allowRoles、后端 PermissionCatalog 共用 GITEE_VIEW_ROLES。 */
+const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
+
 /**
- * 系统管理入口：四级管理者都能进（里面是「人员管理」）。
- * 平台级配置卡片（角色 / 权限点 / 功能管理 / 模型管理）由 AdminView 内部按
- * isPlatformAdmin 收起 —— 菜单层不再一刀切，否则机构管理员连数据都看不到。
+ * 侧边菜单的高亮项。
+ *
+ * `/admin` 是保留下来的**旧深链**（菜单里不再单独列出），直接拿 route.path 当高亮键，
+ * 会让合并后的唯一入口失去高亮 —— 用户从旧书签进来会看到「菜单里一项都没选中」。
+ * 因此把 /admin 归并到合并入口 /org-structure 上。
  */
-const showAdminMenu = computed(() => hasAnyRole(roles.value, PERSONNEL_VIEW_ROLES))
+const menuActive = computed(() => (route.path === '/admin' ? '/org-structure' : route.path))
 
 /**
  * 「审批中心」未处理红点。
