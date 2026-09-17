@@ -99,7 +99,15 @@
 
 ## 6. Git 远端
 - `origin`=内网 Gitea `172.16.8.249:3000`：沙箱不可达 + push-to-create 关闭(403)，本地无解。
-- **推 GitHub 只有 SSH over 443 这一条路（2026-09-16 实测修正）**：
+- ⚠️ **2026-09-17 起：本沙箱内推不了** —— 读 `~/.ssh` 被沙箱策略**硬拒**，`dangerouslyDisableSandbox` 对该目录同样无效
+  （`[sandbox] …\id_rsa (读 · 拒绝)` → `Permission denied (publickey)`）。已排除的替代路径：HTTPS 本就无凭证；
+  `SSH_AUTH_SOCK` 未设置、无 `ssh-agent` 进程（无「免读文件」捷径）；`~/.workbuddy/settings.json` 的
+  `sandbox.extraAllowWrite` **只有写路径、没有读白名单**。PowerShell 通道另有三坑：`git` 不在 PATH
+  （全路径 `C:\Users\刘尖尖\.workbuddy\binaries\PortableGit\versions\1.2.0\mingw64\bin\git.exe`，
+  ssh 在同级 `usr\bin\ssh.exe`）· `cmd /c` 被安全策略拒绝 · `& "…\git.exe" … 2>&1 | Select-Object`
+  报 `CantActivateDocumentInPipeline`（改 `> $log 2>&1` 再 `Get-Content`）。
+  ⇒ **本地提交照做，推送这一步把命令原样交给用户在本机终端执行；绝不写成「已推送」，也不要反复重试同一路径。**
+- 若换到允许读密钥的环境（**2026-09-16 曾成功**），**推 GitHub 只有 SSH over 443 这一条路**：
   - HTTPS（`github` remote = `https://github.com/liujiejie7089/AIOA.git`）**现在需要凭证且当前无可用凭证**
     → `remote: Invalid username or token. Password authentication is not supported`。旧记录「无需 PAT」**已证伪**，不要再照抄。
   - SSH **22 端口被拒**（`Connection refused`）；**443 可用**：`ssh.github.com:443`（实测 `Hi liujiejie7089! You've successfully authenticated`）。
@@ -118,5 +126,14 @@
     git ls-remote ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git refs/heads/main
   ```
   两个 SHA 一致才算推成功。（**勿**用 `git ls-remote github refs/heads/main` —— 那是 HTTPS，需凭证必失败。）
-- 收口前必查**无跟踪脏文件**：`git status --porcelain | grep -v '^??'` 应为空。
-  `.gitignore` 只忽略 `e2e_*.py`，`h5_v33_render.py` 等**老脚本是跟踪文件**，改了不提交就留脏。
+- 收口前必查**两类脏文件，缺一不可**（只查第一类是 2026-09-17 踩到的最大坑）：
+  - **已跟踪**：`git status --porcelain | grep -v '^??'` 应为空。`.gitignore` 只忽略 `e2e_*.py`；
+    `h5_v33_render.py`/`SMOKE_v48.py`/`gitee_stub.py` 等**老脚本是跟踪文件**，改了不提交就留脏。
+  - **未跟踪但属源码**：`git status --porcelain | grep '^??'` **逐条判过**。`git diff` **只显示已跟踪文件**
+    的改动 ⇒ 只看 `git diff` 会**整块漏掉新增文件**。实测：V48 收尾 + V50/V51/V52 的成果里 Flyway
+    `V50/V51/V52`、`NotificationRequested`、`resource/service/notify/**`(10 类)、`GiteeTenantInitService`、
+    `GiteeProjectsView.vue`、`api/gitee.ts`、`api/notifications.ts` 全是 `??`；HEAD 版 `router/index.ts`
+    的 Gitee 引用数为 **0** ⇒ 上个提交只落了后端骨架，"换台机器 clone 下来跑不起来"。
+    另：`git status` 的 `??` 列表**常被 `head` 截断**，必须看全量（本次 65 项，前 30 项全是无关小文件）。
+  - 属 scratch、**按既有约定不入库**（别误当漏提交）：`scripts/_*`（diag/probe/截图/runner）·
+    根目录 `probe*.txt`/`bind_probe.txt`/`e2e_v50_*.txt` · `.workbuddy/artifacts/`（历次会话均未入库）。
