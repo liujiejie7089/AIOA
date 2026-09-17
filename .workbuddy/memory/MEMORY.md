@@ -105,7 +105,7 @@
 服务端真打到真站的判据 = 后端日志 `GiteeClient` 的 WARN 行 + **Gitee 英文原文错误**（桩只产中文/自定义文案）：
 `POST /api/v5/orgs/<org>/repos -> HTTP 401 code=0 msg=401 Unauthorized: Access token does not exist`。
 
-**真机「建出仓库」做不了，缺三样**（别重试到天亮，直接如实报）：
+**真机「建出仓库」做不了，缺三样**（直接如实报「缺凭据 / 被限流」，不要重复重试同一失败路径）：
 ① 库内无真实令牌（`gitee_tenant_config.access_token` 为 NULL）；② `gitee_account` 全是**桩签发的假身份**
 （`gitee_uid` 42083/42279/42366/42489/42511，用户名形如 `gitee_dev_212`）；③ OAuth 应用未在真站注册
 （生产默认 `client-id` 为空）。另加一条环境限制：本机出口 IP 被 Gitee 限流 —— `/api/v5/version` 与无令牌建仓
