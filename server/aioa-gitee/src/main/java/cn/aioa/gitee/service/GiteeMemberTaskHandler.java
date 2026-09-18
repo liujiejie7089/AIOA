@@ -1,12 +1,13 @@
 package cn.aioa.gitee.service;
 
-import cn.aioa.gitee.client.GiteeApiException;
-import cn.aioa.gitee.client.GiteeClient;
+import cn.aioa.gitee.client.RepoProviderException;
+import cn.aioa.gitee.client.RepoProviderClient;
 import cn.aioa.gitee.entity.GiteeProject;
 import cn.aioa.gitee.entity.GiteeRepoMember;
 import cn.aioa.gitee.entity.GiteeTask;
 import cn.aioa.gitee.mapper.GiteeProjectMapper;
 import cn.aioa.gitee.mapper.GiteeRepoMemberMapper;
+import cn.aioa.gitee.support.ProviderFailureText;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,9 +39,11 @@ public class GiteeMemberTaskHandler implements GiteeTaskHandler {
 
     private final GiteeProjectMapper projectMapper;
     private final GiteeRepoMemberMapper memberMapper;
-    private final GiteeClient client;
+    private final RepoProviderClient client;
     private final GiteeTokenService tokenService;
     private final GiteeTaskService taskService;
+    /** 只用来取托管方展示名：lastError 是对用户展示的文案，不能写死「Gitee」。 */
+    private final cn.aioa.gitee.config.RepoProviderSettings props;
 
     @Override
     public List<String> types() {
@@ -60,8 +63,20 @@ public class GiteeMemberTaskHandler implements GiteeTaskHandler {
             return;
         }
         GiteeProject project = projectMapper.selectById(member.getProjectId());
-        if (project == null || !StringUtils.hasText(project.getGiteeRepo())) {
-            throw new GiteeApiException(0, "项目或仓库信息不完整，无法同步成员权限", true);
+        if (project == null) {
+            // 项目已删除（逻辑删除后 selectById 返回 null）→ 任务作废，**不能重试**。
+            // 真机实测：删项目时 softDelete 只按 biz_type='PROJECT' 撤单，而成员任务的
+            // biz_id 是成员行 id ⇒ 它会带着「项目或仓库信息不完整」空转到重试上限，
+            // 在队列里留下无意义的重试与 FAILED 计数。这与上面「成员已不存在」同一口径：
+            // 目标对象没了 = 没什么可同步的，日志留痕即可（不静默：成员行仍留着可解释的
+            // PENDING 原因，由其绑定后的校准任务收敛）。
+            log.info("成员同步：项目已不存在，任务作废 member={} project={}",
+                    memberId, member.getProjectId());
+            return;
+        }
+        if (!StringUtils.hasText(project.getGiteeRepo())) {
+            // 仓库还没建出来 ⇒ 这是**瞬时**状态，必须重试（建仓任务稍后才完成）
+            throw new RepoProviderException(0, "项目或仓库信息不完整，无法同步成员权限", true, false);
         }
         if (!StringUtils.hasText(member.getGiteeUsername())) {
             if (OP_REMOVE.equals(op)) {
@@ -71,7 +86,8 @@ public class GiteeMemberTaskHandler implements GiteeTaskHandler {
                 return;
             }
             // 该成员还没绑定 Gitee：不能同步，但不是错误 —— 标记 PENDING 等其绑定后再校准
-            memberMapper.updateById(pendingMember(member, "成员尚未绑定 Gitee 账号，待绑定后由定时校准补齐"));
+            memberMapper.updateById(pendingMember(member,
+                    "成员尚未绑定 " + props.providerLabel() + " 账号，待绑定后由定时校准补齐"));
             return;
         }
 
@@ -86,7 +102,7 @@ public class GiteeMemberTaskHandler implements GiteeTaskHandler {
                         member.getGiteeUsername(), toGiteePermission(member.getRole()));
                 memberMapper.updateById(syncedMember(member));
             }
-        } catch (GiteeApiException e) {
+        } catch (RepoProviderException e) {
             if (isAlreadyCollaborator(e) || (OP_REMOVE.equals(op) && e.getStatus() == 404)) {
                 // 目标状态已达成 → 幂等成功
                 if (OP_REMOVE.equals(op)) {
@@ -96,7 +112,10 @@ public class GiteeMemberTaskHandler implements GiteeTaskHandler {
                 }
                 return;
             }
-            memberMapper.updateById(failedMember(member, e.getMessage()));
+            memberMapper.updateById(failedMember(member,
+                    ProviderFailureText.forMemberSync(e.getStatus(), e.getMessage(),
+                            props.providerLabel(), project.getGiteeOwner(), project.getGiteeRepo(),
+                            member.getGiteeUsername())));
             throw e;
         }
     }
@@ -127,10 +146,26 @@ public class GiteeMemberTaskHandler implements GiteeTaskHandler {
         };
     }
 
-    private static boolean isAlreadyCollaborator(GiteeApiException e) {
+    /**
+     * 是否「已经是协作者」——**判据必须锚定文案，不能只看状态码**。
+     *
+     * <p>旧实现把 {@code 422} 一律当成功，理由记的是「Gitee 对已在协作者列表中的用户可能
+     * 返回 422/400」。这在 Gitea 上是**静默假成功**：真机实测
+     * {@code PUT /repos/{o}/{r}/collaborators/{name}} 对<b>不存在的用户</b>回的正是 422 ——</p>
+     * <pre>{"message":"user does not exist [uid: 0, name: no-such-user]"}</pre>
+     * <p>于是「成员绑定的托管方账号根本不存在」被判成 SYNCED：管理端看到绿色「已同步」，
+     * 而这个人<b>对仓库没有任何权限</b>。这属于最危险的一类缺陷（假阴/假绿），
+     * 任何只看 happy path 的用例都不会发现它。</p>
+     *
+     * <p>现在的判据：状态码属 4xx，<b>且</b>文案里明确说了「已经是协作者」。
+     * Gitea 真正遇到「已是协作者」时回的是 204（幂等成功，不走异常），不会落到这里。</p>
+     */
+    static boolean isAlreadyCollaborator(RepoProviderException e) {
         String m = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
-        return e.getStatus() == 422 || m.contains("already") || m.contains("已存在")
-                || m.contains("has been added") || m.contains("repeated");
+        boolean saysAlready = m.contains("already") || m.contains("已存在") || m.contains("已是")
+                || m.contains("已在") || m.contains("has been added") || m.contains("repeated");
+        int s = e.getStatus();
+        return saysAlready && (s == 400 || s == 409 || s == 422);
     }
 
     private static GiteeRepoMember syncedMember(GiteeRepoMember m) {

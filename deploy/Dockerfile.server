@@ -15,8 +15,13 @@ RUN mvn -q -B -DskipTests package -pl aioa-boot -am
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# 安装 tzdata 与 curl；JVM 需要 /etc/timezone 才能读到 TZ 环境变量
+RUN apt-get update && apt-get install -y --no-install-recommends curl tzdata && \
+    ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=build /build/aioa-boot/target/aioa-boot-*.jar /app/aioa-server.jar
 EXPOSE 8080
-ENV JAVA_OPTS="-Xms512m -Xmx2g"
+# -Duser.timezone 保证 JVM 日志、定时任务（Flyway / cron）按北京时间跑
+ENV JAVA_OPTS="-Xms512m -Xmx2g -Duser.timezone=Asia/Shanghai"
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/aioa-server.jar"]

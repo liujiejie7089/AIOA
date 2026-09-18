@@ -1,6 +1,8 @@
 package cn.aioa.gitee.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -82,6 +84,16 @@ public class GiteeProject {
     /** CREATING / ACTIVE / FAILED / DELETED。 */
     private String status;
 
+    /**
+     * 建仓失败原因（**直接渲染给用户**：项目详情页红色告警标题）。
+     *
+     * <p>{@code updateStrategy = ALWAYS} 不是可选项：MyBatis-Plus 默认策略是
+     * {@code NOT_NULL}，会把值为 null 的字段整段排除在 SET 之外 —— 于是
+     * 「建仓成功 → {@code setErrorMsg(null)}」这句代码**看起来执行成功、实际一个字节都没写**，
+     * 失败原因会永久留在行上（真机实测：17 个已经 ACTIVE 的项目仍挂着
+     * {@code Rate Limit Exceeded}）。显式声明 ALWAYS 让「清空」真的落库。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String errorMsg;
 
     /** 软删项目时是否同时删除 Gitee 仓库（默认否：误删代码不可逆）。 */

@@ -71,12 +71,23 @@ def main():
 
     print("\n== 2. 授权绑定：配置缺失时的报错质量 ==")
     tok_t2 = login(U_T2TEN)
+    # arrange：本段断言的是**未绑定态**的渲染。dsj_admin 是共享演示账号，
+    # e2e_v50_tenant_org.py（T3.2c）会把它绑定上且**不清理**，于是本段结果取决于套件执行顺序
+    # ——曾因此在整轮矩阵后跑 SMOKE 时出现两条「失败」，而实际是无绑定态前置条件被别的套件改掉了。
+    # 这里先自行解绑，把前置条件摆正；**断言保持原样**（不靠改断言转绿，也不依赖外部清理）。
+    req("DELETE", "/gitee/bind", tok_t2)
     st, d = req("GET", "/gitee/bind", tok_t2)
     chk("查询绑定状态 200", st == 200 and d.get("code") == 0, d)
     chk("未绑定返回 bound=false", d.get("data", {}).get("bound") is False, d.get("data"))
-    chk("绑定视图不包含任何令牌字段",
-        not any(k for k in (d.get("data") or {}) if "token" in k.lower() and k != "tokenExpiresAt"),
-        list((d.get("data") or {}).keys()))
+    _keys = list((d.get("data") or {}).keys())
+    _vals = [v for v in (d.get("data") or {}).values() if isinstance(v, str)]
+    chk("绑定视图不泄露令牌（无 accessToken/refreshToken 键，且无密文值）",
+        "accessToken" not in _keys and "refreshToken" not in _keys
+        and not any(v.startswith("enc:") for v in _vals), _keys)
+    # 注：旧断言把**所有含 "token" 的键名**一律判为违规，于是把 hasRefreshToken（布尔）也算进去了；
+    # 但 hasRefreshToken 是既有的非密字段，且 scripts/e2e_v48_gitee.py 的 FR-1.12 明确要求它存在。
+    # 该断言原先只有在账号恰好未绑定（视图仅 2 个键）时才通过，属**假阳性**。
+    # 现改为按「是否泄露令牌/密文」判定，口径与 e2e_v48_gitee 的 FR-1.13 对齐，安全性不降。
 
     st, d = req("POST", "/gitee/bind/authorize", tok_t2)
     biz = d.get("code")

@@ -8,7 +8,7 @@
 - 改 `agent/app/**` 必须重启 uvicorn（非 `--reload`）。`bash start-all.sh` 一键起（幂等，日志 `logs/`）。
 - 端口 8080/8000/5173；H5 :5181 **只绑 127.0.0.1**。探端口 `netstat -ano|grep LISTENING|grep ":<port> "`，**不接 `| head`**。**长驻服务必须用后台常驻任务**（`nohup &` 被沙箱回收→ConnectError）。
 - 口令：租户侧全 `User@123`（含 `dsj_admin`）；平台 `admin/Admin@123`。账号：`zhangsan`(t0) · `dsj_admin`(t2 租户管理员) · `fagai_admin`(t2 inst1 机构管理员) · `fagai_liu`(t2 dept10 负责人) · `fagai_li`(t2 **dept11** 成员) · t9 全链 `znkj_admin`(3142)/`znkjyf_admin`(3143)/`znsfb_ldr`(3144)。
-- Flyway：新增前 `ls .../db/migration | sort -V | tail -3` 取实际最大+1（**当前 V52**）。已应用迁移**不可改**（checksum），只能追加。文档里的版本号只是预测。
+- Flyway：新增前 `ls .../db/migration | sort -V | tail -3` 取实际最大+1（**当前 V58**）。已应用迁移**不可改**（checksum），只能追加。文档里的版本号只是预测。
 
 ## 2. 接口与权限
 - 基址 `/api/v1`。登录 `POST /api/v1/auth/login` `{username,password,tenantName?}` → `data.accessToken`（**不是** `token`）。少写 `v1`→401，易误诊为密码错。
@@ -42,6 +42,9 @@
 19. **软删+唯一键**：`sys_user.username` 唯一键**覆盖软删行**，`AccountProvisioner.resolveOrCreate` 须先查软删行再 `reviveUser`，否则重建同名管理员 500。
 20. **`decide()` 判定顺序**：CC 任务 `status='CC'`（不是 PENDING），所以**必须先判 `task_role=CC` 再判状态**；反过来会让「知会无需审批」分支**永不可达**，用户看到误导性的「该审批节点已处理（CC）」。
 21. **管理端配置页 = 能力的唯一入口**：引擎支持的能力若配置页配不出来，等于**能力事实上不可用**（只能直接打接口）。`web/apps/shell/src/constants/permissions.ts` 是审批人类型/职务/模式/条件字段的**唯一常量入口**，视图里不得再抄一份字面量（曾导致 `DEPT_DUTY`/`UNIT_DUTY` 在下拉里显示成裸码）。配置页须做 `_extra` **无损往返**：未建模键原样带回，否则管理员每次「打开-保存」都会悄悄丢配置。
+22. **多步状态机：每一步失败都要有终态**（gitee_project 实测）：`CREATING --(建仓+配 Webhook 都成功)--> ACTIVE` 是**两条任务**，只有建仓侧 `markFailed`，配 Webhook 失败只判死**任务** ⇒ 项目**永远停在 CREATING**、界面无红字、校准只扫 `ACTIVE` ⇒ **无人再动它**。凡「A 步成功才入队 B 步」，B 的终态失败必须回写主对象。修法见 `GiteeRepoTaskHandler.configureWebhook` + `ProviderFailureText.forWebhookStep`。
+23. **回填用户可见字段时不准照抄历史原文**：历史原文带着**当时的环境**（托管方名/配置键/路径），照抄等于把旧环境的错话印给今天的用户（V56 实测把「Gitee 无法回调本机地址」写进了 Gitea 接线下的列表页，被 `_check_gitea_ui_provider.py` L3 抓红 ⇒ V58 中性化）。判据：「这行文本放到**今天**的配置下，还是真的吗？」
+24. **展示字段与事实必须同源**：`gitee_project.webhook_events` 落库写死 Gitee 词表（`merge_requests`/`notes`），Gitea 项目详情页据此渲染标签 ⇒ **明确说错自己订了什么**。修法是让接口层 `RepoProviderClient.hookEventNames()` 复用**建钩子用的同一函数**，而不是各写一份。
 
 22. **同一决策点必须在**一处**判定，否则视图会说谎**：`GiteeTenantConfigService` 的 `effectiveOrg`（行存在 **且** `enabled=1` **且** org 非空才用租户 org）与 `buildView` 的 `source`（原实现只看 `row != null`）是**两个谓词**，于是「有行但 `enabled=0`」时 `orgName` 已回落平台默认、`source` 仍报 `TENANT` —— 界面显示「企业自配置」却指向**共享**组织。修法：抽出 `tenantSuppliesOrg()` 单一判定供两条路径共用；**不要在展示层打补丁**。此类「新增一个可配置维度 → 造出旧状态机从未有过的组合」是本项目最容易漏的缺陷类型，**必须为该组合补断言**（本例 `e2e_v50` T9）。
 23. **长驻服务绝不能由子代理启动**：子代理被 kill（如 429 限流）时其**子进程随之死亡**，桩/后端会静默消失，后续套件全红且原因难查。桩(8090)、后端(8080)等**一律由主代理以后台常驻任务启动**；子代理只做「改代码 + 拉起自测」。（另：`netstat` 探活确认在跑，比相信启动命令的返回码可靠。）
@@ -125,8 +128,109 @@
 **测完必做**：切回桩接线并复跑 `SMOKE_v48` + `e2e_v48_gitee`（实测 32/32、116/116）；
 清理测试建的 `gitee_project` 行用 `DELETE /api/v1/gitee/projects/{id}?purgeRepo=false`（回读应 404）。
 
+### 真机（真实 gitee.com）**建仓跑通** + 桩环境测不出的 3 个真实缺陷（2026-09-17 二测）
+
+**跑通了**：组织 `yjiud` 下建出 `yjiud/dept11-aioa-1789630096`（`gitee_repo_id=50369702`，private，master），
+写文件 sha 一致、真站 `GET /commits` 可见、purge 后真站 404。报告 `.workbuddy/artifacts/real-gitee-e2e-report-v2.md`。
+建仓用 **`fagai_admin`**（无个人绑定 ⇒ 走企业令牌回落）；`dsj_admin` 会 401（见缺陷 3）。
+库中留证据行 `gitee_project.id=69`（`gitee_html_url` 无 `.git`、`gitee_https_url` 有 `.git`）。
+
+**★ 判据：桩环境**不校验 scope、URL 口径也不同** ⇒ 下面 3 条在 116/116 全绿时依然存在，只能上真站才暴露。**
+1. **OAuth scope 必须含 `hook`**（Gitee 无 GitHub 式聚合 `repo`）：官方 scope =
+   `user_info projects pull_requests issues notes keys hook groups gists enterprises`，
+   `projects`=仓库读写、**Webhook 的建/改/删/测属独立 `hook`**。旧默认缺 `hook` ⇒ 真站建仓成功、**Webhook 被拒**。
+   已改默认值 + 桩令牌响应；并在 `GiteeConfig` 加启动期 `selfCheck()` 打印接线与 scope（缺项 **只 WARN 不中断** ——
+   后果是「部分能力不可用」而非「服务不可用」，拒绝启动会把可诊断问题变成起不来）。
+2. **真站 `html_url` 带 `.git` 后缀、`https_url` 字段根本不存在**（桩恰好相反）⇒ `htmlUrl + "/blob/" + ...`
+   拼出的文件链接真站 **404**。修法：`webUrl()` 剥后缀 + `cloneUrl()`（`clone_url → https_url → html_url` 三级回落）
+   + **V53 回填迁移**（**先回填 https 再剥后缀，顺序不可颠倒**）。
+3. **个人令牌「存在但已失效」不会回落企业令牌**（口径缺口，**未改代码待拍板**）：docs/30 §1.5 只写了「**无**个人令牌时回落」。
+   建议 401 时回落 + 错误文案改可执行中文。
+   - **切真接线的硬前置**：库中存活 `gitee_account` 全是 `enc:` 桩假令牌（实战时 6 行：`admin`/`wjj_admin`/
+     `znsfb_m01`/`znkj_admin`/`znsfb_ldr`/`znkjyf_admin`，login 形如 `gitee_dev_*`）⇒ **真接线下全部 401，必须先清**（`DELETE /api/v1/gitee/bind`）。
+
+**★ 通用纪律（比单个 bug 值钱）**：**「先软删、再异步入队执行」的动作，执行段一律不得 `selectById`，必须从 payload 取值。**
+`GiteeRepoTaskHandler.deleteRepo()` 因 `@TableLogic` 读到 null → 静默 `return` → 任务记 **DONE** 但真站仓库还在
+（`purgeRepo=true` 假成功）；同文件 `deleteWebhook()` 早已改 payload —— **同一个坑改了一个漏了另一个**。
+修后信息不全**抛错判 FAILED**：不可逆动作绝不允许静默成功。
+
+### OAuth 浏览器跳转授权的**判据**（2026-09-17 实测踩坑，极易误判两次）
+
+**判定 Gitee `client_id` 是否有效的唯一可靠探针 = 带浏览器会话打开 `/oauth/authorize`。**
+- 出同意页 ⇒ ID 有效；回 `{"error":"Application does not exist"}` ⇒ ID 在 Gitee 侧不存在。
+- **不带会话时（curl）只会 302 到 `/login?redirect_to_url=…`，零信号** —— 我据此误判过一次「ID 被接受」。
+
+**`POST /oauth/token` 不能离线判定客户端凭据**（两个方向都会骗人）：
+- `authorization_code` 路径：Gitee **先按 code 查记录、再从记录解析客户端** ⇒ **假 code 对有效 client_id 也回
+  `invalid_client`**，且与全零 client_id 的响应**逐字相同**；
+- `refresh_token` 路径：**先校验 refresh_token** ⇒ 对全零 client_id 也回 `invalid_grant_validate_token`。
+- 我据此先后得出「凭据有效」和「凭据无效」**两个相反的错误结论**，最后靠真站 authorize 页定案。
+
+**格式常识**：Gitee `client_id` 与 `client_secret` 官方形态**都是 64 位十六进制**
+（Drone 官方文档 `f7018cdd…61de20`、gitee 示例 `f224ce5b…8e7d9666` 佐证）⇒ 纯 64 位十六进制**不是**错误信号。
+
+**第三方凭据必须与截图/原页面逐字符比对，不要只信聊天文本**：实测曾因 `client_id` **第 34 位** `e`→`b`
+一字之差，真站回 `{"error":"Application does not exist"}`（与「凭据错」「回调地址不匹配」完全不区分，极易查错方向）。
+**Gitee 应用详情页的「今日请求次数」是「请求是否到达该应用」的独立旁证**：错 client_id ⇒ 恒为 0。
+
+**★ 精化（2026-09-17 实跑后修正）**：真站换回的 scope 是
+`user_info projects pull_requests issues notes keys hook groups gists enterprises emails` ——
+我们只**请求** 6 个、**拿到** 11 个 ⇒ **Gitee 返回的是「应用登记时勾选的权限集」，授权 URL 的 `scope` 参数不会收窄它**。
+故 Webhook 可用的决定性一环是**登记应用时勾了 `hook`**；代码默认 scope 补 `hook` 是必要防御（口径一致 + 不误导排障），
+**单独不足以**让 Webhook 可用。检查清单三条：① 登记页勾 `projects`+`hook`；② `aioa.gitee.scope` 含 `hook`；
+③ 换回的令牌 scope 里确认有 `hook`。
+
+**★ 陷阱：桩接线下跑 Gitee 套件会把真实绑定覆盖成假身份。** `GiteeAccountService.callback()` 对已有绑定行
+**无任何保护**，直接覆盖 `giteeUid/giteeUsername/accessToken`；桩下这两个调用返回 `gitee_dev_*` 假身份
+⇒ **真实绑定被静默降级**（`e2e_v50_tenant_org.py:295` 正是绑 `dsj_admin`）。
+⇒ 手上有真实绑定时**不要跑桩套件**（或先解绑）；只改配置无代码改动时，本就无需重跑回归。
+
+**实测成功基线（2026-09-17）**：`dsj_admin` ← `liu-yang20`(uid 14032724)，`gitee_account.id=59`，令牌 `enc:` 加密、refresh 有值、
+有效期 ~24h；换来的个人令牌在真站建仓成功（`gitee_repo_id=50373399`）。`requireOrgUser()` 准入含
+`TENANT_ADMIN`/`ORG_ADMIN`/`DEPT_LEADER`/`MEMBER`/`ROLE_ADMIN` 5 角色。
+
+**平台侧复核手段**：`gitee_oauth_state.consumed=0` + 后端日志 `bind/callback` 零命中 ⇒ **回调从未发生**，
+可把「平台缺陷」与「用户侧凭据问题」干净地分开。state TTL **600s**。
+真实接线值放 `.env.gitee-real`（`.gitignore` 的 `.env.*` 已覆盖）：`source .env.gitee-real && bash start-all.sh`。
+
+### Gitee → Gitea 迁移：耦合面与 5 个硬分歧点（2026-09-18 盘点，评估见 `.workbuddy/artifacts/gitee-to-gitea-migration.md`）
+
+**规模**：`aioa-gitee` 42 文件 / 6683 行；`GiteeClient` 592 行 / ~25 端点，**无接口抽象**（具体类被 **8 处**服务注入）。
+**跨模块耦合极小**：只有 `aioa-security`（3 个权限码，其中**只有 `gitee:bind` 带提供商字样**）与
+`aioa-resource`（4 个通知文件里只是文案）；`aioa-chat`/`aioa-org`/`aioa-bridge` **零引用**；**H5 零引用**。
+9 张 `gitee_*` 表 + 5 个迁移；前端 7 文件 / 2691 行；15 个 `AIOA_GITEE_*` 环境变量；4 套件 252 条断言。
+
+**约 19/25 端点同形**（Gitea 刻意对齐 GitHub，Gitee 骨架也仿 GitHub）：`/user`、`/user/orgs`、`/orgs/{org}[​/members]`、
+`POST /orgs/{org}/repos`、`POST /user/repos`、`/repos/{o}/{r}[​/contents|branches|commits|collaborators]` 路径与字段名一致；
+`content` base64 / `message` / `branch` / `sha` 一致；**`Authorization: token xxx` Gitea 同样接受**。
+
+**★ 5 个硬分歧点**：
+1. **Gitea 没有独立 `path`**（`POST /orgs/{org}/repos` 只认 `name`，`name` 即 slug）⇒ 我们用 `name`(中文显示名)+`path`(slug)
+   两字段，`path` 会**被静默忽略**、仓库 URL 变中文名且与平台 `repo_name` 不一致。**唯一需产品拍板的破坏性变更**。
+2. **Webhook 签名**：Gitee = `X-Gitee-Token` **明文比对**；Gitea = **原始报文体的 hex HMAC-SHA256**
+   （`X-Gitea-Signature`；兼容头 `X-Hub-Signature-256` 带 `sha256=` 前缀）⇒ **必须先缓存原始报文再解析 JSON**。
+3. **Webhook 体与事件名**：Gitea `{type, config:{url,content_type,secret}, events:[...], active}`（Gitee 那套字段全废）；
+   事件名 `push`/`pull_request`/`issues`/**`issue_comment`**。**现有 `classify()` 按子串顺序判断，`issue_comment` 含 `issue`
+   ⇒ 必被误判成 Issue 事件、永远进不到 note 分支** ⇒ 必须改**精确映射表**（Gitea 下这条是必错项）。
+4. **OAuth**：Gitea 是 **`/login/oauth/authorize` + `/login/oauth/access_token`**；scope 词表**无一同名**
+   （`repo`/`read:repository`/`read:organization`/`notification`/`issue`…），且**官方文档版本间口径矛盾**
+   ⇒ **必须锁版本实测**。Gitea 文档另明确：**改 scope 会导致流程失败须重新授权**；回调 URI **建议 `127.0.0.1` 而非 `localhost`**。
+5. **分页 `per_page` → `limit`**（Gitea `ListOptions` 只有 `page`+`limit`，`per_page` **被静默忽略**）⇒ 成员/协作者列表静默少一截，~6 处。
+
+**无对应物**：仓库级团队（Gitee `/repos/{o}/{r}/teams` + `PUT .../teams/{team}`；Gitea 只有组织级 teams，
+`PUT /teams/{id}/repos/{org}/{repo}` —— **语义反转**，建议砍掉）；企业(enterprise)层级（Gitea 只有 org）。
+
+**迁移工作量（含测试文档，1 名熟练后端）**：整体替换 **14–20 人天** · 抽象并存 **19–26 人天（推荐）** · MVP **5–8 人天**。
+**建议**：抽象适配层 + 先交 MVP；**不建议改表名**（只加 `provider` 列）；私有化 Gitea 常用**自签证书**，
+而当前 `HttpClient` **无任何 TLS/信任配置**（只有 `NO_PROXY` + `followRedirects(NEVER)`）⇒ 会直接 `SSLHandshakeException`。
+
 ## 6. Git 远端
-- `origin`=内网 Gitea `172.16.8.249:3000`：沙箱不可达 + push-to-create 关闭(403)，本地无解。
+- `origin`=内网 Gitea `172.16.8.249:3000`：**HTTP 层沙箱可达**（2026-09-18 实测，此前「不可达」结论已作废）；
+  公共接口免认证可读：`/api/v1/version`→`1.26.2`、`/api/v1/settings/api`→`max_response_items:50`、
+  `/api/v1/orgs`→仅 `huimao`。但**仓库/组织/用户级全需令牌**（匿名读 `repos/...`→404，
+  `git ls-remote origin`→`Repository not found`），且 push-to-create 关闭(403)。
+- **契约以实例自述规范为准**：`GET /swagger.v1.json`（Swagger 2.0 / 300 路径）拿到的是该实例
+  **真实**的字段集，优于官网文档（版本会漂）。已存 `logs/gitea-swagger-1.26.2.json`（gitignored）。
 - ⚠️ **2026-09-17 起：本沙箱内推不了** —— 读 `~/.ssh` 被沙箱策略**硬拒**，`dangerouslyDisableSandbox` 对该目录同样无效
   （`[sandbox] …\id_rsa (读 · 拒绝)` → `Permission denied (publickey)`）。已排除的替代路径：HTTPS 本就无凭证；
   `SSH_AUTH_SOCK` 未设置、无 `ssh-agent` 进程（无「免读文件」捷径）；`~/.workbuddy/settings.json` 的
@@ -165,3 +269,163 @@
     另：`git status` 的 `??` 列表**常被 `head` 截断**，必须看全量（本次 65 项，前 30 项全是无关小文件）。
   - 属 scratch、**按既有约定不入库**（别误当漏提交）：`scripts/_*`（diag/probe/截图/runner）·
     根目录 `probe*.txt`/`bind_probe.txt`/`e2e_v50_*.txt` · `.workbuddy/artifacts/`（历次会话均未入库）。
+
+## 7. 托管方抽象（Gitee→Gitea，2026-09-18 开工）
+- **`RepoProviderClient`**（`aioa-gitee/client/`，21 方法）是上层唯一依赖；8 个服务只注入接口，
+  **不再直接注入 `GiteeClient`**。新增实现时上层零改动。`RepoProviderException` 为中立基类，
+  `GiteeApiException extends` 它；advice 里 `GiteeApiException` 与基类**两个 handler 并存**
+  （Spring 取最具体），保证新托管方异常不会落到全局兜底变 500。**勿**把 `providerName()` 的
+  Gitee 覆写删掉 —— 文案会变。
+- **5 条硬分歧点**（写在接口类注释里，实现前必读）：①建仓 `name`/`path` 双字段 vs 单 `name`；
+  ②Webhook 校验 **Gitee 明文共享密钥** vs **Gitea HMAC-SHA256**（`X-Gitea-Signature`，无前缀 /
+  兼容 `X-Hub-Signature-256` 带 `sha256=` 前缀；须用**原始字节**算，不能先 getReader）；
+  ③事件名下划线风格 + 子串包含（`issue_comment` 含 `issue`）⇒ 必须**归一化+精确顺序**；
+  ④OAuth 路径与 scope 词表**全不同**（无交集）；⑤分页 `per_page`→`page`+`limit`，Gitea 硬上限 50。
+- **翻页结束条件必须是「本页为空」**，不能写「本页条数<请求条数」：Gitea 请求 100 实回 50 会被
+  误判成末页 ⇒ 第 2 页起静默丢失。另加「整页与上页相同即停」兜「服务端忽略分页参数」的重复累加。
+- **桩/替身必须忠实**：`gitee_stub.py` 原先无视 `page`/`per_page` 每次都回全量，已加 `_paginate()`
+  按真实语义切片。**替身越宽容越会替真实服务掩盖缺陷**（与「桩不校验 scope」同类）。
+- **本模块已启用 Java 单测**（此前为零）：`aioa-gitee` 加 `spring-boot-starter-test`(test scope)，
+  `GiteeWebhookEventClassifyTest` 31 用例。纯函数改动建议先加单测再改（跑一次 ~0.4s，
+  比整套 Python E2E 快两个数量级）。
+- **真机验证唯一硬阻塞 = 一个 Gitea 令牌**（仓库级全需认证）；Webhook 端到端还需**公网可达回调地址**。
+- **托管方切换开关**：`aioa.repo.provider`（默认 `gitee`）。两个实现**互斥装配**
+  （`@ConditionalOnProperty`；Gitee 侧 `matchIfMissing=true`）⇒ 容器里恰好一个
+  `RepoProviderClient`。**条件写反 = 整个应用起不来**（接口注入候选不唯一），
+  已由 `RepoProviderWiringTest` 守住。改配置后**必须重启**才生效。
+- **Webhook 校验在托管方实现里，不在控制器**：`verifyWebhook(byte[] rawBody, Map headers, secret)`。
+  报文入口必须收 **`byte[]`**（Gitea 签名是对原始字节算 HMAC，String 往返会永久不匹配）；
+  控制器**不得**按托管方 if/else（新增一家必漏，后果是「谁都能伪造提交记录」）。
+  日志只记**头名**不记头值（头值含签名/密钥）。
+- **打包纪律复核（实测有效）**：改 Java 后必须「停 :8080 → `mvnw clean package` → 重启」；
+  产物应约 **82MB**，若变成 ~20KB 即是被 rename 的 stripped-jar。重启前 `source .env.gitee-real`
+  才能保持真实接线（否则回落到 yml 默认值：无 org、无 client_id）。
+- **不要用真实接线跑 `e2e_full_system`**：平台会**在 yjiud 组织上真的建仓**留下残留。
+  该套件必须在桩接线下跑；而切桩接线要重启且会碰「桩覆盖真实绑定」陷阱 —— 需先备份 `gitee_account`。
+
+### 7.1 设置端口 `RepoProviderSettings`（2026-09-18 补，**换托管方的第二半**）
+
+`RepoProviderClient` 只解决「**怎么调**平台接口」；「**平台侧配置长什么样**」是另一件事，必须另有端口。
+原先 8 个业务类 + 2 个控制器直读 `GiteeProperties`，切 gitea 后读到**空组织/空回调基址/错密钥**且**编译期无提示**。
+
+- 实现：`config/RepoProviderSettings.java` + `RepoProviderSettingsAdapter`，
+  **访问器取名与 `GiteeProperties` getter 完全相同** ⇒ 11 处调用点**一行未改**，只换字段声明类型。
+- **三类取数规则**（改动前必读）：①**协议类随 provider 切**（`org`/`webhook-base-url`/`webhook-secret`/
+  `redirect-uri`/`oauth-authorize-base-url`/`token-enc-key`/`repo-name-max-length`）；
+  ②**运行参数仍取 `aioa.gitee.*`**（`sync-enabled`/`purge-repo-on-delete`/`max-attempts`/
+  `task-batch-size`/`bind-return-url` —— Gitea 段未重复定义，改了会让后台批量莫名变默认值）；
+  ③**OAuth 报错与警示文案随 provider 变，且必须指名当前 provider 的属性键**
+  （让用户去改一个不生效的配置项，比不给提示更糟）。
+- 反例症状（改造前实测）：`provider=gitea` 下 `POST /gitee/bind/authorize` 回
+  `code=400`「Gitee OAuth 应用未配置（缺 aioa.gitee.client-id / client-secret）」—— 授权地址仍在读 Gitee 段。
+- **零凭据探针**：`POST /gitee/bind/authorize` **不调远端**、只按配置拼 URL ⇒ **没有令牌也能验
+  「provider 是否真的切过去了」**。配合 `GET /gitee/config`（`enabled`/`orgConfigured`/
+  `webhookBaseUrlConfigured` 必须来自当前 provider 段）一起看「配置面是否真中立」。
+- **切 provider ⇒ 既有令牌不可解密**（两段各一个默认 `token-enc-key`）：症状
+  `IllegalStateException: Gitee 令牌解密失败：请确认 aioa.gitee.token-enc-key 未被变更`。
+  **这是预期行为**（令牌按平台签发，跨平台迁移无意义），需重新授权绑定，**不是 bug**。
+- **fail-loud（`sandbox`/`warning`）两家判据不同，别照抄**：Gitee 比 `gitee.com` 常量
+  （授权域指向桩即 true）；Gitea 比 **`web-base-url` 的域**（自建实例无官方域可参照）⇒
+  要触发必须让 `oauth-authorize-base-url` 与 `web-base-url` **不同域**；
+  **两端同域时 `sandbox=false` 是正确的**（用户确实到达真实例），别当 bug 修。
+- **同一时刻只许起一个后端实例**：两实例共库会**互抢同一个任务队列**。
+  `AIOA_GITEE_SYNC_ENABLED=false` **只停 cron（`GiteeSyncScheduler`），不停 worker（`GiteeTaskService`）**；
+  要真关得让该实例 `props.isEnabled()==false`（切 provider 后它取的是**当前 provider 的** enabled）。
+  症状 = 「项目卡 `CREATING` + 下游套件大片红」，而**失败在另一个实例的日志里**
+  （本实例只说「任务完成」）⇒ 必须去另一实例 grep `Gitee 任务`/`Exception`。
+- **单测基线 `aioa-gitee` 136/136**（29 请求体 + 3 装配 + 21 校验 + 31 事件分类 + 10 设置端口 +
+  6 覆盖守卫 + 3 密钥中立 + 3 源码审计 + 20 失败文案映射 + 6 已是协作者判据 + 4 其他；
+  **以实跑计数为准**）。
+  改托管方相关代码先跑 `cd server && bash mvnw -pl aioa-gitee -am test`（快），再跑 Python 矩阵。
+  ⚠️ `-pl aioa-gitee` **必须带 `-am`**，否则兄弟模块未 install 会 `DependencyResolutionException`。
+- **沙箱回调覆盖真实绑定的守卫**：`GiteeAccountService.clobberRealBinding()` +
+  `STUB_UID_CEILING=1_000_000`。判据实测：**桩签发 5 位 uid（42040–42891），真实账号 8 位（14032724）**。
+  沙箱 + 既有 uid ≥ 10^6 + uid 不同 ⇒ 拒绝（否则真实令牌被换成假身份，两条路径都返回「绑定成功」、
+  **事后无从分辨**）。**跑桩套件前手工备份 `gitee_account` 的纪律已不再必需**。
+  失效方向 fail-open；彻底修法=给绑定行加 `sandbox` 列（后续项）。
+  ⚠️ 判据常数依赖「桩 uid 是 5 位」这一事实，**若桩改成签发 8 位 uid，此守卫会把桩套件全拦红**。
+- 完整切换验证配方见技能 `.workbuddy/skills/aioa-e2e-regression/SKILL.md` §4.5 / §0.12。
+
+### 7.2 Gitea 真机跑通（2026-09-18，**换托管方的收口**）
+
+接线文件 `.env.gitea-real`（gitignored）→ `set -a && . ./.env.gitea-real && set +a` + 启动 jar。
+关键项：`AIOA_REPO_PROVIDER=gitea` · `AIOA_GITEA_BASE_URL=http://172.16.8.249:3000/api/v1`
+（**必须带 `/api/v1`**）· `AIOA_GITEA_ORG=AI-OA` · `AIOA_GITEA_WEBHOOK_BASE_URL`
+（**必须是 Gitea 能访问到的地址**）· `AIOA_GITEA_TEST_TOKEN`（真机套件用，不入库）。
+
+- **验证配方**：`python scripts/e2e_gitea_live.py`（**81 条**，自净，含 `G0a` 列宽闸门 + `G4.7/G5.4/G5.5` 事件词表断言）·
+  `python scripts/_check_gitea_ui_provider.py`（浏览器实渲染 **17 条**，自净）·
+  `python scripts/_check_gitea_cfg_failure_ui.py`（配置拉取失败归因 **16 条**，自净）。
+  基线：真机 **81/81**（连跑两次）· 界面 17/17 · 配置失败 16/16 · `aioa-gitee` 单测 **165/165** ·
+  `e2e_v51_gitee_init` 50/50 · `e2e_v48_gitee` 116/116 · `e2e_full_system --no-browser` 145/145
+  （后三者实测**与 provider 无关**，真机接线下 `e2e_full_system` 同样 145/145）。
+  ⚠️ **套件分两种接线，不能同时接**：`e2e_gitea_live`/`_check_gitea_*` 要真机接线
+  （`.env.gitea-real`）；`e2e_v48_gitee`/`e2e_v51_gitee_init`/`e2e_full_system` 要**桩接线**
+  （`set -a && . scripts/gitee-e2e-env.sh && set +a`，桩在 `:8090`）。
+  切换只需重启后端，**不用重新打包**；跑完必须切回 `.env.gitea-real`（用户目标态）。
+  ⚠️ **改断言/改可见文案后要连跑两次**，且 `_check_gitea_ui_provider.py` 的 L3「整页不出现 Gitee」
+  是**数据面**的哨兵（V56 回填文案就是被它抓红的），改数据后必跑。
+- **失败原因字段（`member.lastError` / `project.errorMsg`）直接渲染给用户**
+  （成员表 FAILED 态 tooltip · 项目详情红字告警）⇒ **禁止落库托管方原文**。两条硬规则：
+  ①`GiteaProviderClient.extractMessage()` 必须 **`errors[]` 优先**（Gitea 的 `message` 可能是
+  **内部操作名**：协作者用户不存在时回 `GetUserByName`，人话在 `errors[]`）；
+  ②落库前过 `support/ProviderFailureText`（中文归因+动作在前、托管方原文附尾，托管方名走 `label`）。
+- **⚠️ Gitea 对「协作者用户不存在」回 422（不是 404）**：`PUT /repos/{o}/{r}/collaborators/{不存在}`
+  → `422 {"message":"user does not exist [uid: 0, name: x]"}`；**重复添加（已是协作者）回 204**。
+  ⇒ `isAlreadyCollaborator()` **绝不能把 422 一律当成功**（旧写法据此把「没权限的成员」标成 SYNCED
+  = **假绿**）。判据必须是「4xx **且**文案明确说已是协作者」。同类陷阱通用：
+  **判定「目标已达成」要锚定文案，不要只看状态码。**
+- **⚠️ Gitea OAuth 应用的 `client_secret` 可能「登记页显示的值永远校验不过」**（2026-09-18 实测）：
+  该实例生成/校验的是 **`gto_` 前缀 56 字符**密钥；失效那个应用登记页显示的却是
+  **`qto_` 前缀 55 字符**，`POST {web}/login/oauth/access_token` 恒回
+  `unauthorized_client / invalid client secret` —— **且「登记页显示的值」与「故意写错的值」响应逐字节相同**。
+  编辑页把库里的失效值**原样显示** ⇒ 「看起来复制对了」这个直觉是错的。
+  判据三分：① 不存在的 client_id → `invalid_client / cannot load client with client id`（可区分）；
+  ② 空密钥 → `invalid empty client secret`（可区分）；③ 正确值≡错值 ⇒ **该应用已废**。
+  解法：API **没有** `regenerate-secret`（PATCH 体不含 secret）⇒ 只能**新建应用**
+  （`POST /user/applications/oauth2` 的**创建响应**才返回明文 `client_secret`），再删旧的。
+  当前有效 `client_id=a2e8f7bd-8f0b-4a2f-a1e5-345b5741b0cd`（应用 id 6）；旧 id 4 已删除，勿再引用。
+- **OAuth 换令牌错误体的 `error` 是通用码，人话在 `error_description`**：
+  `{error:"unauthorized_client", error_description:"invalid client secret" |
+  "client is not authorized"}`。⇒ `firstDetail()` 必须 **`error_description` 优先并保留 `error`**
+  （`errors[]` 优先级仍在其前），否则「平台侧密钥不对」与「授权码不对」在页面/日志里是**同一句话**。
+  另：`/login/oauth/authorize` **不接受私人令牌**（header/query 都试过，一律 303 去登录页），
+  Gitea 也不支持 `client_credentials` ⇒ 浏览器那半程必须由人完成。
+- **MyBatis-Plus「清空字段」有坑**：默认 `update-strategy=NOT_NULL` 会把 **null 字段排除在 `SET` 外**
+  ⇒ `setErrorMsg(null)` / `setLastError(null)` / `setDeletedAt(...)+updateById` **都是空转**
+  （症状：库里 17 个 ACTIVE 项目还挂着旧的 `Rate Limit Exceeded`）。
+  修法：该字段加 `@TableField(updateStrategy = FieldStrategy.ALWAYS)`，或改用 `LambdaUpdateWrapper.set()`。
+  断言「清空生效」的办法：**写脏 → 走一次真实动作 → 回读必须为空**（真机 G10.5~G10.7）。
+- **V54 迁移**：`gitee_account` 加 `provider` 列（老行回填 `'gitee'`），唯一键并入
+  `provider` + `gitee_uid` ⇒ **一个用户可同时持有 Gitee 与 Gitea 两个身份**。
+  漏掉 provider 过滤的症状：切平台后建项目 500 / 拿异平台登录名加协作者 404（**同步静默失败**）。
+- **解密失败必须回落企业令牌**：密文是**写入时那个托管方的密钥**加密的，切 provider 必然
+  `AEADBadTagException: Tag mismatch`。原实现只在 `acc == null` 时回落 ⇒ 建项目 500。
+  现 `decryptTolerant()`：解不开 = 本平台下没有这条绑定 → 回落企业令牌。
+- **端口命名四件套**（`RepoProviderSettings`）：`providerName()`（机器标识，写库/过滤）·
+  `providerLabel()`（展示名）· `configKeyPrefix()`（`aioa.gitee`/`aioa.gitea`，错误文案指名配置段）·
+  `tokenEncKeyProperty()`；另有 `tokenRequirementHint()`（**Gitee 讲 `projects` scope，Gitea 讲
+  「仓库/组织」勾选项** —— 照抄会让 Gitea 用户在令牌页找不到该选项）。
+- **`/gitee/config` 是界面文案的唯一来源**：回 `provider / providerLabel / configKey /
+  tokenRequirementHint`。**前端整页文案必须按 `providerLabel` 渲染**：写死「Gitee」会让
+  gitea 接线下页面谎报托管方（页头/卡片/表头/按钮/确认框/Toast/OAuth 结果页全中）。
+  前端回落值取 `'Gitee'`（与后端默认 provider 一致），**这样 Gitee 桩套件的旧锚点
+  （如 `我的 Gitee 账号`）不漂移**。
+- **源码审计三条**（`RepoProviderNeutralityTest`）：①服务层不得 `catch (GiteeApiException)`；
+  ②`gitee_account` 的条件查询必须带 `GiteeAccount::getProvider`；③`service|controller|support`
+  下 `Gitee `（含**句中**写法，如「仅移除平台项目，Gitee 仓库保留」）只准出现在注释或 `log.*`。
+  审计只查「`Gitee`+空格」⇒ 类名（`GiteeRepoTaskHandler`）不误伤。
+- **⚠️ 真机专属环境限制：Webhook 入站不可达**（本机经两层 NAT 到 Gitea，无回程路由 +
+  防火墙三档全开无入站规则）。**出站全正常**（建仓/挂钩子/加成员/读分支），
+  只是 `gitee_event` 不会自动增长。收敛手段（定时校准 + 只读接口）与入站无关，可用。
+  要真验入站必须同网段部署或给一个 Gitea 可达的地址。套件用「本地构造报文 + 正确 HMAC 签名」
+  直投平台端点，验的是**协议正确性**，**不等于网络可达性**。
+- **Gitea 1.26.2 实测契约**：默认分支 `main`（非 `master`）· Webhook `secret` **只写不读** ·
+  请求 4 个事件实际落 **14 个**（断言用**子集**）· `/hooks/{id}/deliveries` **404** ·
+  SSH 端口 **2222** · 协作者 `PUT` 需 **JSON body**（query 形式 422）·
+  `X-Gitea-Signature` = HMAC-SHA256(**原始字节**, secret) 十六进制（无前缀）。
+  详见 `.workbuddy/artifacts/gitea-api-contract-1.26.2.md`。
+- **长驻服务启动纪律（本日踩到）**：`bash start-all.sh` 里的 `&` 子进程会随该后台任务结束
+  **被回收**（:8080 起来又立刻死，日志只到 "profile is active"）。要常驻必须把
+  **java 进程本身**作为后台任务的**前台进程**跑（重定向到日志文件、不加 `&`）。
+- **仍叫 `Gitee` 的地方**（有意保留）：`log.*` 文案、类名、`gitee_*` 表名 —— 改名属纯重构。

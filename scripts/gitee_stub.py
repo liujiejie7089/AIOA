@@ -160,6 +160,29 @@ def _auth(request: Request) -> Optional[Dict[str, Any]]:
     return info
 
 
+def _paginate(items: List[Any], request: Request) -> List[Any]:
+    """按 `page` / `per_page` 切片返回（对齐 Gitee 真实语义）。
+
+    **为什么桩必须真分页**：Gitee 真实 API 是分页的，客户端只有翻页才能取全量。
+    若桩无视这两个参数、每次都回全量，那么「只请求一次就拿全」的客户端在桩上也能
+    全绿 —— 分页相关的 bug（例如服务端把单页上限压到比请求值更小、导致第 2 页起
+    静默丢失）在桩上**永远暴露不出来**。桩是测试替身，替身越"宽容"，越会替真实
+    服务掩盖缺陷。
+    """
+    try:
+        page = int(request.query_params.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = int(request.query_params.get("per_page") or 20)
+    except (TypeError, ValueError):
+        per_page = 20
+    page = max(1, page)
+    per_page = max(1, per_page)
+    start = (page - 1) * per_page
+    return items[start:start + per_page]
+
+
 @app.middleware("http")
 async def _log_and_ratelimit(request: Request, call_next):
     path = request.url.path
@@ -247,7 +270,10 @@ def _issue(uid: int, login: str) -> Dict[str, Any]:
         STUB["refresh"][rt] = at
     return {"access_token": at, "refresh_token": rt,
             "expires_in": STUB["token_ttl"], "token_type": "bearer",
-            "scope": "user_info projects pull_requests issues notes",
+            # 与后端默认 scope 保持一致（GiteeProperties.scope / AIOA_GITEE_SCOPE）。
+            # 注意：本桩**不校验** scope，所以「缺 hook 导致真站挂 Webhook 被拒」这类问题
+            # 桩环境永远测不出来 —— 该风险已在 GiteeProperties.scope 处注明。
+            "scope": "user_info projects hook pull_requests issues notes",
             "created_at": int(time.time())}
 
 
@@ -283,7 +309,7 @@ def get_org(org: str):
 def org_members(org: str, request: Request):
     if not _auth(request):
         return _fail(401, "401 Unauthorized: Access token does not exist")
-    return ORG_MEMBERS
+    return _paginate(ORG_MEMBERS, request)
 
 
 # 组织级 Team：Gitee 开放平台**没有**该 API（真实环境返回 HTML 404）。
@@ -410,7 +436,7 @@ def create_hook(owner: str, repo: str, request: Request, body: Dict[str, Any] = 
 def list_hooks(owner: str, repo: str, request: Request):
     if not _auth(request):
         return _fail(401, "401 Unauthorized: Access token does not exist")
-    return STUB["hooks"].get(_repo_key(owner, repo), [])
+    return _paginate(STUB["hooks"].get(_repo_key(owner, repo), []), request)
 
 
 @app.delete("/api/v5/repos/{owner}/{repo}/hooks/{hook_id}")
@@ -435,7 +461,7 @@ def delete_hook(owner: str, repo: str, hook_id: int, request: Request):
 def list_branches(owner: str, repo: str, request: Request):
     if not _auth(request):
         return _fail(401, "401 Unauthorized: Access token does not exist")
-    return STUB["branches"].get(_repo_key(owner, repo), [])
+    return _paginate(STUB["branches"].get(_repo_key(owner, repo), []), request)
 
 
 @app.get("/api/v5/repos/{owner}/{repo}/commits")
@@ -549,7 +575,7 @@ def update_file(owner: str, repo: str, request: Request, path: str = "",
 def list_collaborators(owner: str, repo: str, request: Request):
     if not _auth(request):
         return _fail(401, "401 Unauthorized: Access token does not exist")
-    return STUB["collabs"].get(_repo_key(owner, repo), [])
+    return _paginate(STUB["collabs"].get(_repo_key(owner, repo), []), request)
 
 
 @app.put("/api/v5/repos/{owner}/{repo}/collaborators/{username}")

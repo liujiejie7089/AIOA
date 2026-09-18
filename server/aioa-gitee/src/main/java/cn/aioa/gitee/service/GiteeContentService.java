@@ -1,8 +1,8 @@
 package cn.aioa.gitee.service;
 
 import cn.aioa.common.exception.BizException;
-import cn.aioa.gitee.client.GiteeApiException;
-import cn.aioa.gitee.client.GiteeClient;
+import cn.aioa.gitee.client.RepoProviderException;
+import cn.aioa.gitee.client.RepoProviderClient;
 import cn.aioa.gitee.entity.GiteeCommit;
 import cn.aioa.gitee.entity.GiteeEvent;
 import cn.aioa.gitee.entity.GiteeProject;
@@ -51,7 +51,7 @@ public class GiteeContentService {
 
     private final GiteeProjectService projectService;
     private final GiteeTokenService tokenService;
-    private final GiteeClient client;
+    private final RepoProviderClient client;
     private final GiteeCommitMapper commitMapper;
     private final GiteeEventMapper eventMapper;
 
@@ -112,7 +112,7 @@ public class GiteeContentService {
         Object raw;
         try {
             raw = client.getContents(token, p.getGiteeOwner(), p.getGiteeRepo(), safePath, safeRef);
-        } catch (GiteeApiException e) {
+        } catch (RepoProviderException e) {
             if (e.getStatus() != 404) {
                 throw e;
             }
@@ -301,7 +301,7 @@ public class GiteeContentService {
         Map<String, Object> resp;
         try {
             resp = client.putFile(token, p.getGiteeOwner(), p.getGiteeRepo(), path, base64, message, branch);
-        } catch (GiteeApiException e) {
+        } catch (RepoProviderException e) {
             if (!fileExistsError(e)) {
                 throw e;
             }
@@ -362,7 +362,7 @@ public class GiteeContentService {
     // ======================================================================
 
     /** 是否是「文件已存在」类错误（应当改为覆盖提交）。 */
-    static boolean fileExistsError(GiteeApiException e) {
+    static boolean fileExistsError(RepoProviderException e) {
         if (e.getStatus() == 422) {
             return true;
         }

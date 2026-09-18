@@ -213,7 +213,13 @@ export const GITEE_SYNC_STATUS_TAG: Record<string, string> = {
   FAILED: 'danger'
 }
 
-/** 成员来源：平台授予 vs 在 Gitee 网页直接添加（定时校准会捞回来）。 */
+/**
+ * 成员来源：平台授予 vs 在托管平台网页直接添加（定时校准会捞回来）。
+ *
+ * 注意 `GITEE` 这一项**不要直接渲染** —— 它表达的是「在托管平台网页上添加」，
+ * 但字面写死了平台名。托管方可能是 Gitea，展示时必须由视图按当前 provider 生成
+ * （见 `GiteeProjectDetailView.vue` 的 `memberSourceLabel()`），此处只作兜底。
+ */
 export const GITEE_MEMBER_SOURCE_LABEL: Record<string, string> = {
   PLATFORM: '平台授予',
   GITEE: 'Gitee 侧添加'

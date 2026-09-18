@@ -1,7 +1,7 @@
 package cn.aioa.gitee.service;
 
-import cn.aioa.gitee.client.GiteeApiException;
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.client.RepoProviderException;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeTask;
 import cn.aioa.gitee.mapper.GiteeTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  * </ol>
  *
  * <p><b>退避</b>：{@code 10s × 2^attempts}，封顶 10 分钟。只对
- * {@link GiteeApiException#isRetryable()} 的错误重试；参数类错误直接判死，
+ * {@link RepoProviderException#isRetryable()} 的错误重试；参数类错误直接判死，
  * 避免把「仓库名重复」这种永久错误重试到上限、白白消耗配额。</p>
  *
  * <p><b>领取方式</b>：{@link GiteeTaskMapper#claim} 用条件 UPDATE 抢占，
@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
 public class GiteeTaskService {
 
     private final GiteeTaskMapper taskMapper;
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
     private final ObjectMapper objectMapper;
 
     /**
@@ -56,7 +56,7 @@ public class GiteeTaskService {
     /** 本实例标识（写入 locked_by，用于排障「是哪台机器在处理」）。 */
     private final String workerId;
 
-    public GiteeTaskService(GiteeTaskMapper taskMapper, GiteeProperties props,
+    public GiteeTaskService(GiteeTaskMapper taskMapper, RepoProviderSettings props,
                             ObjectMapper objectMapper,
                             ObjectProvider<List<GiteeTaskHandler>> handlerProvider) {
         this.taskMapper = taskMapper;
@@ -179,7 +179,7 @@ public class GiteeTaskService {
             handler.handle(t);
             finish(t, GiteeTask.STATUS_DONE, null);
             log.info("Gitee 任务完成 id={} type={} biz={}#{}", t.getId(), t.getTaskType(), t.getBizType(), t.getBizId());
-        } catch (GiteeApiException e) {
+        } catch (RepoProviderException e) {
             if (e.isRetryable() && attempts(t) < maxAttempts(t)) {
                 retry(t, e.getMessage());
             } else {

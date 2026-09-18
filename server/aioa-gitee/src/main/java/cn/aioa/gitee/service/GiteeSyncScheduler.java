@@ -1,6 +1,6 @@
 package cn.aioa.gitee.service;
 
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeProject;
 import cn.aioa.gitee.entity.GiteeTask;
 import cn.aioa.gitee.mapper.GiteeProjectMapper;
@@ -41,7 +41,7 @@ public class GiteeSyncScheduler {
     /** 每条任务之间的错峰间隔（秒）。 */
     private static final int STAGGER_SECONDS = 2;
 
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
     private final GiteeProjectMapper projectMapper;
     private final GiteeTaskService taskService;
 

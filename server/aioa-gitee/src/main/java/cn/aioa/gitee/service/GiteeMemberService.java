@@ -42,7 +42,9 @@ public class GiteeMemberService {
     private final GiteeTokenService tokenService;
     private final GiteeTaskService taskService;
     private final OrgMemberMapper orgMemberMapper;
-    private final cn.aioa.gitee.client.GiteeClient client;
+    private final cn.aioa.gitee.client.RepoProviderClient client;
+    /** 只用来取托管方展示名：lastError 是对用户展示的文案，不能写死「Gitee」。 */
+    private final cn.aioa.gitee.config.RepoProviderSettings props;
 
     // ======================================================================
     // 增删
@@ -66,7 +68,7 @@ public class GiteeMemberService {
         String role = normalizeRole(body.get("role"));
 
         if (userId == null && !StringUtils.hasText(giteeUsername)) {
-            throw BizException.badRequest("请选择平台成员，或直接填写 Gitee 登录名");
+            throw BizException.badRequest("请选择平台成员，或直接填写 " + props.providerLabel() + " 登录名");
         }
 
         // 平台成员：取其绑定信息；未绑定则留 NULL（PENDING），绑定后由校准补齐
@@ -118,7 +120,7 @@ public class GiteeMemberService {
         m.setSource(GiteeRepoMember.SOURCE_PLATFORM);
         m.setSyncStatus(GiteeRepoMember.SYNC_PENDING);
         if (acc == null) {
-            m.setLastError("成员尚未绑定 Gitee 账号，待绑定后自动同步权限");
+            m.setLastError("成员尚未绑定 " + props.providerLabel() + " 账号，待绑定后自动同步权限");
         }
         m.setCreatedAt(LocalDateTime.now());
         memberMapper.insert(m);
@@ -180,7 +182,7 @@ public class GiteeMemberService {
         m.setSource(GiteeRepoMember.SOURCE_PLATFORM);
         m.setSyncStatus(GiteeRepoMember.SYNC_PENDING);
         if (acc == null) {
-            m.setLastError("项目创建者尚未绑定 Gitee 账号，待绑定后自动补齐仓库权限");
+            m.setLastError("项目创建者尚未绑定 " + props.providerLabel() + " 账号，待绑定后自动补齐仓库权限");
         }
         m.setCreatedAt(LocalDateTime.now());
         memberMapper.insert(m);

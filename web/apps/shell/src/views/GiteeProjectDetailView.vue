@@ -36,7 +36,7 @@
               <el-icon><Back /></el-icon>返回列表
             </el-button>
             <el-button v-if="project?.htmlUrl" size="small" type="primary" @click="openGitee">
-              <el-icon><Link /></el-icon>跳转 Gitee
+              <el-icon><Link /></el-icon>跳转 {{ pName }}
             </el-button>
             <el-button size="small" :loading="refreshing" @click="refreshAll">
               <el-icon><Refresh /></el-icon>刷新
@@ -125,7 +125,7 @@
                 <div class="link-row">
                   <el-link v-if="repository.sshUrl" type="primary" :href="repository.sshUrl" target="_blank" rel="noopener">SSH {{ repository.sshUrl }}</el-link>
                   <el-link v-if="repository.httpsUrl" type="primary" :href="repository.httpsUrl" target="_blank" rel="noopener">HTTPS {{ repository.httpsUrl }}</el-link>
-                  <el-link v-if="repository.htmlUrl" type="primary" :href="repository.htmlUrl" target="_blank" rel="noopener">Gitee 网页 {{ repository.htmlUrl }}</el-link>
+                  <el-link v-if="repository.htmlUrl" type="primary" :href="repository.htmlUrl" target="_blank" rel="noopener">{{ pName }} 网页 {{ repository.htmlUrl }}</el-link>
                 </div>
               </div>
             </template>
@@ -164,17 +164,17 @@
               :closable="false"
               style="margin-top: 8px"
               title="提示"
-              description="订阅 Push / 合并请求 / Issue / 评论 等事件后，Gitee 上的代码活动会经 Webhook 实时回流到本平台。"
+              :description="`订阅 Push / 合并请求 / Issue / 评论 等事件后，${pName} 上的代码活动会经 Webhook 实时回流到本平台。`"
             />
 
             <!-- 危险操作 -->
             <el-divider v-if="canManage" content-position="left">危险操作</el-divider>
             <div v-if="canManage" class="danger-ops">
               <el-button type="warning" size="small" :loading="deleting" @click="deleteKeepRepo">
-                删除项目（保留 Gitee 仓库）
+                {{ `删除项目（保留 ${pName} 仓库）` }}
               </el-button>
               <el-button type="danger" size="small" :loading="deleting" @click="deleteWithRepo">
-                删除项目并删除 Gitee 仓库
+                {{ `删除项目并删除 ${pName} 仓库` }}
               </el-button>
             </div>
           </el-tab-pane>
@@ -182,7 +182,7 @@
           <!-- ---------------- 成员 ---------------- -->
           <el-tab-pane label="成员" name="members">
             <div class="pane-head">
-              <span class="muted small">协作者与同步状态。来源为「Gitee 侧添加」表示在 Gitee 网页直接添加、由定时校准捞回。</span>
+              <span class="muted small">{{ `协作者与同步状态。来源为「${pName} 侧添加」表示在 ${pName} 网页直接添加、由定时校准捞回。` }}</span>
               <div>
                 <el-button size="small" :loading="membersLoading" @click="loadMembers">刷新</el-button>
                 <el-button v-if="canManage" size="small" type="primary" @click="openAddDlg">添加成员</el-button>
@@ -192,7 +192,7 @@
               <el-table-column label="用户" min-width="120">
                 <template #default="{ row }">用户 #{{ row.userId }}</template>
               </el-table-column>
-              <el-table-column label="Gitee 账号" min-width="160">
+              <el-table-column :label="`${pName} 账号`" min-width="160">
                 <template #default="{ row }">
                   <span v-if="row.giteeUsername">{{ row.giteeUsername }}</span>
                   <el-tag v-else type="info">未绑定</el-tag>
@@ -202,7 +202,7 @@
                 <template #default="{ row }">{{ GITEE_MEMBER_ROLE_LABEL[row.role] || row.role || '—' }}</template>
               </el-table-column>
               <el-table-column label="来源" min-width="120">
-                <template #default="{ row }">{{ GITEE_MEMBER_SOURCE_LABEL[row.source] || row.source || '—' }}</template>
+                <template #default="{ row }">{{ memberSourceLabel(row.source) }}</template>
               </el-table-column>
               <el-table-column label="同步状态" min-width="120">
                 <template #default="{ row }">
@@ -249,7 +249,7 @@
               show-icon
               style="margin-bottom: 8px"
               title="分支列表不完整"
-              :description="(degradedReason || 'Gitee 暂不可达') + '。已默认使用默认分支，列表可能不全，但可正常浏览默认分支内容。'"
+              :description="(degradedReason || `${pName} 暂不可达`) + '。已默认使用默认分支，列表可能不全，但可正常浏览默认分支内容。'"
             />
 
             <!-- 路径面包屑 -->
@@ -382,7 +382,7 @@
                 <el-select v-model="eventType" size="small" style="width: 180px" placeholder="事件类型" @change="onEventTypeChange">
                   <el-option v-for="t in GITEE_EVENT_TYPES" :key="t.value" :label="t.label" :value="t.value" />
                 </el-select>
-                <span class="muted small">Gitee 网页上的操作经 Webhook 回流；重复投递会按幂等键去重，不会重复出现。</span>
+                <span class="muted small">{{ `${pName} 网页上的操作经 Webhook 回流；重复投递会按幂等键去重，不会重复出现。` }}</span>
               </div>
             </div>
             <el-table v-loading="eventLoading" :data="events" stripe>
@@ -393,7 +393,7 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="Gitee 事件" width="150" prop="giteeEvent" show-overflow-tooltip />
+              <el-table-column :label="`${pName} 事件`" width="150" prop="giteeEvent" show-overflow-tooltip />
               <el-table-column label="动作" width="100" prop="action" />
               <el-table-column label="标题" min-width="200" prop="title" show-overflow-tooltip />
               <el-table-column label="摘要" min-width="200" prop="summary" show-overflow-tooltip />
@@ -438,7 +438,7 @@
       :closable="false"
       style="margin-bottom: 8px"
       title="提示"
-      description="未绑定 Gitee 的成员添加后将处于「待同步（PENDING）」，待其绑定 Gitee 后由后台同步；后端不会替其编造 Gitee 账号。"
+      :description="`未绑定 ${pName} 的成员添加后将处于「待同步（PENDING）」，待其绑定 ${pName} 后由后台同步；后端不会替其编造 ${pName} 账号。`"
     />
     <div class="file-bar" style="margin-bottom: 8px">
       <el-input v-model="candidateKeyword" size="small" placeholder="按姓名 / 工号搜索" clearable style="width: 240px" @keyup.enter="searchCandidates" />
@@ -455,7 +455,7 @@
         <template #default="{ row }">{{ row.departmentId != null ? '部门 #' + row.departmentId : '—' }}</template>
       </el-table-column>
       <el-table-column label="工号" width="130" prop="employeeNo" />
-      <el-table-column label="Gitee 账号" min-width="160">
+      <el-table-column :label="`${pName} 账号`" min-width="160">
         <template #default="{ row }">
           <span v-if="row.giteeUsername">{{ row.giteeUsername }}</span>
           <el-tag v-else type="warning">未绑定</el-tag>
@@ -489,7 +489,7 @@
       :closable="false"
       style="margin-bottom: 8px"
       title="仅提交文本内容"
-      description="此路径提交的是文本正文；二进制文件请使用 git 推送到 Gitee。"
+      :description="`此路径提交的是文本正文；二进制文件请使用 git 推送到 ${pName}。`"
     />
     <el-form label-width="90px" size="small">
       <el-form-item label="文件路径" required>
@@ -562,6 +562,27 @@ const detail = ref<GiteeProjectDetail | null>(null)
 const project = computed<GiteeProject | undefined>(() => detail.value?.project)
 const repository = computed<GiteeRepository | undefined>(() => detail.value?.repository)
 const webhook = computed<GiteeWebhook | undefined>(() => detail.value?.webhook)
+
+/** `/gitee/config` 的返回值：只有托管方展示名/角色选项从这里取。 */
+const config = ref<GiteeConfig | null>(null)
+/**
+ * 托管方展示名。本页文案（跳转按钮、仓库地址标签、危险操作、表头、提示）都必须走它；
+ * 写死「Gitee」会让 gitea 接线下的详情页谎报托管方。
+ * 回落 'Gitee' 与后端 `aioa.repo.provider` 默认值一致。
+ */
+const pName = computed(() => config.value?.providerLabel || 'Gitee')
+
+/**
+ * 成员来源展示名。
+ *
+ * <p>不能直接用 `GITEE_MEMBER_SOURCE_LABEL`：其中 `GITEE` 这一项写死「Gitee 侧添加」，
+ * 而它表达的是「在托管平台网页上直接添加」（与后端 `SOURCE=GITEE` 同源）。
+ * 托管方换成 Gitea 后这句话就答非所问了。</p>
+ */
+function memberSourceLabel(source?: string): string {
+  if (source === 'GITEE') return `${pName.value} 侧添加`
+  return (source && GITEE_MEMBER_SOURCE_LABEL[source]) || source || '—'
+}
 const canManage = computed<boolean>(() => detail.value?.canManage ?? false)
 
 // Webhook 事件归一化（可能是 string[] 也可能是逗号拼接的 string）
@@ -596,9 +617,10 @@ async function loadDetail() {
 async function loadConfig() {
   try {
     const c: GiteeConfig = await giteeConfig()
+    config.value = c
     if (c?.roleOptions?.length) roleOptions.value = c.roleOptions
   } catch {
-    /* config 不可用时降级到 GITEE_MEMBER_ROLES */
+    /* config 不可用时降级到 GITEE_MEMBER_ROLES，托管方展示名回落 'Gitee' */
   }
 }
 
@@ -643,7 +665,7 @@ const deleting = ref(false)
 async function deleteKeepRepo() {
   try {
     await ElMessageBox.confirm(
-      '确认删除该项目？Gitee 仓库将保留，可稍后重新关联。',
+      `确认删除该项目？${pName.value} 仓库将保留，可稍后重新关联。`,
       '删除项目（保留仓库）',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
@@ -664,8 +686,8 @@ async function deleteKeepRepo() {
 async function deleteWithRepo() {
   try {
     await ElMessageBox.confirm(
-      '此操作将同时删除 Gitee 仓库，且不可恢复。确认继续？',
-      '删除项目并删除 Gitee 仓库',
+      `此操作将同时删除 ${pName.value} 仓库，且不可恢复。确认继续？`,
+      `删除项目并删除 ${pName.value} 仓库`,
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
   } catch {
@@ -674,7 +696,7 @@ async function deleteWithRepo() {
   deleting.value = true
   try {
     const r = await giteeDeleteProject(projectId, true)
-    ElMessage.success(r.note || '已删除项目及 Gitee 仓库')
+    ElMessage.success(r.note || `已删除项目及 ${pName.value} 仓库`)
     router.push('/gitee/projects')
   } catch (e: unknown) {
     ElMessage.error(giteeErrMsg(e, '删除失败'))

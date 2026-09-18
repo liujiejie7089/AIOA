@@ -64,6 +64,12 @@ aioa:
   kb:
     # 知识库存储实现：mysql（默认，LIKE 检索）/ vector（预留，切换向量数据库时启用）
     store: ${AIOA_KB_STORE:mysql}
+  repo:
+    # 代码托管方选择：gitee（默认）/ gitea。
+    # 两个实现互斥装配，容器里恰好一个 RepoProviderClient —— 上层按接口注入，切换无需改业务代码。
+    # 注意：切换后 Gitee 那套配置整体不生效，需另配 aioa.gitea.*（两家的 OAuth 端点、
+    # scope 词表、Webhook 校验算法、分页参数名全都不同，不是「改个地址」就能换）。
+    provider: ${AIOA_REPO_PROVIDER:gitee}
   gitee:
     # 总开关：关闭时所有 Gitee 任务不入队、Webhook 不处理（用于无外网的部署环境）
     enabled: ${AIOA_GITEE_ENABLED:true}
@@ -78,7 +84,10 @@ aioa:
     client-id: ${AIOA_GITEE_CLIENT_ID:}
     client-secret: ${AIOA_GITEE_CLIENT_SECRET:}
     redirect-uri: ${AIOA_GITEE_REDIRECT_URI:http://localhost:8080/api/v1/gitee/bind/callback}
-    scope: ${AIOA_GITEE_SCOPE:user_info projects pull_requests issues notes}
+    # 授权 scope（空格分隔）。必须同时含 projects（仓库读写）与 hook（Webhook 读写）——
+    # 二者在 Gitee 是两个独立 scope，没有 GitHub 式聚合的 repo。
+    # 改这里须同步 Gitee「第三方应用」登记页勾选的权限，否则授权可能失败。
+    scope: ${AIOA_GITEE_SCOPE:user_info projects hook pull_requests issues notes}
     # Gitee 组织 login：部门项目仓库都建在它下面；留空则建在绑定用户自己的命名空间下
     org: ${AIOA_GITEE_ORG:}
     # Webhook 回调基址：必须是 Gitee 能访问到的公网地址（127.0.0.1 无效）
@@ -99,6 +108,47 @@ aioa:
     sync-cron: ${AIOA_GITEE_SYNC_CRON:0 17 * * * *}
     # 删除项目时是否连带删除 Gitee 仓库：默认 false（误删代码不可恢复）
     purge-repo-on-delete: false
+
+  gitea:
+    # 仅当 aioa.repo.provider=gitea 时生效（默认 false，不影响现有 Gitee 部署）
+    enabled: ${AIOA_GITEA_ENABLED:false}
+    # REST 基址：**必须带 /api/v1**（Gitea 的 REST 全在 /api/v1 下；漏了会打到网页路径拿回 HTML）
+    base-url: ${AIOA_GITEA_BASE_URL:}
+    # 网页域：OAuth 端点与「跳转原仓库」链接用它（OAuth 不在 /api/v1 下）
+    web-base-url: ${AIOA_GITEA_WEB_URL:}
+    # 用户浏览器授权页基址（授权跳转 = {此值}/login/oauth/authorize）。
+    # 与 web-base-url 分开维护：服务端可被指向桩做回归，但用户的浏览器必须到达真实例。
+    oauth-authorize-base-url: ${AIOA_GITEA_OAUTH_AUTHORIZE_URL:}
+    # OAuth2 应用（Gitea「设置 → 应用」创建；回调地址须与本处 redirect-uri 完全一致）
+    client-id: ${AIOA_GITEA_CLIENT_ID:}
+    client-secret: ${AIOA_GITEA_CLIENT_SECRET:}
+    redirect-uri: ${AIOA_GITEA_REDIRECT_URI:http://localhost:8080/api/v1/gitea/bind/callback}
+    # 授权 scope（空格分隔）。词表与 Gitee **完全不同**（Gitee 是 projects/hook）。
+    # 另：Gitea 返回的是应用登记时勾选的全部权限，不严格按 URL 上的 scope 收窄
+    # ⇒ 应用登记页的勾选同样是有效范围，两处都要对。
+    scope: ${AIOA_GITEA_SCOPE:repo read:organization notification issue}
+    # 组织名：仓库都建在它下面；留空则建在绑定用户名下
+    org: ${AIOA_GITEA_ORG:}
+    # Webhook 回调基址：必须是 **Gitea 能访问到** 的地址（本机/内网地址从 Gitea 视角不可达）
+    webhook-base-url: ${AIOA_GITEA_WEBHOOK_BASE_URL:}
+    # HMAC-SHA256 签名密钥（回调头 X-Gitea-Signature）；留空 = 每仓库随机生成
+    webhook-secret: ${AIOA_GITEA_WEBHOOK_SECRET:}
+    # 令牌加密密钥（AES-256）：生产必须通过环境变量覆盖
+    token-enc-key: ${AIOA_GITEA_TOKEN_ENC_KEY:aioa-dev-gitea-token-key-please-change}
+    # 仓库标识来源（Gitea 只有一个 name 兼作 URL 片段，而 Gitee 的 name/path 是两个字段）：
+    # AUTO=优先 path、为空回落 name（默认）；NAME=总是用 name（中文会进 URL）；PATH=总是用 path，为空则报错
+    repo-name-source: ${AIOA_GITEA_REPO_NAME_SOURCE:AUTO}
+    min-request-interval-ms: 120
+    http-timeout-seconds: 30
+    # 分页：Gitea 服务端硬上限 max_response_items 默认 50，请求更大也只回 50 ⇒ 必须翻页
+    list-page-size: 100
+    list-max-pages: 20
+    # TLS：私有化 Gitea 常用自签证书。优先用 trust-store 导入自签 CA；
+    # insecure-skip-verify 是最后手段（会关闭服务端身份校验，启动时打 WARN，便于审计）
+    insecure-skip-verify: ${AIOA_GITEA_INSECURE_SKIP_VERIFY:false}
+    trust-store: ${AIOA_GITEA_TRUST_STORE:}
+    trust-store-password: ${AIOA_GITEA_TRUST_STORE_PASSWORD:}
+    trust-store-type: ${AIOA_GITEA_TRUST_STORE_TYPE:PKCS12}
 
 management:
   endpoints:

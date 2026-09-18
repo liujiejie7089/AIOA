@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -20,10 +21,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -41,11 +44,19 @@ import java.util.Map;
  * </ol>
  *
  * <p><b>已验证的端点清单见 docs/30 §2</b>（含「组织级 Team API 不可用」这一实测结论）。</p>
+ *
+ * <p>本类是 {@link RepoProviderClient} 的 <b>Gitee 实现</b>。上层服务一律按接口注入，
+ * 以便在不变更调用方的前提下换用其他托管方（见该接口的硬分歧点清单）。</p>
+ *
+ * <p><b>装配条件</b>：{@code aioa.repo.provider} 为 {@code gitee}（含未配置时的默认）
+ * 时生效。与 {@code GiteaProviderClient} 的条件互斥，保证容器里<b>恰好有一个</b>
+ * {@code RepoProviderClient} Bean —— 否则上层按接口注入会因「候选不唯一」启动失败。</p>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class GiteeClient {
+@ConditionalOnProperty(prefix = "aioa.repo", name = "provider", havingValue = "gitee", matchIfMissing = true)
+public class GiteeClient implements RepoProviderClient {
 
     private static final ProxySelector NO_PROXY = new ProxySelector() {
         @Override
@@ -74,6 +85,16 @@ public class GiteeClient {
     // ======================================================================
     // OAuth2（注意：token 端点在网页域 /oauth/token，不在 /api/v5 下）
     // ======================================================================
+
+    /**
+     * Gitee 新建仓库的默认分支：{@code master}。
+     *
+     * <p>仅作兜底 —— 权威值取建仓接口返回的 {@code default_branch}。</p>
+     */
+    @Override
+    public String defaultBranch() {
+        return "master";
+    }
 
     /**
      * 拼授权页地址（**用户浏览器**跳转，非服务端调用）。
@@ -184,9 +205,9 @@ public class GiteeClient {
         return asMap(get(StringUtils.hasText(token) ? token : null, "/orgs/" + encPath(org), Map.of()));
     }
 
-    /** 组织成员：{@code GET /orgs/{org}/members}。 */
+    /** 组织成员：{@code GET /orgs/{org}/members}（翻页取全量）。 */
     public List<Map<String, Object>> listOrgMembers(String token, String org) {
-        return asList(get(token, "/orgs/" + encPath(org) + "/members", Map.of("per_page", "100")));
+        return listAllPaged(token, "/orgs/" + encPath(org) + "/members", Map.of());
     }
 
     // ======================================================================
@@ -254,9 +275,38 @@ public class GiteeClient {
         return asMap(postJson(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/hooks", body));
     }
 
-    /** Webhook 列表：{@code GET /repos/{owner}/{repo}/hooks}。 */
+    /**
+     * Gitee 的事件名列表（与建钩子请求体里的四个开关一一对应）。
+     *
+     * <p>词表是 Gitee 自己的：合并请求叫 {@code merge_requests}、评论叫 {@code notes}。
+     * 这套名字挪到 Gitea 上是**不存在的事件**，写进项目详情页就是一句谎话。</p>
+     */
+    @Override
+    public List<String> hookEventNames(boolean push, boolean pr, boolean issue, boolean note) {
+        List<String> out = new ArrayList<>();
+        if (push) {
+            out.add("push");
+        }
+        if (pr) {
+            out.add("merge_requests");
+        }
+        if (issue) {
+            out.add("issues");
+        }
+        if (note) {
+            out.add("notes");
+        }
+        return out;
+    }
+
+    /**
+     * Webhook 列表（翻页取全量）。
+     *
+     * <p>调用方若用于「判重 / 清理」，务必走本方法而不是单页请求 —— 单页在 Gitea 上
+     * 会被服务端截到 50 条，导致已存在的 Webhook 看不见、被重复创建。</p>
+     */
     public List<Map<String, Object>> listHooks(String token, String owner, String repo) {
-        return asList(get(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/hooks", Map.of()));
+        return listAllPaged(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/hooks", Map.of());
     }
 
     /** 删除 Webhook：{@code DELETE /repos/{owner}/{repo}/hooks/{id}}。 */
@@ -332,9 +382,9 @@ public class GiteeClient {
     // 分支 / 提交 / PR / Issue
     // ======================================================================
 
-    /** 分支列表：{@code GET /repos/{owner}/{repo}/branches}。 */
+    /** 分支列表（翻页取全量）。 */
     public List<Map<String, Object>> listBranches(String token, String owner, String repo) {
-        return asList(get(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/branches", Map.of()));
+        return listAllPaged(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/branches", Map.of());
     }
 
     /** 提交列表：{@code GET /repos/{owner}/{repo}/commits}。 */
@@ -351,10 +401,15 @@ public class GiteeClient {
     // 成员权限（协作者）
     // ======================================================================
 
-    /** 协作者列表（**公开可读**）：{@code GET /repos/{owner}/{repo}/collaborators}。 */
+    /**
+     * 协作者列表（**公开可读**，翻页取全量）。
+     *
+     * <p>必须翻页：成员同步靠「已有协作者 vs 期望成员」做差集，单页截断会让
+     * <b>已存在的协作者被误判为缺失</b>，进而重复调用添加接口。</p>
+     */
     public List<Map<String, Object>> listCollaborators(String token, String owner, String repo) {
-        return asList(get(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/collaborators",
-                Map.of("per_page", "100")));
+        return listAllPaged(token, "/repos/" + encPath(owner) + "/" + encPath(repo) + "/collaborators",
+                Map.of());
     }
 
     /**
@@ -386,6 +441,52 @@ public class GiteeClient {
     public void addRepoTeam(String token, String owner, String repo, Object team) {
         send(token, "PUT", "/repos/" + encPath(owner) + "/" + encPath(repo) + "/teams/" + team,
                 Map.of(), Map.of("permission", "push"));
+    }
+
+    // ======================================================================
+    // Webhook 接收侧
+    // ======================================================================
+
+    @Override
+    public String webhookEventHeader() {
+        return "X-Gitee-Event";
+    }
+
+    @Override
+    public String webhookRequestIdHeader() {
+        return "X-Gitee-Request-Id";
+    }
+
+    /**
+     * 校验投递：Gitee <b>不做签名</b>，而是把建 Webhook 时填的 {@code password}
+     * 以明文放在 {@code X-Gitee-Token} 里回传，因此校验就是<b>常量时间字符串比对</b>。
+     *
+     * <p>不要试图去算 sha256 —— Gitee 根本没有签名，算了也永远不匹配。</p>
+     *
+     * <p>密钥为空时必须<b>拒绝</b>而不是放行：本端点是写入口，放行等于允许任何人
+     * 伪造提交记录。</p>
+     */
+    @Override
+    public boolean verifyWebhook(byte[] rawBody, Map<String, String> headers, String secret) {
+        if (!StringUtils.hasText(secret)) {
+            return false;
+        }
+        String actual = header(headers, "X-Gitee-Token");
+        return MessageDigest.isEqual(
+                secret.getBytes(StandardCharsets.UTF_8),
+                actual.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 大小写不敏感取头；缺失返回空串（不返回 null，便于直接比对）。 */
+    static String header(Map<String, String> headers, String name) {
+        if (headers == null) {
+            return "";
+        }
+        String v = headers.get(name);
+        if (v == null) {
+            v = headers.get(name.toLowerCase(Locale.ROOT));
+        }
+        return v == null ? "" : v.trim();
     }
 
     // ======================================================================
@@ -569,6 +670,55 @@ public class GiteeClient {
         }
         return objectMapper.convertValue(n, new TypeReference<ArrayList<Map<String, Object>>>() {
         });
+    }
+
+    /**
+     * 翻页拉取列表全量。
+     *
+     * <p><b>为什么结束条件是「本页为空」而不是「本页条数 &lt; 请求条数」</b>：
+     * 后者看起来更省一次请求，但服务端<b>有权把单页上限压到比你请求的更小</b> ——
+     * Gitea 实测 {@code max_response_items=50}，即便请求 {@code limit=100} 也只回 50 条。
+     * 此时「50 &lt; 100」会被误判成「已经是最后一页」，于是<b>第 2 页起全部静默丢失</b>。
+     * 用「空页才停」就对两家的上限差异免疫，代价是每轮多一次请求（返回空数组），
+     * 这个成本远低于静默截断。</p>
+     *
+     * <p>另一道保险是 {@code list-max-pages}：达到上限仍未取完时打 WARN，
+     * 把「不可能发生但一旦发生就没法发现」的截断变成日志里可见的事件。</p>
+     *
+     * <p><b>第三道保险：整页内容与上一页完全相同即停</b>。这专门用来兜住
+     * 「服务端忽略分页参数、每次都回同一页」这种实现缺陷 —— 没有它，循环会把同一页
+     * 重复累加 {@code list-max-pages} 次，产出<b>看起来正常但内容翻了几十倍</b>的结果
+     * （例如 1 个 Webhook 变成 20 个），比报错更难查。（本平台的 Gitee 桩服务就曾
+     * 无视 {@code page} 参数，此类缺陷真实存在。）</p>
+     *
+     * @param baseQuery 除分页参数外的查询条件（如 sha、ref）
+     */
+    private List<Map<String, Object>> listAllPaged(String token, String path, Map<String, Object> baseQuery) {
+        int size = Math.max(1, props.getListPageSize());
+        int maxPages = Math.max(1, props.getListMaxPages());
+        List<Map<String, Object>> all = new ArrayList<>();
+        List<Map<String, Object>> prev = null;
+        for (int page = 1; page <= maxPages; page++) {
+            Map<String, Object> q = new LinkedHashMap<>(baseQuery == null ? Map.of() : baseQuery);
+            q.put("page", String.valueOf(page));
+            q.put("per_page", String.valueOf(size));
+            List<Map<String, Object>> chunk = asList(get(token, path, q));
+            if (chunk.isEmpty()) {
+                return all;
+            }
+            if (chunk.equals(prev)) {
+                log.warn("列表翻页疑似无效：第 {} 页与该页在前的响应完全相同，已提前停止以"
+                                + "避免重复累加。多半是服务端忽略了 page/per_page 参数。path={} size={}",
+                        page, path, chunk.size());
+                return all;
+            }
+            all.addAll(chunk);
+            prev = chunk;
+        }
+        log.warn("列表翻页达到安全上限仍未取完：path={} maxPages={} size={} got={}；"
+                        + "结果可能被截断，如需全量请调大 aioa.gitee.list-max-pages",
+                path, maxPages, size, all.size());
+        return all;
     }
 
     private static String enc(String v) {

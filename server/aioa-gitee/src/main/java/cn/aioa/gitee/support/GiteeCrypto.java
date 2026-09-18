@@ -1,6 +1,6 @@
 package cn.aioa.gitee.support;
 
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -33,7 +33,7 @@ public class GiteeCrypto {
     private static final int IV_LEN = 12;
     private static final int TAG_BITS = 128;
 
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
     private final SecureRandom random = new SecureRandom();
 
     /** 加密；入参为 null / 空串时原样返回（令牌可能为空，如仅用 refresh_token）。 */
@@ -53,7 +53,7 @@ public class GiteeCrypto {
             System.arraycopy(ct, 0, out, iv.length, ct.length);
             return PREFIX + Base64.getEncoder().encodeToString(out);
         } catch (Exception e) {
-            throw new IllegalStateException("Gitee 令牌加密失败", e);
+            throw new IllegalStateException(props.providerLabel() + " 令牌加密失败", e);
         }
     }
 
@@ -62,6 +62,10 @@ public class GiteeCrypto {
      *
      * <p>解密失败抛异常而**不返回 null** —— 静默返回 null 会让上层把「密钥不对」
      * 误判成「用户没绑过账号」，从而给出完全错误的提示。</p>
+     *
+     * <p><b>文案必须指名当前生效的属性键</b>：密钥来自 {@code aioa.gitee.token-enc-key}
+     * 还是 {@code aioa.gitea.token-enc-key} 取决于 provider；说错会让人去改一个
+     * 根本不生效的配置项，把排查引到错误方向。</p>
      */
     public String decrypt(String stored) {
         if (stored == null || stored.isEmpty()) {
@@ -79,7 +83,9 @@ public class GiteeCrypto {
             byte[] pt = cipher.doFinal(raw, IV_LEN, raw.length - IV_LEN);
             return new String(pt, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new IllegalStateException("Gitee 令牌解密失败：请确认 aioa.gitee.token-enc-key 未被变更", e);
+            throw new IllegalStateException("令牌解密失败：请确认 " + props.tokenEncKeyProperty()
+                    + " 未被变更；若刚切换过托管方（aioa.repo.provider），"
+                    + "则这条密文是用另一个平台的密钥写的，需要重新授权绑定", e);
         }
     }
 
@@ -94,7 +100,7 @@ public class GiteeCrypto {
             byte[] k = MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8));
             return new SecretKeySpec(k, "AES");
         } catch (Exception e) {
-            throw new IllegalStateException("无法派生 Gitee 令牌加密密钥", e);
+            throw new IllegalStateException("无法派生 " + props.providerLabel() + " 令牌加密密钥", e);
         }
     }
 }

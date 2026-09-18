@@ -10,9 +10,12 @@ import cn.aioa.gitee.entity.GiteeTask;
  * Spring 的循环依赖。处理器只依赖「Gitee 客户端 + 令牌 + 数据表」，
  * 由 {@link GiteeTaskService} 通过 {@code List<GiteeTaskHandler>} 收集并分发。</p>
  *
- * <p><b>异常约定</b>：{@link cn.aioa.gitee.client.GiteeApiException} 且
- * {@code retryable=true} 时由调度器退避重试；其余异常一律视为永久失败，
+ * <p><b>异常约定</b>：抛 {@link cn.aioa.gitee.client.RepoProviderException}（托管方中立基类，
+ * 两家的实现都继承它）且 {@code retryable=true} 时由调度器退避重试；其余异常一律视为永久失败，
  * 直接落 {@code FAILED} 并写 {@code last_error}（避免把参数错误重试到天花板）。</p>
+ *
+ * <p>⚠️ 处理器**不要**按 Gitee 专有类型 {@code GiteeApiException} 去 catch：Gitea 侧抛的是
+ * 中立基类，按专有类型捕获会漏接，症状是「幂等/认领这类兜底逻辑在 Gitea 下静默失效」。</p>
  */
 public interface GiteeTaskHandler {
 

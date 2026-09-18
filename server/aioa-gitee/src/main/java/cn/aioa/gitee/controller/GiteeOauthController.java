@@ -1,8 +1,9 @@
 package cn.aioa.gitee.controller;
 
 import cn.aioa.common.resp.ApiResponse;
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.service.GiteeAccountService;
+import cn.aioa.gitee.support.ProviderFailureText;
 import cn.aioa.org.support.OrgGuard;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +38,7 @@ public class GiteeOauthController {
 
     private final OrgGuard guard;
     private final GiteeAccountService accountService;
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
 
     /** 我的绑定状态。 */
     @GetMapping
@@ -71,14 +72,20 @@ public class GiteeOauthController {
                            @RequestParam(name = "error_description", required = false) String errorDescription,
                            HttpServletResponse response) {
         if (error != null && !error.isBlank()) {
-            return failPage(response, "Gitee 拒绝了本次授权", error, errorDescription);
+            // 这一页是用户直接看的：原因过一遍「中文归因 + 可执行动作」，
+            // 托管方原文附在末尾括号里保留可追溯性（与成员/项目失败文案同一口径）。
+            return failPage(response, props.providerLabel() + " 拒绝了本次授权", error,
+                    ProviderFailureText.forOauthBind(
+                            errorDescription != null && !errorDescription.isBlank() ? errorDescription : error,
+                            props.providerLabel()));
         }
         try {
             Map<String, Object> r = accountService.callback(code, state);
             return okPage(response, String.valueOf(r.get("giteeUsername")));
         } catch (Exception e) {
-            log.warn("Gitee 绑定回调失败：{}", e.getMessage());
-            return failPage(response, "绑定失败", e.getClass().getSimpleName(), e.getMessage());
+            log.warn("绑定回调失败：{}", e.getMessage());
+            return failPage(response, "绑定失败", e.getClass().getSimpleName(),
+                    ProviderFailureText.forOauthBind(e.getMessage(), props.providerLabel()));
         }
     }
 
@@ -88,23 +95,23 @@ public class GiteeOauthController {
 
     private String okPage(HttpServletResponse response, String giteeUsername) {
         String back = props.getBindReturnUrl();
+        String label = props.providerLabel();
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
-                .append("<title>Gitee 绑定成功</title></head><body style=\"font-family:system-ui;padding:40px\">")
-                .append("<h2>Gitee 绑定成功</h2>")
+                .append("<title>").append(esc(label)).append(" 绑定成功</title></head><body style=\"font-family:system-ui;padding:40px\">")
+                .append("<h2>").append(esc(label)).append(" 绑定成功</h2>")
                 .append("<p>已绑定账号：<b>").append(esc(giteeUsername)).append("</b></p>");
-        // fail-loud：授权域非 gitee.com 时，这一页必须说清楚「未经过真实 Gitee 授权」，
+        // fail-loud：授权域非官方站点时，这一页必须说清楚「未经过真实授权」，
         // 否则用户会把桩/代理签发的假身份当成真实绑定（截图里的迷惑点正在于此）。
+        // 文案复用 sandboxAuthorizeWarning()：它已按当前 provider 给出站点名与配置键，
+        // 在此另写一份就会在切托管方时漏改。
         String host = nonProdAuthorizeHost();
         if (host != null) {
             sb.append("<p style=\"background:#fff7e6;border:1px solid #ffd591;border-radius:6px;")
                     .append("padding:12px;color:#874d00;max-width:640px\">")
-                    .append("<b>⚠ 本次授权未经过真实 Gitee</b><br>")
-                    .append("授权跳转落地在 <code>").append(esc(host)).append("</code>（非 gitee.com），")
-                    .append("账号由本地桩/代理签发。如需真实 Gitee 授权，请将 ")
-                    .append("<code>aioa.gitee.oauth-authorize-base-url</code>")
-                    .append("（环境变量 <code>AIOA_GITEE_OAUTH_AUTHORIZE_URL</code>）")
-                    .append("配置为 <code>https://gitee.com</code> 后重新发起绑定。</p>");
+                    .append("<b>⚠ 本次授权未经过真实 ").append(esc(label)).append("</b><br>")
+                    .append(esc(props.sandboxAuthorizeWarning(host)))
+                    .append("</p>");
         }
         if (back != null && !back.isBlank()) {
             sb.append("<p>正在返回平台…</p>")
@@ -123,9 +130,10 @@ public class GiteeOauthController {
         response.setStatus(HttpServletResponse.SC_OK);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         String back = props.getBindReturnUrl();
+        String label = props.providerLabel();
         StringBuilder sb = new StringBuilder();
         sb.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
-                .append("<title>Gitee 绑定失败</title></head><body style=\"font-family:system-ui;padding:40px\">")
+                .append("<title>").append(esc(label)).append(" 绑定失败</title></head><body style=\"font-family:system-ui;padding:40px\">")
                 .append("<h2>").append(esc(title)).append("</h2>")
                 .append("<p>原因：").append(esc(desc == null ? code : desc)).append("</p>");
         if (back != null && !back.isBlank()) {
@@ -138,17 +146,25 @@ public class GiteeOauthController {
     }
 
     /**
-     * 授权域若不是 gitee.com，返回该域名（用于结果页的 fail-loud 提示）；
-     * 是生产域或无法解析时返回 {@code null}。
+     * 授权域若不是该托管方的**正式站点**，返回该域名（用于结果页的 fail-loud 提示）；
+     * 是正式站点或无法解析时返回 {@code null}。
+     *
+     * <p><b>判定不在本方法里写</b>：参照物随托管方变（Gitee 是 {@code gitee.com}，
+     * 自建 Gitea 是配置里的本实例网页域），由 {@link RepoProviderSettings#authorizeHostIsSandbox()}
+     * 统一给出。这里曾写死 {@code gitee.com}，于是真实 Gitea 被误判成桩 ——
+     * **绑定成功页反过来警告「本次授权未经过真实 Gitea」**（2026-09-18 真机实测）。</p>
+     *
+     * <p>包内可见以便单测直接覆盖「成功页到底会不会告警」—— 这一段没有别的观测方式：
+     * 成功页只在真实授权回调后渲染，而真实授权需要浏览器登录态。</p>
      */
-    private String nonProdAuthorizeHost() {
+    String nonProdAuthorizeHost() {
+        if (!props.authorizeHostIsSandbox()) {
+            return null;
+        }
         String base = props.getOauthAuthorizeBaseUrl();
         try {
             String h = java.net.URI.create(base == null ? "" : base.trim()).getHost();
-            if (h == null || h.isBlank()) {
-                return null;
-            }
-            return ("gitee.com".equalsIgnoreCase(h) || "www.gitee.com".equalsIgnoreCase(h)) ? null : h;
+            return (h == null || h.isBlank()) ? null : h;
         } catch (Exception e) {
             return null;
         }

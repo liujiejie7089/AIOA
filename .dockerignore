@@ -1,0 +1,113 @@
+# ---- Git ----
+.git/
+.gitignore
+.gitattributes
+
+# ---- OS / IDE ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# ---- Node / Web ----
+node_modules/
+dist/
+dist-ssr/
+dist-verify/
+*.local
+.npm/
+.pnpm-store/
+
+# ---- Java ----
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- Env / Secrets（密钥一律不入库）----
+.env
+.env.*
+!.env.example
+
+# ---- Local tools / data ----
+.tools/
+logs/
+*.log
+data/
+
+# ---- Docs temp ----
+*.tmp
+
+# ---- AIOA 本地临时产物 / 密钥（一律不入库）----
+.aioa_login.json
+.diag.txt
+.docx_extract/
+.workbuddy/_check.js
+.workbuddy/_uc.js
+.workbuddy/sse_*.txt
+.workbuddy/verify_*.py
+.workbuddy/verify_*.sh
+.workbuddy/*.log
+.workbuddy/proxy*.log
+.workbuddy/*.png
+.workbuddy/*.txt
+.workbuddy/doc_*.json
+.workbuddy/p0_*.json
+.workbuddy/p0_*.txt
+.workbuddy/debug_*.py
+.workbuddy/probe_*.py
+.workbuddy/restore_*.py
+.workbuddy/_*.js
+
+# ---- E2E / 浏览器调试产物 ----
+ab_*.png
+ab_*.txt
+ab_*.html
+e2e_*.json
+e2e_*.py
+e2e_*.sh
+/extract_docx.py
+
+# ---- 本地后端启动 / 冒烟脚本产物（不入库）----
+boot-run*.log
+boot-run*.err
+start-backend.bat
+.proxy.pid
+.backend.pid
+.smoke_*.py
+.aioa_check.js
+proxy-run*.log
+
+# ---- 演示数据备份文件 ----
+flyway_history_backup_*.json
+cleanup_backup_*.json
+quota_backup_*.json
+
+# ---- 运行时上传产物 ----
+uploads/
+server/uploads/
+
+# ---- 体验走查 / 验证截图 ----
+ux-review/*.png
+ux-review/before-fix/
+ux-review/after-fix/
+shot-*.png
+
+# ---- 根目录临时探测脚本 ----
+_db_inspect.py
+_trigger_run.py
+_reconstruct_history.py
+
+# ---- 文档与构建产物 ----
+*.docx

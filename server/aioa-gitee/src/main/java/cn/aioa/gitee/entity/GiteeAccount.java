@@ -32,6 +32,17 @@ public class GiteeAccount {
     /** 平台用户 id（sys_user.id）。 */
     private Long userId;
 
+    /**
+     * 托管方（{@code gitee} / {@code gitea}，V54）。
+     *
+     * <p><b>为什么绑定必须带托管方</b>：本行存的 access_token 由某个平台签发、
+     * {@code giteeUid}/{@code giteeUsername} 是某个平台的 id 与登录名 —— 换平台后
+     * 它们**语义就变了**（数值可能相撞、登录名可能不存在）。且两个平台的令牌加密
+     * 密钥不同，异平台密文解密必然 Tag mismatch。因此查询必须按托管方过滤，
+     * 唯一键也必须含托管方（否则无法同一用户并存两个平台的身份）。</p>
+     */
+    private String provider;
+
     /** Gitee 数字 id —— Webhook 身份映射的锚点。 */
     private Long giteeUid;
 

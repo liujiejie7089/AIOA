@@ -64,6 +64,14 @@ e2e_*.py
 e2e_*.sh
 /extract_docx.py
 
+# ---- 一次性诊断脚本与其快照（验完即弃，不入库）----
+# 注意：`_check_*.py` 是**长期回归探针**（如 _check_gitea_ui_provider.py），
+# 不在此列 —— 它们要入库，否则真机接线的界面/数据哨兵就会丢。
+scripts/_diag_*
+scripts/_tmp_*
+scripts/_q.py
+scripts/_*.png
+
 # ---- 本地后端启动 / 冒烟脚本产物（不入库）----
 boot-run*.log
 boot-run*.err

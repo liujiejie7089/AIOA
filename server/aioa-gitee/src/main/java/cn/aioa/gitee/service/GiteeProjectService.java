@@ -1,7 +1,8 @@
 package cn.aioa.gitee.service;
 
 import cn.aioa.common.exception.BizException;
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.client.RepoProviderClient;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeProject;
 import cn.aioa.gitee.entity.GiteeRepoMember;
 import cn.aioa.gitee.entity.GiteeTask;
@@ -60,7 +61,8 @@ public class GiteeProjectService {
     private final OrgGuard guard;
     private final GiteeTokenService tokenService;
     private final GiteeTaskService taskService;
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
+    private final RepoProviderClient client;
     private final GiteeTenantConfigService tenantConfigService;
 
     // ======================================================================
@@ -81,7 +83,7 @@ public class GiteeProjectService {
         Long tenantId = guard.tenantId();
         // 租户级开关：该租户被显式关闭 Gitee 联动时，不允许新建项目
         if (!tenantConfigService.tenantEnabled(tenantId)) {
-            throw BizException.badRequest("本企业已关闭 Gitee 仓库联动，无法新建项目；如需使用请联系租户管理员开启");
+            throw BizException.badRequest("本企业已关闭 " + props.providerLabel() + " 仓库联动，无法新建项目；如需使用请联系租户管理员开启");
         }
         String name = str(body.get("name"));
         if (!StringUtils.hasText(name)) {
@@ -97,7 +99,7 @@ public class GiteeProjectService {
         // 建仓需要创建者的 Gitee 授权：前置校验，避免落库后才在异步任务里失败
         String token = tokenService.requireAccessToken(tenantId, user.getUserId());
         if (token == null || token.isBlank()) {
-            throw BizException.badRequest("Gitee 授权无效，请重新绑定后重试");
+            throw BizException.badRequest(props.providerLabel() + " 授权无效，请重新绑定后重试");
         }
 
         GiteeTeam team = resolveTeam(tenantId, dept);
@@ -116,11 +118,14 @@ public class GiteeProjectService {
         // 而不是悄悄建一个没有归属组织的空项目。
         String owner = tenantConfigService.effectiveOrg(tenantId);
         if (!StringUtils.hasText(owner)) {
-            throw BizException.badRequest("本企业未配置 Gitee 组织，请先在「项目与仓库」中配置");
+            throw BizException.badRequest("本企业未配置 " + props.providerLabel() + " 组织，请先在「项目与仓库」中配置");
         }
         p.setGiteeOwner(owner);
         p.setGiteeRepo(repoPath);
-        p.setDefaultBranch("master");
+        // 默认分支取**托管平台的**默认值（Gitee=master、Gitea=main）。
+        // 此前硬编码 "master"，切到 Gitea 后写文件/读目录/文件链接会全部 404。
+        // 这只是建仓前的占位值：建仓任务会用接口返回的 default_branch 覆盖它。
+        p.setDefaultBranch(client.defaultBranch());
         p.setStatus(GiteeProject.STATUS_CREATING);
         p.setPurgeRepo(Boolean.TRUE.equals(body.get("purgeRepo")));
         p.setCreatedBy(user.getUserId());
@@ -265,7 +270,14 @@ public class GiteeProjectService {
         projectMapper.deleteById(p.getId());
 
         if (purgeRepo && StringUtils.hasText(p.getGiteeRepo())) {
-            taskService.enqueue(p.getTenantId(), GiteeTask.TYPE_DELETE_REPO, "PROJECT", p.getId(), Map.of());
+            // 仓库信息必须**随任务入队**，不能在执行时回读项目行：
+            // 项目行上面已被逻辑删除（@TableLogic 置 deleted_at），执行侧 selectById 会拿到
+            // null —— 旧实现正是在这里静默 return，导致 purgeRepo=true 变成「什么都不做却报成功」。
+            // deleteWebhook 早就按这个约定传了 payload，deleteRepo 先前漏了，现补齐。
+            taskService.enqueue(p.getTenantId(), GiteeTask.TYPE_DELETE_REPO, "PROJECT", p.getId(),
+                    Map.of("owner", p.getGiteeOwner() == null ? "" : p.getGiteeOwner(),
+                            "repo", p.getGiteeRepo(),
+                            "createdBy", p.getCreatedBy() == null ? 0L : p.getCreatedBy()));
         } else if (p.getWebhookId() != null) {
             // 保留仓库时，必须**摘掉平台自己挂的 Webhook**：
             // 那个钩子指向 /gitee/webhook/{projectId}，项目已删，继续投递只会一直得到

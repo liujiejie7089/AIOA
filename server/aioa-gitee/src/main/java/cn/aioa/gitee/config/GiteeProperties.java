@@ -56,8 +56,19 @@ public class GiteeProperties {
     /** OAuth2 回调地址（必须与 Gitee 应用登记的一致，且与发起授权时使用的完全相同）。 */
     private String redirectUri = "";
 
-    /** 授权 scope：必须含 repo（读写仓库与 Webhook）。 */
-    private String scope = "user_info projects pull_requests issues notes";
+    /**
+     * 授权 scope。
+     *
+     * <p><b>必须同时含 {@code projects} 与 {@code hook}</b>：Gitee 的 scope 里
+     * {@code projects} = "Read and manage repositories"（建仓、读写文件），
+     * 而 Webhook 的建/改/删/测 归属 {@code hook} = "Read and manage webhooks"。
+     * 少了 {@code hook}，桩环境因为不校验 scope 而全绿，但**接真站时挂 Webhook 会被拒**——
+     * 建仓成功、Webhook 静默失败，正是最难查的那种。</p>
+     *
+     * <p>两者在 Gitee 是**两个独立 scope**，没有 GitHub 那种聚合的 {@code repo}。
+     * 变更本值时须同步 Gitee「第三方应用」登记页勾选的权限，否则授权可能失败。</p>
+     */
+    private String scope = "user_info projects hook pull_requests issues notes";
 
     /**
      * 「Gitee 总组织」login —— 部门团队与项目仓库都建在它下面。
@@ -117,4 +128,21 @@ public class GiteeProperties {
 
     /** 对 Gitee 的请求间隔（毫秒）：避免触发 403 Rate Limit Exceeded（实测存在）。 */
     private long minRequestIntervalMs = 120;
+
+    /**
+     * 列表分页：单页条数。
+     *
+     * <p>Gitee 的 {@code per_page} 上限是 100；<b>注意服务端可能把请求值再往下压</b>
+     * （Gitea 实测 {@code max_response_items=50}，即便传 100 也只回 50），
+     * 因此上层的翻页逻辑<b>不能</b>用「返回条数 &lt; 请求条数」作为结束条件。</p>
+     */
+    private int listPageSize = 100;
+
+    /**
+     * 列表分页：最大翻页数（安全上限）。
+     *
+     * <p>作用是把「超大仓库」的请求数钉死在可控范围（默认最多 20 页 × 100 条 ≈ 2000 条）。
+     * 达到上限仍未取完时<b>会打 WARN 日志</b>，让「静默截断」变成可见事件。</p>
+     */
+    private int listMaxPages = 20;
 }

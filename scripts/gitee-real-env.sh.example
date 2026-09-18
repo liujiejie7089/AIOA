@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# ============================================================
+# Gitee **真实接线**（与 scripts/gitee-e2e-env.sh 的桩接线相对）
+# ------------------------------------------------------------
+# 本文件是**模板**：复制成 .env.gitee-real（已被 .gitignore 的 `.env.*` 覆盖，
+# 不会入库）后填入真实值，再 `source` 它启动后端。
+#
+#   cp scripts/gitee-real-env.sh.example .env.gitee-real
+#   $EDITOR .env.gitee-real
+#   source .env.gitee-real && bash start-all.sh
+#
+# ⚠ 不要 source scripts/gitee-e2e-env.sh —— 那会把授权跳转指向本地桩，
+#   用户永远到不了真实 gitee.com。
+#
+# 注意：base-url / web-base-url / oauth-authorize-base-url 三项**无需在此设置**，
+# 它们的默认值本来就是真实 Gitee（见 application.yml）。只有走桩才需要覆盖。
+# 刻意写在这里，是为了让「本次是真实还是桩」一眼可见。
+# ============================================================
+
+# ---- 三个域名变量：真实接线即默认值，显式写出以便自查 ----
+export AIOA_GITEE_BASE_URL=https://gitee.com/api/v5
+export AIOA_GITEE_WEB_URL=https://gitee.com
+export AIOA_GITEE_OAUTH_AUTHORIZE_URL=https://gitee.com
+
+# ---- OAuth2 应用：在 gitee.com「设置 → 第三方应用」创建后获得 ----
+# redirect-uri 必须与登记页「应用回调地址」**逐字符一致**
+# （协议/主机/端口/路径/大小写/尾斜杠都不能差；用 localhost，不要用 127.0.0.1）
+export AIOA_GITEE_CLIENT_ID=<Client ID>
+export AIOA_GITEE_CLIENT_SECRET=<Client Secret>
+export AIOA_GITEE_REDIRECT_URI=http://localhost:8080/api/v1/gitee/bind/callback
+
+# ---- scope：必须同时含 projects（仓库）与 hook（Webhook），二者独立不可替代 ----
+# 须与「第三方应用」登记页勾选的权限一致，否则授权可能失败。
+export AIOA_GITEE_SCOPE="user_info projects hook pull_requests issues notes"
+
+# ---- 组织：仓库建在哪个 Gitee 组织（login，非中文显示名）----
+export AIOA_GITEE_ORG=<组织 login，如 yjiud>
+
+# ---- Webhook 回调基址：必须是 **Gitee 能访问到的公网地址** ----
+# 留空 ⇒ Webhook 配不上（建仓本身不受影响，但 Webhook 状态为失败）。
+# 本机 127.0.0.1 / localhost 对 Gitee 无效。
+export AIOA_GITEE_WEBHOOK_BASE_URL=<可选：https://aioa.example.com>
+
+# ---- 授权完成后的前端回跳地址 ----
+export AIOA_GITEE_BIND_RETURN_URL=http://localhost:5173/gitee/projects
+
+# ---- 令牌加密密钥：生产必须覆盖，否则库内令牌可被离线解密 ----
+export AIOA_GITEE_TOKEN_ENC_KEY=<32 字节以上随机串>
+
+# ---- 定时校准：真实环境下按需开启（默认 true）----
+export AIOA_GITEE_SYNC_ENABLED=true

@@ -1,9 +1,9 @@
 package cn.aioa.gitee.service;
 
 import cn.aioa.common.exception.BizException;
-import cn.aioa.gitee.client.GiteeApiException;
-import cn.aioa.gitee.client.GiteeClient;
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.client.RepoProviderException;
+import cn.aioa.gitee.client.RepoProviderClient;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeAccount;
 import cn.aioa.gitee.entity.GiteeTenantConfig;
 import cn.aioa.gitee.mapper.GiteeTenantConfigMapper;
@@ -44,8 +44,8 @@ public class GiteeTenantConfigService {
     private static final Pattern ORG_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,128}$");
 
     private final GiteeTenantConfigMapper mapper;
-    private final GiteeProperties props;
-    private final GiteeClient client;
+    private final RepoProviderSettings props;
+    private final RepoProviderClient client;
     private final GiteeTokenService tokenService;
 
     /** 取某租户的单行配置（无则空）。 */
@@ -133,7 +133,7 @@ public class GiteeTenantConfigService {
         }
         String raw = orgName == null ? "" : orgName.trim();
         if (!ORG_PATTERN.matcher(raw).matches()) {
-            throw BizException.badRequest("Gitee 组织名非法（仅允许字母/数字/-/_/.，长度 1–128）：" + raw);
+            throw BizException.badRequest(props.providerLabel() + " 组织名非法（仅允许字母/数字/-/_/.，长度 1–128）：" + raw);
         }
         Boolean effEnabled = enabled == null ? Boolean.TRUE : enabled;
 
@@ -202,7 +202,7 @@ public class GiteeTenantConfigService {
      *
      * <p><b>绝不阻塞保存</b>：探测失败（令牌失效 / 组织不可见 / Gitee 不可达）一律降级为
      * orgVerified=false 并给出中文说明；一个普通组织成员可能看不到组织、Gitee 不可达也不应
-     * 阻止配置落地。捕获 {@link BizException}/{@link GiteeApiException}/一切异常。</p>
+     * 阻止配置落地。捕获 {@link BizException}/{@link RepoProviderException}/一切异常。</p>
      */
     private Map<String, Object> probeVisibility(Long tenantId, String org, Long actorUserId) {
         Map<String, Object> r = new LinkedHashMap<>();
@@ -234,9 +234,9 @@ public class GiteeTenantConfigService {
             r.put("verified", false);
             r.put("message", "未校验（" + e.getMessage() + "）");
             return r;
-        } catch (GiteeApiException e) {
+        } catch (RepoProviderException e) {
             r.put("verified", false);
-            r.put("message", "组织不可见或 Gitee 不可达：" + e.getMessage());
+            r.put("message", "组织不可见或 " + props.providerLabel() + " 不可达：" + e.getMessage());
             return r;
         } catch (Exception e) {
             r.put("verified", false);

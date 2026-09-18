@@ -1,7 +1,7 @@
 package cn.aioa.gitee.controller;
 
 import cn.aioa.common.resp.ApiResponse;
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeProject;
 import cn.aioa.gitee.service.GiteeContentService;
 import cn.aioa.gitee.service.GiteeMemberService;
@@ -42,7 +42,7 @@ import java.util.Map;
 public class GiteeController {
 
     private final OrgGuard guard;
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
     private final GiteeTenantConfigService tenantConfigService;
     private final GiteeTenantInitService tenantInitService;
     private final GiteeProjectService projectService;
@@ -59,6 +59,12 @@ public class GiteeController {
      * 前端初始化信息：决定「仓库联动」菜单是否显示、按钮是否可用。
      *
      * <p>只回布尔与枚举，不回组织名 / 回调地址等内部配置（那些属于部署信息）。</p>
+     *
+     * <p><b>为什么必须回 provider 三兄弟</b>：本平台可挂 Gitee 与 Gitea 两个托管方，
+     * 而前端整页文案（页头、「我的 xx 账号」、「本企业 xx 组织」、未启用提示里的配置键）
+     * 原先一律写死「Gitee」。切到 gitea 后界面会**谎报**托管方，并把人指向
+     * {@code aioa.gitee.*} 这个在 gitea 下根本不读的配置段。所以托管方标识/展示名/
+     * 配置前缀由后端一处给出，前端只做渲染。</p>
      */
     @GetMapping("/config")
     public ApiResponse<Map<String, Object>> config() {
@@ -66,7 +72,14 @@ public class GiteeController {
         // 租户级视角的初始化信息：orgConfigured 与 enabled 都按「当前用户所属租户」判定，
         // 而非全局 props（全局值只能作为回落默认值，不能决定单个租户是否可用）。
         Long tenantId = guard.tenantId();
+        String pn = props.providerName();
         Map<String, Object> m = new LinkedHashMap<>();
+        m.put("provider", pn);
+        m.put("providerLabel", props.providerLabel());
+        // 配置前缀与 provider 标识同源（aioa.gitee / aioa.gitea），不另立常量表。
+        m.put("configKey", props.configKeyPrefix());
+        // 企业初始化对话框的令牌权限要求：两个平台的权限模型不同，文案随 provider。
+        m.put("tokenRequirementHint", props.tokenRequirementHint());
         m.put("enabled", props.isEnabled() && tenantConfigService.tenantEnabled(tenantId));
         m.put("orgConfigured", tenantConfigService.orgConfigured(tenantId));
         m.put("webhookBaseUrlConfigured",
@@ -295,7 +308,7 @@ public class GiteeController {
         boolean purge = purgeRepo == null ? props.isPurgeRepoOnDelete() : purgeRepo;
         projectService.softDelete(guard.requireOrgUser(), projectId, purge);
         return ApiResponse.ok(Map.of("deleted", true, "purgeRepo", purge,
-                "note", purge ? "已标记删除 Gitee 仓库（不可恢复）" : "仅移除平台项目，Gitee 仓库保留"));
+                "note", purge ? "已标记删除 " + props.providerLabel() + " 仓库（不可恢复）" : "仅移除平台项目，" + props.providerLabel() + " 仓库保留"));
     }
 
     // ======================================================================
@@ -323,23 +336,24 @@ public class GiteeController {
         return ApiResponse.ok(m);
     }
 
-    /** 添加成员（异步同步 Gitee 协作者权限）。 */
+    /** 添加成员（异步同步托管方协作者权限）。 */
     @PostMapping("/projects/{projectId}/members")
     public ApiResponse<Map<String, Object>> addMember(@PathVariable Long projectId,
                                                       @RequestBody Map<String, Object> body) {
         var m = memberService.add(guard.requireOrgUser(), projectId, body == null ? Map.of() : body);
         Map<String, Object> out = memberService.toView(m);
-        out.put("note", "权限同步已入队；若成员尚未绑定 Gitee 会显示 PENDING，绑定后自动补齐");
+        out.put("note", "权限同步已入队；若成员尚未绑定 " + props.providerLabel()
+                + " 会显示 PENDING，绑定后自动补齐");
         return ApiResponse.ok(out);
     }
 
-    /** 移除成员（异步回收 Gitee 协作者权限）。 */
+    /** 移除成员（异步回收托管方协作者权限）。 */
     @DeleteMapping("/projects/{projectId}/members/{memberId}")
     public ApiResponse<Map<String, Object>> removeMember(@PathVariable Long projectId,
                                                          @PathVariable Long memberId) {
         memberService.remove(guard.requireOrgUser(), projectId, memberId);
         return ApiResponse.ok(Map.of("removed", true, "memberId", memberId,
-                "note", "Gitee 权限回收任务已入队"));
+                "note", props.providerLabel() + " 权限回收任务已入队"));
     }
 
     // ======================================================================

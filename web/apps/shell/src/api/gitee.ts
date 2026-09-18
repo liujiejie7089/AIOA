@@ -18,6 +18,25 @@ import { http, unwrap } from './index'
 
 /** 前端初始化信息，决定「仓库联动」入口与按钮可用性。 */
 export interface GiteeConfig {
+  /**
+   * 当前生效的托管方标识（`gitee` / `gitea`）。
+   *
+   * <p>界面文案必须用它，不能写死「Gitee」：本平台可挂 Gitee 与 Gitea 两个托管方，
+   * 写死会让页面在 gitea 接线下**谎报**托管方（见 `providerLabel`）。</p>
+   */
+  provider?: string
+  /** 托管方展示名（`Gitee` / `Gitea`），与 `provider` 同源，由后端给出。 */
+  providerLabel?: string
+  /** 该托管方在后端的配置前缀（`aioa.gitee` / `aioa.gitea`），用于「未启用」提示。 */
+  configKey?: string
+  /**
+   * 企业初始化时对访问令牌权限的要求（整句文案）。
+   *
+   * <p>两个平台的权限模型不同：Gitee 的 PAT 讲 `projects` 这类 scope，
+   * Gitea 的个人令牌是「仓库 / 组织 / 用户 / 其他」勾选项。写死 Gitee 的说法
+   * 会让 Gitea 用户在令牌页上找不到对应选项。</p>
+   */
+  tokenRequirementHint?: string
   /** 模块总开关；false 时整块功能不可用。 */
   enabled: boolean
   /** 后端是否配置了 Gitee 组织（建仓的 owner 来源）。 */

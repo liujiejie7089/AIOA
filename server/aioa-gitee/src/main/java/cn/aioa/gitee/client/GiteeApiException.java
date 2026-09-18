@@ -15,26 +15,17 @@ import lombok.Getter;
  * </ul>
  */
 @Getter
-public class GiteeApiException extends RuntimeException {
-
-    /** HTTP 状态码；0 表示连接层失败（未拿到响应）。 */
-    private final int status;
+public class GiteeApiException extends RepoProviderException {
 
     /** Gitee 业务错误码（响应体里的 code），无则为 0。 */
     private final int giteeCode;
 
-    /** 是否值得重试。 */
-    private final boolean retryable;
-
-    /** 令牌失效（需要用户重新绑定）—— 上层据此把绑定标记为失效并提示。 */
-    private final boolean tokenInvalid;
-
     public GiteeApiException(int status, int giteeCode, String message, boolean retryable, boolean tokenInvalid) {
-        super(message);
-        this.status = status;
+        // status / retryable / tokenInvalid 与托管方无关，上提到中立基类；
+        // getStatus() / isRetryable() / isTokenInvalid() 由父类继承而来，
+        // 既有全部调用点（含 GiteeExceptionAdvice）无需改动。
+        super(status, message, retryable, tokenInvalid);
         this.giteeCode = giteeCode;
-        this.retryable = retryable;
-        this.tokenInvalid = tokenInvalid;
     }
 
     public GiteeApiException(int status, String message, boolean retryable) {
@@ -44,6 +35,12 @@ public class GiteeApiException extends RuntimeException {
     /** 连接层失败（DNS / 超时 / TLS）—— 一律可重试。 */
     public static GiteeApiException network(String message) {
         return new GiteeApiException(0, 0, message, true, false);
+    }
+
+    /** 错误文案里的托管方名（覆写中性默认值，保证 Gitee 文案与此前逐字一致）。 */
+    @Override
+    public String providerName() {
+        return "Gitee";
     }
 
     /** 按 HTTP 状态与错误码推断重试语义。 */

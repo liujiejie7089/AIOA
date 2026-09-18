@@ -1,5 +1,6 @@
 package cn.aioa.gitee.service;
 
+import cn.aioa.gitee.client.RepoProviderClient;
 import cn.aioa.gitee.entity.GiteeAccount;
 import cn.aioa.gitee.entity.GiteeCommit;
 import cn.aioa.gitee.entity.GiteeEvent;
@@ -22,7 +23,9 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Gitee Webhook 接收与落库。
@@ -49,24 +52,30 @@ public class GiteeWebhookService {
     /** push 事件落 commit 明细的上限，避免一次 push 打爆写库。 */
     private static final int MAX_COMMITS_PER_PUSH = 20;
 
+    /** 事件头归一化用的空白压缩器（提到静态常量，避免每次调用都编译正则）。 */
+    private static final Pattern WS = Pattern.compile("\\s+");
+
     private final GiteeProjectMapper projectMapper;
     private final GiteeEventMapper eventMapper;
     private final GiteeCommitMapper commitMapper;
     private final GiteeTokenService tokenService;
     private final ObjectMapper objectMapper;
 
+    /** 当前生效的托管方：事件头名与投递校验都由它决定（Gitee 明文比对 / Gitea HMAC 签名）。 */
+    private final RepoProviderClient provider;
+
     /**
      * 处理一次 Webhook 投递。
      *
      * @param projectId    路径参数：平台项目 id（Webhook 地址由平台生成，形如 /api/v1/gitee/webhook/{id}）
-     * @param eventHeader  {@code X-Gitee-Event}
-     * @param tokenHeader  {@code X-Gitee-Token}（明文共享密钥）
-     * @param requestId    {@code X-Gitee-Request-Id}（有则用，无则留空）
-     * @param rawBody      原始报文（用于计算兜底幂等键）
+     * @param headers      请求头（事件头名与请求 id 头名由当前托管方决定，见
+     *                     {@link RepoProviderClient#webhookEventHeader()}）
+     * @param rawBodyBytes <b>原始报文字节</b>。必须以字节传入而不是字符串：
+     *                     Gitea 的签名是对字节算的 HMAC，任何字符集往返都可能改变字节序列，
+     *                     导致签名永远不匹配、并把排查方向误导到「密钥配错了」。
      * @return 处理结果（含 duplicated 标记，便于对账）
      */
-    public Map<String, Object> handle(Long projectId, String eventHeader, String tokenHeader,
-                                      String requestId, String rawBody) {
+    public Map<String, Object> handle(Long projectId, Map<String, String> headers, byte[] rawBodyBytes) {
         Map<String, Object> out = new LinkedHashMap<>();
         GiteeProject p = projectMapper.selectById(projectId);
         if (p == null) {
@@ -76,14 +85,20 @@ public class GiteeWebhookService {
             out.put("reason", "PROJECT_NOT_FOUND");
             return out;
         }
-        if (!secretMatches(p, tokenHeader)) {
-            // 只记 id，不记密钥内容
-            log.warn("Webhook 密钥不匹配 project={}", projectId);
+        // 校验交给当前托管方：Gitee 是共享密钥明文比对，Gitea 是 HMAC-SHA256 签名。
+        // 机制不同、但约定一致 —— 密钥为空或凭证缺失一律拒绝（本端点是写入口，
+        // 放行等于允许任何人伪造提交记录）。
+        if (!provider.verifyWebhook(rawBodyBytes, headers, p.getWebhookSecret())) {
+            // 只记 id，不记密钥/签名内容
+            log.warn("Webhook 校验失败 project={} provider={}", projectId, providerName());
             out.put("accepted", false);
             out.put("reason", "BAD_TOKEN");
             return out;
         }
 
+        String rawBody = rawBodyBytes == null ? "" : new String(rawBodyBytes, StandardCharsets.UTF_8);
+        String eventHeader = headerOf(headers, provider.webhookEventHeader());
+        String requestId = headerOf(headers, provider.webhookRequestIdHeader());
         Map<String, Object> body = parse(rawBody);
         String giteeEvent = eventHeader == null ? "" : eventHeader.trim();
         String eventKey = buildEventKey(giteeEvent, body, rawBody);
@@ -154,38 +169,91 @@ public class GiteeWebhookService {
     // ======================================================================
 
     /**
-     * 常量时间比对 Webhook 密钥。
+     * 大小写不敏感取头；缺失返回空串。
      *
-     * <p>项目未配置密钥（历史数据/create 失败）时**拒绝**而不是放行：
-     * Webhook 是写入口，放行等于允许任意人伪造提交记录。</p>
+     * <p>取头按头名做一次小写回退：不同 HTTP 栈对头名大小写的规范化程度不一致，
+     * 只按原样查会在某些容器下取不到值，表现为「校验莫名失败」。</p>
      */
-    private boolean secretMatches(GiteeProject p, String tokenHeader) {
-        String expected = p.getWebhookSecret();
-        if (!StringUtils.hasText(expected)) {
-            return false;
+    private static String headerOf(Map<String, String> headers, String name) {
+        if (headers == null || name == null) {
+            return "";
         }
-        String actual = tokenHeader == null ? "" : tokenHeader.trim();
-        return MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8),
-                actual.getBytes(StandardCharsets.UTF_8));
+        String v = headers.get(name);
+        if (v == null) {
+            v = headers.get(name.toLowerCase(Locale.ROOT));
+        }
+        return v == null ? "" : v.trim();
     }
 
-    /** 事件类型归一化：把 Gitee 的事件头映射为平台枚举。 */
+    /** 当前托管方名（仅用于日志，便于分辨「哪家没通过校验」）。 */
+    private String providerName() {
+        return provider.getClass().getSimpleName();
+    }
+
+    /** 事件类型归一化：把**各托管方**的事件头映射为平台枚举。 */
     static String classify(String eventHeader) {
-        String e = eventHeader == null ? "" : eventHeader.toLowerCase();
-        if (e.contains("push")) {
-            return GiteeEvent.TYPE_PUSH;
+        String e = normalizeEvent(eventHeader);
+        if (e.isEmpty()) {
+            return GiteeEvent.TYPE_OTHER;
         }
+        // 顺序不能改，见 normalizeEvent 上方的说明：
+        // 1) 评论最先判 —— 它的名字里含 "issue"/"pull request"，放后面会被抢走
+        if (e.contains("note") || e.contains("comment")) {
+            return GiteeEvent.TYPE_NOTE;
+        }
+        // 2) 合并请求：Gitee "merge request"；Gitea "pull_request"（归一化后为 "pull request"）
         if (e.contains("merge request") || e.contains("pull request")) {
             return GiteeEvent.TYPE_MERGE_REQUEST;
         }
+        // 3) 任务：Gitee "issue"；Gitea "issues" / "issue_label"
         if (e.contains("issue")) {
             return GiteeEvent.TYPE_ISSUE;
         }
-        if (e.contains("note")) {
-            return GiteeEvent.TYPE_NOTE;
+        // 4) 推送放最后：tag push 也含 "push"，但它本就属于 PUSH
+        if (e.contains("push")) {
+            return GiteeEvent.TYPE_PUSH;
         }
         return GiteeEvent.TYPE_OTHER;
+    }
+
+    /**
+     * 事件头归一化：小写 → 下划线/连字符转空格 → 压缩空白 → 去掉尾部 {@code hook}。
+     *
+     * <p><b>为什么必须先归一化</b>：两家事件名风格不同且存在<b>子串包含关系</b>，
+     * 直接按子串判断会误分类：</p>
+     * <ul>
+     *   <li>Gitea 用<b>下划线</b>：{@code pull_request} 用 {@code "pull request"} 去
+     *       {@code contains} 会失手（下划线≠空格），PR 事件被误判为 OTHER；</li>
+     *   <li>评论类事件名里<b>含 "issue"</b>：{@code issue_comment} 会被
+     *       {@code contains("issue")} 抢先判成 ISSUE，永远到不了 NOTE 分支。</li>
+     * </ul>
+     *
+     * <p>归一化示例：{@code "Pull Request Hook"} → {@code "pull request"}；
+     * {@code "pull_request"} → {@code "pull request"}；
+     * {@code "issue_comment"} → {@code "issue comment"}。</p>
+     *
+     * <p>对照表（同名事件在两家的写法）：</p>
+     * <table border="1">
+     *   <caption>事件名映射</caption>
+     *   <tr><th>平台枚举</th><th>Gitee（X-Gitee-Event）</th><th>Gitea（X-Gitea-Event）</th></tr>
+     *   <tr><td>PUSH</td><td>Push Hook / Tag Push Hook</td><td>push</td></tr>
+     *   <tr><td>MERGE_REQUEST</td><td>Merge Request Hook</td><td>pull_request / pull_request_review</td></tr>
+     *   <tr><td>ISSUE</td><td>Issue Hook</td><td>issues / issue_label / issue_assign</td></tr>
+     *   <tr><td>NOTE</td><td>Note Hook</td><td>issue_comment / pull_request_comment</td></tr>
+     * </table>
+     */
+    static String normalizeEvent(String eventHeader) {
+        if (eventHeader == null) {
+            return "";
+        }
+        String e = eventHeader.trim().toLowerCase(Locale.ROOT)
+                .replace('_', ' ')
+                .replace('-', ' ');
+        e = WS.matcher(e).replaceAll(" ").trim();
+        if (e.endsWith(" hook")) {
+            e = e.substring(0, e.length() - " hook".length()).trim();
+        }
+        return e;
     }
 
     /**

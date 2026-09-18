@@ -36,5 +36,12 @@
       <artifactId>mysql-connector-j</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <!-- 单元测试：本模块此前没有任何 Java 测试，纯函数（如事件头归一化）只能靠
+         Python E2E 间接覆盖，改错了要跑整套 E2E 才发现。版本由 spring-boot-starter-parent 管理。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

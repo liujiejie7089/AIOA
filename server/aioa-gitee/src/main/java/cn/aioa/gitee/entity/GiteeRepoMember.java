@@ -1,6 +1,8 @@
 package cn.aioa.gitee.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -59,6 +61,14 @@ public class GiteeRepoMember {
     /** SYNCED / PENDING / FAILED。 */
     private String syncStatus;
 
+    /**
+     * 最近一次权限同步的失败原因（**直接渲染给用户**：成员表 FAILED 态的悬浮说明）。
+     *
+     * <p>{@code updateStrategy = ALWAYS} 与 {@code GiteeProject.errorMsg} 同因：
+     * 默认 {@code NOT_NULL} 会把 null 字段排除在 SET 之外，「同步成功 → 清空失败原因」
+     * 与「重新绑定后清空」这两处清理都会静默失效，旧原因会一直挂在行上。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String lastError;
 
     private LocalDateTime syncedAt;

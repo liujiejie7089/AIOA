@@ -1,6 +1,6 @@
 package cn.aioa.gitee.service;
 
-import cn.aioa.gitee.client.GiteeApiException;
+import cn.aioa.gitee.client.RepoProviderException;
 import cn.aioa.gitee.entity.GiteeProject;
 import cn.aioa.gitee.entity.GiteeTask;
 import cn.aioa.gitee.mapper.GiteeProjectMapper;
@@ -38,7 +38,7 @@ public class GiteeCalibrateTaskHandler implements GiteeTaskHandler {
     public void handle(GiteeTask task) {
         Long projectId = task.getBizId();
         if (projectId == null) {
-            throw new GiteeApiException(0, "校准任务缺少项目 id", false);
+            throw new RepoProviderException(0, "校准任务缺少项目 id", false, false);
         }
         GiteeProject p = projectMapper.selectById(projectId);
         if (p == null || !StringUtils.hasText(p.getGiteeRepo())) {

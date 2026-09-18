@@ -1,9 +1,9 @@
 package cn.aioa.gitee.service;
 
 import cn.aioa.common.exception.BizException;
-import cn.aioa.gitee.client.GiteeApiException;
-import cn.aioa.gitee.client.GiteeClient;
-import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.client.RepoProviderException;
+import cn.aioa.gitee.client.RepoProviderClient;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeTenantConfig;
 import cn.aioa.gitee.mapper.GiteeTenantConfigMapper;
 import cn.aioa.gitee.support.GiteeCrypto;
@@ -55,9 +55,9 @@ public class GiteeTenantInitService {
     private static final Pattern ORG_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,128}$");
 
     private final GiteeTenantConfigMapper mapper;
-    private final GiteeClient client;
+    private final RepoProviderClient client;
     private final GiteeCrypto crypto;
-    private final GiteeProperties props;
+    private final RepoProviderSettings props;
     private final AuditRecorder auditRecorder;
 
     // ======================================================================
@@ -122,7 +122,7 @@ public class GiteeTenantInitService {
     public Map<String, Object> revoke(AuthUser actor, Long tenantId) {
         GiteeTenantConfig row = findRow(tenantId);
         if (row == null || !StringUtils.hasText(row.getAccessToken())) {
-            throw BizException.badRequest("该企业尚未初始化 Gitee 令牌，无可撤销内容");
+            throw BizException.badRequest("该企业尚未初始化 " + props.providerLabel() + " 令牌，无可撤销内容");
         }
         Map<String, Object> before = snapshot(row);
         mapper.update(null, new LambdaUpdateWrapper<GiteeTenantConfig>()
@@ -137,7 +137,7 @@ public class GiteeTenantInitService {
                 .set(GiteeTenantConfig::getLastError, null));
         GiteeTenantConfig after = findRow(tenantId);
         auditRecorder.record(tenantId, 0L, actor, "GITEE_TENANT_INIT_REVOKE", "GITEE_TENANT_CONFIG",
-                String.valueOf(tenantId), "撤销企业 Gitee 令牌（组织=" + str(row.getOrgName()) + "）",
+                String.valueOf(tenantId), "撤销企业 " + props.providerLabel() + " 令牌（组织=" + str(row.getOrgName()) + "）",
                 before, snapshot(after));
         Map<String, Object> m = buildStatus(tenantId);
         m.put("revoked", true);
@@ -199,8 +199,8 @@ public class GiteeTenantInitService {
 
         // 1. GLOBAL_ENABLED
         if (!check(props.isEnabled(), steps, "GLOBAL_ENABLED", "平台能力开关",
-                "Gitee 能力已开启",
-                "Gitee 能力已在平台侧关闭（aioa.gitee.enabled=false），无法初始化",
+                props.providerLabel() + " 能力已开启",
+                props.providerLabel() + " 能力已在平台侧关闭（" + props.configKeyPrefix() + ".enabled=false），无法初始化",
                 existing, doPersist)) {
             return steps;
         }
@@ -210,8 +210,8 @@ public class GiteeTenantInitService {
                 && !Boolean.TRUE.equals(existing.getEnabled())
                 && !(enabled != null && enabled);
         if (!check(!tenantDisabled, steps, "TENANT_ENABLED", "租户联动开关",
-                "租户 Gitee 仓库联动已启用",
-                "本企业 Gitee 仓库联动已关闭，请先启用后再初始化",
+                props.providerLabel() + " 仓库联动已启用",
+                "本企业 " + props.providerLabel() + " 仓库联动已关闭，请先启用后再初始化",
                 existing, doPersist)) {
             return steps;
         }
@@ -248,7 +248,7 @@ public class GiteeTenantInitService {
         boolean orgFormatOk = ORG_PATTERN.matcher(rawOrg).matches();
         if (!check(orgFormatOk, steps, "ORG_FORMAT", "组织名格式",
                 "组织名格式合法",
-                "Gitee 组织名非法（仅允许字母/数字/-/_/.，长度 1–128）：" + rawOrg,
+                props.providerLabel() + " 组织名非法（仅允许字母/数字/-/_/.，长度 1–128）：" + rawOrg,
                 existing, doPersist)) {
             return steps;
         }
@@ -289,11 +289,11 @@ public class GiteeTenantInitService {
                 } else {
                     failMsg = "访问令牌有效但未返回账号信息";
                 }
-            } catch (GiteeApiException e) {
+            } catch (RepoProviderException e) {
                 if (e.getStatus() == 401 || e.getStatus() == 403) {
-                    failMsg = "访问令牌无效或已过期（Gitee 返回 " + e.getStatus() + "）";
+                    failMsg = "访问令牌无效或已过期（" + props.providerLabel() + " 返回 " + e.getStatus() + "）";
                 } else {
-                    failMsg = "访问令牌校验失败（Gitee 返回 " + e.getStatus() + "）：" + e.getMessage();
+                    failMsg = "访问令牌校验失败（" + props.providerLabel() + " 返回 " + e.getStatus() + "）：" + e.getMessage();
                 }
             } catch (Exception e) {
                 failMsg = "访问令牌校验失败：" + e.getMessage();
@@ -316,13 +316,13 @@ public class GiteeTenantInitService {
             client.getOrg(tokenForCalls, rawOrg);
             accessible = true;
             orgVerified = true;
-        } catch (GiteeApiException e) {
+        } catch (RepoProviderException e) {
             if (e.getStatus() == 404) {
                 orgFailMsg = "组织「" + rawOrg + "」不存在，或该令牌的账号不是该组织成员、无权访问";
             } else if (e.getStatus() == 403) {
                 orgFailMsg = "令牌权限不足，无法读取组织信息";
             } else {
-                orgFailMsg = "组织校验失败（Gitee 返回 " + e.getStatus() + "）：" + e.getMessage();
+                orgFailMsg = "组织校验失败（" + props.providerLabel() + " 返回 " + e.getStatus() + "）：" + e.getMessage();
             }
         } catch (Exception e) {
             orgFailMsg = "组织校验失败：" + e.getMessage();
@@ -338,7 +338,7 @@ public class GiteeTenantInitService {
         if (doPersist) {
             persist(tenantId, rawOrg, enabled, note, reuseStored, existing,
                     tokenForCalls, tokenOwner, tokenScope, orgVerified, actor);
-            addStep(steps, "PERSIST", "落库初始化", true, "企业 Gitee 初始化已完成");
+            addStep(steps, "PERSIST", "落库初始化", true, "企业 " + props.providerLabel() + " 初始化已完成");
         }
         return steps;
     }
