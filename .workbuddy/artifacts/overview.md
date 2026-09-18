@@ -216,8 +216,20 @@ MyBatis-Plus 默认 `NOT_NULL` 策略下**一直是空转**（库里 17 个 ACTI
    仓库 `aioa-demo-org/dept101-999` 真实存在（`http=200`、`default_branch=main`、你选的 public）。
    **仍建议你做一次（可选但推荐）**：用租户 9 管理员进「项目与仓库 → 企业 Gitea 初始化」，
    用**真实企业令牌**重跑一次初始化，把那一行的 `org_name` 改成你真正想用的组织
-   （例如 `AI-OA`）并让 `org_verified` 落上 —— 否则那一行会一直"能用但来路不明"。
+   （例如 `AI-OA`）并让 `org_verified` 落上 —— 否则那一行会一直「能用但来路不明」。
 4. 建议（非必须，按性价比）：
    - 给令牌密文加 `enc:gitee:`/`enc:gitea:` 前缀，即可程序化区分「异平台遗留密文」与「密钥被误改」
      （目前两者都是 Tag mismatch，只能靠日志提示）。
    - `gitee_*` 类名/表名/日志文案统一改名（纯重构，风险低但改动面大）。
+
+## 6. 本轮收口
+
+| 项 | 值 |
+|---|---|
+| 提交 | `b829432` `feat(V53-V58): Gitea 托管方迁移收口 —— provider 抽象、绑定闭环与 14 项真机缺陷`（130 files，+10720/−2144；工作树已清空） |
+| 推送 | GitHub `github/main` **`b829432`** —— 与本地 `git rev-parse HEAD` **逐字符一致**（不靠 push 返回码判定） |
+| 库态 | Flyway 至 **V58**；创建中项目 **0** 条；`error_msg` 含「Gitee」的 **0** 条；队列无 `PENDING`/`RUNNING` 残留 |
+| 目标项目 | `999 / dept101-999` → `ACTIVE`，接口回读 `events = push,pull_request,pull_request_review,issues,issue_comment,pull_request_review_comment` |
+| 运行态 | 后端 :8080（`provider=gitea`，V58）· agent :8000 · 前端 :5173 均在监听 |
+| 未入库 | `scripts/e2e_*.py` 按仓库既有约定 gitignore（本次新增的 3 条真机断言因此只在本机可见，已在记忆与技能中留档） |
+| 新增忽略 | `scripts/_diag_*` `_tmp_*` `_q.py` `_*.png`（一次性诊断产物）；`_check_*.py` **刻意不入此列**，它们是要留的回归探针 |
