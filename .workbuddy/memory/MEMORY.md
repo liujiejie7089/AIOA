@@ -64,6 +64,8 @@
 36. **「留空」类语义先查有没有可回落的东西**：`accessToken` 留空只在「本企业已有令牌」时可复用 —— 平台**不存在**共享企业令牌（`enterpriseToken` 只读本租户行），故首次留空**本就应当失败**（`docs/30` §1.3）；正确修法是「必填 + 文案可读 + 前端按 `tokenConfigured` 动态必填」，**不是**让它静默成功。且报错文案**绝不回显 `null`**（`accessToken == null ? "null" : accessToken` 曾产出「…不合法：null」）。
 37. **E2E 反模式（2026-09-17 修了 3 个）**：① **toast 断言必须轮询** —— `ElMessage` 默认 3000ms 自动关，"固定 sleep 后一次性读 `.el-message`"必然读到空数组、成功也判 False；② **禁硬编码项目/单据 id** —— 桩是**内存态**，重启后旧项目仓库消失、上传必 404，而症状是"弹窗不关 + 点击被遮罩拦截"，看着像前端 bug（正解：现建一个项目）；③ **单条检查要 try 兜底** —— 否则一条超时就让整场套件崩溃、零信号。
 38. **子代理被限流中断会留下"半成品"，比没做更危险**：`general-purpose-16` 429 中断时已改好 router 并新建了视图文件，但**菜单没改**，且引入的 `alias` 放宽了权限、"三页签拆分"会碎断言 —— 这些**能通过 `vue-tsc`**，只看编译结果会误判为"已改好"。接手前必须**逐文件核对"改到哪一步"**（`git status` + 读关键文件 + 跑既有套件），不要假设它没动过。
+39. **侧栏滚动隔离的根因是 flex 高度链，不是 `overflow` 一处**（2026-09-18 修）：Element Plus 的 `.el-container` 是 `flex:1; flex-basis:auto`，而 flex 项默认 `min-height:auto` ⇒ 内侧 flex 行被整棵菜单撑高（实测 1074px > 视口 720）且**无法收缩**，溢出 `.layout{height:100%}` 把**文档**撑到 1130px ⇒ 滚左栏 = 滚整页。此时 `.layout-aside{overflow:hidden}` 既无效（`scrollHeight==clientHeight`，无内部可滚空间）也**挡不住父级被撑高**（`overflow` 只裁剪自身盒子）。四处齐改才成立：`.layout{overflow:hidden}` + **内侧 flex 行必须 `min-height:0`**（本项目加了 `.layout-body` 类）+ `.layout-aside{overflow-y:auto}` + `.layout-menu{min-height:100%}`（**不能是 `height:100%`**，否则菜单无法长高、无从滚动）。判据：`document.scrollHeight == clientHeight`，且展开全部分组后滚左栏只有 `aside.scrollTop` 变、`main`/`document` 位移为 0。回归探针 `scripts/_check_menu_scroll.py`（27 项）。
+40. **`git rm` 在本环境不可信 —— 一次误删把整个目录清空了**（2026-09-18 事故）：执行 `git rm -q -- '<glob>'`（清理 `ux-review` 下 png）后，`scripts/` 与 `ux-review/` **两个目录被整体清空**（72 个跟踪文件 + **全部未跟踪**的 `scripts/e2e_*.py`、`ux-review` 的走查原图与 before/after 归档），第二次调用还被 SIGTERM 并留下 `index.lock`。**纪律：本环境禁用 `git rm`**，改为 `rm 明确文件列表` + `git add`；清理必须小步走、每批后核对 `git status`。**恢复路径**（已实战验证）：① 删 0 字节 `index.lock` → `git restore --worktree -- <dirs>` 找回全部跟踪文件；② **未跟踪文件从 `~/.workbuddy/projects/<conv>/*.jsonl`（含子代理）重放 `Write`+`Edit`** 还原（本次找回 51 个，含 24 个 e2e 套件）；③ 用 `~/.workbuddy/file-history/<proj>/<hash>@vN` 做**内容级校验**（17/26 逐字节一致，其余为历史库旧版 ⇒ 重建版更新）；④ 跟踪文件一律以 git 为准覆盖。**恢复正确性必须用「跑套件」判定，不能用文件大小**。
 
 ## 4. 已知缺口（docs/20 发现）—— **2026-09-16 已全量收口，当前为空**
 `docs/28` 是「未开工项」的唯一进度权威，收口记录见其 §6。现状速查：
@@ -89,7 +91,8 @@
   `admin_v34_review_render` 8/8 · `check_org_structure_render` ALL PASS · `agent/tests/` 42 passed。
 - **`h5_v33_render` 假红排查**：其「AI 解读」段依赖 agent。若用 `agent/.venv` + `127.0.0.1` 起 agent，请求体被丢弃 → 422 → 假红；**必须按 `start-all.sh` 口径**（`envs/default` python + `--host 0.0.0.0`）重启 agent 后再判。
 - **套件会凭空消失**（gitignore）→ 跑前先 `ls scripts/ | grep -E "^e2e_"`，别照抄本表。只改前端也必须跑 `vue-tsc --noEmit`（少 import 常量表现为页面空白）。
-- **本地哨兵**（非 e2e 命名，也是本地工具）：`scripts/_syntax_h5.js`（H5 语法）、`scripts/_refaudit_h5.js`（**H5 内联 `onX="fn()"` 的悬空函数引用** —— 单文件 H5 无打包器无类型检查，`activateTodoTab` 曾「从未定义」却天天被调用）。改 H5 后顺手跑一次。
+- **本地哨兵**（非 e2e 命名，也是本地工具）：`scripts/_syntax_h5.js`（H5 语法）、`scripts/_refaudit_h5.js`（**H5 内联 `onX="fn()"` 的悬空函数引用** —— 单文件 H5 无打包器无类型检查，`activateTodoTab` 曾「从未定义」却天天被调用）、`scripts/_check_menu_scroll.py`（**管理端布局/菜单**：高度链闭合 + 侧栏滚动隔离 + 分组深链展开与高亮 + 分组 RBAC 边界，27 项，已入 `_run_all_regression.sh`）。改 H5/管理端布局后顺手跑一次。
+- **管理端菜单分组（2026-09-18 重构）**：21 个一级项 → **5 个一级 + 6 个分组子菜单**（智能服务 / 成果与项目 / 运营管理 / 租户与机构 / 安全与治理 / 平台管理）。**高频项刻意不下沉**（审批中心含待办红点、知识库、消息中心、组织与员工）。分组的 `v-if` = 子项可见性之「或」，**子项守卫与路由 `index` 一律不动**（`router/index.ts` 一行未改，维持菜单/路由/后端三层同源）。改分组归属时**必须同步 `MainLayout.vue` 里的 `PATH_GROUP`**，否则深链进来该分组不展开、表现为「菜单一项都不高亮」。
 
 ### 断言纪律（写新套件必读）
 - **禁固定页长/绝对条数**：用 `len(items)==min(total,size)`。判据：数据涨 10 倍、清库后该断言还成立吗？
