@@ -77,6 +77,21 @@ a {
 /* ---------- 主布局 ---------- */
 .layout {
   height: 100%;
+  /* 根布局不向外溢出：否则内侧 flex 行被菜单撑高后会顶破 100%，
+     整个文档（html/body）跟着一起滚 —— 表现为「滑菜单时右侧页面一起动」。 */
+  overflow: hidden;
+}
+
+/*
+  内侧 flex 行（左菜单 + 右内容）。
+  必须 min-height:0 —— Element Plus 的 .el-container 是 flex:1 + flex-basis:auto，
+  而 flex 项默认 min-height:auto，会被内容（整棵菜单）撑到 1074px 而无法收缩，
+  于是溢出根布局、把文档撑高。补上 min-height:0 后它才真正等于「视口 - 顶栏」。
+*/
+.layout-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .layout-header {
@@ -149,13 +164,36 @@ a {
   background: #ffffff;
   border-right: 1px solid var(--aioa-border);
   transition: width 0.2s;
-  overflow: hidden;
+  /* 菜单超高时「只有菜单自己滚」，右侧页面保持不动。
+     原实现是 overflow:hidden —— 既裁不出滚动条，也挡不住内容把父级撑高。 */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .layout-menu {
   border-right: none;
-  height: 100%;
+  /* min-height 而非 height：内容少时铺满侧栏（背景不断层），
+     内容多时让自身长高、交给 .layout-aside 滚动。 */
+  min-height: 100%;
   padding: 8px 8px;
+}
+
+/* 侧栏滚动条收窄（默认 8px 深灰在淡色侧栏上很扎眼） */
+.layout-aside::-webkit-scrollbar {
+  width: 6px;
+}
+
+.layout-aside::-webkit-scrollbar-thumb {
+  background: var(--aioa-border-strong);
+  border-radius: 3px;
+}
+
+.layout-aside::-webkit-scrollbar-thumb:hover {
+  background: var(--aioa-primary);
+}
+
+.layout-aside::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .layout-menu .el-menu-item,

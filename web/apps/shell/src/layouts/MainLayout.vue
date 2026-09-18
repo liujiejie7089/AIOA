@@ -46,15 +46,20 @@
       </div>
     </el-header>
 
-    <el-container>
+    <el-container class="layout-body">
       <el-aside class="layout-aside" :width="collapsed ? '64px' : '200px'">
         <el-menu
           class="layout-menu"
           :default-active="menuActive"
-          :default-openeds="['apps']"
+          :default-openeds="initialOpenedGroups"
           :collapse="collapsed"
           router
         >
+          <!--
+            ===== 一级平铺：日常高频，人人都有 =====
+            首页 / 审批中心 / 知识库 / 消息中心 —— 使用频次最高，不做折叠，
+            避免「点两次才能进」把最常用的入口藏进子菜单。
+          -->
           <el-menu-item index="/home">
             <el-icon><HomeFilled /></el-icon>
             <template #title>首页</template>
@@ -97,14 +102,6 @@
               >{{ collapsed ? '' : todoCount > 99 ? '99+' : todoCount }}</span
             >
           </el-menu-item>
-          <!--
-            审批流配置（三期 C-02/A3-9）：租户端可视化配置各业务审批流的「知会对象」。
-            可见范围与后端 /tenant/approval-flow-defs（requireTenantAdmin）一致 = TENANT_SCOPE_ROLES。
-          -->
-          <el-menu-item v-if="showTenantMenu" index="/approval-flows">
-            <el-icon><SetUp /></el-icon>
-            <template #title>审批流配置</template>
-          </el-menu-item>
           <el-menu-item index="/kb">
             <el-icon><Collection /></el-icon>
             <template #title>知识库</template>
@@ -118,16 +115,62 @@
             <el-icon><Bell /></el-icon>
             <template #title>消息中心</template>
           </el-menu-item>
-          <!--
-            项目与仓库（V48 Gitee 联动）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
-            三处共用 GITEE_VIEW_ROLES —— 只读边界由后端按部门作用域收窄（人人有入口，只能看本部门）。
-          -->
-          <el-menu-item v-if="showGiteeMenu" index="/gitee/projects">
-            <el-icon><Link /></el-icon>
-            <template #title>项目与仓库</template>
-          </el-menu-item>
 
-          <!-- 租户域：仅平台管理员 / 租户管理员可见 -->
+          <!--
+            ===== 以下按「功能相近程度」收进子菜单 =====
+            原先是 21 个一级项平铺（含 2 个既有子菜单），菜单上下溢出 1074px、
+            必须整页滚动才能看到最后几项。现按域聚合为 6 个组：
+
+              · 智能服务   —— AI 能力载体的定义与接入（数字员工/专家/工具/业务系统）
+              · 成果与项目 —— 平台产出物（成果沉淀 + 代码仓库联动）
+              · 运营管理   —— 用量与成本（经营数据 / 配额）
+              · 租户与机构 —— 租户级组织与费用（机构/入驻/授权/分摊）
+              · 安全与治理 —— 规则与留痕（审批流/审计/参数/审核记录）
+              · 平台管理   —— 仅平台管理员（内容审核台 / 租户管理）
+
+            每个组的可见性 = 其子项可见性的「或」，子项各自仍带原来的 RBAC 守卫；
+            路由 index 与 router/index.ts 完全不变（三层同源不受影响）。
+          -->
+
+          <!-- 智能服务：数字员工 / 专家配置 / 业务工具 / 业务系统 -->
+          <el-sub-menu v-if="showWorkerMenu || showExpertMenu || showTenantMenu" index="svc">
+            <template #title>
+              <el-icon><Cpu /></el-icon>
+              <span>智能服务</span>
+            </template>
+            <!-- 创建/管理归属：系统管理员 / 租户管理员 / 企业管理员 / 部门负责人 -->
+            <el-menu-item v-if="showWorkerMenu" index="/workers">数字员工</el-menu-item>
+            <!-- 专家创建/配置：系统管理员 / 租户管理员 / 企业管理员（不含部门负责人） -->
+            <el-menu-item v-if="showExpertMenu" index="/experts">专家配置</el-menu-item>
+            <el-menu-item v-if="showTenantMenu" index="/tools">业务工具</el-menu-item>
+            <el-menu-item v-if="showTenantMenu" index="/biz-systems">业务系统</el-menu-item>
+          </el-sub-menu>
+
+          <!-- 成果与项目：成果沉淀 + 仓库联动 -->
+          <el-sub-menu v-if="showTenantMenu || showGiteeMenu" index="output">
+            <template #title>
+              <el-icon><FolderOpened /></el-icon>
+              <span>成果与项目</span>
+            </template>
+            <el-menu-item v-if="showTenantMenu" index="/results">成果沉淀</el-menu-item>
+            <!--
+              项目与仓库（V48 Gitee 联动）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
+              三处共用 GITEE_VIEW_ROLES —— 只读边界由后端按部门作用域收窄（人人有入口，只能看本部门）。
+            -->
+            <el-menu-item v-if="showGiteeMenu" index="/gitee/projects">项目与仓库</el-menu-item>
+          </el-sub-menu>
+
+          <!-- 运营管理：经营数据 / 配额管理 -->
+          <el-sub-menu v-if="showTenantMenu" index="ops">
+            <template #title>
+              <el-icon><DataAnalysis /></el-icon>
+              <span>运营管理</span>
+            </template>
+            <el-menu-item index="/kpi">经营数据</el-menu-item>
+            <el-menu-item index="/quotas">配额管理</el-menu-item>
+          </el-sub-menu>
+
+          <!-- 租户与机构：仅平台管理员 / 租户管理员可见 -->
           <el-sub-menu v-if="showTenantMenu" index="tenant">
             <template #title>
               <el-icon><OfficeBuilding /></el-icon>
@@ -159,60 +202,40 @@
               其余管理者要的是「组织与员工」。
             - 页内是「组织与部门 | 人员管理」两个页签，后者由 OrgAdminView 按
               PERSONNEL_VIEW_ROLES 收起 —— 普通成员看不到它，也就不会打出注定 403 的平台级接口。
+
+            不做折叠：管人 / 配权限是仅次于审批的高频管理动作，保持一级可见。
           -->
           <el-menu-item v-if="showOrgMenu" index="/org-structure">
             <el-icon><UserFilled /></el-icon>
             <template #title>{{ isPlatformAdmin ? '系统管理' : '组织与员工' }}</template>
           </el-menu-item>
 
-          <el-menu-item v-if="showTenantMenu" index="/kpi">
-            <el-icon><DataAnalysis /></el-icon>
-            <template #title>经营数据</template>
-          </el-menu-item>
-          <el-menu-item v-if="showWorkerMenu" index="/workers">
-            <el-icon><Cpu /></el-icon>
-            <template #title>数字员工</template>
-          </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/biz-systems">
-            <el-icon><Connection /></el-icon>
-            <template #title>业务系统</template>
-          </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/quotas">
-            <el-icon><Coin /></el-icon>
-            <template #title>配额管理</template>
-          </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/audit">
-            <el-icon><Document /></el-icon>
-            <template #title>操作审计</template>
-          </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/settings">
-            <el-icon><Tools /></el-icon>
-            <template #title>系统参数</template>
-          </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/results">
-            <el-icon><FolderOpened /></el-icon>
-            <template #title>成果沉淀</template>
-          </el-menu-item>
-          <el-menu-item v-if="showExpertMenu" index="/experts">
-            <el-icon><MagicStick /></el-icon>
-            <template #title>专家配置</template>
-          </el-menu-item>
-          <el-menu-item v-if="showTenantMenu" index="/tools">
-            <el-icon><Switch /></el-icon>
-            <template #title>业务工具</template>
-          </el-menu-item>
-          <el-menu-item v-if="isPlatformAdmin" index="/content-reviews">
-            <el-icon><Stamp /></el-icon>
-            <template #title>内容审核</template>
-          </el-menu-item>
-          <el-menu-item v-if="showReviewRecordMenu" index="/review-records">
-            <el-icon><DocumentChecked /></el-icon>
-            <template #title>审核记录</template>
-          </el-menu-item>
-          <el-menu-item v-if="isPlatformAdmin" index="/tenants">
-            <el-icon><OfficeBuilding /></el-icon>
-            <template #title>租户管理</template>
-          </el-menu-item>
+          <!-- 安全与治理：审批流 / 审计 / 参数 / 审核记录 -->
+          <el-sub-menu v-if="showTenantMenu || showReviewRecordMenu" index="gov">
+            <template #title>
+              <el-icon><SetUp /></el-icon>
+              <span>安全与治理</span>
+            </template>
+            <!--
+              审批流配置（三期 C-02/A3-9）：租户端可视化配置各业务审批流的「知会对象」。
+              可见范围与后端 /tenant/approval-flow-defs（requireTenantAdmin）一致 = TENANT_SCOPE_ROLES。
+            -->
+            <el-menu-item v-if="showTenantMenu" index="/approval-flows">审批流配置</el-menu-item>
+            <el-menu-item v-if="showTenantMenu" index="/audit">操作审计</el-menu-item>
+            <el-menu-item v-if="showTenantMenu" index="/settings">系统参数</el-menu-item>
+            <!-- 审核记录（V36 需求④）：平台管理员看全量，租户管理员看本租户 -->
+            <el-menu-item v-if="showReviewRecordMenu" index="/review-records">审核记录</el-menu-item>
+          </el-sub-menu>
+
+          <!-- 平台管理：仅平台管理员（内容审核台 / 租户管理） -->
+          <el-sub-menu v-if="isPlatformAdmin" index="plat">
+            <template #title>
+              <el-icon><Stamp /></el-icon>
+              <span>平台管理</span>
+            </template>
+            <el-menu-item index="/content-reviews">内容审核</el-menu-item>
+            <el-menu-item index="/tenants">租户管理</el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </el-aside>
 
@@ -331,6 +354,50 @@ const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
  * 因此把 /admin 归并到合并入口 /org-structure 上。
  */
 const menuActive = computed(() => (route.path === '/admin' ? '/org-structure' : route.path))
+
+/**
+ * 子菜单「默认展开」的组。
+ *
+ * 菜单分组后，子项默认是收起的：若用户从书签/深链直接进 `/quotas`，
+ * 其所属组不展开就会出现「菜单里一项都没高亮」（高亮项被藏在收起的分组里）。
+ * 这里按落地路由把所属组展开。
+ *
+ * `default-openeds` 只作为初始值生效，故按 `route.path` 计算即可 ——
+ * 之后用户在菜单里手动展开/收起分组，由组件自身状态接管。
+ */
+const PATH_GROUP: Record<string, string> = {
+  // 智能服务
+  '/workers': 'svc',
+  '/experts': 'svc',
+  '/tools': 'svc',
+  '/biz-systems': 'svc',
+  // 成果与项目
+  '/results': 'output',
+  '/gitee/projects': 'output',
+  // 运营管理
+  '/kpi': 'ops',
+  '/quotas': 'ops',
+  // 租户与机构
+  '/institutions': 'tenant',
+  '/onboarding': 'tenant',
+  '/resource-grants': 'tenant',
+  '/cost-alloc': 'tenant',
+  // 安全与治理
+  '/approval-flows': 'gov',
+  '/audit': 'gov',
+  '/settings': 'gov',
+  '/review-records': 'gov',
+  // 平台管理
+  '/content-reviews': 'plat',
+  '/tenants': 'plat'
+}
+
+const initialOpenedGroups = computed<string[]>(() => {
+  const p = route.path
+  // 项目详情 `/gitee/projects/:id`、子应用 `/app/:code` 均按前缀归组
+  const g = PATH_GROUP[p] || (p.startsWith('/gitee/') ? 'output' : p.startsWith('/app/') ? 'apps' : '')
+  return g ? [g] : []
+})
 
 /**
  * 「审批中心」未处理红点。

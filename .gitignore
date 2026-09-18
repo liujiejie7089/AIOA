@@ -97,6 +97,15 @@ proxy-run*.log
 ux-review/*.png
 # 批次改造证据截图体积小且未内嵌，保留入库
 !ux-review/batch1/*.png
+# 历史审计轮次的多角色整页截图（admin/dsj_admin/fagai_admin/jyj_admin × 各页面）：
+# 既未内嵌进报告、也无任何脚本/文档引用，属可重新生成的过程产物 —— 不入库。
+# 需要时重跑：python ux-review/walkthrough.py（截图目录用 WALKTHROUGH_OUT 指定）。
+ux-review/full-audit/*.png
+ux-review/admin-audit/*.png
+# 保留这两轮的审计数据（报告渲染与角色菜单矩阵的真源，体积小）
+!ux-review/full-audit/report.json
+!ux-review/admin-audit/report.json
+!ux-review/admin-audit/menu-by-role.json
 
 # ---- 根目录临时探测脚本 ----
 /_db_inspect.py

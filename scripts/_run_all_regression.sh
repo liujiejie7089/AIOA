@@ -40,6 +40,8 @@ SUITES=(
   h5_v33_render.py
   admin_v39_todo_badge.py
   admin_v34_review_render.py
+  # 管理端布局/菜单：高度链闭合 + 侧栏滚动隔离 + 分组深链展开 + 分组 RBAC 边界
+  _check_menu_scroll.py
   verify_v48_ui.py
   verify_v48_ui_extra.py
   e2e_full_system.py
