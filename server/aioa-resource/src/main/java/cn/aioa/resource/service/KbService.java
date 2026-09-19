@@ -3,7 +3,7 @@ package cn.aioa.resource.service;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.resource.entity.KbChunk;
 import cn.aioa.resource.entity.KbDocument;
-import cn.aioa.resource.mapper.KbChunkMapper;
+import cn.aioa.resource.store.KbRelationalDao;
 import cn.aioa.resource.store.KnowledgeStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +39,7 @@ public class KbService {
     public static final String SCOPE_TENANT = "TENANT";
 
     private final KnowledgeStore store;
-    private final KbChunkMapper kbChunkMapper;
+    private final KbRelationalDao relationalDao;
     private final EmbeddingProvider embeddingProvider;
 
     /**
@@ -63,6 +63,21 @@ public class KbService {
     /** 带原文片段的检索结果，供工具网关 citations 与用户端检索测试使用。 */
     public List<KnowledgeStore.KbHit> searchHits(Long tenantId, Long userId, String keyword, int limit) {
         return store.search(tenantId, userId, keyword, limit);
+    }
+
+    /** 当前生效的存储实现（mysql / milvus）——供运维排查与 E2E 双跑矩阵判断档位。 */
+    public String storeType() {
+        return store.type();
+    }
+
+    /** 当前生效的嵌入 provider 标识（local / http:模型名）。 */
+    public String embeddingProviderName() {
+        return embeddingProvider.name();
+    }
+
+    /** 当前嵌入维度（必须与 Milvus 集合维度一致）。 */
+    public int embeddingDims() {
+        return embeddingProvider.dims();
     }
 
     /**
@@ -149,9 +164,7 @@ public class KbService {
 
     /** 对切片逐条向量化并回写（失败不中断整体，仅记录日志，检索时自动退化关键词）。 */
     private void embedAll(Long docId, Long tenantId, List<String> chunks) {
-        List<KbChunk> rows = kbChunkMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<KbChunk>()
-                .eq(KbChunk::getDocId, docId)
-                .orderByAsc(KbChunk::getChunkIndex));
+        List<KbChunk> rows = relationalDao.chunksOfDoc(docId);
         for (int i = 0; i < rows.size() && i < chunks.size(); i++) {
             KbChunk c = rows.get(i);
             try {
@@ -161,6 +174,54 @@ public class KbService {
                 log.warn("切片向量化失败 chunkId={}: {}", c.getId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 用**当前** embedding provider 全量重算切片向量（docs/32 Ph1「重算 job」）。
+     *
+     * <p>触发场景：{@code aioa.kb.embedding-provider} 从 {@code local} 换成 {@code http}、
+     * 或换了 embedding 模型 / 维度。**不重算的后果是静默的**——
+     * 旧向量维度与新 query 向量不符，{@link EmbeddingProvider#cosine} 直接返回 0，
+     * 检索「不出错但永远不命中」。</p>
+     *
+     * <p>幂等：只处理 {@code embedding_provider} 或 {@code embedding_dims} 与当前 provider 不符的切片，
+     * 已是最新的跳过；单条失败只告警、继续下一条（与 {@link #embedAll} 一致，便于分批重跑收敛）。</p>
+     *
+     * @return 实际重算条数
+     */
+    public int reembedAll() {
+        final int batchSize = 200;
+        final String wantProvider = embeddingProvider.name();
+        final int wantDims = embeddingProvider.dims();
+        long cursor = 0L;
+        int done = 0;
+        int scanned = 0;
+        while (true) {
+            List<KbChunk> batch = relationalDao.chunksAfterId(cursor, batchSize);
+            if (batch.isEmpty()) {
+                break;
+            }
+            for (KbChunk c : batch) {
+                cursor = Math.max(cursor, c.getId());
+                scanned++;
+                if (wantProvider.equals(c.getEmbeddingProvider())
+                        && c.getEmbeddingDims() != null && c.getEmbeddingDims() == wantDims) {
+                    continue;
+                }
+                try {
+                    float[] vec = embeddingProvider.embed(c.getContent());
+                    store.saveEmbedding(c.getId(), c.getContent(), vec, wantProvider, wantDims);
+                    done++;
+                } catch (Exception e) {
+                    log.warn("切片重算向量失败 chunkId={}: {}", c.getId(), e.getMessage());
+                }
+            }
+            if (batch.size() < batchSize) {
+                break;
+            }
+        }
+        log.info("知识库向量全量重算完成：扫描={} 重算={} provider={} dims={}", scanned, done, wantProvider, wantDims);
+        return done;
     }
 
     /** 失败重试：重新切片入库。 */

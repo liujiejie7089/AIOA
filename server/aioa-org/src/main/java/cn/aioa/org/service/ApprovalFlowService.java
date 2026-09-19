@@ -3,11 +3,13 @@ package cn.aioa.org.service;
 import cn.aioa.common.event.NotificationRequested;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.org.entity.ApprovalFlowDef;
+import cn.aioa.org.entity.ApprovalFlowDefVersion;
 import cn.aioa.org.entity.ApprovalTask;
 import cn.aioa.org.entity.OrgDuty;
 import cn.aioa.org.entity.OrgInstitution;
 import cn.aioa.org.entity.OrgMember;
 import cn.aioa.org.mapper.ApprovalFlowDefMapper;
+import cn.aioa.org.mapper.ApprovalFlowDefVersionMapper;
 import cn.aioa.org.mapper.ApprovalTaskMapper;
 import cn.aioa.org.mapper.OrgInstitutionMapper;
 import cn.aioa.org.mapper.OrgMemberMapper;
@@ -19,6 +21,8 @@ import cn.aioa.org.support.approver.ApproverResolver;
 import cn.aioa.org.support.approver.ApproverStrategy;
 import cn.aioa.security.AuthUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 多级审批流引擎（审批流程升级主交付）。
@@ -88,6 +93,8 @@ public class ApprovalFlowService {
     public static final String APPLICANT_DEPARTMENT = "DEPARTMENT";
 
     private final ApprovalFlowDefMapper defMapper;
+    /** 流程定义版本快照（六期 V60：模板版本对比）。 */
+    private final ApprovalFlowDefVersionMapper defVersionMapper;
     private final ApprovalTaskMapper taskMapper;
     private final OrgInstitutionMapper institutionMapper;
     private final OrgMemberMapper memberMapper;
@@ -1210,6 +1217,16 @@ public class ApprovalFlowService {
         if (!ApprovalTask.PENDING.equals(task.getStatus())) {
             throw BizException.badRequest("该审批节点已处理（" + task.getStatus() + "），不可重复审批");
         }
+        // 六期②子流程：本节点已派生子单据且子单据未出终态 → 不可单独决策。
+        // 若放行，「发起子流程」就退化成「另外发了一张单」，对本单的推进毫无约束力，
+        // 于是父单会被人在子流程还没结论时就批掉 —— 子流程等于没做。
+        if (task.getSubOrderId() != null) {
+            Map<String, Object> sub = statMapper.selectApprovalOrder(task.getSubOrderId());
+            if (sub != null && "PENDING".equals(sub.get("status"))) {
+                throw BizException.badRequest("该节点已发起子流程《"
+                        + sub.get("title") + "》，需等子流程出结论后方可决策");
+            }
+        }
         if (task.getApproverId() != null && !task.getApproverId().equals(actor.getUserId())) {
             throw BizException.forbidden("该节点不由你审批（当前审批人 #" + task.getApproverId() + "）");
         }
@@ -1293,6 +1310,12 @@ public class ApprovalFlowService {
                 finalDone = true;
                 fire(order, true);
             }
+        }
+
+        // 六期②子流程：本单据出终态后，替父节点做一次决策（以父节点审批人的身份）。
+        // 这样子流程才是「闭环的一环」而不是「另一张单」。
+        if (!approve || finalDone) {
+            resolveParentNode(order, approve, note);
         }
 
         notify(lng0(order.get("userId")), task.getTenantId(),
@@ -1428,6 +1451,206 @@ public class ApprovalFlowService {
                 });
     }
 
+    // ================================================================== 六期：加签 / 子流程（V60）
+
+    /**
+     * 加签：在审批过程中插入一个审批人。
+     *
+     * @param type  {@code BEFORE} 前加签（加签人先批，再由原审批人批）
+     *              / {@code AFTER} 后加签（当前人先批，再交给加签人）
+     *
+     * <p><b>为什么 seq 要整体后移而不是插入小数</b>：{@code isCurrentNode} 与
+     * {@code nextPending} 都以 seq 排序取最小未决节点，小数 seq 能工作，
+     * 但会让「第 N 级」这类面向用户的文案出现「第 1.5 级」。整体后移保证
+     * 节点序号始终是连续正整数，前端与提示语都不必为加签特判。</p>
+     *
+     * <p><b>只后移 PENDING 任务</b>：已决策任务的 seq 是历史事实，改它会让
+     * 「第 2 级由张三于 X 时通过」这条留痕对不上。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> addSign(Long taskId, AuthUser actor, String type,
+                                       Long targetUserId, String reason) {
+        ApprovalTask task = requireAddSignableTask(taskId, actor);
+        if (targetUserId == null) {
+            throw BizException.badRequest("加签对象不能为空");
+        }
+        if (targetUserId.equals(task.getApproverId())) {
+            throw BizException.badRequest("不能加签给当前审批人本人（同一节点重复审批无意义）");
+        }
+        String signType = ApprovalTask.ADD_SIGN_AFTER.equalsIgnoreCase(type)
+                ? ApprovalTask.ADD_SIGN_AFTER : ApprovalTask.ADD_SIGN_BEFORE;
+        // 同一单据内不允许重复加签同一人：否则会出现「同一个人要批两次」
+        long dup = taskMapper.selectCount(new LambdaQueryWrapper<ApprovalTask>()
+                .eq(ApprovalTask::getOrderId, task.getOrderId())
+                .eq(ApprovalTask::getApproverId, targetUserId)
+                .eq(ApprovalTask::getStatus, ApprovalTask.PENDING));
+        if (dup > 0) {
+            throw BizException.badRequest("该审批人已在本单据的待办节点中，无需重复加签");
+        }
+
+        int newSeq = ApprovalTask.ADD_SIGN_BEFORE.equals(signType) ? task.getSeq() : task.getSeq() + 1;
+        taskMapper.update(null, Wrappers.<ApprovalTask>lambdaUpdate()
+                .eq(ApprovalTask::getOrderId, task.getOrderId())
+                .eq(ApprovalTask::getStatus, ApprovalTask.PENDING)
+                .ge(ApprovalTask::getSeq, newSeq)
+                .setSql("seq = seq + 1"));
+
+        ApprovalTask added = new ApprovalTask();
+        added.setTenantId(task.getTenantId());
+        added.setInstitutionId(task.getInstitutionId());
+        added.setOrderId(task.getOrderId());
+        added.setSeq(newSeq);
+        added.setApproverType(ApprovalTask.TYPE_SPECIFIC);
+        added.setApproverId(targetUserId);
+        added.setApproverName(nameOf(targetUserId));
+        added.setTaskRole(ApprovalTask.ROLE_APPROVE);
+        added.setNodeMode(ApprovalTask.MODE_SINGLE);
+        added.setStatus(ApprovalTask.PENDING);
+        added.setNote(reason == null ? ("由「" + AuditRecorder.displayName(actor) + "」"
+                + (ApprovalTask.ADD_SIGN_BEFORE.equals(signType) ? "前加签" : "后加签"))
+                : reason);
+        added.setAddSignType(signType);
+        added.setAddedBy(actor.getUserId());
+        added.setCreatedAt(LocalDateTime.now());
+        taskMapper.insert(added);
+
+        notify(targetUserId, task.getTenantId(), "被加签：待你审批",
+                "《" + titleOf(task.getOrderId()) + "》由「" + AuditRecorder.displayName(actor)
+                        + "」" + (ApprovalTask.ADD_SIGN_BEFORE.equals(signType) ? "前加签" : "后加签")
+                        + "给你，请处理", task.getOrderId());
+        audit.record(task.getTenantId(), task.getInstitutionId(), actor, "WORKFLOW_ADD_SIGN",
+                "APPROVAL_TASK", added.getId(),
+                "在《" + titleOf(task.getOrderId()) + "》第 " + newSeq + " 级"
+                        + (ApprovalTask.ADD_SIGN_BEFORE.equals(signType) ? "前" : "后")
+                        + "加签「" + added.getApproverName() + "」", null,
+                Map.of("taskId", taskId, "signType", signType, "targetUserId", targetUserId));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("addedTaskId", added.getId());
+        out.put("orderId", task.getOrderId());
+        out.put("signType", signType);
+        out.put("seq", newSeq);
+        out.put("approverId", targetUserId);
+        out.put("approverName", added.getApproverName());
+        out.put("timeline", timeline(task.getOrderId()));
+        return out;
+    }
+
+    /** 子流程请求（结构化，避免服务间传 Map 丢字段）。 */
+    public record SubFlowReq(String bizType, String title, String content, Long approverId) {
+    }
+
+    /**
+     * 发起子流程：由当前节点派生一张子单据，本节点等子单据出结论后才可推进。
+     *
+     * <p>子单据出终态时，{@code decide} 会用子单据的结论替父节点做决策
+     * （见 {@link #resolveParentNode}），因此这里只需建单与回指，不需要轮询。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> startSubFlow(Long taskId, AuthUser actor, SubFlowReq req) {
+        ApprovalTask task = requireAddSignableTask(taskId, actor);
+        if (task.getSubOrderId() != null) {
+            throw BizException.badRequest("该节点已发起过子流程（子单据 #"
+                    + task.getSubOrderId() + "），不可重复发起");
+        }
+        if (req == null || req.bizType() == null || req.bizType().isBlank()) {
+            throw BizException.badRequest("子流程 bizType 不能为空");
+        }
+        SubmitReq s = new SubmitReq(req.bizType(),
+                req.title() == null ? ("子流程：" + req.bizType()) : req.title(),
+                req.content(), null, task.getInstitutionId(), null, null,
+                actor.getUserId(), AuditRecorder.displayName(actor), req.approverId(),
+                null, null);
+        Map<String, Object> created = submit(task.getTenantId(), actor, s);
+        Long subId = created.get("orderId") instanceof Number n ? n.longValue() : null;
+        if (subId == null) {
+            throw BizException.badRequest("子流程单据创建失败：未返回单号");
+        }
+        statMapper.updateApprovalOrderParent(subId, task.getOrderId(), task.getId());
+
+        ApprovalTask patch = new ApprovalTask();
+        patch.setId(task.getId());
+        patch.setSubOrderId(subId);
+        patch.setUpdatedAt(LocalDateTime.now());
+        taskMapper.updateById(patch);
+
+        audit.record(task.getTenantId(), task.getInstitutionId(), actor, "WORKFLOW_SUB_FLOW_START",
+                "APPROVAL_TASK", task.getId(),
+                "在第 " + task.getSeq() + " 级发起子流程《" + (req.title() == null ? req.bizType() : req.title())
+                        + "》（单据 #" + subId + "）", null,
+                Map.of("taskId", taskId, "subOrderId", subId));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("subOrderId", subId);
+        out.put("parentTaskId", task.getId());
+        out.put("parentOrderId", task.getOrderId());
+        out.put("nodeCount", created.get("nodeCount"));
+        out.put("currentApproverName", created.get("currentApproverName"));
+        out.put("message", "子流程已发起：父节点将等子单据出结论后自动推进");
+        return out;
+    }
+
+    /**
+     * 子单据出终态后推进父节点。
+     *
+     * <p><b>为什么以「父节点审批人」的身份决策</b>：审批留痕必须能回答「谁批的」。
+     * 若凭空造一个 system 身份，时间线上会出现一个查无此人的审批人。
+     * 用父节点自己的审批人，语义是「子流程的结论即该审批人的结论」，与人工点击等价。</p>
+     */
+    private void resolveParentNode(Map<String, Object> childOrder, boolean approved, String note) {
+        Long parentOrderId = lng(childOrder.get("parentOrderId"));
+        Long parentTaskId = lng(childOrder.get("parentTaskId"));
+        if (parentOrderId == null || parentTaskId == null) {
+            return;
+        }
+        ApprovalTask parent = taskMapper.selectById(parentTaskId);
+        if (parent == null || !ApprovalTask.PENDING.equals(parent.getStatus())) {
+            return;
+        }
+        AuthUser as = AuthUser.of(parent.getApproverId(), parent.getTenantId(), null,
+                parent.getApproverName(), List.of());
+        String auto = "子流程《" + childOrder.get("title") + "》"
+                + (approved ? "通过" : "被驳回")
+                + (note == null || String.valueOf(note).isBlank() ? "" : "：" + note);
+        try {
+            decide(parentTaskId, as, approved, auto);
+        } catch (RuntimeException e) {
+            // 父节点此刻若不可推进（例如前面还有未决节点），记日志而不是让子流程的
+            // 终态事务回滚 —— 子单据的结论已经成立，回滚只会造成状态不一致。
+            log.error("子流程终态回填父节点失败：parentTaskId={}, subOrderId={}",
+                    parentTaskId, childOrder.get("id"), e);
+        }
+    }
+
+    /** 加签 / 发起子流程的共同前置校验：节点可操作且操作人有资格。 */
+    private ApprovalTask requireAddSignableTask(Long taskId, AuthUser actor) {
+        ApprovalTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw BizException.notFound("审批任务不存在：" + taskId);
+        }
+        if (ApprovalTask.ROLE_CC.equals(task.getTaskRole())) {
+            throw BizException.badRequest("知会（抄送）节点不可加签或发起子流程");
+        }
+        if (!ApprovalTask.PENDING.equals(task.getStatus())) {
+            throw BizException.badRequest("该节点已处理（" + task.getStatus() + "），不可再操作");
+        }
+        if (!isCurrentNode(task)) {
+            throw BizException.badRequest("前序节点尚未通过，本节点暂不可操作");
+        }
+        boolean isOwner = task.getApproverId() != null && task.getApproverId().equals(actor.getUserId());
+        boolean isAdmin = OrgGuard.hasRole(actor, OrgGuard.ROLE_TENANT_ADMIN)
+                || OrgGuard.hasRole(actor, "ROLE_ADMIN");
+        if (!isOwner && !isAdmin) {
+            throw BizException.forbidden("只有当前审批人或租户 / 平台管理员可以操作该节点");
+        }
+        return task;
+    }
+
+    private String titleOf(Long orderId) {
+        Map<String, Object> o = statMapper.selectApprovalOrder(orderId);
+        return o == null || o.get("title") == null ? ("单据#" + orderId) : String.valueOf(o.get("title"));
+    }
+
     // ================================================================== 流程定义管理
 
     public List<ApprovalFlowDef> listDefs(Long tenantId, Long institutionId) {
@@ -1466,6 +1689,8 @@ public class ApprovalFlowService {
             }
             def.setUpdatedAt(LocalDateTime.now());
             defMapper.updateById(def);
+            // 六期③：每次编辑留一份快照，供版本对比与回溯
+            snapshotDef(def, actor);
             audit.record(tenantId, 0L, actor, "FLOW_DEF_UPDATE", "APPROVAL_FLOW_DEF", def.getId(),
                     "编辑审批流「" + def.getName() + "」", null, def);
             return def;
@@ -1481,9 +1706,165 @@ public class ApprovalFlowService {
         def.setCreatedAt(LocalDateTime.now());
         def.setCreatedBy(actor.getUserId());
         defMapper.insert(def);
+        snapshotDef(def, actor);
         audit.record(tenantId, institutionId, actor, "FLOW_DEF_CREATE", "APPROVAL_FLOW_DEF", def.getId(),
                 "新建审批流「" + def.getName() + "」（" + def.getBizType() + "）", null, def);
         return def;
+    }
+
+    // ================================================================== 六期③：流程模板版本（V60）
+
+    /**
+     * 留一份定义快照，版本号 = 当前最大版本 + 1（首版为 1）。
+     *
+     * <p>存的是<b>保存之后</b>的状态：v1 = 建好时的样子，v2 = 第一次编辑后的样子。
+     * 这样「看 v2 相对 v1 改了什么」就等于「这次编辑改了什么」，符合直觉。</p>
+     */
+    private void snapshotDef(ApprovalFlowDef def, AuthUser actor) {
+        try {
+            Integer max = defVersionMapper.selectMaxVersion(def.getId());
+            ApprovalFlowDefVersion v = new ApprovalFlowDefVersion();
+            v.setTenantId(def.getTenantId());
+            v.setDefId(def.getId());
+            v.setVersion(max == null ? 1 : max + 1);
+            v.setBizType(def.getBizType());
+            v.setInstitutionId(def.getInstitutionId() == null ? 0L : def.getInstitutionId());
+            v.setName(def.getName());
+            v.setStepsJson(def.getStepsJson());
+            v.setStatus(def.getStatus());
+            v.setRemark(def.getRemark());
+            v.setCreatedAt(LocalDateTime.now());
+            v.setCreatedBy(actor == null ? null : actor.getUserId());
+            defVersionMapper.insert(v);
+        } catch (RuntimeException e) {
+            // 快照失败不能拖垮「保存流程」这件事本身：它只是历史记录，不是流程能否运行的条件
+            log.error("流程定义版本快照失败：defId={}", def.getId(), e);
+        }
+    }
+
+    /** 某定义的全部版本（含步骤内容，供对比直接取用）。 */
+    public List<Map<String, Object>> listDefVersions(Long defId, Long tenantId) {
+        ApprovalFlowDef def = defMapper.selectById(defId);
+        if (def == null || !def.getTenantId().equals(tenantId)) {
+            throw BizException.notFound("审批流定义不存在：" + defId);
+        }
+        List<ApprovalFlowDefVersion> rows = defVersionMapper.selectList(
+                new LambdaQueryWrapper<ApprovalFlowDefVersion>()
+                        .eq(ApprovalFlowDefVersion::getDefId, defId)
+                        .orderByAsc(ApprovalFlowDefVersion::getVersion));
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (ApprovalFlowDefVersion v : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("version", v.getVersion());
+            m.put("name", v.getName());
+            m.put("status", v.getStatus());
+            m.put("steps", readSteps(v.getStepsJson()));
+            m.put("createdAt", v.getCreatedAt());
+            m.put("createdBy", v.getCreatedBy());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * 对比同一定义的两个版本。
+     *
+     * <p><b>按 seq 对齐而不是按下标</b>：流程节点顺序由 seq 表达，
+     * 按下标对比会在「中间插了一级」时把后面所有节点都报成「变更」，
+     * 真正的信息（插入了一级）被淹没在噪音里。</p>
+     *
+     * @return {@code {from, to, added, removed, changed, summary}}
+     */
+    public Map<String, Object> diffDefVersions(Long defId, Long tenantId, int from, int to) {
+        List<Map<String, Object>> versions = listDefVersions(defId, tenantId);
+        Map<String, Object> a = versions.stream().filter(v -> Integer.valueOf(from).equals(v.get("version")))
+                .findFirst().orElse(null);
+        Map<String, Object> b = versions.stream().filter(v -> Integer.valueOf(to).equals(v.get("version")))
+                .findFirst().orElse(null);
+        if (a == null || b == null) {
+            throw BizException.notFound("版本不存在：from=" + from + ", to=" + to);
+        }
+        Map<Integer, Map<String, Object>> ma = indexBySeq(a.get("steps"));
+        Map<Integer, Map<String, Object>> mb = indexBySeq(b.get("steps"));
+
+        List<Map<String, Object>> added = new ArrayList<>();
+        List<Map<String, Object>> removed = new ArrayList<>();
+        List<Map<String, Object>> changed = new ArrayList<>();
+        Set<Integer> keys = new TreeSet<>();
+        keys.addAll(ma.keySet());
+        keys.addAll(mb.keySet());
+        for (Integer seq : keys) {
+            Map<String, Object> x = ma.get(seq);
+            Map<String, Object> y = mb.get(seq);
+            if (x == null) {
+                added.add(Map.of("seq", seq, "step", y));
+                continue;
+            }
+            if (y == null) {
+                removed.add(Map.of("seq", seq, "step", x));
+                continue;
+            }
+            for (String f : DIFF_FIELDS) {
+                Object vx = x.get(f);
+                Object vy = y.get(f);
+                if (!Objects.equals(vx, vy)) {
+                    Map<String, Object> c = new LinkedHashMap<>();
+                    c.put("seq", seq);
+                    c.put("field", f);
+                    c.put("from", vx);
+                    c.put("to", vy);
+                    changed.add(c);
+                }
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("defId", defId);
+        out.put("from", from);
+        out.put("to", to);
+        out.put("added", added);
+        out.put("removed", removed);
+        out.put("changed", changed);
+        out.put("summary", "新增 " + added.size() + " 个节点，移除 " + removed.size()
+                + " 个节点，修改 " + changed.size() + " 处字段");
+        return out;
+    }
+
+    /** 版本对比关注的字段：都是「改了会实质影响流转」的配置项。 */
+    private static final List<String> DIFF_FIELDS = List.of(
+            "approver_type", "approver_id", "mode", "levels", "duty_code",
+            "threshold_days", "when", "cc", "institution_id");
+
+    private Map<Integer, Map<String, Object>> indexBySeq(Object steps) {
+        Map<Integer, Map<String, Object>> out = new LinkedHashMap<>();
+        if (!(steps instanceof List<?> list)) {
+            return out;
+        }
+        int i = 0;
+        for (Object o : list) {
+            i++;
+            if (!(o instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : raw.entrySet()) {
+                m.put(String.valueOf(e.getKey()), e.getValue());
+            }
+            int seq = m.get("seq") instanceof Number n ? n.intValue() : i;
+            out.put(seq, m);
+        }
+        return out;
+    }
+
+    private Object readSteps(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, Object.class);
+        } catch (Exception e) {
+            log.warn("流程定义 steps_json 解析失败：{}", e.getMessage());
+            return List.of();
+        }
     }
 
     private String writeSteps(Object steps) {

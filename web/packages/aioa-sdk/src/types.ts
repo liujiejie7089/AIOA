@@ -38,6 +38,18 @@ export interface OpenAssistantOptions {
 export interface CreateBridgeOptions {
   /** 子应用编码 */
   appCode: string
+  /**
+   * 主应用（父窗口）的 origin，postMessage 的 targetOrigin。
+   * 不传则沿用 '*'（调试方便但任何站点都能收到消息）—— 生产环境务必显式配置。
+   */
+  targetOrigin?: string
+  /**
+   * 允许接收其消息的 origin 白名单（校验 event.origin）。
+   * 不传则不做校验（向后兼容），并在首次收到消息时告警一次。
+   */
+  allowedOrigins?: string[]
+  /** getToken 的等待超时（毫秒，默认 3000）。超时按失败抛出，不静默返回 null。 */
+  tokenTimeoutMs?: number
 }
 
 /** 动作负载（主应用派发下来的原始结构） */

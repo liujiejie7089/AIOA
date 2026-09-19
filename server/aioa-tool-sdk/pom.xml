@@ -11,13 +11,24 @@
 
     <artifactId>aioa-tool-sdk</artifactId>
     <name>aioa-tool-sdk</name>
-    <description>子应用接入 SDK 契约（M1 占位，M2 实现）</description>
+    <description>工具接入 SDK 契约：注解声明 + 自动注册（服务内工具，免 HTTP 中转）</description>
 
     <dependencies>
         <dependency>
             <groupId>cn.aioa</groupId>
             <artifactId>aioa-common</artifactId>
             <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- 扫描注解需要 Spring 容器上下文（Bean 枚举 / AOP 目标类判定）。
+             刻意不引 spring-security：SDK 保持领域中立，调用者身份以
+             ToolCallContext 这一朴素载体传入，谁用谁转换。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
     </dependencies>
 </project>

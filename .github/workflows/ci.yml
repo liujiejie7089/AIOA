@@ -1,0 +1,78 @@
+name: CI
+
+# 目标：拦住「编译不过 / 类型不过 / 单测不过」三类问题。
+# 端到端套件需要真实服务与数据库（见 scripts/e2e_*.py），不在 CI 里跑——
+# 它们依赖本机运行态，放进 CI 会变成一堆与代码无关的偶发红。
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Java 后端编译
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: 编译（跳过测试，仅验证可编译）
+        working-directory: server
+        run: ./mvnw -B -DskipTests -q clean package
+      - name: 归档 fat-jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: aioa-boot
+          path: server/aioa-boot/target/aioa-boot-*.jar
+          if-no-files-found: error
+
+  agent:
+    name: Python agent 单测
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./agent
+      - name: pytest
+        working-directory: agent
+        run: python -m pytest -q
+
+  web:
+    name: 前端类型检查与构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # 锁文件是 lockfileVersion 9.0（pnpm 9 生成），pnpm 10 可向下兼容读取
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: 安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: 构建 SDK（shell 的类型解析依赖 dist）
+        working-directory: web
+        run: pnpm --filter @aioa/sdk build
+      - name: 类型检查（少 import 一个常量在页面上是「整页空白」）
+        working-directory: web
+        run: pnpm -r typecheck
+      - name: 构建
+        working-directory: web
+        run: pnpm -r build

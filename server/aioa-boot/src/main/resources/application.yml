@@ -62,8 +62,47 @@ aioa:
   agent:
     base-url: ${AIOA_AGENT_BASE_URL:http://localhost:8000}
   kb:
-    # 知识库存储实现：mysql（默认，LIKE 检索）/ vector（预留，切换向量数据库时启用）
+    # ─── 知识库存储与嵌入（docs/32「向量库重建为 Milvus」）───────────────────────
+    # 存储实现：mysql（默认，切片 + 向量 BLOB + 应用层余弦）/ milvus（向量库 + 原生混合检索）。
+    # 两者互斥装配（@ConditionalOnProperty），业务层（管理端 / 用户端 / agent / 工具网关）零改动。
+    # 注意：store=milvus 时 Milvus 必须在线——连不上则**应用直接启动失败**，不静默降级为空结果。
     store: ${AIOA_KB_STORE:mysql}
+    # 嵌入实现：local（默认，256 维 char n-gram 哈希；零依赖可复现但**无语义**）
+    #           http（复用已有 ollama / vllm 暴露语义向量，需配下面 embedding.* 与 milvus.dims）
+    embedding-provider: ${AIOA_KB_EMBEDDING_PROVIDER:local}
+    # 换 provider / 换模型后置 true 跑一次全量重算（幂等：只处理 provider 或维度不符的切片）。
+    # 不重算的后果是静默的——旧维度向量与新 query 向量余弦恒为 0，检索「不出错但永不命中」。
+    reembed-on-start: ${AIOA_KB_REEMBED_ON_START:false}
+    embedding:
+      # 协议形态：ollama（/api/embeddings 或 /api/embed）/ openai（/v1/embeddings）
+      format: ${AIOA_KB_EMBEDDING_FORMAT:ollama}
+      # 例：Ollama http://localhost:11434/api/embeddings ；vLLM http://localhost:8001/v1/embeddings
+      url: ${AIOA_KB_EMBEDDING_URL:}
+      model: ${AIOA_KB_EMBEDDING_MODEL:bge-small-zh-v1.5}
+      # 必须与 Milvus 集合维度一致（Milvus 集合维度创建后不可改）
+      dims: ${AIOA_KB_EMBEDDING_DIMS:512}
+      timeout-ms: ${AIOA_KB_EMBEDDING_TIMEOUT_MS:15000}
+      # 可选 Bearer 令牌（vLLM 网关常需）
+      api-key: ${AIOA_KB_EMBEDDING_API_KEY:}
+    milvus:
+      # Milvus 单机（compose 里 milvus-standalone 暴露 19530）
+      uri: ${AIOA_MILVUS_URI:http://localhost:19530}
+      token: ${AIOA_MILVUS_TOKEN:}
+      database: ${AIOA_MILVUS_DATABASE:default}
+      # 集合名**带版本后缀**：维度创建后不可改，换嵌入模型必须新建集合（如 kb_chunk_v2）再回填
+      collection: ${AIOA_MILVUS_COLLECTION:kb_chunk_v1}
+      dims: ${AIOA_MILVUS_DIMS:512}
+      metric-type: ${AIOA_MILVUS_METRIC:COSINE}
+      index-type: ${AIOA_MILVUS_INDEX:HNSW}
+      hnsw-m: ${AIOA_MILVUS_HNSW_M:16}
+      hnsw-ef-construction: ${AIOA_MILVUS_HNSW_EF:200}
+      # 原生 BM25（需 Milvus >= 2.5）。建集合失败会自动退回「纯稠密」并在日志告警，
+      # 此时 bm25 / hybrid 的关键词腿改由 MySQL 切片打分兜底（口径与 mysql 档位一致）。
+      enable-bm25: ${AIOA_MILVUS_ENABLE_BM25:true}
+      # 启动时从 kb_chunk 全量回填 Milvus（首次接入 / 索引损坏后重建）
+      backfill-on-start: ${AIOA_MILVUS_BACKFILL:false}
+      timeout-ms: ${AIOA_MILVUS_TIMEOUT_MS:10000}
+      backfill-batch-size: ${AIOA_MILVUS_BATCH:200}
   repo:
     # 代码托管方选择：gitee（默认）/ gitea。
     # 两个实现互斥装配，容器里恰好一个 RepoProviderClient —— 上层按接口注入，切换无需改业务代码。

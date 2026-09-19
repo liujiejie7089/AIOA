@@ -8,10 +8,10 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.core import runtime
+from app.core import multi_task, runtime
 from app.core.events import to_frame
 from app.core.guards import GuardError
-from app.schemas import CompleteRequest, RunRequest, SseEvent
+from app.schemas import CompleteRequest, RunRequest, SseEvent, TaskPlanRequest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("aioa.agent")
@@ -60,6 +60,108 @@ async def create_run(req: RunRequest, request: Request) -> StreamingResponse:
     )
 
 
+@app.post("/internal/v1/tasks")
+async def create_task_plan(req: TaskPlanRequest, request: Request) -> StreamingResponse:
+    """多任务协同：执行一份显式计划（子任务 + 依赖 + 入参引用），响应为 SSE 事件流。
+
+    与 /internal/v1/runs 的区别：runs 由模型逐步决定调什么工具；tasks 由调用方
+    先把计划写出来，运行时只负责「依赖分层 → 同层并发 → 依赖失败则下游跳过」。
+    对应架构第 8 条「主 agent 编排式」的执行侧。
+    """
+    logger.info("task plan %s start: tasks=%d (trace=%s)", req.run_id, len(req.tasks),
+                req.user_context.trace_id)
+
+    async def event_stream():
+        seq = 1
+        try:
+            async for event in multi_task.run(req):
+                seq = event.seq + 1
+                yield to_frame(event)
+        except GuardError as exc:
+            yield to_frame(SseEvent(seq=seq, type="error",
+                                    data={"code": exc.code, "message": exc.message, "retryable": exc.retryable}))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
+                                    data={"reason": exc.message, "error_code": exc.code}))
+        except Exception as exc:
+            logger.exception("task plan %s failed", req.run_id)
+            yield to_frame(SseEvent(seq=seq, type="error",
+                                    data={"code": "INTERNAL_ERROR", "message": str(exc), "retryable": True}))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
+                                    data={"reason": str(exc), "error_code": "INTERNAL_ERROR"}))
+        finally:
+            logger.info("task plan %s finished", req.run_id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/internal/v1/models")
+async def list_models_state() -> dict:
+    """运维/管理端观测：当前注册表状态（密钥只暴露「是否已配置」）。"""
+    from app.model_gateway import configured_providers, current_default_key
+
+    return {"providers": configured_providers(), "default": current_default_key()}
+
+
+@app.post("/internal/v1/models/check")
+async def check_model(payload: dict) -> dict:
+    """连通性校验：用**本进程实际会用的配置**（含管理端推送下来的 Key）打一次最小补全。
+
+    校验必须在持有密钥的一侧做：服务端进程通常没有供应商 Key，由它直接探测会
+    把「服务端没配 Key」误报成「模型连不通」。返回 {ok, message, latency_ms}。
+    """
+    import time
+
+    import httpx
+
+    from app.model_gateway import get_provider
+
+    key = str(payload.get("key") or "").strip().lower()
+    if not key:
+        raise GuardError("BAD_REQUEST", "key 不能为空")
+    provider = get_provider(key)
+    if provider is None:
+        return {"ok": False, "message": f"模型未注册：{key}（请先在管理端保存一次以推送配置）", "latency_ms": 0}
+    if provider.driver == "echo":
+        return {"ok": True, "message": "回声模型为本地兜底实现，无需联网校验", "latency_ms": 0}
+
+    api_key = provider.api_key()
+    if not api_key:
+        return {"ok": False, "latency_ms": 0,
+                "message": f"未配置 API Key：环境变量 {provider.api_key_env} 未设置，且管理端未填写密钥"}
+
+    body: dict = {"model": provider.model, "messages": [{"role": "user", "content": "ping"}],
+                  "max_tokens": 1, "stream": False}
+    started = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client_http:
+            resp = await client_http.post(
+                provider.base_url.rstrip("/") + "/chat/completions",
+                json=body,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            )
+        cost = int((time.time() - started) * 1000)
+        if resp.status_code == 200:
+            return {"ok": True, "message": "连通性校验通过（HTTP 200）", "latency_ms": cost}
+        return {"ok": False, "message": _describe_upstream(resp.status_code, resp.text or ""), "latency_ms": cost}
+    except Exception as exc:  # noqa: BLE001
+        cost = int((time.time() - started) * 1000)
+        return {"ok": False, "message": f"连接失败：{exc}", "latency_ms": cost}
+
+
+def _describe_upstream(status: int, body: str) -> str:
+    detail = " ".join((body or "").split())
+    if len(detail) > 160:
+        detail = detail[:160] + "…"
+    hint = {401: "API Key 无效或无权限", 403: "API Key 无效或无权限",
+            404: "接口地址或模型名不存在（请检查接入地址与模型名）",
+            429: "被供应商限流，请稍后重试"}.get(status, "供应商服务异常" if status >= 500 else "上游拒绝请求")
+    return f"{hint}（HTTP {status}）" + (f"：{detail}" if detail else "")
+
+
 @app.post("/internal/v1/models/apply")
 async def apply_models(payload: dict, request: Request) -> dict:
     """管理端「模型管理」配置热加载：{models:[{key,baseUrl,model,apiKeyEnv,enabled,isDefault}], default}。
@@ -95,12 +197,13 @@ async def complete(req: CompleteRequest) -> dict:
     if req.system:
         messages.append({"role": "system", "content": req.system})
     messages.append({"role": "user", "content": req.prompt})
-    body: dict = {"model": provider.model, "messages": messages, "stream": False, "temperature": 0.3}
-    if req.max_tokens:
-        body["max_tokens"] = req.max_tokens
     async with httpx.AsyncClient(timeout=120) as client_http:
         try:
-            message, usage = await _post_non_stream(client_http, provider, api_key, messages, None)
+            # 温度取模型配置（管理端可配），max_tokens 由调用方显式指定时才下发；
+            # 请求体统一由 _post_non_stream 组装，避免「配了但没发出去」。
+            message, usage = await _post_non_stream(
+                client_http, provider, api_key, messages, None,
+                getattr(provider, "temperature", 0.3) or 0.3, req.max_tokens)
         except UpstreamError as exc:
             return {"content": "", "model": provider.model, "usage": {"prompt_tokens": 0, "completion_tokens": 0},
                     "error": f"模型上游错误：{exc}"}

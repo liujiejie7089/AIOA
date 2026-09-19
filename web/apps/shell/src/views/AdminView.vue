@@ -138,123 +138,6 @@
           />
         </div>
       </el-card>
-
-      <!-- 以下为平台级基线数据与配置，仅系统管理员可见（租户侧无写权限） -->
-      <template v-if="isPlatformAdmin">
-        <el-card shadow="never" class="block">
-          <template #header><span>角色</span></template>
-          <el-table :data="roles" stripe>
-            <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="roleCode" label="角色编码" min-width="160" />
-            <el-table-column prop="roleName" label="角色名称" min-width="160">
-              <template #default="{ row }">{{ row.roleName || '—' }}</template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无角色数据" :image-size="60" />
-            </template>
-          </el-table>
-        </el-card>
-
-        <el-card shadow="never" class="block">
-          <template #header>
-            <div class="card-header">
-              <span>功能管理</span>
-              <el-button text type="primary" size="small" :loading="appsLoading" @click="loadApps">刷新</el-button>
-            </div>
-          </template>
-          <el-alert
-            type="info"
-            :closable="false"
-            show-icon
-            title="启用/禁用与可见范围保存后立即生效：禁用的模块从用户端「我的应用」隐藏；「仅管理员」模块对普通用户不可见。"
-            style="margin-bottom: 10px"
-          />
-          <el-table v-loading="appsLoading" :data="apps" stripe>
-            <el-table-column prop="appCode" label="模块编码" width="120" />
-            <el-table-column prop="name" label="名称" min-width="160" />
-            <el-table-column label="启用" width="90">
-              <template #default="{ row }">
-                <el-switch :model-value="row.enabled" @change="(v: boolean) => saveApp(row, { enabled: v })" />
-              </template>
-            </el-table-column>
-            <el-table-column label="可见范围" width="160">
-              <template #default="{ row }">
-                <el-select
-                  :model-value="row.visibleScope || 'ALL'"
-                  size="small"
-                  @change="(v: 'ALL' | 'ADMIN') => saveApp(row, { visibleScope: v })"
-                >
-                  <el-option label="所有人" value="ALL" />
-                  <el-option label="仅管理员" value="ADMIN" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column prop="hostType" label="类型" width="100" />
-            <template #empty>
-              <el-empty description="暂无功能模块" :image-size="60" />
-            </template>
-          </el-table>
-        </el-card>
-
-        <el-card shadow="never" class="block">
-          <template #header>
-            <div class="card-header">
-              <span>模型管理</span>
-              <div>
-                <el-button text type="primary" size="small" :loading="modelsLoading" @click="loadModels">刷新</el-button>
-                <el-button type="primary" size="small" @click="openModelDialog()">新增模型</el-button>
-              </div>
-            </div>
-          </template>
-          <el-alert
-            type="info"
-            :closable="false"
-            show-icon
-            title="保存/切换默认后自动推送 agent 热加载，无需重启即可生效。默认模型即用户端会话的默认路由。"
-            style="margin-bottom: 10px"
-          />
-          <el-table v-loading="modelsLoading" :data="models" stripe>
-            <el-table-column prop="providerKey" label="标识" width="110" />
-            <el-table-column prop="name" label="名称" min-width="120" />
-            <el-table-column prop="modelName" label="模型" min-width="150" />
-            <el-table-column prop="baseUrl" label="接入地址" min-width="220" show-overflow-tooltip />
-            <el-table-column label="默认" width="80">
-              <template #default="{ row }">
-                <el-tag v-if="row.isDefault" type="success" effect="plain" size="small">默认</el-tag>
-                <el-button v-else text type="primary" size="small" @click="makeDefault(row)">设默认</el-button>
-              </template>
-            </el-table-column>
-            <el-table-column label="启用" width="90">
-              <template #default="{ row }">
-                <el-switch :model-value="row.enabled" @change="(v: boolean) => toggleModel(row, v)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="140" fixed="right">
-              <template #default="{ row }">
-                <el-button text type="primary" size="small" @click="openModelDialog(row)">编辑</el-button>
-                <el-button text type="danger" size="small" @click="removeModel(row)">删除</el-button>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无模型配置" :image-size="60" />
-            </template>
-          </el-table>
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header><span>权限点</span></template>
-          <el-table :data="permissions" stripe>
-            <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="permCode" label="权限编码" min-width="200" />
-            <el-table-column prop="permName" label="权限名称" min-width="200">
-              <template #default="{ row }">{{ row.permName || '—' }}</template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无权限点数据" :image-size="60" />
-            </template>
-          </el-table>
-        </el-card>
-      </template>
     </template>
 
     <!-- 分配角色对话框（仅平台管理员可达） -->
@@ -272,64 +155,30 @@
         <el-button type="primary" :loading="roleDialog.saving" @click="saveRoles">保存</el-button>
       </template>
     </el-dialog>
-
-    <!-- 模型弹窗（仅平台管理员可达） -->
-    <el-dialog v-model="modelDialog.visible" :title="modelDialog.form.id ? '编辑模型' : '新增模型'" width="480px">
-      <el-form label-position="top">
-        <el-form-item label="标识（唯一，如 deepseek）">
-          <el-input v-model="modelDialog.form.providerKey" :disabled="!!modelDialog.form.id" />
-        </el-form-item>
-        <el-form-item label="名称">
-          <el-input v-model="modelDialog.form.name" />
-        </el-form-item>
-        <el-form-item label="接入地址">
-          <el-input v-model="modelDialog.form.baseUrl" />
-        </el-form-item>
-        <el-form-item label="模型名">
-          <el-input v-model="modelDialog.form.modelName" />
-        </el-form-item>
-        <el-form-item label="密钥环境变量名">
-          <el-input v-model="modelDialog.form.apiKeyEnv" />
-        </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="modelDialog.form.enabled" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="modelDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="modelDialog.saving" @click="saveModelForm">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   assignUserRoles,
   changeUserStatus,
-  deleteModel,
-  listAllApps,
-  listModels,
-  listPermissions,
   listPersonnel,
   listRoles,
-  saveModel,
-  setDefaultModel,
-  updateApp,
-  type AppItem,
-  type ModelItem,
   type PersonnelClass,
   type PersonnelMember,
   type PersonnelView,
-  type SysPermission,
   type SysRole,
 } from '@/api/resource'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
-/** 平台级配置（角色/权限点/功能管理/模型管理/写操作）仅系统管理员可见。 */
+/**
+ * 本页只保留「人」相关的能力：名册、账号启停、分配角色。
+ * 原挂在页内的平台级基线配置（角色 / 权限点 → 「权限与安全」；
+ * 功能管理 / 模型管理 → 「系统配置」）已按功能域迁出，见 views/PlatformConfigView.vue。
+ */
 const isPlatformAdmin = computed(() => auth.isPlatformAdmin)
 
 const loading = ref(false)
@@ -402,9 +251,8 @@ async function loadPersonnel() {
   }
 }
 
-// ---------- 平台级：角色分配 / 账号启停 ----------
+// ---------- 角色分配 / 账号启停 ----------
 const roles = ref<SysRole[]>([])
-const permissions = ref<SysPermission[]>([])
 const roleDialog = reactive({
   visible: false,
   saving: false,
@@ -446,125 +294,23 @@ async function toggleStatus(row: PersonnelMember, status: 'ENABLED' | 'DISABLED'
   }
 }
 
-async function loadRolesAndPermissions() {
-  const results = await Promise.allSettled([listRoles(), listPermissions()])
-  const [r, p] = results
-  roles.value = r.status === 'fulfilled' ? r.value || [] : []
-  permissions.value = p.status === 'fulfilled' ? p.value || [] : []
-}
-
-// ---------- 功能管理 ----------
-const apps = ref<AppItem[]>([])
-const appsLoading = ref(false)
-
-async function loadApps() {
-  appsLoading.value = true
+/**
+ * 角色列表只作为「分配角色」对话框的选项来源。
+ *
+ * 后端 `GET /admin/roles` 是 requireAdmin()（仅平台管理员）—— 沿用原口径按
+ * 平台管理员收口，非平台管理员不发这发注定 403 的请求。
+ */
+async function loadRoles() {
   try {
-    apps.value = (await listAllApps()) || []
+    roles.value = (await listRoles()) || []
   } catch {
-    apps.value = []
-  } finally {
-    appsLoading.value = false
-  }
-}
-
-async function saveApp(row: AppItem, patch: { enabled?: boolean; visibleScope?: 'ALL' | 'ADMIN' }) {
-  try {
-    const updated = await updateApp(row.appCode, patch)
-    Object.assign(row, updated)
-    ElMessage.success(`「${row.name}」配置已保存并即时生效`)
-  } catch (e) {
-    ElMessage.error(apiError(e, '保存失败'))
-  }
-}
-
-// ---------- 模型管理 ----------
-const models = ref<ModelItem[]>([])
-const modelsLoading = ref(false)
-const modelDialog = reactive({
-  visible: false,
-  saving: false,
-  form: { id: 0, providerKey: '', name: '', baseUrl: '', modelName: '', apiKeyEnv: '', enabled: true },
-})
-
-async function loadModels() {
-  modelsLoading.value = true
-  try {
-    models.value = (await listModels()) || []
-  } catch {
-    models.value = []
-  } finally {
-    modelsLoading.value = false
-  }
-}
-
-function openModelDialog(row?: ModelItem) {
-  modelDialog.form = row
-    ? {
-        id: row.id,
-        providerKey: row.providerKey,
-        name: row.name,
-        baseUrl: row.baseUrl,
-        modelName: row.modelName,
-        apiKeyEnv: row.apiKeyEnv,
-        enabled: !!row.enabled,
-      }
-    : { id: 0, providerKey: '', name: '', baseUrl: 'https://', modelName: '', apiKeyEnv: 'API_KEY', enabled: true }
-  modelDialog.visible = true
-}
-
-async function saveModelForm() {
-  modelDialog.saving = true
-  try {
-    await saveModel({ ...modelDialog.form })
-    ElMessage.success('模型配置已保存并推送 agent 热加载')
-    modelDialog.visible = false
-    await loadModels()
-  } catch (e) {
-    ElMessage.error(apiError(e, '保存失败'))
-  } finally {
-    modelDialog.saving = false
-  }
-}
-
-async function makeDefault(row: ModelItem) {
-  try {
-    await setDefaultModel(row.providerKey)
-    ElMessage.success(`默认模型已切换为「${row.name}」，立即生效`)
-    await loadModels()
-  } catch (e) {
-    ElMessage.error(apiError(e, '操作失败'))
-  }
-}
-
-async function toggleModel(row: ModelItem, enabled: boolean) {
-  try {
-    await saveModel({ ...row, enabled })
-    await loadModels()
-  } catch (e) {
-    ElMessage.error(apiError(e, '操作失败'))
-  }
-}
-
-async function removeModel(row: ModelItem) {
-  try {
-    await ElMessageBox.confirm(`确认删除模型「${row.name}」？`, '删除确认', { type: 'warning' })
-    await deleteModel(row.providerKey)
-    ElMessage.success('已删除')
-    await loadModels()
-  } catch (e) {
-    if ((e as string) !== 'cancel') ElMessage.error(apiError(e, '删除失败'))
+    roles.value = []
   }
 }
 
 onMounted(() => {
   loadPersonnel()
-  // 平台级卡片对租户侧不可见，也就不必发注定 403 的请求
-  if (isPlatformAdmin.value) {
-    loadRolesAndPermissions()
-    loadApps()
-    loadModels()
-  }
+  if (isPlatformAdmin.value) loadRoles()
 })
 </script>
 

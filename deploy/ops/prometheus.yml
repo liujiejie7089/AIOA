@@ -1,0 +1,42 @@
+# =============================================================================
+# Prometheus 抓取配置
+#
+# 由 docker-compose.yml 的 `prometheus` 服务（profile=ops）挂载到
+# /etc/prometheus/prometheus.yml。**注意：本文件此前不存在**，而 compose 会去挂载它
+# —— 宿主路径缺失时 Docker 会建成一个同名**目录**，Prometheus 因拿不到配置而起不来。
+#
+# 这里只写**当前真实存在的指标端点**，不做「配了但抓不到东西」的假接线：
+#   milvus   http://milvus:9091/metrics   Milvus 2.5 standalone 自带（同端口还有 /healthz 与 /webui/）
+#   etcd     http://etcd:2379/metrics     etcd v3.5 在 client 端口暴露 /metrics
+# 两者只在同时开 `--profile ops --profile milvus` 时存在。
+#
+# 尚未接入（**不要凭想象加 job**）：
+#   `server` / `agent` 的**业务指标**目前抓不到 —— 后端 pom 未引
+#   `micrometer-registry-prometheus`，application.yml 里
+#   `management.endpoints.web.exposure.include` 只有 `health` ⇒ 抓 /actuator/prometheus 只会 404。
+#   接入前置：① 加 micrometer-registry-prometheus 依赖；② 把 `prometheus` 加进 include。
+# =============================================================================
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: milvus
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["milvus:9091"]
+
+  - job_name: etcd
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["etcd:2379"]
+
+  # 前置条件满足后再打开（见文件头「尚未接入」）
+  # - job_name: aioa-server
+  #   metrics_path: /actuator/prometheus
+  #   static_configs:
+  #     - targets: ["server:8080"]
+  # - job_name: aioa-agent
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ["agent:8000"]

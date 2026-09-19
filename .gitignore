@@ -33,6 +33,10 @@ venv/
 .env
 .env.*
 !.env.example
+# 两套环境模板：只含占位值（CHANGE_ME__/DEV_ONLY__），显式入库便于对照与切换。
+# 真实密钥请写 `.env`（上面已忽略）或部署平台 Secret，禁止回填进这两个模板。
+!deploy/.env.development
+!deploy/.env.production
 
 # ---- Local tools / data ----
 .tools/

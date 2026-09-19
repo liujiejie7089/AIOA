@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -62,7 +63,23 @@ public class KbController {
     public record UploadRequest(String name, String icon, Long sizeBytes, String content, String scope) {
     }
 
-    public record HitView(Long docId, String docName, String snippet, Integer chunkIndex) {
+    /** 检索命中：docId/docName/snippet/chunkIndex 为既有字段（前端在用），score 为新增的相似度（可空）。 */
+    public record HitView(Long docId, String docName, String snippet, Integer chunkIndex, Float score) {
+    }
+
+    /**
+     * 诊断：当前知识库档位（存储实现 / 嵌入 provider / 维度）。
+     *
+     * <p>不含任何敏感信息，登录即可读。存在意义有两个：运维排查「到底走的是哪一档」，
+     * 以及 E2E 双跑矩阵（store × mode）据此判断本次跑在哪个档位。</p>
+     */
+    @GetMapping("/store")
+    public ApiResponse<Map<String, Object>> storeInfo() {
+        AuthUserContext.require();
+        return ApiResponse.ok(Map.of(
+                "store", kbService.storeType(),
+                "embeddingProvider", kbService.embeddingProviderName(),
+                "embeddingDims", kbService.embeddingDims()));
     }
 
     @GetMapping("/documents")
@@ -192,17 +209,62 @@ public class KbController {
         return ApiResponse.ok(Map.of("id", id, "deleted", true));
     }
 
-    /** 检索测试（FR-F3 配套）：返回命中的原文片段，验证入库内容可被检索到。 */
+    /**
+     * 检索测试（FR-F3 配套）：返回命中的原文片段，验证入库内容可被检索到。
+     *
+     * <p>2026-09-19（docs/32）新增四个**可选**参数，用于在 mysql / milvus 两档下做同一批用例的双跑对齐
+     * （topK / threshold / mode / kbScope 四个参数在两种实现下语义一致）。不传时行为与改造前**逐字一致**
+     * （等效 mode=bm25、topk=limit、threshold=0、不限范围），存量调用方零影响。</p>
+     *
+     * @param mode      vector / bm25 / hybrid，缺省 bm25（与既有行为一致）
+     * @param topk      返回条数，缺省取 limit
+     * @param threshold 相似度阈值（仅作用于向量召回），缺省 0
+     * @param docScope  知识库范围：逗号分隔的文档 ID，缺省不限
+     */
     @GetMapping("/search")
     public ApiResponse<List<HitView>> search(@RequestParam(name = "q") String q,
-                                             @RequestParam(name = "limit", defaultValue = "5") int limit) {
+                                             @RequestParam(name = "limit", defaultValue = "5") int limit,
+                                             @RequestParam(name = "mode", required = false) String mode,
+                                             @RequestParam(name = "topk", required = false) Integer topk,
+                                             @RequestParam(name = "threshold", required = false) Double threshold,
+                                             @RequestParam(name = "docScope", required = false) String docScope) {
         AuthUser user = AuthUserContext.require();
         if (q == null || q.isBlank()) {
             throw BizException.badRequest("检索词不能为空");
         }
-        List<HitView> hits = kbService.searchMine(user.getTenantId(), user.getUserId(), q.trim(), limit)
-                .stream().map(h -> new HitView(h.docId(), h.docName(), h.snippet(), h.chunkIndex())).toList();
+        List<Long> scopeIds = parseDocScope(docScope);
+        String m = (mode == null || mode.isBlank()) ? "bm25" : mode.trim().toLowerCase();
+        if (!VALID_MODES.contains(m)) {
+            throw BizException.badRequest("mode 只能是 " + VALID_MODES + " 之一，收到：" + mode);
+        }
+        int k = (topk != null && topk > 0) ? topk : Math.max(1, limit);
+        List<HitView> hits = kbService.search(user.getTenantId(), user.getUserId(), q.trim(),
+                        k, threshold == null ? 0.0 : threshold, m, scopeIds)
+                .stream().map(h -> new HitView(h.docId(), h.docName(), h.snippet(), h.chunkIndex(), h.score()))
+                .toList();
         return ApiResponse.ok(hits);
+    }
+
+    private static final List<String> VALID_MODES = List.of("vector", "bm25", "hybrid");
+
+    /** 解析逗号分隔的文档范围；空白一律视为「不限范围」。 */
+    private static List<Long> parseDocScope(String docScope) {
+        if (docScope == null || docScope.isBlank()) {
+            return null;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String part : docScope.split(",")) {
+            String t = part.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            try {
+                ids.add(Long.parseLong(t));
+            } catch (NumberFormatException e) {
+                throw BizException.badRequest("docScope 非法（应为逗号分隔的数字 ID）：" + t);
+            }
+        }
+        return ids.isEmpty() ? null : ids;
     }
 
     private boolean isVisible(AuthUser user, KbDocument doc) {

@@ -2,16 +2,13 @@ package cn.aioa.resource.store;
 
 import cn.aioa.resource.entity.KbChunk;
 import cn.aioa.resource.entity.KbDocument;
-import cn.aioa.resource.mapper.KbChunkMapper;
-import cn.aioa.resource.mapper.KbDocumentMapper;
 import cn.aioa.resource.service.EmbeddingProvider;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,8 +22,13 @@ import java.util.Map;
  * 融合。向量由 {@link EmbeddingProvider} 产出并持久化到 kb_chunk.embedding，
  * 无向量数据（历史切片）时自动退化为纯关键词检索。</p>
  *
- * <p>切换 Elasticsearch：{@code aioa.kb.store=elasticsearch} 启用
- * {@link ElasticKnowledgeStore}，本类自动让位（@ConditionalOnProperty），业务层零改动。</p>
+ * <p>切换 Milvus：{@code aioa.kb.store=milvus} 启用 {@link MilvusKnowledgeStore}，
+ * 本类自动让位（{@code @ConditionalOnProperty}），业务层零改动。</p>
+ *
+ * <p>2026-09-19（docs/32 Ph3）重构：文档/切片/向量落库被抽到 {@link KbRelationalDao}，
+ * 关键词打分抽到 {@link KeywordScorer}，RRF 融合抽到 {@link RrfFusion}——
+ * 目的是让 Milvus 档位的**兜底路径**与本体共用同一套口径，两种 store 的排序才能对齐。
+ * <b>检索行为与重构前逐字等价</b>（同分、同序、同截断）。</p>
  */
 @Slf4j
 @Component
@@ -34,11 +36,10 @@ import java.util.Map;
 @ConditionalOnProperty(name = "aioa.kb.store", havingValue = "mysql", matchIfMissing = true)
 public class MysqlKnowledgeStore implements KnowledgeStore {
 
-    /** RRF 融合常数（Elasticsearch 生产默认）。 */
-    static final double RRF_K = 60.0;
+    /** RRF 融合常数（Elasticsearch 生产默认）。保留常量名以兼容外部引用。 */
+    static final double RRF_K = RrfFusion.RRF_K;
 
-    private final KbDocumentMapper kbDocumentMapper;
-    private final KbChunkMapper kbChunkMapper;
+    private final KbRelationalDao dao;
     private final EmbeddingProvider embeddingProvider;
 
     @Override
@@ -48,75 +49,42 @@ public class MysqlKnowledgeStore implements KnowledgeStore {
 
     @Override
     public KbDocument saveDocument(KbDocument doc) {
-        kbDocumentMapper.insert(doc);
-        return doc;
+        return dao.saveDocument(doc);
     }
 
     @Override
     public KbDocument updateDocument(KbDocument doc) {
-        kbDocumentMapper.updateById(doc);
-        return doc;
+        return dao.updateDocument(doc);
     }
 
     @Override
     public KbDocument findDocById(Long docId) {
-        return docId == null ? null : kbDocumentMapper.selectById(docId);
+        return dao.findDocById(docId);
     }
 
     @Override
     public void deleteDocument(Long docId) {
-        kbChunkMapper.delete(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, docId));
-        kbDocumentMapper.deleteById(docId);
+        dao.deleteDocument(docId);
     }
 
     @Override
     public List<KbDocument> listVisible(Long tenantId, Long userId) {
-        long tid = tenantId == null ? 0L : tenantId;
-        long uid = userId == null ? 0L : userId;
-        return kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
-                .eq(KbDocument::getTenantId, tid)
-                .and(w -> w.eq(KbDocument::getUserId, uid)
-                        .or().eq(KbDocument::getUserId, 0L)
-                        .or().eq(KbDocument::getScope, KbDocument.SCOPE_TENANT))
-                .orderByDesc(KbDocument::getCreatedAt));
+        return dao.listVisible(tenantId, userId);
     }
 
     @Override
     public List<KbDocument> listTenant(Long tenantId) {
-        return kbDocumentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
-                .eq(KbDocument::getTenantId, tenantId == null ? 0L : tenantId)
-                .orderByDesc(KbDocument::getCreatedAt));
+        return dao.listTenant(tenantId);
     }
 
     @Override
     public int replaceChunks(KbDocument doc, List<String> chunks) {
-        // 重跑入库先清旧切片，避免重复命中（幂等）
-        kbChunkMapper.delete(new LambdaQueryWrapper<KbChunk>().eq(KbChunk::getDocId, doc.getId()));
-        int i = 0;
-        for (String c : chunks) {
-            KbChunk chunk = new KbChunk();
-            chunk.setTenantId(doc.getTenantId());
-            chunk.setDocId(doc.getId());
-            chunk.setUserId(doc.getUserId());
-            chunk.setChunkIndex(i++);
-            chunk.setContent(c);
-            chunk.setCreatedAt(LocalDateTime.now());
-            kbChunkMapper.insert(chunk);
-        }
-        return i;
+        return dao.replaceChunks(doc, chunks);
     }
 
     @Override
     public void saveEmbedding(Long chunkId, String content, float[] vector, String provider, int dims) {
-        KbChunk chunk = kbChunkMapper.selectById(chunkId);
-        if (chunk == null) {
-            return;
-        }
-        chunk.setEmbedding(embeddingProvider.toBytes(vector));
-        chunk.setEmbeddingProvider(provider);
-        chunk.setEmbeddingDims(dims);
-        chunk.setEmbeddingAt(LocalDateTime.now());
-        kbChunkMapper.updateById(chunk);
+        dao.saveEmbedding(chunkId, content, vector, provider, dims);
     }
 
     @Override
@@ -125,8 +93,8 @@ public class MysqlKnowledgeStore implements KnowledgeStore {
         long tid = tenantId == null ? 0L : tenantId;
         int max = Math.max(1, topK);
 
-        // 可见文档 + 知识库范围过滤
-        List<Long> visible = listVisible(tid, userId).stream().map(KbDocument::getId).toList();
+        // 可见文档 + 知识库范围过滤（隔离口径来自 KbRelationalDao，与列表接口同源）
+        List<Long> visible = dao.visibleDocIds(tid, userId);
         List<Long> scope = (docIdScope == null || docIdScope.isEmpty()) ? visible
                 : docIdScope.stream().filter(visible::contains).toList();
         if (scope.isEmpty()) {
@@ -137,12 +105,10 @@ public class MysqlKnowledgeStore implements KnowledgeStore {
         boolean wantVector = "vector".equals(m) || "hybrid".equals(m);
         boolean wantBm25 = "bm25".equals(m) || "hybrid".equals(m);
 
-        List<KbChunk> candidates = kbChunkMapper.selectList(new LambdaQueryWrapper<KbChunk>()
-                .eq(KbChunk::getTenantId, tid)
-                .in(KbChunk::getDocId, scope));
+        List<KbChunk> candidates = dao.chunksOfDocs(tid, scope);
 
         // 双路打分
-        Map<Long, Double> bm25Score = wantBm25 ? bm25(candidates, query) : Map.of();
+        Map<Long, Double> bm25Score = wantBm25 ? KeywordScorer.score(candidates, query) : Map.of();
         Map<Long, Double> vecScore = new HashMap<>();
         if (wantVector && queryVec != null) {
             for (KbChunk c : candidates) {
@@ -158,98 +124,46 @@ public class MysqlKnowledgeStore implements KnowledgeStore {
         }
 
         // RRF 融合：只按排名融合，规避关键词分与向量分数量纲不一致
-        Map<Long, Double> fused = new HashMap<>();
-        addRrf(fused, rankBy(bm25Score));
-        addRrf(fused, rankBy(vecScore));
+        Map<Long, Double> fused = RrfFusion.fuse(List.of(bm25Score, vecScore));
+
+        Map<Long, KbChunk> byId = new HashMap<>();
+        for (KbChunk c : candidates) {
+            byId.put(c.getId(), c);
+        }
 
         // 组装命中并按融合分降序、截断
-        List<KbHit> hits = new ArrayList<>();
+        List<Map.Entry<Long, KbHit>> ordered = new ArrayList<>();
         for (Map.Entry<Long, Double> e : fused.entrySet()) {
-            KbChunk c = candidates.stream().filter(x -> x.getId().equals(e.getKey())).findFirst().orElse(null);
+            KbChunk c = byId.get(e.getKey());
             if (c == null) {
                 continue;
             }
-            KbDocument doc = kbDocumentMapper.selectById(c.getDocId());
+            KbDocument doc = dao.findDocById(c.getDocId());
             if (doc == null) {
                 continue;
             }
             Double vec = vecScore.get(c.getId());
-            hits.add(new KbHit(doc.getId(), doc.getDocName(), c.getContent(), c.getChunkIndex(),
-                    vec == null ? null : vec.floatValue()));
+            KbHit hit = new KbHit(doc.getId(), doc.getDocName(), c.getContent(), c.getChunkIndex(),
+                    vec == null ? null : vec.floatValue());
+            ordered.add(new AbstractMap.SimpleEntry<>(c.getId(), hit));
         }
-        hits.sort((a, b) -> {
-            double sa = fused.getOrDefault(chunkIdOf(a, candidates), 0.0);
-            double sb = fused.getOrDefault(chunkIdOf(b, candidates), 0.0);
-            return Double.compare(sb, sa);
-        });
-        return hits.size() > max ? new ArrayList<>(hits.subList(0, max)) : hits;
-    }
+        ordered.sort((a, b) -> Double.compare(
+                fused.getOrDefault(b.getKey(), 0.0),
+                fused.getOrDefault(a.getKey(), 0.0)));
 
-    private Long chunkIdOf(KbHit hit, List<KbChunk> candidates) {
-        return candidates.stream()
-                .filter(x -> x.getDocId().equals(hit.docId())
-                        && Integer.valueOf(x.getChunkIndex()).equals(hit.chunkIndex()))
-                .map(KbChunk::getId).findFirst().orElse(null);
+        List<KbHit> hits = new ArrayList<>(ordered.size());
+        for (Map.Entry<Long, KbHit> e : ordered) {
+            if (hits.size() >= max) {
+                break;
+            }
+            hits.add(e.getValue());
+        }
+        return hits;
     }
 
     @Override
     public List<KbHit> search(Long tenantId, Long userId, String keyword, int limit) {
         return search(tenantId, userId, keyword, embeddingProvider.embed(keyword),
                 limit, 0.0, "bm25", null);
-    }
-
-    // ---------- 打分与融合 ----------
-
-    /** 关键词打分：查询词 n-gram 在切片中的覆盖率（近似 BM25 的轻量版，可复现）。 */
-    private Map<Long, Double> bm25(List<KbChunk> chunks, String query) {
-        Map<Long, Double> out = new HashMap<>();
-        if (query == null || query.isBlank()) {
-            return out;
-        }
-        List<String> qgrams = ngrams(query);
-        if (qgrams.isEmpty()) {
-            return out;
-        }
-        for (KbChunk c : chunks) {
-            String content = c.getContent() == null ? "" : c.getContent();
-            int hit = 0;
-            for (String g : qgrams) {
-                if (content.contains(g)) {
-                    hit++;
-                }
-            }
-            if (hit > 0) {
-                out.put(c.getId(), (double) hit / qgrams.size() * (1.0 + Math.log1p(hit)));
-            }
-        }
-        return out;
-    }
-
-    private static List<String> ngrams(String s) {
-        List<String> out = new ArrayList<>();
-        String t = s.trim();
-        if (t.length() <= 2) {
-            if (!t.isEmpty()) {
-                out.add(t);
-            }
-            return out;
-        }
-        for (int i = 0; i + 2 <= t.length(); i++) {
-            out.add(t.substring(i, i + 2));
-        }
-        return out;
-    }
-
-    private static List<Long> rankBy(Map<Long, Double> scores) {
-        return scores.entrySet().stream()
-                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                .map(Map.Entry::getKey)
-                .toList();
-    }
-
-    private static void addRrf(Map<Long, Double> fused, List<Long> ranked) {
-        for (int i = 0; i < ranked.size(); i++) {
-            fused.merge(ranked.get(i), 1.0 / (RRF_K + i + 1), Double::sum);
-        }
     }
 }

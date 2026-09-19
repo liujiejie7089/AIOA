@@ -180,9 +180,21 @@ public interface OrgStatMapper {
             + "o.applicant_type AS applicantType, o.applicant_department_id AS applicantDepartmentId, "
             + "(SELECT d.name FROM org_department d WHERE d.id = o.applicant_department_id) AS applicantDepartmentName, "
             + "o.biz_type AS bizType, o.title, o.content, o.form_data AS formData, o.attachment, o.status, "
-            + "o.approver, o.decision_note AS decisionNote, o.decided_at AS decidedAt, o.created_at AS createdAt "
+            + "o.approver, o.decision_note AS decisionNote, o.decided_at AS decidedAt, o.created_at AS createdAt, "
+            + "o.parent_order_id AS parentOrderId, o.parent_task_id AS parentTaskId "
             + "FROM approval_order o WHERE o.deleted_at IS NULL AND o.id = #{id} LIMIT 1")
     Map<String, Object> selectApprovalOrder(@Param("id") Long id);
+
+    /**
+     * 子流程回指父单据 —— 六期（V60）。
+     *
+     * <p>为什么不在 insert 时带上：子单据是复用既有 {@code submit()} 建出来的，
+     * 那一条链路不该为一个调用方多带两个参数。建完再回指，父链路零改动。</p>
+     */
+    @Update("UPDATE approval_order SET parent_order_id = #{parentOrderId}, parent_task_id = #{parentTaskId}, "
+            + "updated_at = NOW(6) WHERE id = #{id}")
+    int updateApprovalOrderParent(@Param("id") Long id, @Param("parentOrderId") Long parentOrderId,
+                                  @Param("parentTaskId") Long parentTaskId);
 
     @Select("<script>SELECT id, tenant_id AS tenantId, user_id AS userId, "
             + "applicant_name AS applicantName, biz_type AS bizType, title, status, "

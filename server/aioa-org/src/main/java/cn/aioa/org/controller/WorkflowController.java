@@ -127,6 +127,67 @@ public class WorkflowController {
         return ApiResponse.ok(flowService.timeline(orderId));
     }
 
+    // ================================================================== 六期：加签 / 子流程（V60）
+
+    /**
+     * 加签：审批过程中临时插入一个审批人。
+     *
+     * <p>body：{@code {type: "BEFORE"|"AFTER", userId: 123, reason: "…"}}。
+     * BEFORE = 加签人先批（前加签）；AFTER = 当前人批完再交给加签人（后加签）。</p>
+     */
+    @PostMapping("/workflow/tasks/{id}/add-sign")
+    public ApiResponse<Map<String, Object>> addSign(@PathVariable Long id,
+                                                    @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireApprover();
+        Map<String, Object> b = body == null ? Map.of() : body;
+        Long userId = b.get("userId") instanceof Number n ? n.longValue() : null;
+        String type = b.get("type") == null ? "AFTER" : String.valueOf(b.get("type"));
+        String reason = b.get("reason") == null ? null : String.valueOf(b.get("reason"));
+        return ApiResponse.ok(flowService.addSign(id, u, type, userId, reason));
+    }
+
+    /**
+     * 发起子流程：由当前节点派生一张子单据，父节点等子单据出结论后自动推进。
+     *
+     * <p>body：{@code {bizType, title, content, approverId?}}。</p>
+     */
+    @PostMapping("/workflow/tasks/{id}/sub-flow")
+    public ApiResponse<Map<String, Object>> startSubFlow(@PathVariable Long id,
+                                                         @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireApprover();
+        Map<String, Object> b = body == null ? Map.of() : body;
+        Long approverId = b.get("approverId") instanceof Number n ? n.longValue() : null;
+        return ApiResponse.ok(flowService.startSubFlow(id, u,
+                new ApprovalFlowService.SubFlowReq(
+                        b.get("bizType") == null ? null : String.valueOf(b.get("bizType")),
+                        b.get("title") == null ? null : String.valueOf(b.get("title")),
+                        b.get("content") == null ? null : String.valueOf(b.get("content")),
+                        approverId)));
+    }
+
+    // ================================================================== 六期：流程模板版本（V60）
+
+    /** 某流程定义的全部版本快照（含各版步骤内容）。 */
+    @GetMapping("/workflow/defs/{id}/versions")
+    public ApiResponse<List<Map<String, Object>>> defVersions(@PathVariable Long id) {
+        AuthUser u = guard.requireOrgUser();
+        return ApiResponse.ok(flowService.listDefVersions(id, u.getTenantId()));
+    }
+
+    /**
+     * 对比同一流程定义的两个版本。
+     *
+     * @return {@code {added, removed, changed, summary}}；按节点 seq 对齐，
+     *         而不是按下标 —— 否则「中间插了一级」会把后面所有节点都报成变更。
+     */
+    @GetMapping("/workflow/defs/{id}/versions/diff")
+    public ApiResponse<Map<String, Object>> diffDefVersions(@PathVariable Long id,
+                                                            @RequestParam int from,
+                                                            @RequestParam int to) {
+        AuthUser u = guard.requireOrgUser();
+        return ApiResponse.ok(flowService.diffDefVersions(id, u.getTenantId(), from, to));
+    }
+
     /**
      * 标记知会（抄送）条目为已读 —— 三期 C-04。
      *

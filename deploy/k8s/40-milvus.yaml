@@ -1,0 +1,295 @@
+# =============================================================================
+# 向量库 Milvus 单机栈（可选；对应 deploy/docker-compose.yml 的 profile=milvus）
+#
+# 三个组件 + 三个 PVC，与 compose 版**同镜像 tag、同服务名、同环境变量**，
+# 因此 server 侧切换只需把 AIOA_KB_STORE 从 mysql 改成 milvus，其余键一字不改：
+#   etcd         元数据（Milvus 用它存集合/分区/索引元数据）
+#   milvus-minio 段文件对象存储（与业务 MinIO 分开，避免 access key 口径与桶混用）
+#   milvus       standalone（19530=gRPC 端口；9091=healthz/metrics + 自带 WebUI）
+#
+# ⚠️ 切换前必读（与 docs/32 口径一致）：
+#   1. server 侧 AIOA_KB_STORE=milvus 时 **Milvus 必须在线**，否则应用直接启动失败
+#      （决策 D6 fail-fast：宁可起不来，也不要静默返回空结果）。
+#   2. 集合维度**创建后不可改**：换嵌入模型（AIOA_KB_EMBEDDING_MODEL）或改
+#      AIOA_KB_EMBEDDING_DIMS / AIOA_MILVUS_DIMS 时，必须同时换集合名（如 kb_chunk_v2）再回填。
+#   3. 三个 PVC 都是**可丢的**：索引任何时刻可从 MySQL kb_chunk 重建
+#      （一次性开 AIOA_MILVUS_BACKFILL=true）。
+#   4. 首次切换前先补齐切片向量（AIOA_KB_REEMBED_ON_START=true 跑一次），否则表现为
+#      「切过去了但搜不到」——存量切片里只有一部分有向量。
+#   5. 本清单与同目录其余清单**一并未经真机集群验证**（见 README 顶部）：
+#      storageClassName、资源配额、镜像仓库地址需按目标集群调整。
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: etcd-data
+  namespace: aioa
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName: <按目标集群填>    # 不填即用集群默认 StorageClass
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd
+  namespace: aioa
+  labels:
+    app: etcd
+    app.kubernetes.io/part-of: aioa
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # 单机 etcd：数据目录独占，禁止滚动并行
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+        - name: etcd
+          image: quay.io/coreos/etcd:v3.5.18
+          imagePullPolicy: IfNotPresent
+          command:
+            - etcd
+            - -advertise-client-urls=http://etcd:2379
+            - -listen-client-urls=http://0.0.0.0:2379
+            - --data-dir
+            - /etcd
+          env:
+            # 与 compose 完全一致：自动压缩 + 配额，避免元数据无限增长把磁盘吃满
+            - name: ETCD_AUTO_COMPACTION_MODE
+              value: "revision"
+            - name: ETCD_AUTO_COMPACTION_RETENTION
+              value: "1000"
+            - name: ETCD_QUOTA_BACKEND_BYTES
+              value: "4294967296"
+            - name: ETCD_SNAPSHOT_COUNT
+              value: "50000"
+          ports:
+            - name: client
+              containerPort: 2379
+          readinessProbe:
+            exec:
+              command: ["etcdctl", "endpoint", "health"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["etcdctl", "endpoint", "health"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+          volumeMounts:
+            - name: data
+              mountPath: /etcd
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: etcd-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd
+  namespace: aioa
+spec:
+  selector:
+    app: etcd
+  ports:
+    - name: client
+      port: 2379
+      targetPort: 2379
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-minio-data
+  namespace: aioa
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName: <按目标集群填>
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus-minio
+  namespace: aioa
+  labels:
+    app: milvus-minio
+    app.kubernetes.io/part-of: aioa
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: milvus-minio
+  template:
+    metadata:
+      labels:
+        app: milvus-minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+          imagePullPolicy: IfNotPresent
+          command: ["minio", "server", "/minio_data", "--console-address", ":9001"]
+          env:
+            # 与官方 Milvus standalone compose 同口径（Milvus 侧默认就用 minioadmin/minioadmin，
+            # 两边必须一致）。本 Service 是 ClusterIP、不经 Ingress 暴露，属于集群内网隔离。
+            # ⚠️ 若要改这两个值：Milvus Deployment 必须**同时**加
+            #    MINIO_ACCESS_KEY_ID / MINIO_SECRET_ACCESS_KEY，否则 Milvus 连不上 MinIO。
+            - name: MINIO_ACCESS_KEY
+              value: "minioadmin"
+            - name: MINIO_SECRET_KEY
+              value: "minioadmin"
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          readinessProbe:
+            httpGet: { path: /minio/health/live, port: 9000 }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 5
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1",    memory: "2Gi" }
+          volumeMounts:
+            - name: data
+              mountPath: /minio_data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: milvus-minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: milvus-minio
+  namespace: aioa
+spec:
+  selector:
+    app: milvus-minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-data
+  namespace: aioa
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName: <按目标集群填>
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus
+  namespace: aioa
+  labels:
+    app: milvus
+    app.kubernetes.io/part-of: aioa
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # standalone 模式只允许单副本
+  selector:
+    matchLabels:
+      app: milvus
+  template:
+    metadata:
+      labels:
+        app: milvus
+    spec:
+      # 官方镜像要求：Milvus 依赖的一些系统调用在默认 seccomp 下会被拒（与 compose 的
+      # security_opt: seccomp:unconfined 等价）。集群策略若禁止 Unconfined，需改用自定义 profile。
+      securityContext:
+        seccompProfile:
+          type: Unconfined
+      containers:
+        - name: milvus
+          # 与 compose 同 tag：2.5.x 起有原生 BM25 Function + hybrid_search，RocksMQ 内嵌。
+          # 升 2.6.x 只需改这里（2.6 默认消息队列换 Woodpecker，仍复用同一个 MinIO）。
+          image: milvusdb/milvus:v2.5.3
+          imagePullPolicy: IfNotPresent
+          command: ["milvus", "run", "standalone"]
+          env:
+            - name: ETCD_ENDPOINTS
+              value: "etcd:2379"
+            - name: MINIO_ADDRESS
+              value: "milvus-minio:9000"
+            - name: MINIO_REGION
+              value: "us-east-1"
+            - name: TZ
+              value: "Asia/Shanghai"
+          ports:
+            - name: grpc
+              containerPort: 19530      # server 侧 AIOA_MILVUS_URI=http://milvus:19530
+            - name: http
+              containerPort: 9091       # healthz / metrics / WebUI
+          # 首次启动要建集合与加载，给足冷启动时间；否则会被反复重启
+          readinessProbe:
+            httpGet: { path: /healthz, port: 9091 }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: 9091 }
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: "1", memory: "2Gi" }
+            limits:   { cpu: "2", memory: "4Gi" }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/milvus
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: milvus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: milvus
+  namespace: aioa
+spec:
+  selector:
+    app: milvus
+  ports:
+    - name: grpc
+      port: 19530
+      targetPort: 19530
+    - name: http
+      port: 9091
+      targetPort: 9091
+  type: ClusterIP

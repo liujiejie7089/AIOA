@@ -37,7 +37,7 @@ export const ORG_VIEW_ROLES: readonly string[] = [
 export const PLATFORM_ONLY_ROLES: readonly string[] = [ROLE.ADMIN]
 
 /**
- * 人员管理可见范围（系统管理 → 人员管理）。
+ * 人员管理可见范围（组织与员工 → 人员管理）。
  *
  * <p>与后端 {@code AdminController#personnel} 共用同一口径：四级管理者可读，
  * 数据范围由后端按调用者档位收窄（平台=全平台 / 租户=本租户 / 机构=本机构 / 部门=本部门）。

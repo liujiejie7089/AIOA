@@ -82,6 +82,9 @@ public class RunService {
     /** 传给 Agent 的最大历史轮数（FR-C2 多轮会话）。 */
     private static final int HISTORY_TURNS = 10;
 
+    /** 单份多任务计划的子任务上限（与 agent 侧 MAX_SUBTASKS 对齐，Java 侧先拦一次，快速失败）。 */
+    private static final int MAX_PLAN_TASKS = 50;
+
     /**
      * 发起一轮对话：额度准入（FR-B2）→ 输入内容审核（FR-H3）→ 落 user 消息 +
      * 创建 agent_run（RUNNING），返回 runId。
@@ -253,6 +256,98 @@ public class RunService {
         } catch (Exception e) {
             log.error("subscribe agent run {} failed", runId, e);
             markFailed(run, e.getMessage());
+            safeSend(emitter, EVENT_ERROR, lastId.get(), errorJson(e));
+            cleanup.run();
+            emitter.completeWithError(e);
+        }
+        return emitter;
+    }
+
+    /**
+     * 多任务协同：把一份显式计划（子任务 + 依赖）交给 Agent 编排器执行，逐帧转发事件流。
+     *
+     * 与 {@link #subscribe} 的区别：subscribe 是一次「对话 run」（模型逐步决定调什么工具，
+     * 落 agent_run / 计费 / 内容审核）；本方法是**计划执行**——步骤与依赖由调用方给定，
+     * 不进会话、不消耗词元（没有模型推理），因此不落 agent_run、不做额度准入。
+     *
+     * 身份与权限：透传发起方用户 token，Agent 侧以该用户身份调业务工具网关，
+     * 工具权限 = 用户权限（Agent 侧不做二次授权）。
+     */
+    public SseEmitter runTasks(Map<String, Object> body, String authorization) {
+        AuthUser user = AuthUserContext.require();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> tasks = body == null ? null : (List<Map<String, Object>>) body.get("tasks");
+        if (tasks == null || tasks.isEmpty()) {
+            throw BizException.badRequest("tasks 不能为空");
+        }
+        if (tasks.size() > MAX_PLAN_TASKS) {
+            throw BizException.badRequest("子任务过多：" + tasks.size() + " > " + MAX_PLAN_TASKS);
+        }
+
+        // run_id 由调用方给定则沿用：SSE 断线重连时浏览器会用同一份 body 重发，
+        // Agent 侧据此命中回放缓存，避免把整份计划（可能有副作用）再执行一遍。
+        Object givenRunId = body.get("runId");
+        String runId = givenRunId instanceof String s && !s.isBlank() ? s : newRunId();
+        Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("run_id", runId);
+        request.put("conversation_id", body.get("conversationId"));
+        // 无 Authorization 时不下发 token：Agent 侧会以「缺少用户凭证」拒绝全部任务，
+        // 而不是匿名调用业务工具（工具权限 = 用户权限）。
+        request.put("user_token", authorization == null ? null : stripBearer(authorization));
+        Map<String, Object> userContext = new java.util.LinkedHashMap<>();
+        userContext.put("user_id", user.getUserId());
+        userContext.put("tenant_id", user.getTenantId() == null ? 0L : user.getTenantId());
+        userContext.put("username", user.getUsername());
+        userContext.put("roles", user.getRoles() == null ? List.of() : user.getRoles());
+        userContext.put("trace_id", TraceId.get());
+        request.put("user_context", userContext);
+        request.put("tasks", tasks);
+        if (body.get("maxConcurrency") != null) {
+            request.put("max_concurrency", body.get("maxConcurrency"));
+        }
+
+        SseEmitter emitter = new SseEmitter(0L);
+        AtomicReference<String> lastId = new AtomicReference<>(null);
+        Disposable[] subscription = new Disposable[1];
+        Runnable cleanup = () -> {
+            if (subscription[0] != null) {
+                subscription[0].dispose();
+            }
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(thrown -> cleanup.run());
+        try {
+            subscription[0] = agentWebClient.post()
+                    .uri("/internal/v1/tasks")
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(HttpHeaders.AUTHORIZATION,
+                            "Bearer " + serviceTokenProvider.generate(ServiceTokenProvider.SVC_SERVER))
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToFlux(SSE_TYPE)
+                    .subscribe(
+                            event -> {
+                                String name = event.event() == null ? "message" : event.event();
+                                if (event.id() != null) {
+                                    lastId.set(event.id());
+                                }
+                                safeSend(emitter, name, event.id(),
+                                        event.data() == null ? "" : event.data());
+                            },
+                            error -> {
+                                log.warn("agent task plan {} failed: {}", runId, error.getMessage());
+                                safeSend(emitter, EVENT_ERROR, lastId.get(), errorJson(error));
+                                cleanup.run();
+                                emitter.completeWithError(error);
+                            },
+                            () -> {
+                                cleanup.run();
+                                emitter.complete();
+                            });
+        } catch (Exception e) {
+            log.error("subscribe agent task plan {} failed", runId, e);
             safeSend(emitter, EVENT_ERROR, lastId.get(), errorJson(e));
             cleanup.run();
             emitter.completeWithError(e);

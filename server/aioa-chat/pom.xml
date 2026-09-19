@@ -36,6 +36,13 @@
             <artifactId>aioa-org</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
+        <!-- 工具桥接需要「工具域」与「审批域」同时可见：bridge 只定义
+             ToolApprovalGateway，由本模块实现（bridge 不反向依赖 chat/org，无循环）。 -->
+        <dependency>
+            <groupId>cn.aioa</groupId>
+            <artifactId>aioa-bridge</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>

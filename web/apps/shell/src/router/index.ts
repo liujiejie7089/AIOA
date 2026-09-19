@@ -90,20 +90,53 @@ const routes: RouteRecordRaw[] = [
         path: 'org-structure',
         name: 'org-structure',
         component: () => import('@/views/OrgAdminView.vue'),
-        // 合并「组织与员工」与「人员管理 / 系统管理」为单页双页签，菜单只保留一个入口。
-        // 本路由是合并后的**正式入口**：部门树 / 员工名册对机构成员开放（ORG_VIEW_ROLES）；
-        // 「人员管理」页签由 OrgAdminView 内部再按 PERSONNEL_VIEW_ROLES 收起。
+        // 「组织与部门」：部门树 / 员工名册对机构成员开放（ORG_VIEW_ROLES）。
+        // 与 /admin 指向同一组件（OrgAdminView 双页签容器），由入口路由决定默认落在哪个页签；
+        // 页签本身仍按 PERSONNEL_VIEW_ROLES 收起，深链进来也不会越过权限边界。
         meta: { title: '组织与员工', allowRoles: ORG_VIEW_ROLES }
       },
       {
-        // 旧深链 /admin 保留为**独立路由**而不是 alias：
-        // alias 会继承本路由的 allowRoles（含 ROLE_MEMBER），普通成员深链 /admin 就不再被拦截，
-        // 等于顺手放宽了人员管理的边界。这里沿用原口径 PERSONNEL_VIEW_ROLES，
-        // 使「合并菜单」与「谁能进人员管理」两件事互不牵连。
+        // 「人员管理」从 /org-structure 的页签提升为独立菜单项（组织与员工 → 人员管理）。
+        // 保留为**独立路由**而不是 alias：
+        // alias 会继承 /org-structure 的 allowRoles（含 ROLE_MEMBER），普通成员深链 /admin
+        // 就不再被拦截，等于顺手放宽了人员管理的边界。这里沿用原口径 PERSONNEL_VIEW_ROLES，
+        // 使「菜单怎么摆」与「谁能进人员管理」两件事互不牵连。
         path: 'admin',
         name: 'admin',
         component: () => import('@/views/OrgAdminView.vue'),
         meta: { title: '人员管理', allowRoles: PERSONNEL_VIEW_ROLES }
+      },
+      /*
+        平台级基线配置：原「人员管理」页内的卡片，管的是平台级基线数据与系统配置，
+        与「员工 / 账号」没有从属关系，故从人员页拆出。按功能域分两处落菜单：
+          · /sys-roles（角色）、/sys-permissions（权限点） → 「权限与安全」
+          · /sys-apps（功能管理）、/sys-models（模型管理） → 「系统配置」
+        四条路由共用 PlatformConfigView，靠 meta.section 决定渲染哪一块；
+        path 与菜单 index 一一对应，可见范围沿用后端 requireAdmin() = PLATFORM_ONLY_ROLES。
+      */
+      {
+        path: 'sys-roles',
+        name: 'sys-roles',
+        component: () => import('@/views/PlatformConfigView.vue'),
+        meta: { title: '角色', section: 'roles', allowRoles: PLATFORM_ONLY_ROLES }
+      },
+      {
+        path: 'sys-apps',
+        name: 'sys-apps',
+        component: () => import('@/views/PlatformConfigView.vue'),
+        meta: { title: '功能管理', section: 'apps', allowRoles: PLATFORM_ONLY_ROLES }
+      },
+      {
+        path: 'sys-models',
+        name: 'sys-models',
+        component: () => import('@/views/PlatformConfigView.vue'),
+        meta: { title: '模型管理', section: 'models', allowRoles: PLATFORM_ONLY_ROLES }
+      },
+      {
+        path: 'sys-permissions',
+        name: 'sys-permissions',
+        component: () => import('@/views/PlatformConfigView.vue'),
+        meta: { title: '权限点', section: 'permissions', allowRoles: PLATFORM_ONLY_ROLES }
       },
       {
         path: 'resource-grants',

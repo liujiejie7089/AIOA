@@ -50,6 +50,15 @@ class Settings(BaseModel):
     # 默认模型引用，对应 model_gateway 注册表中的 key（echo/deepseek/dashscope/vllm/ollama）
     model_default: str = Field(default="echo", alias="MODEL_DEFAULT")
 
+    # 决策轮是否走上游 SSE 流式（True=真实增量直出；False=非流式取回后本地切片）
+    agent_stream: bool = Field(default=True, alias="AGENT_STREAM")
+
+    # 一轮内多个工具调用是否并发执行（依赖由模型给出的顺序决定，彼此独立时收益最大）
+    agent_parallel_tools: bool = Field(default=True, alias="AGENT_PARALLEL_TOOLS")
+
+    # 一轮内并发执行的上限（与编排器同义，防止一次把业务网关打满）
+    agent_max_concurrency: int = Field(default=4, alias="AGENT_MAX_CONCURRENCY")
+
     # 数据库（M2+ 持久化会话/审批），M1 不连接
     pg_dsn: str = Field(default="", alias="PG_DSN")
 
@@ -65,6 +74,9 @@ def _load() -> Settings:
             "SERVICE_JWT_SECRET": os.getenv("SERVICE_JWT_SECRET", ""),
             "AIOA_SERVER_BASE_URL": os.getenv("AIOA_SERVER_BASE_URL", "http://aioa-server:8080"),
             "MODEL_DEFAULT": os.getenv("MODEL_DEFAULT", "echo"),
+            "AGENT_STREAM": os.getenv("AGENT_STREAM", "true"),
+            "AGENT_PARALLEL_TOOLS": os.getenv("AGENT_PARALLEL_TOOLS", "true"),
+            "AGENT_MAX_CONCURRENCY": os.getenv("AGENT_MAX_CONCURRENCY", "4"),
             "PG_DSN": os.getenv("PG_DSN", ""),
             "HOST": os.getenv("HOST", "0.0.0.0"),
             "PORT": os.getenv("PORT", "8000"),

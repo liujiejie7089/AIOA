@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="ThMI8PbiID33rUX3fO8mF4">
+<head data-page-node-id="SB7ZqdgQtBfwRbUlAsAc9H">
+<meta charset="UTF-8" data-page-node-id="PCuARdEE4tQsypxiVopxPG">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="EAz0CqJbif6h7CR7dO2M3z">
+<title>AIOA 模块开发进度与完善度报告</title>
+<style>
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --ink:#1f2733; --sub:#667085; --line:#e6eaf0;
+    --ok:#12a150; --warn:#e8a20c; --bad:#e5484d; --accent:#2f6fed; --accent2:#7c5cff;
+    --track:#eef1f6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:22px;margin:0 0 4px}
+  .meta{color:var(--sub);font-size:12.5px;margin-bottom:22px}
+  h2{font-size:16px;margin:34px 0 12px;padding-left:10px;border-left:4px solid var(--accent)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .card .k{font-size:12.5px;color:var(--sub)}
+  .card .v{font-size:30px;font-weight:700;margin-top:4px;letter-spacing:-.5px}
+  .card .d{font-size:12px;color:var(--sub);margin-top:2px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 4px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{background:#fafbfd;color:var(--sub);font-weight:600;font-size:12px;letter-spacing:.02em}
+  tr:last-child td{border-bottom:none}
+  .bar{position:relative;height:20px;border-radius:6px;background:var(--track);min-width:120px;overflow:hidden}
+  .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+  .bar span{position:absolute;right:7px;top:0;line-height:20px;font-size:11.5px;color:var(--ink);font-weight:600}
+  .num{font-variant-numeric:tabular-nums;font-weight:600}
+  .tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;font-weight:600;line-height:18px}
+  .t-ok{background:#e7f7ee;color:#0b7a3b}
+  .t-warn{background:#fdf4e3;color:#96650a}
+  .t-bad{background:#fdeaea;color:#b42318}
+  .t-info{background:#eaf1ff;color:#1f4fd0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  ul.clean{margin:6px 0 0;padding-left:18px}
+  ul.clean li{margin:5px 0}
+  .kv{font-size:13px}
+  .kv b{color:var(--accent)}
+  .legend{font-size:12px;color:var(--sub);margin:8px 2px 0}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 5px 0 14px;vertical-align:-1px}
+  .foot{margin-top:30px;color:var(--sub);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  .h3{font-size:13.5px;font-weight:700;margin:14px 0 4px;color:#2b3a4f}
+  code{background:#f1f4f9;border-radius:4px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body data-page-node-id="73RgC6pA0WGfaD0fP4KLnN">
+<div class="wrap" data-page-node-id="LgTawexRssOrUG5AubaGUB">
+  <h1 data-page-node-id="pmKR6GBOgpHk17E0NU8rY9">AIOA 城市级 AI 公共服务平台 · 模块开发进度与完善度报告</h1>
+  <div class="meta" data-page-node-id="ifxBvskzDfNGDpjJOtGqY1">统计口径：源码 + 迁移 + 文档 + E2E 套件 · 数据时间 2026-09-19 · 后端 9 模块 / 60 迁移 / 29 E2E 套件</div>
+
+  <div class="cards" data-page-node-id="MwurLY6O1alaKv8kFhRajn">
+    <div class="card" data-page-node-id="qOXZMVPGynYnnK8iC4DP6G"><div class="k" data-page-node-id="sEr72MPUr46XIHnFHN3Hum">平台工程完成度（加权）</div><div class="v" style="color:var(--ok)" data-page-node-id="6bx9sSjHGatKdgxlPd7n9v">91%</div><div class="d" data-page-node-id="PErLmADtovAQeHikf3MPJN">15 个技术模块均值 · 主干功能已闭环</div></div>
+    <div class="card" data-page-node-id="ZEubdxmaoWEY8ok9FyoMCl"><div class="k" data-page-node-id="GXKj3SbfRcahdf6tC5Lif2">业务能力域完成度</div><div class="v" style="color:var(--warn)" data-page-node-id="7DGCVPIMw6K2hJwVB0Lkcj">48%</div><div class="d" data-page-node-id="yXhjzbEpGhUIZwf0A1x2D2">7 项优先事项均值 · 税务/发票/项目域欠账</div></div>
+    <div class="card" data-page-node-id="yrIdZDn7OkKojE4rE7RTOP"><div class="k" data-page-node-id="C0CgABhzjWznCFrEMt7WYL">E2E 套件 / 全链路基线</div><div class="v" style="color:var(--ok)" data-page-node-id="iyJecYqYSayGRoKicivPXF">29 / 155</div><div class="d" data-page-node-id="t2WKDAINSptElcSlP52RLX">E2E 套件数 · e2e_full_system 155/155 全绿</div></div>
+    <div class="card" data-page-node-id="1ujwMDWmzXalkW2f7fE45P"><div class="k" data-page-node-id="VpV9DogMzSw3gKMdjoL5K5">已知缺口（Docs/28）</div><div class="v" style="color:var(--ok)" data-page-node-id="NYBvsozuT1jcjKtpUoUmhY">0</div><div class="d" data-page-node-id="KESnDgcQYmbC2CntlJaOfQ">未开工项已于 2026-09-16 全量收口</div></div>
+  </div>
+
+  <h2 data-page-node-id="AHxRjLzRKMAoBOThDK0QJY">一、平台 / 技术模块完成度</h2>
+  <div class="panel" data-page-node-id="onKmGcUKHb63uTjWJo0YyU">
+    <table data-page-node-id="minCmDye39BNWKQwtb38ci">
+      <thead data-page-node-id="a97oJQXXidx6n7UiZz7Zmn"><tr data-page-node-id="QUqJTq3WIcOmTJiOKGpGan"><th style="width:33%" data-page-node-id="myVormzqKeL7bt7RZ9XeCy">模块</th><th style="width:26%" data-page-node-id="HYCZOidUEO8ydCWPHLgVAv">完成度</th><th data-page-node-id="plpQsnH8TVMiVn5BAWiFls">状态</th><th data-page-node-id="DISNckFTjo0muA0hKppwOz">一句话依据 / 主要缺口</th></tr></thead>
+      <tbody data-page-node-id="7b5q7XkC4C2TJDF6ltKZ0Q">
+        <tr data-page-node-id="6dTyzLj1NMCRzOQspF4EAo"><td data-page-node-id="3EyC9XyR7VJg5G82qwslhI">aioa-common 基础层</td><td data-page-node-id="E1hFwcyaQIV1Sx86RpgbR7"><div class="bar" data-page-node-id="ouilSBAS9EhBB37H3WBg4Z"><i style="width:100%;background:var(--ok)" data-page-node-id="IR4sym5pburFKJlPCfvPFj"></i><span data-page-node-id="7plX9B38WOTSGNploYLZE0">100%</span></div></td><td data-page-node-id="5AXEZO3YjbyuFCsBqMZ5cU"><span class="tag t-ok" data-page-node-id="WiUUwGp2wirMybyvDCx74B">稳定</span></td><td data-page-node-id="R1EWGmCw90pCLhq9bkaXDn">统一响应信封 · BizException→403/404 收口</td></tr>
+        <tr data-page-node-id="CAZ9PaWiS0qrQdkc6CrMpT"><td data-page-node-id="Pue8iOcs0t7WoGvzoa4TSh">aioa-boot 启动 / 迁移</td><td data-page-node-id="aPkHfVh4zgCahvufA92APx"><div class="bar" data-page-node-id="6L2EELKyBerwlVjIQp4Gt2"><i style="width:100%;background:var(--ok)" data-page-node-id="kNppVZ4n60qgtr3GwtSsHD"></i><span data-page-node-id="oT0y1BdQXAGEeeTxbtLzpo">100%</span></div></td><td data-page-node-id="iXCuFBAd1eD1CwG4BDDtUe"><span class="tag t-ok" data-page-node-id="hEosiwbv15q9AEXF30aDY8">稳定</span></td><td data-page-node-id="E0JgvGpN2S66BPDkNvTC1L">Flyway V1→V60（60 个迁移）</td></tr>
+        <tr data-page-node-id="gwbeFul9CxtLdPNpNs2cx1"><td data-page-node-id="6KvQ1abULyqIf79kbEPMLm">aioa-tool-sdk 注解契约</td><td data-page-node-id="WT3YG30GWS0lKWn1P6WQI3"><div class="bar" data-page-node-id="ViSfbKEDroyen7DWb5fA37"><i style="width:100%;background:var(--ok)" data-page-node-id="RePTwSsiZjHYPlTmNTbtCX"></i><span data-page-node-id="HgZ8VX2Y3LN5qGMxDiijvN">100%</span></div></td><td data-page-node-id="k2rX3d3yj167vcUlfe3Lfv"><span class="tag t-ok" data-page-node-id="Huql1SH1IjDHeOPi1jUD2s">稳定</span></td><td data-page-node-id="gILcWKnEYbhadouQA30zoz"><code data-page-node-id="g2FV8MyFACgGB8iQRiAFfI">@AioaTool</code>/<code data-page-node-id="XcOp3wFKLNgQCKBYojpgpf">@AioaToolParam</code> 自动注册（批次2）</td></tr>
+        <tr data-page-node-id="gNdSEGZG3XP58EhcxfHgnG"><td data-page-node-id="LM6hbrfo2W8TBgRaxxZP3N">aioa-security 安全层</td><td data-page-node-id="eSoy4YruRRP3Pv4xA6GcuP"><div class="bar" data-page-node-id="QU7FIhlRApTo1g1xBtBNc4"><i style="width:95%;background:var(--ok)" data-page-node-id="K1GWSeVu0cIe5zgIoaU171"></i><span data-page-node-id="kE9qdMniugO4jpY0zazjxn">95%</span></div></td><td data-page-node-id="IkRJoqyEha8KiLewLpedKV"><span class="tag t-ok" data-page-node-id="KjycXiezgFywfAdghnrCza">基本达标</span></td><td data-page-node-id="05x7lGvHFmGMwR1pwJmEdU">JWT + 令牌吊销(V46) · OrgGuard 三档；缺统一 SSO/网关</td></tr>
+        <tr data-page-node-id="mMyrp8x3BzphVpkqEuekgZ"><td data-page-node-id="t6ucipNlPPbMRJBc6TNoCg">管理端 shell（Web）</td><td data-page-node-id="Wfj9u8Gkdqqntm042E8E8m"><div class="bar" data-page-node-id="xe1ckEQQWuzDG7HdEotBUe"><i style="width:92%;background:var(--ok)" data-page-node-id="1vDvfF3on4HHv25AgsPVg5"></i><span data-page-node-id="SsuHJxiIrzjoVqpwUCPbxx">92%</span></div></td><td data-page-node-id="WZXYPmTQ9cxp49Zh9h2FOT"><span class="tag t-ok" data-page-node-id="H9G3eTaQrFvNLu39jgfPac">基本达标</span></td><td data-page-node-id="E1oA3GH67sAmkOvufuMFKt">29 视图 + RBAC 菜单（按域分组）· 按钮级测试 145/145</td></tr>
+        <tr data-page-node-id="t5LBD4bPjG43qw7tcrKmWR"><td data-page-node-id="MSCV883m7oCAzL3YFb76TH">aioa-resource 资源治理核心</td><td data-page-node-id="qnDyn1xNLAS7s3f59k9Aph"><div class="bar" data-page-node-id="DniQcT5TcHEodFKN6IvIRC"><i style="width:92%;background:var(--ok)" data-page-node-id="UcstRHaLa45dF0ULURHIY2"></i><span data-page-node-id="BIuoK5VQkIB9SO8MhTPhlU">92%</span></div></td><td data-page-node-id="IzCypVjzjvJsUxWFvwV8m3"><span class="tag t-ok" data-page-node-id="ROMTDxBXoJgqs96Moj4yXz">基本达标</span></td><td data-page-node-id="DXBKleZ3BPLAOs1tGmarwj">23 控制器覆盖权限/配额/审批/计费/KPI/成果；缺发票与欠费</td></tr>
+        <tr data-page-node-id="466tP6U7oy8WOjuPTtCjLo"><td data-page-node-id="BNs5vsIghLiX8ZNoOXNbGH">aioa-org 组织与流程</td><td data-page-node-id="iZjiPXijKC4QiKqexsZVCX"><div class="bar" data-page-node-id="QZzcH0PRAs31bJjwiYSZDk"><i style="width:90%;background:var(--ok)" data-page-node-id="uaFH27PgCg4j1xqcC62hn2"></i><span data-page-node-id="K5RPtkN2CxOfwGmlRVLQxu">90%</span></div></td><td data-page-node-id="YHrwze0vodUxh5eytmpP65"><span class="tag t-ok" data-page-node-id="GivCxE0GTCrm3Z5FGBfGZ0">基本达标</span></td><td data-page-node-id="oG7yul6f1VY9GmXKORIJry">机构/员工/入驻/请假/审批流 + 加签·子流程·版本(V60)</td></tr>
+        <tr data-page-node-id="B5tG2CvWGgMqBrG6nWMIyC"><td data-page-node-id="87yTRLPEJy1qdE1hZA09RS">aioa-admin 平台管理</td><td data-page-node-id="0ZfGarc9HGPLLhWHDKsmqg"><div class="bar" data-page-node-id="TvLggXTsNuWhNLn1gYli2D"><i style="width:90%;background:var(--ok)" data-page-node-id="gxzKWGyYEx97CypkujvfZA"></i><span data-page-node-id="VGEVrQWbd03aTfxYSja7VE">90%</span></div></td><td data-page-node-id="JhR7cmknk3Ou2FxHJWqNWB"><span class="tag t-ok" data-page-node-id="ByhyZzC5EbGLiFHXAYSlys">基本达标</span></td><td data-page-node-id="RaThERgfTtlBSYB1VUYWWx">人员/角色/模型/租户/系统参数</td></tr>
+        <tr data-page-node-id="D8Gj281ws6yxmr4rwfx2Ig"><td data-page-node-id="9tnj66WPs5AiguCiavlo6K">@aioa/sdk 子应用 SDK</td><td data-page-node-id="NZzQATipcmz0E1hz1qEsrm"><div class="bar" data-page-node-id="vtIcYrHyAgFoSisBoBmrCA"><i style="width:90%;background:var(--ok)" data-page-node-id="nt7dQHD53wBprxvn712jeI"></i><span data-page-node-id="AV2v4hlGIkKe1l4wCvoz1p">90%</span></div></td><td data-page-node-id="FKjHH2U3OQDFBokj3MNGz6"><span class="tag t-ok" data-page-node-id="wJKyFJsGHrXg10Hm6Gzhjl">基本达标</span></td><td data-page-node-id="vwj3KAESBPZ441wyYdRt0O">getToken 真实化 + postMessage origin 白名单（批次5）</td></tr>
+        <tr data-page-node-id="HAx6756f9KFrwLAeUsbCCT"><td data-page-node-id="qLz8Rw5B6hr9OwNrJm3BB1">aioa-bridge 工具网关</td><td data-page-node-id="znFmRFq6VfwitZGgmvb4Cn"><div class="bar" data-page-node-id="keVoF9MX4o8ZCReOQmqmtv"><i style="width:88%;background:var(--ok)" data-page-node-id="Y1guIuiUvKIYCSHek2q2Z8"></i><span data-page-node-id="CK1BTKADVh1n20Jc4JinQo">88%</span></div></td><td data-page-node-id="SUfUP4XnnWlBr7EEdCrRdZ"><span class="tag t-ok" data-page-node-id="Ww7JtS3V90gLVmGA2uGGhn">基本达标</span></td><td data-page-node-id="YC9F18sxdmdMu2kB7W9zMS">网关/权限/HITL 审批/幂等/调用日志(V59)；缺熔断·限流</td></tr>
+        <tr data-page-node-id="CdymlYtFF2E3hooYsOLHTP"><td data-page-node-id="SBYLUrsVxEo2dhtXpEGahC">Python agent 运行层</td><td data-page-node-id="s4xTqRME1f1CK4pLeKthA1"><div class="bar" data-page-node-id="jBpJdxJFOmzwUrlkEv1KNo"><i style="width:88%;background:var(--ok)" data-page-node-id="v1LNZL1Wb1m1M8ubwFnu5F"></i><span data-page-node-id="3ioAcIdHMbYyrqoppEADLt">88%</span></div></td><td data-page-node-id="5SIUmrpeiCAFl2VYOH0MkE"><span class="tag t-ok" data-page-node-id="F9dxFEFpaw70FsjFRp3fH8">基本达标</span></td><td data-page-node-id="cyP0s1yuxBAmU3ix95MYLr">runtime/模型网关/orchestrator/多任务/sandbox；缺生产级模型调优</td></tr>
+        <tr data-page-node-id="1q5IpFwXn1SDwrflAxVBVC"><td data-page-node-id="kT3OSOiXxg2gBKPGR8UTJg">H5 用户端</td><td data-page-node-id="qNu0LWDWnQm3sDzlDMv1fY"><div class="bar" data-page-node-id="C8rCI1oCGjnQvWWlt75uhU"><i style="width:88%;background:var(--ok)" data-page-node-id="lYEycZzmtUv8Wtn0xCsJAH"></i><span data-page-node-id="Zlne2Wr4PuamR772GBwrRB">88%</span></div></td><td data-page-node-id="skVG8ckWCXklHPorRCpfVY"><span class="tag t-ok" data-page-node-id="AwZsqAcQ7yErHIZXYBGeDI">基本达标</span></td><td data-page-node-id="A1pyMLHpUtEIqklp572IJO">12 页 4070 行 · 按钮级测试 27/27</td></tr>
+        <tr data-page-node-id="fcRc6kdilW8z4qYU7vGBIC"><td data-page-node-id="laVTiCwz6H7tcQDJWi92BO">aioa-chat 会话与桥接</td><td data-page-node-id="YKHL85cmL1vWfBt4z0UnhC"><div class="bar" data-page-node-id="DCUYOsy3zKENSCM2kBaL94"><i style="width:85%;background:var(--warn)" data-page-node-id="Y7kUCZ0gF6fCLLNeCp7MVR"></i><span data-page-node-id="vWRaMCQC4ztJnTaYg3Pbf8">85%</span></div></td><td data-page-node-id="TYf8DoQUeDxIkwNwtthrbW"><span class="tag t-warn" data-page-node-id="wNtKfYYsJT7G7ELZyHlYXa">待补强</span></td><td data-page-node-id="dM8Gh3NmmovgrSBMH5DYuZ">会话/运行/数字员工准入 + bridge 桥接；IM 渠道网关未实装</td></tr>
+        <tr data-page-node-id="gT0yUsGh7nf7mWBJ2gj0Hm"><td data-page-node-id="QKodroadCNueAgEFCgKq6p">交付与运维件</td><td data-page-node-id="bwUHdJ15VRjjBsacgb4cs5"><div class="bar" data-page-node-id="i5GBPdePbvzT8WkvFY4ZAD"><i style="width:85%;background:var(--warn)" data-page-node-id="XWdHkfu6HIP6JviJGa5dlM"></i><span data-page-node-id="w8Lsgq25qCa4D8rgbUDmuD">85%</span></div></td><td data-page-node-id="nPhYDE8Gr1nIS22H5sSsve"><span class="tag t-warn" data-page-node-id="J3BHsrgSW8FkEBSRDqTWkc">待补强</span></td><td data-page-node-id="PZM6WZOlTSbsE7RFCgTaI2">compose/Dockerfile/K8s/nginx/CI + 6 ADR；缺 CD 流水线与监控告警</td></tr>
+        <tr data-page-node-id="2Av9kSCxoYa9rERupjnJLg"><td data-page-node-id="i3Ok8nZgMEeQjmPGzMOvls">aioa-gitee 仓库联动</td><td data-page-node-id="PD26F29u8FhJFuzZc7f0Gw"><div class="bar" data-page-node-id="s0yKxYDADBLnlCGSYHMnqT"><i style="width:82%;background:var(--warn)" data-page-node-id="FUrCDsnQdLTYkzNPQvLnM4"></i><span data-page-node-id="9avR62HTB1vMPC8SdcypuO">82%</span></div></td><td data-page-node-id="SADmxeh4fscPzx890z9RTb"><span class="tag t-warn" data-page-node-id="YXgVYYDWW2Pi3wqsVON4Cr">待补强</span></td><td data-page-node-id="MxwgUaBnAJXIxT5GC5kVVc">OAuth/建仓/Webhook/成员同步/事件流/校准 · provider 抽象；真机全绿未收口</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend" data-page-node-id="kgbHd9kaOf1328m0lHbxXV"><i style="background:var(--ok)" data-page-node-id="WhmzHzVrCc0aBXT3rrWHYD"></i>≥90% 稳定/基本达标<i style="background:var(--warn)" data-page-node-id="BxLLXx1Kfvkt8jHXjhRou1"></i>80–89% 待补强<i style="background:var(--bad)" data-page-node-id="aMYE9nvTFHwOr9L4XFiXol"></i>&lt;80% 缺口明显</div>
+
+  <h2 data-page-node-id="a08ERSbvuakYYFwGExF9HZ">二、业务能力域完成度（对照 Docs/19 七项优先事项）</h2>
+  <div class="panel" data-page-node-id="3BQhYXKyjlpgDeID4pq1Gv">
+    <table data-page-node-id="XjQ0vOR57c3JfmFYQ1JMwb">
+      <thead data-page-node-id="ao9ubeihJSHRUECsQeKz8y"><tr data-page-node-id="zDYD1mufpGQP38ji4qqfqh"><th style="width:26%" data-page-node-id="HrbbU7ATihUovm5TgeIwnF">优先事项</th><th style="width:30%" data-page-node-id="gAAKkUQ1O4UxP2ifsSi9ZK">当前完成度</th><th data-page-node-id="Y8v28dN4gSTZA0tKDKehGZ">审计基线 → 现状</th><th data-page-node-id="YW1BL1gTiZvZToFUS0n83i">主要缺口</th></tr></thead>
+      <tbody data-page-node-id="CSZ2eWMNa3GUgDC0mtprZP">
+        <tr data-page-node-id="9hXhNYYh2uPzBTAUPD5KqR"><td data-page-node-id="u9rnFiyQV93IvgvDWMvPlA">① 四端权限与多租户</td><td data-page-node-id="EuoBx2UtWM36DPDdnpaCjB"><div class="bar" data-page-node-id="BWrHUAh4jfKkk0pd7N2EWz"><i style="width:88%;background:var(--ok)" data-page-node-id="jYi5uQRfGkMchOed6GbeqL"></i><span data-page-node-id="4DwFneC2W0AhOCxDG2Hozn">88%</span></div></td><td data-page-node-id="TIZcYxZOZ86eMtne86DaK6">85% → 88%</td><td data-page-node-id="mWaybUggLjEwhKZoLdZKDP">应用上架审批 · 应用级计费 · 业务数据读留痕</td></tr>
+        <tr data-page-node-id="9SPLIqCjWukMPx7pwpvlw7"><td data-page-node-id="oUzyBWMgzuxRc8mjXMSRql">⑥ 数字员工申请流程</td><td data-page-node-id="oAAPaOWWiR7hrdaS80O3bC"><div class="bar" data-page-node-id="FsZAeVXLejR5KxC95S3jlQ"><i style="width:72%;background:var(--warn)" data-page-node-id="AIfj2ixvw7A1oinQYIfPIR"></i><span data-page-node-id="iIkJUBkf4Hpm39OFqd0FTf">72%</span></div></td><td data-page-node-id="4zqzry08h7kJety3N9Z3Zi">58% → 72%</td><td data-page-node-id="sjKv2F274eggveYpCESVjM">前置检查 · 意图→权限映射 · 阻断话术 · 回答结构化</td></tr>
+        <tr data-page-node-id="neTfVa0QCfrCxuv3WTsqni"><td data-page-node-id="JiWUmRjN3Qi8Dqo7ohmTGE">④ 工作管理/表单与流程</td><td data-page-node-id="TWM3rovjyyT1h4cRrHSB9Q"><div class="bar" data-page-node-id="O9fevqUKZ9OR5OFR3CRt3I"><i style="width:58%;background:var(--warn)" data-page-node-id="dNvHZRF2YXCWhNXbRjwG38"></i><span data-page-node-id="zqKwiKn4IaWpBfGm8G1Gll">58%</span></div></td><td data-page-node-id="yv2qRiiNvxegikGwrbIHwI">40% → 58%</td><td data-page-node-id="Oom2EiyhrMi19Zz9MEn9C6"><b data-page-node-id="1T5AGpgh6SjuxGK0p7WPWB">表单设计器整体缺失</b>（已补加签/子流程/模板版本）</td></tr>
+        <tr data-page-node-id="NADG0VuEc5ISe8vGFeeQXQ"><td data-page-node-id="A4acvpIxp0iqLl4mTSfqFT">② 收费与分账</td><td data-page-node-id="0xDyCettp7b1QBHXjfFTzY"><div class="bar" data-page-node-id="b1Ai666WBKMsizso7RKRwl"><i style="width:45%;background:var(--bad)" data-page-node-id="voAsYhOMFckj2klDq6CSLF"></i><span data-page-node-id="MjLtFAbermIeiAymGtLrJX">45%</span></div></td><td data-page-node-id="u80fvAUJohurEBV1LNPwNa">45% → 45%</td><td data-page-node-id="NxgLZAJCGfgEA03QYDfy2w">发票 · 账单扣费 · 欠费停服 · 续费；计费项仅 2 类</td></tr>
+        <tr data-page-node-id="oD7I8wpDD9UZ7v91HZP265"><td data-page-node-id="ZoCbCuHtUYNnGabKie9MK4">⑦ LLM 商业化</td><td data-page-node-id="pzbVLWeJo2EqJ22Byc2yu7"><div class="bar" data-page-node-id="XlQsrrgbrx163cGdtZeqva"><i style="width:35%;background:var(--bad)" data-page-node-id="0pzbmszjUH3GMLYzPIUTtv"></i><span data-page-node-id="2lWVVOtvsmHzAhyID5RpAU">35%</span></div></td><td data-page-node-id="sXxnMY9PFkCYJGc19QuQG8">35% → 35%</td><td data-page-node-id="AFb5dNSXdpEm7wTDfjWWH3">缺 API/应用/结果/分润计价与运营分析（仅词元包）</td></tr>
+        <tr data-page-node-id="esKkeCyiPhseSLjTNpZKyN"><td data-page-node-id="sgzkdalXBDJz14F4WHg2GV">⑤ 项目流程</td><td data-page-node-id="PtRErN5tESETW7aGmnRu1S"><div class="bar" data-page-node-id="DD8roTf2Ur4S5n6T58jUYn"><i style="width:32%;background:var(--bad)" data-page-node-id="LtO7m5S01kneDW31lvCPgt"></i><span data-page-node-id="FoOSQJjGNL2VjsIcUQuIEG">32%</span></div></td><td data-page-node-id="RLjiBYVz3GhZXJeDoJed6c">5% → 32%</td><td data-page-node-id="ThTKl4F2KSukpCIQ8JMwLj">已有「项目与仓库」域；缺项目预算/工时/按项目归集分账</td></tr>
+        <tr data-page-node-id="sisaFxP2mlhlPAX6x7NFmD"><td data-page-node-id="QJlRfNPHtdnEYtKBsDHH6u">③ 税务风险接口</td><td data-page-node-id="rgCP4lDzTR61xd3D1y2GAb"><div class="bar" data-page-node-id="TTmADlAVkezuOtQJUj9Ipy"><i style="width:5%;background:var(--bad)" data-page-node-id="ZVbolmvpGaFJj4JUC3xmTK"></i><span data-page-node-id="brcCPCiPQQgAcVOB451rAl">5%</span></div></td><td data-page-node-id="eDBOiATvRmcr2zjytDXUbp">5% → 5%</td><td data-page-node-id="uJr4xyatMVFvazl57DFXUZ"><b data-page-node-id="SISBE3z9OhxiBuufQqymC6">业务域整体未建</b>（无任何数据表），仅通用对接底座</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend" data-page-node-id="FSnJ30oa9Eoitl43DGG8GX">说明：①⑥④ 因 V39–V60 批次（职务型审批人 / 知会 / 加签子流程 / Gitee 域）显著提升；②③⑦ 本轮未触及，仍为欠账。</div>
+
+  <h2 data-page-node-id="OvmqbddGlst616F0DFKP8y">三、各模块尚缺功能与待解决问题</h2>
+  <div class="grid2" data-page-node-id="RqD9lm25Wp6ixCAsMeuskE">
+    <div class="card" data-page-node-id="aPvQXaokNetv3WELhE2hvI">
+      <div class="h3" data-page-node-id="aTScj4ANFGKF4SvhHK23Ir">P0 · 阻断型 / 数据正确性</div>
+      <ul class="clean" data-page-node-id="yoMrvlKAydSohD3zMHCo65">
+        <li data-page-node-id="WxrvhvCPOLceDio5LVUa0a"><b data-page-node-id="2EPJce45dpsVxSDw0Bw1vb">批次 1–7 未提交</b>：bridge/tool-sdk/工作流/agent 多任务/SDK/交付件/按钮测试共 27 未跟踪 + 25 修改，尚未入库</li>
+        <li data-page-node-id="RbXDGPzWtwRBxbAAYruZjQ"><b data-page-node-id="xogLxscOlI1aHBn1bWwTKl">Gitee 真机全绿未收口</b>：缺真实令牌 + 公网回调地址，建仓链路仅桩验证</li>
+        <li data-page-node-id="5lA1qK5a2JLtMEoFL8STbK">申请表单缺<b data-page-node-id="EU93o2G9XnGMyG2v74FbSW">校验规则引擎</b>（AI 生成表单的展示/编辑/保存/校验/提交未闭环）</li>
+      </ul>
+    </div>
+    <div class="card" data-page-node-id="EHC8NhR6yZaybg0qQmz03f">
+      <div class="h3" data-page-node-id="Q0KTskkETPUoEb5RpWP1X5">P1 · 业务能力欠账</div>
+      <ul class="clean" data-page-node-id="asKSGDVORA0y0u2hhZSMRR">
+        <li data-page-node-id="FcqQjx1r9IJcdAhOvw3R3T">计费域：发票、账单扣费、欠费停服、续费、计费项矩阵（仅 2 类）</li>
+        <li data-page-node-id="8LRkc0P5rhHK4gdbkW30ax">流程域：<b data-page-node-id="BKix3v61qO2Vk9ylMncFxz">表单设计器</b>、会签、撤回、转办、催办</li>
+        <li data-page-node-id="6dsHEAKR4PWG64hNvmL9kP">税务风险域：整体未建；项目域：预算/工时/按项目归集分账</li>
+      </ul>
+    </div>
+    <div class="card" data-page-node-id="s639ng9vDYUKtCAiuyLTlv">
+      <div class="h3" data-page-node-id="T4LqHU8sPCBoFwqLqNUfMb">P2 · 工程健壮性</div>
+      <ul class="clean" data-page-node-id="lCxhPNbgvsRkvet7JTwWgB">
+        <li data-page-node-id="pW0p6FajDxcHKLzsVRUS3b">bridge：缺熔断 / 限流 / 生产级调用治理</li>
+        <li data-page-node-id="ryr7OADCDuIZoFbyAGCUGz">交付：缺 CD 流水线、监控告警、灰度发布</li>
+        <li data-page-node-id="yZDu19fqrNcp3wJBGLtvVF">IM 渠道网关骨架未实装（多通道通知仅站内闭环）</li>
+      </ul>
+    </div>
+    <div class="card" data-page-node-id="nlkUu9aLMuDD3GWyUCsWhq">
+      <div class="h3" data-page-node-id="wP4T7wFUeUe8NkAxBtUDEQ">已知但不改（有依据）</div>
+      <ul class="clean" data-page-node-id="fTyfeFy2VPqbEhENxE6hQp">
+        <li data-page-node-id="LQtbN4qkPpCIXMnd3bDXRX">tenant 4 <code data-page-node-id="WFNnqdIeMPPBJdKl6snCAB">V33ANNUAL*</code> 假种被 17 余额 + 35 申请引用，删除会使单据失去类型定义 → 保留</li>
+        <li data-page-node-id="6J22XxZogbmP4NqzbIV9FE">tenant 9 重复昵称 = 同一自然人兼多角色（同一 <code data-page-node-id="ja4UqAuEqejw5RtqwUax9C">sys_user</code>），与 Docs/14 一致 → 保留</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 data-page-node-id="s0HEBCs2R2NLh0HlAhmDDo">四、后续完善计划与优先级</h2>
+  <div class="panel" data-page-node-id="5kQ6OOTw4sKud7RewWOHCG">
+    <table data-page-node-id="MdbSrodPUKdQ13STpERfKh">
+      <thead data-page-node-id="WZG5VpjXSltPVWXcxyeXSe"><tr data-page-node-id="9CV5NQLoEIt7pzXen3S6aj"><th style="width:11%" data-page-node-id="XryHbITBoV5GmjSP1mGaq0">优先级</th><th style="width:30%" data-page-node-id="DP2VGyAYRB4CybjjsC29VK">任务</th><th style="width:14%" data-page-node-id="lvSSXX09FGChYSjEQm341H">目标模块</th><th style="width:12%" data-page-node-id="sUGw7bpWbRlKBeWHXlSWbA">预计提升</th><th data-page-node-id="9QZ0qaqa3rDNMyx2ej0G58">验收判据</th></tr></thead>
+      <tbody data-page-node-id="J2TRusxDlz6M1fUh3GPqC4">
+        <tr data-page-node-id="NDjmzvaim1gSYu4XaP7N1s"><td data-page-node-id="9EYP8pCYKHyRDhOS8NYM4t"><span class="tag t-bad" data-page-node-id="tKxpDw71dXO40wTFSohn8H">P0</span></td><td data-page-node-id="73gghwpDCvurFhk8lUwKjz">提交并推送批次 1–7（bridge/工作流/agent/交付件/按钮测试）</td><td data-page-node-id="53Ru78hwI8oL2Az80ztIYc">全仓</td><td data-page-node-id="GLKiYTrYA241z03KJXgtc6">—</td><td data-page-node-id="eeiduH8JmBh3sxwvXrglyl"><code data-page-node-id="q0aIafb3DuSaMzChF5mUnk">git status</code> 干净 + 27 未跟踪入库</td></tr>
+        <tr data-page-node-id="ubgz3PvyrQBQjhSCKBDgJa"><td data-page-node-id="HNHyZazUBkhAehPZ8pMKXv"><span class="tag t-bad" data-page-node-id="I7OQsddVJO80TWMqfhClGG">P0</span></td><td data-page-node-id="xICuGCEqJ8LdzX036vdyo3">Gitee 真机端到端收口（令牌 + 公网回调）</td><td data-page-node-id="ioKiNDnLuEWvU0leisKmER">aioa-gitee</td><td data-page-node-id="B4BqDmf12u30RviOVYzEVJ">+13% → 95%</td><td data-page-node-id="2GEsBlVKM9JikhkXQsD85F">真机建仓/回调/成员同步全绿套件</td></tr>
+        <tr data-page-node-id="Xpvg3g0vVv5YD7OMxNwHB0"><td data-page-node-id="QnlJuXoGqsXvukUBnuc6GY"><span class="tag t-warn" data-page-node-id="WqRvI1qco2vIYrwXrsoZoT">P1</span></td><td data-page-node-id="ZE0RQjJk1WXHALvGirXaqa">AI 表单设计器 + 表单校验/提交闭环</td><td data-page-node-id="Lpm5gtStq0NOH2F2QyNTbd">resource + shell</td><td data-page-node-id="7pXA5q7c7OIzgFSfSRg42Z">项④ +22%</td><td data-page-node-id="XOxkny2Wl3GalZGheelhwE">可视化拖拽生成表单 + 引擎校验/落库 E2E</td></tr>
+        <tr data-page-node-id="7ouAObxMNrfCBnrbBvCf4d"><td data-page-node-id="lTPWwBBzi8PKhGPEYACrDe"><span class="tag t-warn" data-page-node-id="UZvTlIcsLkLS76glT0zYdu">P1</span></td><td data-page-node-id="nOTvEsoI0WF3Bo9hvtl4aH">流程增强：会签 / 撤回 / 转办 / 催办</td><td data-page-node-id="ZrN0BQMMMFVVSXm9EGFGrL">aioa-org</td><td data-page-node-id="GZzH2MSxCLpEh9EtLCAqMh">项④ +12%</td><td data-page-node-id="KMd8KLxPZ8kIpeLdAX9GEo">四类动作 E2E + 既有回归零红</td></tr>
+        <tr data-page-node-id="x8MNNziArhJoXAz6xZLxy4"><td data-page-node-id="dlRUAzDLWGGiNQkgc8NYrc"><span class="tag t-warn" data-page-node-id="8gpBG3OWO9MWpOfDENFPKo">P1</span></td><td data-page-node-id="bdznE6p0Gxe0oMASBBrdSQ">计费闭环：账单/发票/欠费停服/续费</td><td data-page-node-id="4WQOo7rJFhSc0tqFpFu3mI">aioa-resource</td><td data-page-node-id="TUKGsTB5hLzrZzX81uYhP5">项② +35%</td><td data-page-node-id="7EDXnlyXFXdPvzJqE80JF6">账单扣费→欠费→停服→续费全链路 E2E</td></tr>
+        <tr data-page-node-id="NkwK6AA5RyGKdCE6LHFkGs"><td data-page-node-id="xswuMaCUqBEO2cuGrRb4de"><span class="tag t-info" data-page-node-id="TqaBzFjfpvEK6uFYEgwOOL">P2</span></td><td data-page-node-id="MgIIaejI0weEjL5KYeDekp">项目域：预算 / 工时 / 按项目归集分账</td><td data-page-node-id="GtW9EipeaWMriK91kwcUNL">新模块 + resource</td><td data-page-node-id="nWlRAEe8eiOD4JLxiYn7mG">项⑤ +40%</td><td data-page-node-id="F4svjQmiq4Cd9jea4WxOQx">项目台账 + 分账按项目归集报表</td></tr>
+        <tr data-page-node-id="hUbrFfPEUU8SR9E7qvAU8d"><td data-page-node-id="l79GycVw6xzG16gdBqm8Pt"><span class="tag t-info" data-page-node-id="z15IsoWkZuoBX4HWODBwHo">P2</span></td><td data-page-node-id="VINyRGrAQZDpEPCDCJmiQP">LLM 商业化：API/应用/结果/分润计价 + 运营分析</td><td data-page-node-id="CtpZ2otXC0dxJ6C7XYtOxO">aioa-resource</td><td data-page-node-id="ESGfzdEwguLJMrNSTYl1Fk">项⑦ +40%</td><td data-page-node-id="P4XERIiD86raPU5pbhCc7I">多维计费项 + 运营看板</td></tr>
+        <tr data-page-node-id="xmbO5e341uEGGGRhx7jjBD"><td data-page-node-id="zP8QLIaLDMfhArko2YT7EA"><span class="tag t-info" data-page-node-id="yPoRYA6z3QtxjZxSvwEyyt">P2</span></td><td data-page-node-id="sb3Zr4VHOzNrli8DZ8UbYp">bridge 生产加固：熔断 / 限流 / 灰度</td><td data-page-node-id="Y45GQBwyCHGGUbPISnm9Lx">aioa-bridge</td><td data-page-node-id="YHtlJ9kyHC0XmJjUN3YjvW">+10%</td><td data-page-node-id="1tSYQdEUZAVSNwseD6ztES">压测下熔断生效 + 限流生效 E2E</td></tr>
+        <tr data-page-node-id="ClPdL61s4j12BNobbtps48"><td data-page-node-id="7sTHFiFG1f7J3wyyhCZWsH"><span class="tag t-info" data-page-node-id="wJe8Z0x3nsNKKlUkSpSlRd">P3</span></td><td data-page-node-id="i04vwhFOeYcRW4FjpoNFup">税务风险域（独立大项）</td><td data-page-node-id="xlq9WILBccOIctA9ie8v86">新模块</td><td data-page-node-id="RjAUQeYdQHqGpjCKfKdNiz">项③ +60%</td><td data-page-node-id="LTJhydHkRtmBdzpbkvDG18">独立立项后再排期</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend" data-page-node-id="nmVgpzYffRm4ccBvBfTB0I">建议节奏：<b data-page-node-id="I9BOrB2RVmWGpNYe7B7Q31">先 P0 清账（提交 + Gitee 收口）</b> → 再 P1 补业务闭环（表单/流程/计费）→ P2 扩域（项目/商业化/加固）→ P3 税务独立立项。</div>
+
+  <h2 data-page-node-id="LXLYS1v3J9Gu4Xxm7burEJ">五、测试覆盖矩阵（交付质量佐证）</h2>
+  <div class="panel" data-page-node-id="6rzpbQgeP4FZweiJqC3PqX">
+    <table data-page-node-id="aZQDuWz0BKpCnXLcR3T7KG">
+      <thead data-page-node-id="iq5w7mu1NDkBLmIm4yOBbF"><tr data-page-node-id="iI4xxFmU9OqTqQk5i5Kx9X"><th style="width:42%" data-page-node-id="gw76NO4uhS48ewQFhg9421">套件</th><th style="width:18%" data-page-node-id="thyan1Wpxmj5VHNqLeHc3i">结果</th><th data-page-node-id="xd6Qimy5YhS1Iv2onjKIcu">覆盖</th></tr></thead>
+      <tbody data-page-node-id="SKUofSb9xE9Z11JqrDS0S3">
+        <tr data-page-node-id="ZenXZyAwGFl9xDUB0ijcnN"><td data-page-node-id="rgEHTyDMq9QfN7CA9rMSDI">e2e_full_system.py</td><td data-page-node-id="23voMtOwAKfNUKih5r2Na8"><span class="tag t-ok" data-page-node-id="ZE1QjSLAKujVhkP3agYJen">155/155</span></td><td data-page-node-id="iyCgrwbThkhIJUUOHaDyTq">13 段跨层串联 · 每轮收口必跑</td></tr>
+        <tr data-page-node-id="jyyxUDEp8FWD5noI1kNg0i"><td data-page-node-id="FVnEK2etbuUajV0OByhZJp">e2e_v61_shell_all_buttons.py</td><td data-page-node-id="TiZOAEXJ16ODhOqr9klIZa"><span class="tag t-ok" data-page-node-id="azw2E4gFj5T8HMOcfsIMMn">145/145</span></td><td data-page-node-id="ZkptatiZDGfzZATiWp44ZK">管理端 5 角色 · 全路由按钮级点击 · 0 JS 异常</td></tr>
+        <tr data-page-node-id="tSckbXwkFSDddtqRuX9DpB"><td data-page-node-id="ZEQuzgkR5CSzAKbKUAwpam">e2e_v61_h5_all_buttons.py</td><td data-page-node-id="MLMHvjQAxZlOnFJsSxoueH"><span class="tag t-ok" data-page-node-id="xgmrHoeQ7CrwSyxe9ueyFr">27/27</span></td><td data-page-node-id="xKtCQEkNoIA9nPihNT5gWM">H5 12 页 · 冒烟点 93 键</td></tr>
+        <tr data-page-node-id="zF6vzBJxA7aoEDsRHlpYYs"><td data-page-node-id="yFgZzEg528n850wME6JCpY">e2e_v48_gitee / v51_gitee_init</td><td data-page-node-id="vHYSOFeezFqWWmHRWi4ebp"><span class="tag t-ok" data-page-node-id="Vbfc7zorHPYFvoImEZXV9y">116 / 49</span></td><td data-page-node-id="tcMoastLilO0hLgqmlOcFM">仓库联动 · 企业主动初始化</td></tr>
+        <tr data-page-node-id="OMA6n3PU335guPKD3LQEiQ"><td data-page-node-id="Smu2J4qOGk3AnyBPXIPAoC">e2e_v45_approver_modes / v43 / v41 / v39</td><td data-page-node-id="GSlZTMwIZWrjiSRsTcXDbN"><span class="tag t-ok" data-page-node-id="gYNfV4SmsH2QpdBQ3Dvx9A">44 / 41 / 48 / 49</span></td><td data-page-node-id="HnJ1UlsyjCFjsM2Xwy4fPd">策略族 · 部门申请 · 职务层级 · 上级递推</td></tr>
+        <tr data-page-node-id="G8h7xML01RTVKTfK8k2CIj"><td data-page-node-id="oKDnUWbzCSF8gyX26bXlen">其余 20+ 专项套件</td><td data-page-node-id="vYX6opW3SO37XZVAeOFlIW"><span class="tag t-ok" data-page-node-id="r15b8WLrXRCDmshSKC3o3q">全绿</span></td><td data-page-node-id="Cp2ZoUGWzY3DZfttmLtuuz">消息中心 · 租户组织 · 权限作用域 · 统计口径</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="foot" data-page-node-id="0WNsDJevVCVqZtD5nTeCCj">
+    结论：<b data-page-node-id="HdItqOZScHJjIDCGAOR9A8">平台工程侧已高度成熟（91%）</b>——九大后端模块 + Python agent + 双前端 + 交付件主干闭环、29 套 E2E 全绿；
+    <b data-page-node-id="ZuItPKsSN1aB2lvEEkz0PR">业务能力侧呈两极（48%）</b>——权限/多租户/数字员工已达 70–88%，但计费(45%)、项目(32%)、税务(5%)、LLM 商业化(35%) 为主要欠账。
+    下一步优先顺序：<b data-page-node-id="sCsyxzKp1IkUGD0Vg00YNc">P0 提交批次 1–7 + Gitee 真机收口 → P1 表单设计器/流程增强/计费闭环 → P2 项目域/商业化/加固 → P3 税务独立立项</b>。
+  </div>
+</div>
+</body>
+</html>

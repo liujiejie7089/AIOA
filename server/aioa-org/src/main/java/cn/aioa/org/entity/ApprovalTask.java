@@ -77,6 +77,15 @@ public class ApprovalTask {
 
     // ------------------------------------------------------------------ 五期：节点处理模式
 
+    // ------------------------------------------------------------------ 六期：加签 / 子流程（V60）
+
+    /** 前加签：在**当前节点之前**插入一级（新审批人先批，再由原审批人批）。 */
+    public static final String ADD_SIGN_BEFORE = "BEFORE";
+    /** 后加签：在**当前节点之后**插入一级（当前人先批，再交给加签人）。 */
+    public static final String ADD_SIGN_AFTER = "AFTER";
+
+    // ------------------------------------------------------------------ 五期：节点处理模式
+
     /** 单人（默认）：一个节点只产生 1 条任务，取候选列表第一个。 */
     public static final String MODE_SINGLE = "single";
     /**
@@ -140,6 +149,23 @@ public class ApprovalTask {
      * 职务回答「求哪个职务」，二者正交 —— 换职务不必换类型。</p>
      */
     private String nodeDuty;
+
+    /**
+     * 加签类型 —— 六期（V60）：{@link #ADD_SIGN_BEFORE} / {@link #ADD_SIGN_AFTER}，
+     * NULL = 非加签节点（既有行天然为 NULL，与改造前等价）。
+     */
+    private String addSignType;
+
+    /** 发起加签的人。 */
+    private Long addedBy;
+
+    /**
+     * 本节点派生的子流程单据 id —— 六期（V60）。
+     *
+     * <p>非 NULL 且子单据未出终态时，本节点<b>不可单独决策</b>：
+     * 否则子流程只是「发起了另一张单」，对本单的推进没有任何约束力。</p>
+     */
+    private Long subOrderId;
 
     private String status;
 

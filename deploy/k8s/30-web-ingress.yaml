@@ -1,0 +1,87 @@
+# =============================================================================
+# 前端（构建产物由 nginx 承载）与公网入口
+#
+# 唯一对外端口是 Ingress：server / agent 都是 ClusterIP，不直接暴露。
+# SSE 必须关掉缓冲，否则流式回答会攒到结束才一次性到达前端：
+#   nginx 侧：proxy_buffering off;  （deploy/nginx/nginx.conf 已配置）
+#   Ingress 侧：见下方 annotation
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aioa-web
+  namespace: aioa
+  labels:
+    app: aioa-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aioa-web
+  template:
+    metadata:
+      labels:
+        app: aioa-web
+    spec:
+      containers:
+        - name: web
+          image: aioa/web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aioa-web
+  namespace: aioa
+spec:
+  selector:
+    app: aioa-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aioa
+  namespace: aioa
+  annotations:
+    # SSE：关掉代理缓冲 + 放宽读超时，否则流式回答会被攒到最后
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # 附件与知识库文件可能较大
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: aioa.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: aioa-server
+                port: { number: 8080 }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aioa-web
+                port: { number: 80 }

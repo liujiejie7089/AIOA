@@ -51,6 +51,33 @@ class RunRequest(BaseModel):
     expert_settings: dict[str, Any] | None = None
 
 
+class SubTaskSpec(BaseModel):
+    """多任务协同中的一个子任务（POST /internal/v1/tasks）。
+
+    ``dependsOn`` 里的 id 全部成功后本任务才开始；入参里的 ``"$taskId"`` /
+    ``"$taskId.field"`` 会被替换成前序任务的产出 —— 依赖关系的表达放在计划里，
+    不靠模型再推理一轮。
+    """
+
+    id: str
+    title: str | None = None
+    tool: str | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    dependsOn: list[str] = Field(default_factory=list)
+
+
+class TaskPlanRequest(BaseModel):
+    """POST /internal/v1/tasks 请求体：一份显式的多任务执行计划。"""
+
+    run_id: str
+    conversation_id: int = 0
+    text: str | None = None
+    user_context: UserContext
+    user_token: str | None = None
+    tasks: list[SubTaskSpec] = Field(default_factory=list)
+    max_concurrency: int | None = None
+
+
 class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0

@@ -119,13 +119,15 @@
           <!--
             ===== 以下按「功能相近程度」收进子菜单 =====
             原先是 21 个一级项平铺（含 2 个既有子菜单），菜单上下溢出 1074px、
-            必须整页滚动才能看到最后几项。现按域聚合为 6 个组：
+            必须整页滚动才能看到最后几项。现按域聚合为 8 个组：
 
               · 智能服务   —— AI 能力载体的定义与接入（数字员工/专家/工具/业务系统）
               · 成果与项目 —— 平台产出物（成果沉淀 + 代码仓库联动）
               · 运营管理   —— 用量与成本（经营数据 / 配额）
               · 租户与机构 —— 租户级组织与费用（机构/入驻/授权/分摊）
-              · 安全与治理 —— 规则与留痕（审批流/审计/参数/审核记录）
+              · 组织与员工 —— 组织人事域（组织与部门 / 人员管理）
+              · 权限与安全 —— 权限体系域（角色/权限点/审批流/审计/审核记录）
+              · 系统配置   —— 平台运行配置域（系统参数 / 功能管理 / 模型管理）
               · 平台管理   —— 仅平台管理员（内容审核台 / 租户管理）
 
             每个组的可见性 = 其子项可见性的「或」，子项各自仍带原来的 RBAC 守卫；
@@ -191,40 +193,70 @@
           </el-sub-menu>
 
           <!--
-            组织与员工 / 系统管理（单入口，多页签）：
-            原「组织与员工」(/org-structure) 与「人员管理 / 系统管理」(/admin) 两个菜单
-            指向同一批人、同一批数据（前者部门树+员工名册，后者人事操作+平台配置），
-            并列展示会让用户在两处反复横跳。现合并为一个入口：
+            组织与员工（组织人事域）：
+            只装「人」相关的两个入口 —— 部门树与员工名册、账号与角色分配。
+            原「系统管理」混装的平台级基线配置（角色 / 权限点 / 功能管理 / 模型管理）
+            已按功能域分别迁入「权限与安全」「系统配置」，本组不再承担配置职能，
+            故一并取消「标题按角色切换」的补丁（平台管理员与其他角色看到同一个名字）。
 
-            - 可见范围用 ORG_VIEW_ROLES（并集）：普通成员原本就能进「组织与员工」，
-              合并后不能反而丢掉入口；PERSONNEL_VIEW_ROLES 是它的真子集，无需另判。
-            - 标签按角色切换：平台管理员要的是「系统管理」（含角色/权限点/模型管理），
-              其余管理者要的是「组织与员工」。
-            - 页内是「组织与部门 | 人员管理」两个页签，后者由 OrgAdminView 按
-              PERSONNEL_VIEW_ROLES 收起 —— 普通成员看不到它，也就不会打出注定 403 的平台级接口。
-
-            不做折叠：管人 / 配权限是仅次于审批的高频管理动作，保持一级可见。
+            可见范围沿用 ORG_VIEW_ROLES（并集，含普通成员）；「人员管理」子项再按
+            PERSONNEL_VIEW_ROLES 收口，与路由 meta.allowRoles 同源。
           -->
-          <el-menu-item v-if="showOrgMenu" index="/org-structure">
-            <el-icon><UserFilled /></el-icon>
-            <template #title>{{ isPlatformAdmin ? '系统管理' : '组织与员工' }}</template>
-          </el-menu-item>
+          <el-sub-menu v-if="showOrgMenu" index="org">
+            <template #title>
+              <el-icon><UserFilled /></el-icon>
+              <span>组织与员工</span>
+            </template>
+            <el-menu-item index="/org-structure">
+              <template #title>组织与部门</template>
+            </el-menu-item>
+            <el-menu-item v-if="showPersonnelMenu" index="/admin">
+              <template #title>人员管理</template>
+            </el-menu-item>
+          </el-sub-menu>
 
-          <!-- 安全与治理：审批流 / 审计 / 参数 / 审核记录 -->
+          <!--
+            权限与安全（权限体系域，原「安全与治理」改名）：
+            收进「角色 / 权限点」两块授权基线字典（仅平台管理员），它们与审批流配置、
+            审计留痕、审核记录同属「规则与留痕」；原挂在组内的「系统参数」是运行配置
+            而非治理规则，已迁往「系统配置」。
+
+            组可见性 = 子项的或；子项各自保留原有 RBAC 守卫。
+            TENANT_SCOPE_ROLES 含 ROLE_ADMIN，故平台管理员必然落在本组的可见范围内。
+          -->
           <el-sub-menu v-if="showTenantMenu || showReviewRecordMenu" index="gov">
             <template #title>
               <el-icon><SetUp /></el-icon>
-              <span>安全与治理</span>
+              <span>权限与安全</span>
             </template>
+            <el-menu-item v-if="isPlatformAdmin" index="/sys-roles">角色</el-menu-item>
+            <el-menu-item v-if="isPlatformAdmin" index="/sys-permissions">权限点</el-menu-item>
             <!--
               审批流配置（三期 C-02/A3-9）：租户端可视化配置各业务审批流的「知会对象」。
               可见范围与后端 /tenant/approval-flow-defs（requireTenantAdmin）一致 = TENANT_SCOPE_ROLES。
             -->
             <el-menu-item v-if="showTenantMenu" index="/approval-flows">审批流配置</el-menu-item>
             <el-menu-item v-if="showTenantMenu" index="/audit">操作审计</el-menu-item>
-            <el-menu-item v-if="showTenantMenu" index="/settings">系统参数</el-menu-item>
             <!-- 审核记录（V36 需求④）：平台管理员看全量，租户管理员看本租户 -->
             <el-menu-item v-if="showReviewRecordMenu" index="/review-records">审核记录</el-menu-item>
+          </el-sub-menu>
+
+          <!--
+            系统配置（平台运行配置域，新组）：
+            「系统参数」原先挂在「安全与治理」下是历史错位 —— 它管的是运行参数，
+            与「功能管理」（模块开关）、「模型管理」（大模型接入）同类，现合并为一组。
+
+            租户管理员只看得到「系统参数」（路由 minTier=tenant），平台管理员三项全可见；
+            组可见性取 showTenantMenu（TENANT_SCOPE_ROLES 含 ROLE_ADMIN，平台管理员已覆盖）。
+          -->
+          <el-sub-menu v-if="showTenantMenu" index="syscfg">
+            <template #title>
+              <el-icon><Tools /></el-icon>
+              <span>系统配置</span>
+            </template>
+            <el-menu-item index="/settings">系统参数</el-menu-item>
+            <el-menu-item v-if="isPlatformAdmin" index="/sys-apps">功能管理</el-menu-item>
+            <el-menu-item v-if="isPlatformAdmin" index="/sys-models">模型管理</el-menu-item>
           </el-sub-menu>
 
           <!-- 平台管理：仅平台管理员（内容审核台 / 租户管理） -->
@@ -272,7 +304,7 @@ import { workflowTodoSummary } from '@/api/resource'
 import { useAppsStore } from '@/stores/apps'
 import { useAuthStore } from '@/stores/auth'
 import { useAssistantStore } from '@/stores/assistant'
-import { initBridge } from '@/micro/bridge'
+import { initBridge, registerAppOrigins } from '@/micro/bridge'
 import {
   loadTenantScope,
   resetTenantScope,
@@ -283,6 +315,7 @@ import {
   EXPERT_MANAGER_ROLES,
   GITEE_VIEW_ROLES,
   ORG_VIEW_ROLES,
+  PERSONNEL_VIEW_ROLES,
   REVIEW_RECORD_ROLES,
   ROLE,
   TENANT_SCOPE_ROLES,
@@ -327,11 +360,12 @@ const showTenantMenu = computed(() => hasAnyRole(roles.value, TENANT_SCOPE_ROLES
  * 机构成员（企业管理员 / 部门负责人 / 成员）看本机构；租户管理员与平台管理员
  * 也开放入口——前者需按部门分发数字员工、后者需运维巡检，均为只读或本租户范围。
  *
- * 合并「组织与员工」与「人员管理 / 系统管理」后，本判据同时兼作合并入口的可见性：
- * PERSONNEL_VIEW_ROLES ⊂ ORG_VIEW_ROLES，故取并集即 ORG_VIEW_ROLES。
- * 细粒度的「人员与账号 / 平台配置」页签由 OrgAdminView 内部再按角色收起。
+ * 顶层分组「组织与员工」的可见性取 ORG_VIEW_ROLES（并集）；
+ * 组内的「人员管理」子项再按 PERSONNEL_VIEW_ROLES 收口（它是前者的真子集），
+ * 与路由 meta.allowRoles 同源 —— 普通成员有「组织与部门」，但看不到「人员管理」。
  */
 const showOrgMenu = computed(() => hasAnyRole(roles.value, ORG_VIEW_ROLES))
+const showPersonnelMenu = computed(() => hasAnyRole(roles.value, PERSONNEL_VIEW_ROLES))
 
 /**
  * 数字员工 / 专家配置的创建与管理权限归属（V33），与后端 PermissionCatalog
@@ -349,11 +383,10 @@ const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
 /**
  * 侧边菜单的高亮项。
  *
- * `/admin` 是保留下来的**旧深链**（菜单里不再单独列出），直接拿 route.path 当高亮键，
- * 会让合并后的唯一入口失去高亮 —— 用户从旧书签进来会看到「菜单里一项都没选中」。
- * 因此把 /admin 归并到合并入口 /org-structure 上。
+ * `/admin` 与 `sys-*` 现在都是菜单里真实存在的条目，直接拿 route.path 当高亮键即可；
+ * 早期把 /admin 归并到 /org-structure 上（当时它只是页内页签）的兜底已随之取消。
  */
-const menuActive = computed(() => (route.path === '/admin' ? '/org-structure' : route.path))
+const menuActive = computed(() => route.path)
 
 /**
  * 子菜单「默认展开」的组。
@@ -365,6 +398,7 @@ const menuActive = computed(() => (route.path === '/admin' ? '/org-structure' : 
  * `default-openeds` 只作为初始值生效，故按 `route.path` 计算即可 ——
  * 之后用户在菜单里手动展开/收起分组，由组件自身状态接管。
  */
+/** 键是路由 path，值是该路由所属分组的 index（用于深链时把所属组默认展开）。 */
 const PATH_GROUP: Record<string, string> = {
   // 智能服务
   '/workers': 'svc',
@@ -382,11 +416,19 @@ const PATH_GROUP: Record<string, string> = {
   '/onboarding': 'tenant',
   '/resource-grants': 'tenant',
   '/cost-alloc': 'tenant',
-  // 安全与治理
+  // 组织与员工
+  '/org-structure': 'org',
+  '/admin': 'org',
+  // 权限与安全
+  '/sys-roles': 'gov',
+  '/sys-permissions': 'gov',
   '/approval-flows': 'gov',
   '/audit': 'gov',
-  '/settings': 'gov',
   '/review-records': 'gov',
+  // 系统配置
+  '/settings': 'syscfg',
+  '/sys-apps': 'syscfg',
+  '/sys-models': 'syscfg',
   // 平台管理
   '/content-reviews': 'plat',
   '/tenants': 'plat'
@@ -437,6 +479,13 @@ async function onCommand(command: string | number | object) {
     router.push('/profile')
   }
 }
+
+// 应用注册表一到位就把子应用 origin 收进白名单：在此之前工作台不接收任何桥接消息
+watch(
+  () => apps.items,
+  (items) => registerAppOrigins(items),
+  { immediate: true, deep: false }
+)
 
 onMounted(async () => {
   initBridge()

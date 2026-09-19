@@ -211,39 +211,44 @@ export function markAllNotificationsRead() {
 
 // ============================================================ API：通道配置（新）
 
-export function listChannels() {
+/**
+ * 通道配置 / 投递记录是**租户级**管理动作：平台管理员必须显式带 `tenantId`
+ * （后端 NotificationTenantGuard 对平台管理员强制校验），租户管理员可不带（硬绑定本租户）。
+ */
+export function listChannels(tenantId?: number | null) {
   return http
-    .get('/notifications/channels')
+    .get('/notifications/channels', { params: tenantId ? { tenantId } : {} })
     .then((r) => unwrap<ChannelListResult>(r))
 }
 
-export function updateChannel(code: ChannelCode, body: ChannelUpdateBody) {
+export function updateChannel(code: ChannelCode, body: ChannelUpdateBody, tenantId?: number | null) {
   return http
-    .put(`/notifications/channels/${code}`, body)
+    .put(`/notifications/channels/${code}`, body, { params: tenantId ? { tenantId } : {} })
     .then((r) => unwrap<ChannelInfo>(r))
 }
 
-export function testChannel(code: ChannelCode) {
+export function testChannel(code: ChannelCode, tenantId?: number | null) {
   return http
-    .post(`/notifications/channels/${code}/test`)
+    .post(`/notifications/channels/${code}/test`, {}, { params: tenantId ? { tenantId } : {} })
     .then((r) => unwrap<ChannelTestResult>(r))
 }
 
 // ============================================================ API：投递记录（新）
 
-export function listDeliveries(q: DeliveryQuery = {}) {
+export function listDeliveries(q: DeliveryQuery = {}, tenantId?: number | null) {
   const params: Record<string, unknown> = {}
   if (q.status) params.status = q.status
   if (q.notificationId) params.notificationId = q.notificationId
   if (q.limit) params.limit = q.limit
+  if (tenantId) params.tenantId = tenantId
   return http
     .get('/notifications/deliveries', { params })
     .then((r) => unwrap<DeliveryListResult>(r))
 }
 
-export function retryDelivery(id: number) {
+export function retryDelivery(id: number, tenantId?: number | null) {
   return http
-    .post(`/notifications/deliveries/${id}/retry`)
+    .post(`/notifications/deliveries/${id}/retry`, {}, { params: tenantId ? { tenantId } : {} })
     .then((r) => unwrap<RetryResult>(r))
 }
 

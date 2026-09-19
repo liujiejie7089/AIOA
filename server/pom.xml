@@ -40,6 +40,8 @@
     <jjwt.version>0.12.6</jjwt.version>
     <springdoc.version>2.6.0</springdoc.version>
     <lombok.version>1.18.34</lombok.version>
+    <!-- 向量库 Milvus（docs/32）：仅 aioa-resource 在 aioa.kb.store=milvus 时用到 -->
+    <milvus-sdk.version>2.6.25</milvus-sdk.version>
   </properties>
 
   <dependencies>
@@ -130,6 +132,13 @@
         <groupId>org.springdoc</groupId>
         <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         <version>${springdoc.version}</version>
+      </dependency>
+      <!-- Milvus 向量库 Java SDK（v2 API：MilvusClientV2）。传递带 grpc / protobuf / gson，
+           其中 gson 是 InsertReq.data 的元素类型（com.google.gson.JsonObject）所需。 -->
+      <dependency>
+        <groupId>io.milvus</groupId>
+        <artifactId>milvus-sdk-java</artifactId>
+        <version>${milvus-sdk.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

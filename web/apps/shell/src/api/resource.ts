@@ -412,15 +412,45 @@ export function updateApp(
 
 export interface ModelItem {
   id: number
+  /** 模型标识（唯一，如 minimax / deepseek） */
   providerKey: string
+  /** 大模型类型：minimax / deepseek / dashscope / vllm / ollama / custom */
+  providerType: string
   name: string
   baseUrl: string
   modelName: string
   apiKeyEnv: string
+  /** 后端只回掩码；apiKey 字段仅用于提交，列表里恒为空 */
+  apiKeyMasked: string
+  /** DB=管理端填写 / ENV=环境变量 / NONE=未配置 */
+  apiKeySource: string
   enabled: boolean
   isDefault: boolean
   sort: number
+  temperature: number
+  maxContext: number
+  /** 提交专用：留空或原样回传掩码 = 不修改密钥 */
+  apiKey?: string
   [key: string]: unknown
+}
+
+/** 大模型类型预设：选中后自动带出接入地址 / 模型名 / 密钥环境变量名 */
+export interface ModelPreset {
+  type: string
+  label: string
+  baseUrl: string
+  defaultModel: string
+  apiKeyEnv: string
+  temperature: number
+  maxContext: number
+}
+
+/** 连通性校验结果：ok=false 时 message 是可直接展示给用户的失败原因 */
+export interface ModelCheckResult {
+  providerKey: string
+  ok: boolean
+  message: string
+  latencyMs: number
 }
 
 export function listModels(): Promise<ModelItem[]> {
@@ -440,6 +470,22 @@ export function deleteModel(key: string): Promise<unknown> {
 
 export function setDefaultModel(key: string): Promise<unknown> {
   return http.put(`/admin/models/${key}/default`, {}).then((r) => unwrap(r))
+}
+
+export function listModelPresets(): Promise<{ presets: ModelPreset[]; keyEncryptionWeak: boolean }> {
+  return http.get('/admin/models/presets').then((r) =>
+    unwrap<{ presets: ModelPreset[]; keyEncryptionWeak: boolean }>(r),
+  )
+}
+
+/** 启停：启用时后端先做连通性校验，不通过会返回明确原因（抛 ApiError） */
+export function setModelStatus(key: string, enabled: boolean): Promise<ModelCheckResult> {
+  return http.put(`/admin/models/${key}/status`, { enabled }).then((r) => unwrap<ModelCheckResult>(r))
+}
+
+/** 只做连通性校验，不改启用状态 */
+export function testModel(key: string): Promise<ModelCheckResult> {
+  return http.post(`/admin/models/${key}/test`, {}).then((r) => unwrap<ModelCheckResult>(r))
 }
 
 export interface QuotaView {

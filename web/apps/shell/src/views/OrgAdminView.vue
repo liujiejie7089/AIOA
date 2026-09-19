@@ -3,8 +3,9 @@
     <el-tabs v-model="active" class="org-admin-tabs">
       <!-- 组织与部门：原「组织与员工」页面（机构 / 部门树 / 员工名册），写操作仍由页内 canWrite 收窄。 -->
       <el-tab-pane name="org" label="组织与部门" />
-      <!-- 人员管理：原独立菜单「人员管理 / 系统管理」页面（按档位分组的名册、角色分配、
-           账号启停，以及平台级的角色 / 权限点 / 功能管理 / 模型管理卡片）。 -->
+      <!-- 人员管理：按档位分组的名册、角色分配、账号启停。
+           原挂在本页的平台级卡片（角色 / 权限点 / 功能管理 / 模型管理）已按功能域
+           迁至「权限与安全」「系统配置」两组。 -->
       <el-tab-pane v-if="showPersonnel" name="personnel" label="人员管理" />
     </el-tabs>
 
@@ -35,7 +36,7 @@ const active = ref<TabName>('org')
 
 /**
  * 默认页签由**入口路由**决定，而不是一律落在第一页：
- * - `/admin`（原「人员管理 / 系统管理」深链）→ 人员管理，老书签与老操作路径不变；
+ * - `/admin`（人员管理深链）→ 人员管理，老书签与老操作路径不变；
  * - `/org-structure`（合并后的正式菜单入口）→ 组织与部门。
  *
  * 用 watch(immediate) 而非 onMounted：两条路由共用本组件，在两者之间跳转时
@@ -50,7 +51,7 @@ function syncTabFromRoute() {
 }
 watch(() => route.name, syncTabFromRoute, { immediate: true })
 
-/** 两块内容原样复用：OrgStructureView = 原「组织与员工」；AdminView = 原「人员管理 / 系统管理」。 */
+/** 两块内容原样复用：OrgStructureView = 「组织与部门」；AdminView = 「人员管理」。 */
 const OrgPanel = defineAsyncComponent(() => import('@/views/OrgStructureView.vue'))
 const PersonnelPanel = defineAsyncComponent(() => import('@/views/AdminView.vue'))
 </script>

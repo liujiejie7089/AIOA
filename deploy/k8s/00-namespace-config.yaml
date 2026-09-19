@@ -1,0 +1,115 @@
+# =============================================================================
+# 命名空间 / 非敏感配置 / 密钥样例
+#
+# 与 deploy/docker-compose.yml 使用同一套环境变量名，迁移时只需把它们搬到
+# ConfigMap（非敏感）与 Secret（敏感）两处。
+#
+# 注意：Secret 这里是**样例**，真实值请用
+#   kubectl create secret generic aioa-secrets --from-literal=... -n aioa
+# 或在集群里接入外部密钥管理（Vault / 云厂商 KMS），不要把明文提交进仓库。
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aioa
+  labels:
+    app.kubernetes.io/part-of: aioa
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aioa-config
+  namespace: aioa
+data:
+  # ---- 数据库 / Redis（集群外或同集群 StatefulSet 均可，改这里即可）----
+  MYSQL_HOST: "192.168.31.129"
+  MYSQL_PORT: "3306"
+  MYSQL_DB: "aioa"
+  MYSQL_USER: "root"
+  REDIS_HOST: "192.168.31.129"
+  REDIS_PORT: "6379"
+
+  # ---- 服务间地址（集群内用 Service 名）----
+  AIOA_AGENT_BASE_URL: "http://aioa-agent:8000"
+  SERVER_BASE_URL: "http://aioa-server:8080"
+
+  # ---- 对象存储 ----
+  MINIO_ENDPOINT: "http://aioa-minio:9000"
+  MINIO_ROOT_USER: "aioa"
+
+  # ---- 知识库存储后端 ----
+  # mysql（默认，零新增依赖）/ milvus（需同时 apply 40-milvus.yaml）
+  # ⚠️ 改成 milvus 时 **Milvus 必须在线**，否则 server 启动失败（决策 D6 fail-fast，不静默降级）
+  AIOA_KB_STORE: "mysql"
+  # ---- 知识库嵌入（换成语义向量才谈得上检索质量；local 是 256 维 n-gram 哈希，无语义）----
+  AIOA_KB_EMBEDDING_PROVIDER: "local"
+  AIOA_KB_EMBEDDING_FORMAT: "ollama"
+  AIOA_KB_EMBEDDING_URL: ""                # 例 http://ollama:11434/api/embeddings
+  AIOA_KB_EMBEDDING_MODEL: "bge-small-zh-v1.5"
+  AIOA_KB_EMBEDDING_DIMS: "512"            # 必须与 AIOA_MILVUS_DIMS 一致
+  AIOA_KB_EMBEDDING_TIMEOUT_MS: "15000"
+  AIOA_KB_REEMBED_ON_START: "false"        # 换 provider/模型后跑一次 true，补齐切片向量
+  # ---- Milvus（服务名与 40-milvus.yaml 一致）----
+  AIOA_MILVUS_URI: "http://milvus:19530"
+  AIOA_MILVUS_DATABASE: "default"
+  AIOA_MILVUS_COLLECTION: "kb_chunk_v1"    # 维度创建后不可改；换嵌入模型必须换集合名再回填
+  AIOA_MILVUS_DIMS: "512"
+  AIOA_MILVUS_METRIC: "COSINE"
+  AIOA_MILVUS_INDEX: "HNSW"
+  AIOA_MILVUS_HNSW_M: "16"
+  AIOA_MILVUS_HNSW_EF: "200"
+  AIOA_MILVUS_ENABLE_BM25: "true"          # 稀疏向量 + 原生混合检索
+  AIOA_MILVUS_BACKFILL: "false"            # 一次性 true：从 MySQL kb_chunk 重建索引
+  AIOA_MILVUS_TIMEOUT_MS: "10000"
+  AIOA_MILVUS_BATCH: "200"
+
+  # ---- 模型 ----
+  MODEL_DEFAULT: "echo"
+
+  # ---- 代码托管方 ----
+  AIOA_REPO_PROVIDER: "gitee"
+  AIOA_GITEE_ENABLED: "true"
+  AIOA_GITEE_BASE_URL: "https://gitee.com/api/v5"
+  AIOA_GITEE_WEB_URL: "https://gitee.com"
+  AIOA_GITEE_OAUTH_AUTHORIZE_URL: "https://gitee.com"
+  AIOA_GITEE_REDIRECT_URI: "https://aioa.example.com/api/v1/gitee/bind/callback"
+  AIOA_GITEE_SCOPE: "user_info projects hook pull_requests issues notes"
+  AIOA_GITEA_ENABLED: "false"
+
+  TZ: "Asia/Shanghai"
+---
+# 样例：真实部署请用 kubectl create secret 生成，勿提交明文
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aioa-secrets
+  namespace: aioa
+type: Opaque
+stringData:
+  MYSQL_PASSWORD: "change-me"
+  JWT_SECRET: "change-me-jwt-secret-at-least-32-bytes-long"
+  SERVICE_JWT_SECRET: "change-me-service-secret-at-least-32-bytes"
+  MINIO_ROOT_PASSWORD: "change-me"
+  DEEPSEEK_API_KEY: ""
+  DASHSCOPE_API_KEY: ""
+  AIOA_GITEE_CLIENT_ID: ""
+  AIOA_GITEE_CLIENT_SECRET: ""
+  AIOA_GITEE_WEBHOOK_SECRET: ""
+  AIOA_GITEE_TOKEN_ENC_KEY: "change-me"
+  # 走 http 嵌入时可选（vLLM 网关常需）；留空即不发送 Authorization 头
+  AIOA_KB_EMBEDDING_API_KEY: ""
+  # Milvus 单机默认不鉴权，留空即可；接入鉴权的托管实例时填 <user>:<password>
+  AIOA_MILVUS_TOKEN: ""
+---
+# 上传文件与知识库原文：多副本时必须用 ReadWriteMany 存储
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aioa-uploads
+  namespace: aioa
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi

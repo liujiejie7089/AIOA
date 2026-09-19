@@ -77,6 +77,14 @@
       <!-- ============================== 通道配置（仅租户管理员） ============================== -->
       <el-tab-pane v-if="isTenantAdmin" name="channels">
         <template #label>通道配置</template>
+        <el-alert
+          v-if="needTenantPick"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="通道配置按租户生效：平台管理员请先在顶栏选择租户，再查看/配置该租户的通道"
+          style="margin-bottom: 10px"
+        />
         <div class="noti-toolbar">
           <span class="noti-sub">配置各通道的启用与接入参数（可配置 HTTP 网关）</span>
           <el-button size="small" :loading="channelLoading" @click="loadChannels">刷新</el-button>
@@ -175,6 +183,14 @@
       <!-- ============================== 投递记录（仅租户管理员） ============================== -->
       <el-tab-pane v-if="isTenantAdmin" name="deliveries">
         <template #label>投递记录</template>
+        <el-alert
+          v-if="needTenantPick"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="投递记录按租户归属：平台管理员请先在顶栏选择租户，再查看该租户的投递记录"
+          style="margin-bottom: 10px"
+        />
         <div class="noti-toolbar">
           <el-select
             v-model="deliveryStatusFilter"
@@ -281,7 +297,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { hasAnyRole, TENANT_SCOPE_ROLES } from '@/constants/permissions'
+import { tenantState } from '@/api/tenantScope'
+import { hasAnyRole, ROLE, TENANT_SCOPE_ROLES } from '@/constants/permissions'
 import {
   CHANNEL_CODES,
   CHANNEL_LABELS,
@@ -310,6 +327,14 @@ import {
 const auth = useAuthStore()
 /** 租户管理员判定：与 GiteeProjectsView 同源（TENANT_SCOPE_ROLES = ADMIN / TENANT_ADMIN）。 */
 const isTenantAdmin = computed(() => hasAnyRole(auth.roles, TENANT_SCOPE_ROLES))
+const isPlatformAdmin = computed(() => hasAnyRole(auth.roles, [ROLE.ADMIN]))
+/**
+ * 通道配置 / 投递记录是**租户级**管理动作：后端对平台管理员强制要求 `?tenantId=`，
+ * 而平台管理员的 tenant_id 恒为 0（平台自身）。所以必须显式带上顶栏选中的租户；
+ * 没选就不发请求 —— 否则每次进页面都弹两条「平台管理员需指定 tenantId 参数」。
+ */
+const adminTenantId = computed(() => (isPlatformAdmin.value ? tenantState.currentId.value : null))
+const needTenantPick = computed(() => isPlatformAdmin.value && adminTenantId.value == null)
 
 const activeTab = ref<'mine' | 'channels' | 'deliveries' | 'prefs'>('mine')
 
@@ -402,9 +427,10 @@ function blankForm(): ChannelForm {
 
 async function loadChannels() {
   if (!isTenantAdmin.value) return
+  if (needTenantPick.value) return // 平台管理员未选租户：不发注定失败的请求
   channelLoading.value = true
   try {
-    const res = await listChannels()
+    const res = await listChannels(adminTenantId.value)
     channels.value = (res.items || []).map((c) => ({
       code: c.code,
       label: c.label,
@@ -455,7 +481,7 @@ async function saveChannel(code: ChannelCode) {
   const f = forms.value[code] || blankForm()
   channelSaving.value = code
   try {
-    await updateChannel(code, { enabled: f.enabled, config: f.config })
+    await updateChannel(code, { enabled: f.enabled, config: f.config }, adminTenantId.value)
     ElMessage.success(`${CHANNEL_LABELS[code]} 配置已保存`)
   } catch (e: unknown) {
     ElMessage.error(notiErrMsg(e, '保存失败'))
@@ -468,7 +494,7 @@ async function testChannelFn(code: ChannelCode) {
   channelTesting.value = code
   delete testResults.value[code]
   try {
-    testResults.value[code] = await testChannel(code)
+    testResults.value[code] = await testChannel(code, adminTenantId.value)
   } catch (e: unknown) {
     ElMessage.error(notiErrMsg(e, '测试请求失败'))
   } finally {
@@ -494,12 +520,13 @@ const deliveryRetrying = ref<number | null>(null)
 
 async function loadDeliveries() {
   if (!isTenantAdmin.value) return
+  if (needTenantPick.value) return // 平台管理员未选租户：不发注定失败的请求
   deliveryLoading.value = true
   try {
     const res = await listDeliveries({
       status: deliveryStatusFilter.value || undefined,
       limit: 50
-    })
+    }, adminTenantId.value)
     deliveries.value = res.items || []
     deliveryTotal.value = res.total || 0
   } catch (e: unknown) {
@@ -512,7 +539,7 @@ async function loadDeliveries() {
 async function retryDeliveryFn(id: number) {
   deliveryRetrying.value = id
   try {
-    await retryDelivery(id)
+    await retryDelivery(id, adminTenantId.value)
     ElMessage.success('已触发重试')
     await loadDeliveries()
   } catch (e: unknown) {
