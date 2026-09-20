@@ -44,7 +44,10 @@ venv/
 .tools/
 logs/
 *.log
-data/
+# ★ 必须锚定根目录。裸写 `data/` 在 Docker 里同样匹配**任意层级**，
+#   会把 `web/apps/demo-ticket/src/data/`（应用源码）排除出构建上下文 ⇒ 容器内
+#   `pnpm -r build` 报 `Cannot find module '@/data/tickets'`。与 .gitignore 同源缺陷，两处必须同步。
+/data/
 
 # ---- Docs temp ----
 *.tmp
