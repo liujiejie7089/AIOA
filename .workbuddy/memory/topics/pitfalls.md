@@ -54,5 +54,5 @@
 40. **测试里的「恒真断言」比没有断言更危险**：`chk(name, True, "")` 让用例永远绿。另有一类**依赖校验顺序**的用例 —— 必须构造前置步骤可通过的输入，让失败点确定落在被测步骤。
 
 **构建 / 打包**
-41. **`.gitignore` 裸目录模式会吞掉源码**：不以 `/` 开头的模式（`data/`、`logs/`、`dist/`）匹配**任意层级**。本项目 `data/` 曾把 `web/apps/demo-ticket/src/data/` 整个忽略，而该文件 `git log --all -- <路径>` **无任何记录** ⇒ **从未入过库**（随 `c1dca22` 引入 compose 起就缺），本地能编只因文件在磁盘上。凡「本地过、CI/容器不过」，先跑：`git check-ignore -v <文件>` + `git status --porcelain --ignored`。修法：目录模式一律**锚定根**（`/data/`）。另注意 `--ignored` 里出现 `scripts/e2e_*.py` 属**约定不入库**（本地回归台），不是缺陷。
+41. **`.gitignore` / `.dockerignore` 裸目录模式会吞掉源码（两处必须同改）**：不以 `/` 开头的模式（`data/`、`logs/`、`dist/`）匹配**任意层级**。本项目 `data/` 造成**两个独立原因**同时成立：① `.gitignore` 使 `web/apps/demo-ticket/src/data/` 从未入过库（`git log --all -- <路径>` 无记录，随 `c1dca22` 引入 compose 起就缺）；② `.dockerignore` 使该目录**即便源码拷全也被排除出构建上下文**（所以 rsync 拷贝也照样失败）。两个文件都有 `data/`，**修一个不修另一个，重建仍挂**。凡「本地过、CI/容器不过」，先跑：`git check-ignore -v <文件>` + `git status --porcelain --ignored`。修法：目录模式一律**锚定根**（`/data/`）。另注意 `--ignored` 里出现 `scripts/e2e_*.py` / `start-backend.bat` 属**约定不入库**（本地回归台与本地启动器），不是缺陷。
 
