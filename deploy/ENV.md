@@ -60,24 +60,25 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 
 ### 3.1 数据库 MySQL 8
 
-> **★ 本部署（10.0.0.12）的 MySQL 是该机已有实例、不由 compose 托管** ⇒
+> **★ 本部署的 MySQL 在外部主机 `10.0.0.5:13049`（端口非默认），不由 compose 托管** ⇒
 > **只改 `.env` 的 §1 那几行**。「生效」列标 ❌ 的键改了不会影响容器里跑的后端。
+> ⚠️ 该机口令**以 `$` 结尾** ⇒ 写进 `.env` 时**必须单引号**（`$` 是 compose 插值符）。
 
-| 变量 | 用途 | 本地开发 | 生产（复用外部实例） | 敏感 | 生效 |
+| 变量 | 用途 | 本地开发 | 生产（外部实例） | 敏感 | 生效 |
 |---|---|---|---|---|---|
-| `MYSQL_HOST` / `_PORT` / `_DB` | compose **拼 JDBC 串**用 | `127.0.0.1` / `3306` / `aioa` | `10.0.0.12` / `3306` / `aioa` | — | ✅ |
-| `MYSQL_USER` / `MYSQL_PASSWORD` | compose 拼 JDBC 串用的凭据 | `root` / 空 | `<db-user>` / `CHANGE_ME__` | ★ | ✅ |
+| `MYSQL_HOST` / `_PORT` / `_DB` | compose **拼 JDBC 串**用 | `127.0.0.1` / `3306` / `aioa` | `10.0.0.5` / **`13049`** / `aioa` | — | ✅ |
+| `MYSQL_USER` / `MYSQL_PASSWORD` | compose 拼 JDBC 串用的凭据 | `root` / 空 | `aioa` / `CHANGE_ME__`（非 root） | ★ | ✅ |
 | `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | 后端 JDBC 串与账号 | `jdbc:mysql://127.0.0.1:3306/aioa?…` | 被上面的 `MYSQL_*` **现拼覆盖** | — | ❌ 仅不经 compose 直跑 jar 时有效 |
-| `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` | 仅 compose 自建 mysql 时用 | `DEV_ONLY__` / `aioa` | 本 compose 不读（无 mysql 服务） | ★ | ❌ |
+| `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` | 仅 compose 自建 mysql 时用 | `DEV_ONLY__` / `aioa` | 本 compose 不读（无 mysql 服务）⇒ 留空 | ★ | ❌ |
 
 ### 3.2 Redis
 
-> 同 MySQL：本部署复用该机已有 Redis，**只改 `.env` 的 §2**。
+> 同 MySQL：Redis 在外部主机 `10.0.0.7:6379`，**只改 `.env` 的 §2**。本次 Redis **有口令**（含 `!`，建议单引号）。
 
-| 变量 | 用途 | 本地开发 | 生产（复用外部实例） | 敏感 | 生效 |
+| 变量 | 用途 | 本地开发 | 生产（外部实例） | 敏感 | 生效 |
 |---|---|---|---|---|---|
-| `REDIS_HOST` / `REDIS_PORT` | compose 拼后端 Redis 连接用 | `127.0.0.1` / `6379` | `10.0.0.12` / `6379` | — | ✅ |
-| `SPRING_REDIS_PASSWORD` | 密码（该实例没设 `requirepass` 就留空） | 空 | 空 / `CHANGE_ME__` | ★ | ✅ |
+| `REDIS_HOST` / `REDIS_PORT` | compose 拼后端 Redis 连接用 | `127.0.0.1` / `6379` | `10.0.0.7` / `6379` | — | ✅ |
+| `SPRING_REDIS_PASSWORD` | 密码（无 `requirepass` 才留空） | 空 | `CHANGE_ME__`（**本次必填**） | ★ | ✅ |
 | `SPRING_REDIS_DATABASE` | 库号 | `0` | `0` | — | ✅ |
 | `SPRING_REDIS_HOST` / `_PORT` | `application.yml` 显式读的两个键 | `127.0.0.1` / `6379` | 由 `REDIS_*` 现拼 | — | ❌（被覆盖） |
 
@@ -214,9 +215,9 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 
 | 类别 | 本地开发 | 生产 |
 |---|---|---|
-| 主机名 | `127.0.0.1` / `localhost` | 容器服务名 `mysql` `redis` `agent` `server` `minio` `vllm` `ollama` |
-| 协议 | `http` | `https`（含 OAuth 回调与 Webhook 基址） |
-| 域名 | 本机端口 | `aioa.example.com` 等真实公网域名 |
+| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**仍用服务名 `agent` `server` `minio` `ollama` |
+| 协议 | `http` | 本次 `http`（内网 80/81，未接 TLS）；拿到公网域名后再上 `https` |
+| 域名 | 本机端口 | 本次直接用 IP `10.0.0.12`（80 / 81）；有公网域名时替换 |
 | 凭据 | `DEV_ONLY__` / 空 | 全部 `CHANGE_ME__` 占位，部署前逐项替换 |
 | TLS | 不涉及 | `AIOA_GITEA_INSECURE_SKIP_VERIFY=false` + 自签 CA 信任库 |
 | 并发 | `AGENT_MAX_CONCURRENCY=4` | `8`（按容器规格） |

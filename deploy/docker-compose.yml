@@ -1,10 +1,12 @@
 # =============================================================================
 # AIOA 一键部署（生产可用）
-# - 数据库 / Redis / Milvus：**不由本 compose 托管**，地址由 .env 注入
-#     （`deploy/.env.production` 已按生产机 10.0.0.12 填好；下面 `${MYSQL_HOST:-…}`
-#      的默认值只是「不传 .env 时的兜底」，**部署时必须用 --env-file / .env 覆盖**）
-# - 公网入口：仅 nginx:80；server/agent/web/H5 在 aioa-net 内互访，不直接对外
-#     H5（用户端单文件）由 nginx 以静态文件直接提供：http://<host>/h5/
+# - 数据库 / Redis / Milvus：**都在外部主机、不由本 compose 托管**，地址由 .env 注入
+#     MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa）　Redis = 10.0.0.7:6379　Milvus = 10.0.0.12:19530
+#     （下面 `${MYSQL_HOST:-…}` 的默认值只是「没传 .env 时的兜底」，**部署时必须用 .env 覆盖**；
+#      默认值已与本次环境对齐，但真实口令不在默认值里）
+# - 公网入口：nginx 两个端口 —— **80 = 用户端 H5**、**81 = 管理端**；
+#     server/agent/web 在 aioa-net 内互访，不直接对外
+#     H5（用户端单文件）由 nginx 以静态文件直接提供：http://<host>/（`/h5/` 为兼容路径）
 # - 健康检查 + 重启策略 + 日志轮转 + 资源限制 齐备
 #
 # 起停（在 deploy/ 目录）：
@@ -16,8 +18,9 @@
 
 name: aioa
 
-# 数据库（MySQL 8）与 Redis 7 已迁至远程主机 10.0.0.12，由下方 server/agent 的
-# SPRING_DATASOURCE_* / SPRING_DATA_REDIS_HOST 环境变量直连，compose 内不再托管。
+# 数据库（MySQL 8）与 Redis 7 都在**外部主机**，由下方 server 的 SPRING_DATASOURCE_* /
+# SPRING_DATA_REDIS_HOST 环境变量直连，compose 内不再托管：
+#   MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa，**非默认端口**）　Redis = 10.0.0.7:6379（**有口令**）
 # 如需本地临时起一个 MySQL 调试，可取消下方注释：
 # mysql:
 #   image: mysql:8.0
@@ -101,16 +104,16 @@ services:
     environment:
       # ---- 数据库 / Redis ----
       # createDatabaseIfNotExist=true：全新机器上不必手工建库（账号需有 CREATE 权限）
-      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-10.0.0.12}:${MYSQL_PORT:-3306}/${MYSQL_DB:-aioa}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
-      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-root}
+      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aioa}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-aioa}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-}
       # 两个键名都传：application.yml 显式写了 ${SPRING_REDIS_HOST:…}，
       # 而 Spring Boot 的宽松绑定认 SPRING_DATA_REDIS_HOST —— 少传一个都可能连错 Redis。
-      SPRING_REDIS_HOST: ${REDIS_HOST:-10.0.0.12}
+      SPRING_REDIS_HOST: ${REDIS_HOST:-10.0.0.7}
       SPRING_REDIS_PORT: ${REDIS_PORT:-6379}
       SPRING_REDIS_PASSWORD: ${SPRING_REDIS_PASSWORD:-}
       SPRING_REDIS_DATABASE: ${SPRING_REDIS_DATABASE:-0}
-      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-10.0.0.12}
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-10.0.0.7}
       SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
 
       # ---- JWT 密钥 ----
@@ -236,7 +239,7 @@ services:
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       # M1 骨架 agent 为回声模型，不直连数据库；后续如需持久化（如 LangGraph checkpointer）
       # 复用统一 MySQL，DSN 形如：
-      # AIOA_MYSQL_DSN: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-}@${MYSQL_HOST:-10.0.0.12}:${MYSQL_PORT:-3306}/${MYSQL_DB:-aioa}
+      # AIOA_MYSQL_DSN: mysql://${MYSQL_USER:-aioa}:${MYSQL_PASSWORD:-}@${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aioa}
       TZ: Asia/Shanghai
     expose:
       - "8000"
