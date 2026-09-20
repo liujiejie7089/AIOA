@@ -47,6 +47,10 @@ _load_env()
 
 BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8080"))
+# 监听地址：默认 127.0.0.1（本机联调，不对外暴露）。
+# 放进容器时必须设 HOST=0.0.0.0，否则容器外（含同网络的 nginx）连不上 —— 容器里的
+# 127.0.0.1 指容器自身，不是宿主，也不是其它容器。
+HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.getenv("PORT", "5181"))
 
 HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "content-length", "upgrade"}
@@ -172,7 +176,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 if __name__ == "__main__":
-    print("AIOA 用户端联调服务: http://127.0.0.1:%d  ->  backend %s:%d"
-          % (PORT, BACKEND_HOST, BACKEND_PORT))
-    with Server(("127.0.0.1", PORT), ProxyHandler) as httpd:
+    print("AIOA 用户端联调服务: http://%s:%d  ->  backend %s:%d"
+          % (HOST, PORT, BACKEND_HOST, BACKEND_PORT))
+    with Server((HOST, PORT), ProxyHandler) as httpd:
         httpd.serve_forever()

@@ -202,7 +202,7 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 | `web/apps/shell/.env` | `VITE_PORT` / `VITE_API_TARGET` | `5173` / `http://localhost:8080` | `5173` / `<对外网关地址>` |
 | `web/apps/demo-ticket/.env` | `VITE_PORT` | `5174` | `5174` |
 | `web/apps/demo-dispatch/.env` | `VITE_PORT` | `5175` | `5175` |
-| `user-client/.env` | `PORT` / `BACKEND_HOST` / `BACKEND_PORT` | `5181` / `127.0.0.1` / `8080` | `5181` / `<后端主机>` / `8080` |
+| `user-client/.env` | `HOST` / `PORT` / `BACKEND_HOST` / `BACKEND_PORT` | `127.0.0.1` / `5181` / `127.0.0.1` / `8080` | 走容器时 `0.0.0.0` / `5181` / `aioa-server` / `8080` |
 
 子应用端口改动**需同步业务应用注册表**（wujie 注册表）。
 

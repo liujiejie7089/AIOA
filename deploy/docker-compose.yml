@@ -274,18 +274,23 @@ services:
     cpus: "0.5"
 
   # ===========================================================================
-  # Nginx（唯一对外端口：80；HTTPS 由前置 Nginx / 宝塔 / Cloudflare 处理）
+  # Nginx（对外两个端口：80 = 用户端 H5 / 81 = 管理端；
+  #        HTTPS 由前置 Nginx / 宝塔 / Cloudflare 处理）
   # ===========================================================================
   nginx:
     image: nginx:1.27-alpine
     container_name: aioa-nginx
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # 用户端 H5：单文件应用，直接以静态文件挂进来，由本 nginx 在 /h5/ 提供
+      # 80 与 81 两个 server 块**共用**的 API 反代 location 组。
+      # 抽成单独文件是为了避免「改了一个端口忘了另一个」——两端口必须行为一致。
+      - ./nginx/api-proxy.conf:/etc/nginx/api-proxy.conf:ro
+      # 用户端 H5：单文件应用，直接以静态文件挂进来，由本 nginx 在 **80** 端口提供
       # （H5 内部调相对路径 /api，同源下无需任何前端配置）
       - ../user-client/index.html:/usr/share/nginx/html/h5/index.html:ro
     ports:
-      - "80:80"
+      - "80:80"    # 用户端 H5（对外主入口）
+      - "81:81"    # 管理端 shell
       # HTTPS 若要在本容器终止，把证书挂到 /etc/nginx/certs/ 并在 nginx.conf 加 listen 443
       # 建议由宝塔前置 Nginx / Cloudflare 统一终止 HTTPS，避免在应用层重复签发
     depends_on:

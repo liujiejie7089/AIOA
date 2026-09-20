@@ -3,6 +3,11 @@ FROM node:22-alpine AS build
 WORKDIR /build
 RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 COPY web/pnpm-workspace.yaml web/package.json web/pnpm-lock.yaml* ./
+# ★ 必须 COPY 根 tsconfig：apps/*/tsconfig.json 与 packages/aioa-sdk/tsconfig.json 都
+#    `extends: "../../tsconfig.base.json"`，容器里即 /build/tsconfig.base.json。
+#   漏了它 ⇒ vue-tsc 拿不到 strict / esModuleInterop / moduleResolution:bundler / skipLibCheck，
+#   报的却不是「文件找不到」，而是一堆 element-plus 与 rollup/parseAst 的下游错误，极难定位。
+COPY web/tsconfig.base.json ./
 COPY web/packages ./packages
 COPY web/apps ./apps
 # 先尝试严格模式（lockfile 一致才构建）；fallback 显式放宽而非静默改 lockfile
