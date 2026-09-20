@@ -1,6 +1,8 @@
 # 生产部署（目标机 10.0.0.12）
 
 > 2026-09-19 建立；**2026-09-20 目标机由 192.168.2.130 改为 10.0.0.12**（Milvus `19530`、**无鉴权**）。
+> **2026-09-20 第二批：三件套全部落到已有外部实例** —— MySQL `10.0.0.5:13049`（**非默认端口**）/ 库 `aioa` / 用户 `aioa`；
+> Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus 仍是 `10.0.0.12:19530` 无鉴权。真实口令只在 `deploy/.env`。
 > 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ 验收 + 故障对照表）。
 
 ## 拓扑与「复用而非托管」原则
@@ -27,8 +29,8 @@
 ## 关键配置值（`deploy/.env.production`）
 | 键 | 值 | 备注 |
 |---|---|---|
-| `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.12` / `3306` / `aioa` / … | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*` |
-| `REDIS_HOST` / `_PORT` + `SPRING_REDIS_PASSWORD` / `SPRING_REDIS_DATABASE` | `10.0.0.12` / `6379` / … | **★真正生效的 Redis 键** |
+| `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.5` / `13049` / `aioa` / `aioa` / （见 `.env`） | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*`。**13049 不是 3306** —— 写错端口现象是连不上/超时，不是鉴权失败 |
+| `REDIS_HOST` / `_PORT` + `SPRING_REDIS_PASSWORD` / `SPRING_REDIS_DATABASE` | `10.0.0.7` / `6379` / （有口令，见 `.env`） / `0` | **★真正生效的 Redis 键**。该实例**有 requirepass** ⇒ 口令漏填现象是 `NOAUTH Authentication required` |
 | `AIOA_MILVUS_URI` | `http://10.0.0.12:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
 | `AIOA_MILVUS_TOKEN` | 空 | 该 Milvus **无鉴权** ⇒ 必须留空（填了会认证失败） |
 | `AIOA_KB_STORE` | `milvus` | Milvus 不可达 ⇒ 后端**启动失败**（刻意 fail-fast） |
@@ -36,8 +38,14 @@
 | `AIOA_KB_EMBEDDING_URL` | `http://ollama:11434/api/embeddings` | 容器内互访名 |
 | `AIOA_KB_EMBEDDING_MODEL` | `quentinz/bge-small-zh-v1.5` | Ollama 上真实存在的名字（含命名空间） |
 | `AIOA_KB_EMBEDDING_DIMS` | `512` | 必须与 `AIOA_MILVUS_DIMS` 一致 |
-| `MODEL_DEFAULT` / `MINIMAX_API_KEY` | `minimax` / 留空 | **Key 必须与 `MODEL_DEFAULT` 同名**；留空或不配对 ⇒ **静默降级 echo**（不报错，现象=回答一直回声） |
+| `MODEL_DEFAULT` / `MINIMAX_API_KEY` | `minimax` / **必填** | **Key 必须与 `MODEL_DEFAULT` 同名**；留空或不配对 ⇒ **静默降级 echo**（不报错，现象=回答一直回声） |
 | `AIOA_GITEE_ENABLED` / `AIOA_GITEE_SYNC_ENABLED` | `false` | 私网 IP 无法被 Gitee 回调，先关（功能自动隐藏） |
+
+### ★ 含特殊字符的口令必须用单引号（2026-09-20 实测）
+- MySQL 口令末尾是 `$`，而 `$` 是 **compose 插值字符** ⇒ 双引号/裸写会被吃掉尾部（现象：口令长度少 1、`Access denied`）。
+  正确写法 `MYSQL_PASSWORD='…$'`（**单引号**）。
+- Redis 口令含 `!` ⇒ bash 历史展开风险，同样**单引号**。
+- 自检判据：`source deploy/.env` 后比对**口令长度**，不要只看「变量非空」。
 
 ## 哪些文件要改、哪些不用改（★真实值只写 `.env`）
 - **真实密钥只写 `deploy/.env`** —— 实测 `git check-ignore deploy/.env` = IGNORED（`.gitignore:33 .env`）。
@@ -60,7 +68,7 @@
   `environment:` 覆盖同名值。只有**不经 compose、直接 `java -jar`** 时才读 `.env` 这三个键。
 - ⇒ **`MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` 本 compose 完全不读**（compose 里没有 mysql 服务）。
 - 遗留隐患已清：compose 中曾有旧机默认值 `${MYSQL_HOST:-192.168.31.129}`、`${MYSQL_PASSWORD:-yjiud}`
-  —— **缺键时会静默连到别的机器**，已改为 `:-10.0.0.12` / `:-`（空，缺口令就明确报鉴权失败）。
+  —— **缺键时会静默连到别的机器**，已改为 `:-10.0.0.5` / `:-13049` / `:-aioa` / `:-10.0.0.7`（口令默认留空，缺了就明确报鉴权失败）。
 - 仍未改的两处旧值（**已声明冻结/非本路径**，别照抄）：`deploy/.env.example`（文件头自称
   「已被 .env.development / .env.production 取代，勿再加变量」）与 `deploy/k8s/00-namespace-config.yaml`
   （本部署走 compose，不走 k8s），仍写着 `192.168.31.129`。
