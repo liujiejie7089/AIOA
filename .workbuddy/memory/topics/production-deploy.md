@@ -1,6 +1,7 @@
-# 生产部署（目标机 192.168.2.130）
+# 生产部署（目标机 10.0.0.12）
 
-> 2026-09-19 建立。入口文档 = `deploy/生产部署手册.md`（9 节，含验收与故障对照表）。
+> 2026-09-19 建立；**2026-09-20 目标机由 192.168.2.130 改为 10.0.0.12**（Milvus `19530`、**无鉴权**）。
+> 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ 验收 + 故障对照表）。
 
 ## 拓扑与「复用而非托管」原则
 - 单机 Docker Compose，**边缘 nginx 对外两个端口：80 = 用户端 H5、81 = 管理端**（2026-09-20 由单 80 拆分）；
@@ -26,9 +27,10 @@
 ## 关键配置值（`deploy/.env.production`）
 | 键 | 值 | 备注 |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:mysql://192.168.2.130:3306/aioa?...&createDatabaseIfNotExist=true` | 库不存在会自动建 |
-| `SPRING_REDIS_HOST` / `REDIS_HOST` | `192.168.2.130` | 双键名都传（`application.yml` 显式引用 `SPRING_REDIS_HOST`） |
-| `AIOA_MILVUS_URI` | `http://192.168.2.130:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己） |
+| `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.12` / `3306` / `aioa` / … | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*` |
+| `REDIS_HOST` / `_PORT` + `SPRING_REDIS_PASSWORD` / `SPRING_REDIS_DATABASE` | `10.0.0.12` / `6379` / … | **★真正生效的 Redis 键** |
+| `AIOA_MILVUS_URI` | `http://10.0.0.12:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
+| `AIOA_MILVUS_TOKEN` | 空 | 该 Milvus **无鉴权** ⇒ 必须留空（填了会认证失败） |
 | `AIOA_KB_STORE` | `milvus` | Milvus 不可达 ⇒ 后端**启动失败**（刻意 fail-fast） |
 | `AIOA_KB_EMBEDDING_PROVIDER` | `http` | `local`=256 维哈希无语义，生产必须 `http` |
 | `AIOA_KB_EMBEDDING_URL` | `http://ollama:11434/api/embeddings` | 容器内互访名 |
@@ -45,12 +47,27 @@
   ⇒ 它只允许放 `CHANGE_ME__` 占位，**填真实密钥等于把密码提交进仓库**。
   校验：`git ls-files deploy/.env.production`（已跟踪）+ `git ls-files deploy/.env`（应为空）。
 - 已改完、**用户不用动**：`deploy/docker-compose.yml` · `deploy/nginx/nginx.conf` · `deploy/.env.production`(模板)。
-- 文件里共 **12 处真占位**：9 处随机密钥（不同行号，须一次 sed 全改）+ 3 处同一个 DB 密码
-  （`SPRING_DATASOURCE_PASSWORD` / `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD`，**三个必须同值**）；
-  另有 3 行顶部说明注释含 `CHANGE_ME__` 字样（查残留时必须 `grep -v ':#'` 排除）。
+- 文件里共 **12 处真占位**：9 处随机密钥（不同行号，须一次 sed 全改）+ 3 处 DB 口令
+  （`MYSQL_PASSWORD` ★生效 / `SPRING_DATASOURCE_PASSWORD`、`MYSQL_ROOT_PASSWORD` ✗compose 不读，
+  但一起填同值以免自检残留占位符）；
+  另有若干行顶部说明注释含 `CHANGE_ME__` 字样（查残留时必须 `grep -v ':#'` 排除）。
+
+## ★ 环境变量注入路径（2026-09-20 实测，最易搞错的一处）
+- compose 里**没有 `env_file`**（`grep -n env_file deploy/docker-compose.yml` 为空）⇒ `deploy/.env`
+  **只作为 `${}` 插值源**，不会整份塞进容器；只有 `environment:` 里**显式列出的键**才进容器。
+- ⇒ **改 `.env` 里的 `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` 不生效**：server 服务的同名键是
+  `jdbc:mysql://${MYSQL_HOST:-…}:${MYSQL_PORT:-…}` / `${MYSQL_USER:-…}` / `${MYSQL_PASSWORD:-…}` 现拼的，
+  `environment:` 覆盖同名值。只有**不经 compose、直接 `java -jar`** 时才读 `.env` 这三个键。
+- ⇒ **`MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` 本 compose 完全不读**（compose 里没有 mysql 服务）。
+- 遗留隐患已清：compose 中曾有旧机默认值 `${MYSQL_HOST:-192.168.31.129}`、`${MYSQL_PASSWORD:-yjiud}`
+  —— **缺键时会静默连到别的机器**，已改为 `:-10.0.0.12` / `:-`（空，缺口令就明确报鉴权失败）。
+- 仍未改的两处旧值（**已声明冻结/非本路径**，别照抄）：`deploy/.env.example`（文件头自称
+  「已被 .env.development / .env.production 取代，勿再加变量」）与 `deploy/k8s/00-namespace-config.yaml`
+  （本部署走 compose，不走 k8s），仍写着 `192.168.31.129`。
 
 ## 端口避让（生产机已占用）
-- `milvus-minio` 占 **9000/9001**、`milvus-standalone` 占 **19530/9091**。
+- `milvus-minio` 占 **9000/9001**、`milvus-standalone` 占 **19530/9091**（9091 是否发布到宿主**未确认**
+  ⇒ 体检以 **19530 在监听且可达**为准，别因 9091 连不上就判定 Milvus 不可用）。
 - ⇒ 本项目 MinIO 控制台改 **`9011:9001`**；⇒ **禁用 `--profile milvus`**（会起第二套撞端口）。
 - nginx 卷挂载 `../user-client/index.html` → `/usr/share/nginx/html/h5/index.html`，
   80 端口用 `root` 直接从该目录托管（`/h5/` 作为兼容路径保留）。
