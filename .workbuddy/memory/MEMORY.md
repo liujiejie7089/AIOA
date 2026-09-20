@@ -6,7 +6,7 @@
 | 何时读 | 文件 |
 |---|---|
 | 项目结构 · 打包 · 起服务 · 端口 · 账号 · env · Flyway | `topics/runtime-env.md` |
-| 编码 / 改缺陷 / 排查异常 | `topics/pitfalls.md`（40 条已修坑，勿回退） |
+| 编码 / 改缺陷 / 排查异常 | `topics/pitfalls.md`（43 条已修坑，勿回退） |
 | 跑套件 / 写验收 / 收口 | `topics/e2e-suites.md` |
 | 接口口径 · 登录 · 角色 · 权限链 | `topics/api-permissions.md` |
 | 知识库 / 检索 / 向量库 | `topics/vector-store-milvus.md` |
