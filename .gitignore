@@ -42,7 +42,10 @@ venv/
 .tools/
 logs/
 *.log
-data/
+# ★ 必须锚定根目录。裸写 `data/` 会匹配**任意层级**的 data 目录，
+#   把应用源码 `web/apps/demo-ticket/src/data/tickets.ts` 一并吞掉 ⇒ 容器内
+#   `pnpm -r build` 报 `Cannot find module '@/data/tickets'`（该文件从未入过库）。
+/data/
 
 # ---- Docs temp ----
 *.tmp
