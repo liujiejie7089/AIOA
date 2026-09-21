@@ -83,13 +83,20 @@ do_export() {
   done
   [ "$miss" = 0 ] || die "有镜像缺失，已中止。请把上面清单发我。"
 
-  hr "4) 导出为一个包（docker save | gzip）"
+  hr "4) 导出应用侧为一个包（docker save | gzip）"
+  local base=("${EXT_IMAGES[@]}" "${BUILT_IMAGES[@]}")
+  echo "  含：${base[*]}"
   echo "  文件：$PWD/$out"
-  docker save "${all[@]}" | gzip -1 > "$out" || die "docker save 失败"
+  docker save "${base[@]}" | gzip -1 > "$out" || die "docker save 失败"
   ls -lh "$out" | sed 's/^/  /'
 
   if [ "$with_ollama" = 1 ]; then
-    hr "5) 导出 Ollama 语义嵌入模型（$OLLAMA_MODEL）"
+    hr "5) 导出 Ollama（**单独成包**，方便先起应用侧、后补语义嵌入）"
+    echo "  镜像包：$PWD/ollama-image.tar.gz（约 1.5G，比上面那个大）"
+    docker save "$OLLAMA_IMAGE" | gzip -1 > ollama-image.tar.gz || die "导出 ollama 镜像失败"
+    ls -lh ollama-image.tar.gz | sed 's/^/  /'
+
+    echo "  模型包：$PWD/ollama-models.tar.gz（$OLLAMA_MODEL）"
     docker compose --profile ollama up -d ollama || die "起 ollama 失败"
     for i in $(seq 1 30); do
       docker exec aioa-ollama ollama list >/dev/null 2>&1 && break
@@ -102,13 +109,17 @@ do_export() {
     docker compose --profile ollama stop ollama >/dev/null 2>&1 || true
   fi
 
-  hr "完成：把包拷到目标机"
-  echo "  scp $out${with_ollama:+ ollama-models.tar.gz} root@10.0.0.12:/opt/aioa/"
+  hr "完成：把包拷到目标机（用隧道机 → 真实服务器那条既有通道）"
+  echo "  scp $out${with_ollama:+ ollama-image.tar.gz ollama-models.tar.gz} root@10.0.0.12:/opt/aioa/"
   echo "  目标机执行："
   echo "    cd /opt/aioa && bash deploy/ops/offline-images.sh import $out"
-  [ "$with_ollama" = 1 ] && echo "    bash deploy/ops/offline-images.sh import-ollama ollama-models.tar.gz"
-  echo "  然后（**不要加 --build**）："
-  echo "    cd deploy && docker compose --profile ollama up -d"
+  echo "    docker compose --profile ollama up -d      # 先起应用侧（不要加 --build）"
+  if [ "$with_ollama" = 1 ]; then
+    echo "    # 应用侧验收通过后，再补语义嵌入："
+    echo "    bash deploy/ops/offline-images.sh import ollama-image.tar.gz"
+    echo "    bash deploy/ops/offline-images.sh import-ollama ollama-models.tar.gz"
+    echo "    docker compose --profile ollama up -d"
+  fi
 }
 
 # ---------------------------------------------------------------- import

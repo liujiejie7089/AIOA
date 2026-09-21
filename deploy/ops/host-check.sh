@@ -129,6 +129,20 @@ probe https://docker.m.daocloud.io/v2/            '加速器 docker.m.daocloud.i
 probe https://dockerproxy.net/v2/                 '加速器 dockerproxy.net'
 probe https://hub-mirror.c.163.com/v2/            '加速器 hub-mirror.c.163.com'
 probe https://mirror.ccs.tencentyun.com/v2/       '加速器 mirror.ccs.tencentyun.com'
+echo "  -- ★ 内网可达性（真实服务器虽然没外网，但可能能碰内网 registry / Gitea）--"
+probe http://172.16.8.249:3000                     '内网 Gitea 172.16.8.249:3000'
+probe http://172.16.8.249:3000/api/v1/version       '内网 Gitea API'
+echo "  -- ★ daemon.json 里声明的 registry（若有 → 很可能能直接 pull，不用搬包！）--"
+if [ -f /etc/docker/daemon.json ]; then
+  # 把 registry-mirrors / insecure-registries 里的地址逐个探一遍
+  grep -oE 'https?://[^",[:space:]]+' /etc/docker/daemon.json 2>/dev/null | sort -u | while read -r u; do
+    probe "${u%/}/v2/" "daemon.json => $u"
+  done
+else
+  echo "    (无 /etc/docker/daemon.json)"
+fi
+echo "  -- ★ docker 实际生效的 Registry Mirrors（最权威，读它的输出）--"
+(docker info 2>/dev/null | sed -n '/Registry Mirrors/,/^[A-Z]/p' | head -8 | sed 's/^/    /') || echo "    (取不到)"
 echo "  -- 代理相关 --"
 env | grep -iE 'proxy|PROXY' | sed 's/^/    /' || echo "    (无 proxy 环境变量)"
 [ -f /etc/systemd/system/docker.service.d/http-proxy.conf ] && \
