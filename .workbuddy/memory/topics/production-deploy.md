@@ -159,3 +159,20 @@
 **先探内网，可能白搬**：`host-check.sh` 会把 `daemon.json` 里的 `registry-mirrors` /
 `insecure-registries` 逐个探通断，并读 `docker info` 的生效镜像源、探内网 Gitea（`172.16.8.249:3000`）。
 **若内网本来就有 harbor/nexus，直接 `docker compose up -d --build` 即可，整条搬包流程免掉。**
+
+## ★ 真实服务器已有容器（2026-09-21 `docker ps` 实测）
+
+| 容器 | 镜像 | 对 AIOA |
+|---|---|---|
+| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（`AIOA_MILVUS_URI=http://10.0.0.12:19530`）；`≥2.5` ⇒ BM25 可开 |
+| `milvus-etcd` | `etcd:v3.5.25` | ➖ Milvus 配套，不用单独连 |
+| `mongodb` | `mongo:latest` | ❌ 别的系统 |
+| `rmqbroker` / `rmqnamesrv` | `apache/rocketmq:4.9.6` | ❌ 别的系统 |
+
+- **已核实 AIOA 不用 Mongo/RocketMQ**：`server/*/pom.xml`、`server/pom.xml`、`agent/requirements*.txt`、
+  `deploy/docker-compose.yml` 里搜 `mongo|rocketmq|kafka|amqp|rabbit` **全部零命中**。别去动它们。
+- 端口：已有容器占 `10909/10911/9876/19530/2379/2380/27017`；本项目要 `80/81/9011/11434` ⇒ **不冲突**。
+- **仍然要构建/搬运**：这 5 个镜像一个都不是 compose 要的（`aioa-server/agent/web` 是本项目构建产物；
+  宿主也没有 `minio/minio` 与 `nginx` 镜像 —— Milvus 2.6 自己存对象，所以没起 minio 容器）。
+- ★ **`docker ps` ≠ 镜像清单**：它只列运行中容器，机器上可能有没在跑的 `nginx`/`minio` 镜像；
+  用 `docker ps` 判断齐备会误判成「什么都没有」而白搬整个包。**判断只能用 `docker images`。**
