@@ -138,3 +138,24 @@
 - `origin` = **Gitea `http://172.16.8.249:3000/liujiejie/AIOA_System.git`**（不是 GitHub），
   与本地 `main` **已分叉**：本地领先 92 个提交，`origin/main` 另有 `179547e 删除目录「.workbuddy」`。
   ⇒ 必须确认服务器代码是**从 Gitea 拉**还是**本地直传**；从 Gitea 拉会拿到旧树。
+
+## ★ 2026-09-21 三机角色与「分两包」的依据
+
+**角色固定**：本地（改码/推码）→ **隧道机 `219.151.186.24`（唯一能碰到真实服务器的跳板）** →
+**真实服务器 `10.0.0.12`（无外网）**。任何文件都只能经隧道机中转。
+
+**两个容错事实（决定了 Ollama 可以后补，不必一次搬 2.3G）**：
+1. `EmbeddingConfig.embeddingProvider()` 启动时**只装配 Bean、不校验连通性**；
+   `HttpEmbeddingProvider` 只在**被调用时**抛 `IllegalStateException("嵌入服务不可达：url=…")`。
+2. `KbService.embedAll` 对**单个切片** try/catch：嵌入失败**只告警、不阻断入库**；
+   `MilvusKnowledgeStore` 对 `vector.length != info.dims()` 只**跳过 + 告警**，不抛异常。
+   ⇒ **缺 Ollama 时后端照常启动、上传照常成功，只是没有向量、检索不命中**（预期，非缺陷）。
+
+**搬运分两包**（`deploy/ops/offline-images.sh`）：
+- 包 1 `aioa-images.tar.gz` = `minio/minio:latest` + `nginx:1.27-alpine` + `aioa-server/agent/web`
+  ⇒ 先导入先起，跑 §6 验收。
+- 包 2 `ollama-image.tar.gz`（约 1.5G，**比包 1 还大**）+ `ollama-models.tar.gz` ⇒ 验收后再补。
+
+**先探内网，可能白搬**：`host-check.sh` 会把 `daemon.json` 里的 `registry-mirrors` /
+`insecure-registries` 逐个探通断，并读 `docker info` 的生效镜像源、探内网 Gitea（`172.16.8.249:3000`）。
+**若内网本来就有 harbor/nexus，直接 `docker compose up -d --build` 即可，整条搬包流程免掉。**
