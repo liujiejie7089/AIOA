@@ -92,3 +92,49 @@
 - 真实变量名是 `VLLM_BASE_URL` / `OLLAMA_BASE_URL`（**`OLLAMA_BASE_URL` 必须带 `/v1`**）；
   历史上文档里的 `LOCAL_VLLM_BASE_URL` 是**死变量**（agent 代码未消费）。
 - 缺对应 `*_API_KEY` ⇒ **静默降级 echo**，不报错、难查。
+
+## ★ 2026-09-21 现场排障：两条断链（口令写入 / 镜像获取）
+
+### A. 口令写 `.env`：**禁用 `sed` 拼变量**
+- `sed -i "s|^KEY=.*|KEY='${VAR}'|"` 两个陷阱（本地受控实验已复现）：
+  值含 **分隔符 `|`** ⇒ `sed: -e expression #1, char NN: unknown option to 's'`，**整条命令失败、值静默没写**
+  （屏幕只剩一行报错，极易忽略）；值含 **`&`** ⇒ **不报错但被改坏**（`&` 展开成整段原文，实测 `a&b`→`aMINIMAX_API_KEY=zzzb`）。
+- 正解 = **`deploy/ops/set-secrets.py`**：按行整体重写该行（不做模式替换）+ 自动选引号
+  （无 `'` 用单引号；有 `'` 只能双引号 + `$$` 转义）+ 回读逐字节校验 + `docker compose config --format json`
+  核对**容器真正收到的值**。`--check` / `--only` / `--from-env`（配 `read -rsp`）。
+- 陷阱等价物：**`grep -c '^MINIMAX_API_KEY=.\+'`** 是**假通过** —— 模板该行 `=` 后有对齐空格，`.\+` 匹配到空格。
+  要用 `grep -nE '^KEY=[^[:space:]]'`，或直接跑 `set-secrets.py --check`。
+- **`bash source .env` 不能当自检**：值含 `'` 时只能写双引号 + `$$`，compose 还原成 `$`，
+  但 **bash 把 `$$` 当 PID** ⇒ 两边结论不同。以 compose 渲染结果为准。
+
+### B. 口令长度对照表（判断「到底写进去没有」的第一判据）
+- `CHANGE_ME__db-password` = **22** 字符；`CHANGE_ME__redis-password` = **25** 字符。
+  现场自检报 `22 / 25` ⇒ 就是**占位符本尊**，不是「口令短了」。
+- 本机 `deploy/.env.production` 里各键行号（59/60/61/63/64/76/77/78/79/112/115）
+  可用来判断服务器那份模板是不是最新（行号能逐行对上 = 代码是当前版本）。
+
+### C. 无外网 ⇒ 镜像怎么进来（`deploy/ops/offline-images.sh`）
+- 现场症状：`failed to resolve reference "docker.io/minio/minio:latest" … dial tcp 31.13.94.41:443: i/o timeout`；
+  `ping baidu.com` 100% 丢包；`docker run --rm mysql:8.0 …` 卡在 `Unable to find image … locally`。
+  ⚠️ 解到的 `31.13.94.41` 是 **Facebook 段** = 典型 **DNS 污染**，**不等于没有外网** ⇒
+  必须分开探测「国内站点 / 各加速器」（`deploy/ops/host-check.sh` §⑤ 就是干这个的）。
+- 默认档需 5 个镜像：`minio/minio:latest`、`nginx:1.27-alpine`、`aioa-server`、`aioa-agent`、`aioa-web`；
+  可选 `ollama/ollama:latest`（**KB 语义嵌入必需**，模型 `quentinz/bge-small-zh-v1.5`，卷 `aioa_ollamadata`）。
+- ★ `docker-compose.yml` 顶层有 **`name: aioa`** ⇒ 任意机器上构建出的应用镜像名**完全一致**
+  ⇒ 离线 `docker load` 之后直接 `docker compose up -d`，**绝不要加 `--build`**
+  （加了会重新构建，而目标机拉不到基础镜像，必然失败）。
+- 构建应用镜像需要 `maven:3.9-eclipse-temurin-21` / `node:22-alpine` / `python:3.13-slim` /
+  `eclipse-temurin:21-jre` —— 这些只在**导出机**上需要；搬运只搬**成品镜像**。
+
+### D. 行尾：`core.autocrlf=true` 必须靠 `.gitattributes` 压住
+- Windows 检出的 `.sh` 会是 CRLF ⇒ 拷到 Linux 报 `\r: command not found` / `bad interpreter`；
+  `.env` 混进 `\r` ⇒ 口令多一个隐藏字符 ⇒ 鉴权失败且极难查。
+- 已加 `.gitattributes`：`*.sh` / `deploy/ops/*.py` / `deploy/.env*` / `.env*` 强制 `eol=lf`。
+
+### E. 访问与仓库来源（未决）
+- 公网直连 `10.0.0.12:22` **不通**；隧道 `219.151.186.24:22` —— 用户给的写法（`root/Ego2025` 等 5 种变体 ×
+  3 个用户名 × password/keyboard-interactive）**全部认证被拒**，其余 7 个常见转发端口也不通
+  （仅 22 是 SSH，`OpenSSH_8.9p1 Ubuntu`）⇒ **agent 无法直连该机，只能把脚本交给用户在服务器上跑**。
+- `origin` = **Gitea `http://172.16.8.249:3000/liujiejie/AIOA_System.git`**（不是 GitHub），
+  与本地 `main` **已分叉**：本地领先 92 个提交，`origin/main` 另有 `179547e 删除目录「.workbuddy」`。
+  ⇒ 必须确认服务器代码是**从 Gitea 拉**还是**本地直传**；从 Gitea 拉会拿到旧树。
