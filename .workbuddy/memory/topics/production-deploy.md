@@ -3,15 +3,51 @@
 > 2026-09-19 建立；**2026-09-20 目标机由 192.168.2.130 改为 10.0.0.12**（Milvus `19530`、**无鉴权**）。
 > **2026-09-20 第二批：三件套全部落到已有外部实例** —— MySQL `10.0.0.5:13049`（**非默认端口**）/ 库 `aioa` / 用户 `aioa`；
 > Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus 仍是 `10.0.0.12:19530` 无鉴权。真实口令只在 `deploy/.env`。
-> 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ 验收 + 故障对照表）。
+> **2026-09-21 第三批（定案）：五件基础设施全在外部 / 用户不用边缘 nginx / MinIO 被证实未被使用。**
+> 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ §5.2 静态前端放哪 + 验收 + 故障对照表）。
+
+## ★ 定案（2026-09-21）：本次走「后端档」
+
+- 用户口径：`目前不用nginx`；`我目前有mysql,redis,milvus,nginx，但都在其他服务器上，这些就不用下载了，直接连接`。
+- ⇒ 叠加 `deploy/docker-compose.backend.yml`（**只加 ports，不改任何环境变量**）：
+  `docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent`
+- ⇒ **只起 2 个容器、只搬 2 张镜像**（`aioa-server` + `aioa-agent`）；
+  不需要 `nginx:1.27-alpine` / `aioa-web` / `minio/minio`。
+- 宿主端口 **8080（后端 API）/ 8000（agent，排查用）**；**不再是 80/81**。
+- ⚠️ **代价（必须转告用户）**：80=H5、81=管理端 的静态没人托管了。解法见手册 §5.2：
+  · H5 = 仓库里的 `user-client/index.html`（**单文件、零构建**）；
+  · 管理端 = `aioa-web` 镜像里的 `/usr/share/nginx/html`，**不必跑容器**：
+    `docker create _tmpweb aioa-web` + `docker cp _tmpweb:/usr/share/nginx/html/. <root>` + `docker rm _tmpweb`。
+  · 宿主 nginx 把 `/api/` 反代到 `http://10.0.0.12:8080/`（抄 `deploy/nginx/api-proxy.conf`）。
+
+## ★★ MinIO 被证实「应用代码不使用」（2026-09-21 全仓核对）
+
+- 判据：全仓 grep（不限扩展名，排除 `node_modules/.git/target/dist`）里 `minio` **只出现在 `deploy/`
+  与 `.workbuddy/` 文档**；Java / Python / 前端源码**零命中**，也没有 S3 客户端
+  （`S3Client|amazonaws|OSS|ObjectStorage|FileStorage` 同样零命中，仅 venv 版权注释误命中）。
+- 实际落盘：`FileController` 的 `@Value("${aioa.upload.dir:./uploads}")` + 元数据落 `sys_file` 表。
+- ⇒ ① 别处那台 MinIO（`172.16.8.249`，控制台 `:9001`）**不用接**；② `minio/minio:latest` **不用搬**；
+  ③ `MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY` 是**死配置**（compose 传了但无人读）⇒ 模板里改**留空**并写明原因。
+- ⇒ `minio` 服务归入 **`profiles: ["minio"]`**（默认 `up` 不起）；**`server.depends_on: minio(healthy)` 已删**
+  （保留它会把可选服务强拉起来，且 minio 拉不到镜像时 server 直接起不来）。
+
+## ★ 顺手补掉的真缺口：`server` 原先**没挂卷** ⇒ 上传文件会丢
+
+- `server` 在 compose 里 `volumes:` 为空，`./uploads` = `/app/uploads`（Dockerfile.server `WORKDIR /app`）
+  **随容器重建即丢**，而 `sys_file` 记录还在 ⇒ 下载 404。
+- 已加命名卷 `serveruploads:/app/uploads` + 显式 `AIOA_UPLOAD_DIR=/app/uploads`
+  （`@Value("${aioa.upload.dir:…}")` 占位符也能被 `SystemEnvironmentPropertySource` 宽松绑定从环境变量解析）。
+- 备份口径随之从「MinIO 卷」改成 **`aioa_serveruploads` 卷**。
 
 ## 拓扑与「复用而非托管」原则
-- 单机 Docker Compose，**边缘 nginx 对外两个端口：80 = 用户端 H5、81 = 管理端**（2026-09-20 由单 80 拆分）；
-  server/agent/web 仅内网互访。
-- **MySQL / Redis / Milvus 复用机器已有实例**（用户 `docker ps` 已有 `milvus-standalone`/`milvus-minio`/`milvus-etcd`/`redis`/`mysql`），本 compose **不托管**它们。
-- compose 只起应用侧：`server / agent / web(shell) / nginx / minio / ollama`（+ 可选 `vllm`）。
-- **H5 不是容器**：`user-client/index.html` 由卷挂载进边缘 nginx 静态托管。
-  因此 `user-client/serve.py`（本地联调服务器，默认 :5181 只绑 127.0.0.1）**不在生产链路里**，
+- 单机 Docker Compose。**本次入口由用户已有的 nginx 提供**（在别的机器上）：
+  `/api/` 反代 `http://10.0.0.12:8080/`，H5 与管理端静态按 §5.2 放。
+- **MySQL / Redis / Milvus / MinIO / nginx 全在外部**，本 compose **不托管**它们。
+- 完整档（自带 nginx，80=H5 / 81=管理端）仍然保留可用：不叠加 backend.yml 即可，
+  `deploy/nginx/nginx.conf` = 两个 `server` 块（80 静态托管 H5、81 代理 `aioa_web`），
+  两块 `/api/`、SSE、`/openapi/` 都来自**同一份** `deploy/nginx/api-proxy.conf`（`include`，防漂移）。
+- **H5 不是容器**：`user-client/index.html`；完整档下由卷挂载进边缘 nginx 静态托管。
+  因此 `user-client/serve.py`（本地联调服务器，默认 :5181 只绑 127.0.0.1）**不在生产链路里**
   「serve.py 监听地址 / 它的反代后端地址」都不是生产问题 —— 生产 `/api/` 由 nginx 反代。
 
 ## 端口与配置要点（2026-09-20 更新）
@@ -55,10 +91,11 @@
   ⇒ 它只允许放 `CHANGE_ME__` 占位，**填真实密钥等于把密码提交进仓库**。
   校验：`git ls-files deploy/.env.production`（已跟踪）+ `git ls-files deploy/.env`（应为空）。
 - 已改完、**用户不用动**：`deploy/docker-compose.yml` · `deploy/nginx/nginx.conf` · `deploy/.env.production`(模板)。
-- 文件里共 **12 处真占位**：9 处随机密钥（不同行号，须一次 sed 全改）+ 3 处 DB 口令
-  （`MYSQL_PASSWORD` ★生效 / `SPRING_DATASOURCE_PASSWORD`、`MYSQL_ROOT_PASSWORD` ✗compose 不读，
-  但一起填同值以免自检残留占位符）；
+- 文件里共 **10 处真占位**（2026-09-21 起：原 12 处中的 MinIO 2 处已按「不被使用」清掉）：
+  DB 口令 3 处（`MYSQL_PASSWORD` ★生效 / `SPRING_DATASOURCE_PASSWORD` / `MYSQL_ROOT_PASSWORD` ✗compose 不读，
+  但一起填同值以免自检残留占位符）+ Redis 1 处 + JWT/服务密钥 4 处 + 令牌加密键 2 处；
   另有若干行顶部说明注释含 `CHANGE_ME__` 字样（查残留时必须 `grep -v ':#'` 排除）。
+  `MINIO_*` 五个键**故意留空且不带行尾注释**（免得被 .env 解析当成值的一部分）。
 
 ## ★ 环境变量注入路径（2026-09-20 实测，最易搞错的一处）
 - compose 里**没有 `env_file`**（`grep -n env_file deploy/docker-compose.yml` 为空）⇒ `deploy/.env`
@@ -76,13 +113,19 @@
 ## 端口避让（生产机已占用）
 - `milvus-minio` 占 **9000/9001**、`milvus-standalone` 占 **19530/9091**（9091 是否发布到宿主**未确认**
   ⇒ 体检以 **19530 在监听且可达**为准，别因 9091 连不上就判定 Milvus 不可用）。
-- ⇒ 本项目 MinIO 控制台改 **`9011:9001`**；⇒ **禁用 `--profile milvus`**（会起第二套撞端口）。
-- nginx 卷挂载 `../user-client/index.html` → `/usr/share/nginx/html/h5/index.html`，
+- ⇒ **禁用 `--profile milvus`**（会起第二套撞端口）。
+- **本次后端档要的端口是 8080 / 8000（+ 可选 11434）**，与上面全部不冲突。
+  9011 只属「完整档自带 minio 控制台」，本次不涉及。
+- 完整档下 nginx 卷挂载 `../user-client/index.html` → `/usr/share/nginx/html/h5/index.html`，
   80 端口用 `root` 直接从该目录托管（`/h5/` 作为兼容路径保留）。
   H5 与管理端都用**同源相对路径**（`/api`、`/api/v1`）⇒ 换 IP / 域名 / 端口**无需重新构建前端**。
+  ⚠️ 80 的 `location /` 是 `try_files $uri /index.html` ⇒ **任意路径都回 200**，
+  不能拿 200 当「页面正常」的判据，要看内容或改查容器健康。
 
 ## profile 语义（`deploy/docker-compose.yml`）
-- 默认（无 profile）：server/agent/web/nginx/minio。
+- 默认（无 profile）：**server / agent / web / nginx**（`minio` 自 2026-09-21 起**不再默认起**）。
+- 后端档：叠加 `docker-compose.backend.yml`，只起 **server / agent**。
+- `--profile minio`：起 compose 自带的 minio（**本项目用不上**，见上文）。
 - `--profile ollama`：**只起 Ollama**（KB 语义嵌入的必需项，镜像与模型都小）→ 再 `ollama pull quentinz/bge-small-zh-v1.5`。
 - `--profile model`：ollama + vllm（vLLM 镜像很大，非必要别拉）。
 - `--profile milvus`：**本项目不用**（复用宿主实例）。`--profile ops`：Prometheus/Grafana。
@@ -118,13 +161,35 @@
   `ping baidu.com` 100% 丢包；`docker run --rm mysql:8.0 …` 卡在 `Unable to find image … locally`。
   ⚠️ 解到的 `31.13.94.41` 是 **Facebook 段** = 典型 **DNS 污染**，**不等于没有外网** ⇒
   必须分开探测「国内站点 / 各加速器」（`deploy/ops/host-check.sh` §⑤ 就是干这个的）。
-- 默认档需 5 个镜像：`minio/minio:latest`、`nginx:1.27-alpine`、`aioa-server`、`aioa-agent`、`aioa-web`；
+- **本次后端档只需 2 个镜像**：`aioa-server` + `aioa-agent`（都是本地构建产物）。
+  完整档才需 `minio/minio:latest` + `nginx:1.27-alpine` + `aioa-web`。
   可选 `ollama/ollama:latest`（**KB 语义嵌入必需**，模型 `quentinz/bge-small-zh-v1.5`，卷 `aioa_ollamadata`）。
 - ★ `docker-compose.yml` 顶层有 **`name: aioa`** ⇒ 任意机器上构建出的应用镜像名**完全一致**
   ⇒ 离线 `docker load` 之后直接 `docker compose up -d`，**绝不要加 `--build`**
   （加了会重新构建，而目标机拉不到基础镜像，必然失败）。
 - 构建应用镜像需要 `maven:3.9-eclipse-temurin-21` / `node:22-alpine` / `python:3.13-slim` /
   `eclipse-temurin:21-jre` —— 这些只在**导出机**上需要；搬运只搬**成品镜像**。
+
+### C2. `offline-images.sh` 的三个真 bug 与「假 docker 桩」测法（2026-09-21）
+
+- ① `--backend-only` 下 `EXT_IMAGES` 是**空数组** ⇒ `set -u` + 旧 bash 下 `"${arr[@]}"` 报 unbound：
+  一律先判 `[ ${#arr[@]} -gt 0 ]` 再展开，**不写** `("${A[@]}" "${B[@]}")` 混合形式。
+- ② `--with-ollama` 曾用 `${EXT_IMAGES[1]}`（取 nginx）当搬运容器 ⇒ 后端档下**越界崩**：
+  改为 `docker cp` + **宿主 `tar`**；`import-ollama` 直接写 `${DockerRootDir}/volumes/<vol>/_data`。
+- ③ `list --backend-only` **只改了标题、清单仍取完整档** ⇒ 把 nginx/aioa-web 报成「缺」（误导）：
+  改为按模式选数组；`import` 支持透传 `--backend-only`。
+- **可复用测法**：临时目录放一个 `docker` 桩脚本（记调用日志 + 按子命令返回桩值），
+  `PATH="$TMP:$PATH" bash deploy/ops/offline-images.sh ...`。五条链路（export / export --with-ollama /
+  import / import-ollama / list）应全 exit 0，且后端档下 `docker pull` **一次都不发**。
+  ⚠️ 桩的 PATH 首段**不能带 Windows 反斜杠**（`C:\…` 会让 `command -v docker` 找不到），须转 `/c/…`。
+
+### C3. `deploy/ops/compose-lint.py`（本机无 docker 也能体检 compose）
+
+本机**没装 docker** ⇒ `docker compose config` 用不了。改为纯 pyyaml 静态体检四类「上机才炸」的错：
+① `depends_on` 指向 **profile 门控**服务 —— 判据是「依赖的 profiles ⊄ 本服务的 profiles」，
+   故 `milvus→etcd` 合法、`server→minio` 才报错；② 挂了未在顶层声明的命名卷；
+③ compose 引用但 `.env` 里没有的键（会静默取默认值）；④ `CHANGE_ME__` 残留。
+`--override` 可叠加 backend.yml 一起查。**曾抓到 `server.depends_on: minio` 这条真错误。**
 
 ### D. 行尾：`core.autocrlf=true` 必须靠 `.gitattributes` 压住
 - Windows 检出的 `.sh` 会是 CRLF ⇒ 拷到 Linux 报 `\r: command not found` / `bad interpreter`；
@@ -152,9 +217,10 @@
    ⇒ **缺 Ollama 时后端照常启动、上传照常成功，只是没有向量、检索不命中**（预期，非缺陷）。
 
 **搬运分两包**（`deploy/ops/offline-images.sh`）：
-- 包 1 `aioa-images.tar.gz` = `minio/minio:latest` + `nginx:1.27-alpine` + `aioa-server/agent/web`
+- 包 1 `aioa-images-backend.tar.gz`（`export --backend-only`）= **只有 `aioa-server` + `aioa-agent`**
   ⇒ 先导入先起，跑 §6 验收。
 - 包 2 `ollama-image.tar.gz`（约 1.5G，**比包 1 还大**）+ `ollama-models.tar.gz` ⇒ 验收后再补。
+- （完整档才需 `aioa-images.tar.gz` = minio + nginx + aioa-server/agent/web）
 
 **先探内网，可能白搬**：`host-check.sh` 会把 `daemon.json` 里的 `registry-mirrors` /
 `insecure-registries` 逐个探通断，并读 `docker info` 的生效镜像源、探内网 Gitea（`172.16.8.249:3000`）。
@@ -171,8 +237,8 @@
 
 - **已核实 AIOA 不用 Mongo/RocketMQ**：`server/*/pom.xml`、`server/pom.xml`、`agent/requirements*.txt`、
   `deploy/docker-compose.yml` 里搜 `mongo|rocketmq|kafka|amqp|rabbit` **全部零命中**。别去动它们。
-- 端口：已有容器占 `10909/10911/9876/19530/2379/2380/27017`；本项目要 `80/81/9011/11434` ⇒ **不冲突**。
-- **仍然要构建/搬运**：这 5 个镜像一个都不是 compose 要的（`aioa-server/agent/web` 是本项目构建产物；
-  宿主也没有 `minio/minio` 与 `nginx` 镜像 —— Milvus 2.6 自己存对象，所以没起 minio 容器）。
+- 端口：已有容器占 `10909/10911/9876/19530/2379/2380/27017`；**后端档要 `8080/8000`（+可选 11434）** ⇒ **不冲突**。
+- **仍然要构建/搬运**：这 5 个容器一个都不是本项目要的（`aioa-server/agent` 是本项目构建产物）。
+  但 `minio/minio` 与 `nginx` **本次不需要**（MinIO 代码不读、边缘 nginx 用户已有）。
 - ★ **`docker ps` ≠ 镜像清单**：它只列运行中容器，机器上可能有没在跑的 `nginx`/`minio` 镜像；
   用 `docker ps` 判断齐备会误判成「什么都没有」而白搬整个包。**判断只能用 `docker images`。**
