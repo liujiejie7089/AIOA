@@ -232,8 +232,12 @@ public class MilvusKnowledgeStore implements KnowledgeStore {
             return;
         }
         if (info.dims() > 0 && vector.length != info.dims()) {
-            log.debug("切片向量维度 {} 与集合 {} 不一致，跳过索引（需用当前 provider 重算）chunkId={}",
-                    vector.length, info.dims(), chunkId);
+            // 走到这里说明该切片存的是**旧 provider 的向量**（集合维度已由 MilvusConfig 与当前 provider 对齐）。
+            // 曾经是 debug 级：结果是「Milvus 一条都不进、日志上什么都看不到」——静默失效，
+            // 与本类读路径「不打静默空结果」的立场自相矛盾。改 warn 并给出修复动作。
+            log.warn("切片向量维度 {} 与集合 {} 的 {} 不一致，跳过索引（该切片存的是旧 provider 的向量，"
+                            + "需开 AIOA_KB_REEMBED_ON_START=true 重算一次）chunkId={}",
+                    vector.length, info.name(), info.dims(), chunkId);
             return;
         }
         KbChunk c = dao.findChunk(chunkId);

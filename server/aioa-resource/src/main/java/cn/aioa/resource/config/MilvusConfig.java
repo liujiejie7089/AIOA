@@ -1,5 +1,6 @@
 package cn.aioa.resource.config;
 
+import cn.aioa.resource.service.EmbeddingProvider;
 import cn.aioa.resource.store.MilvusFilter;
 import io.milvus.common.clientenum.FunctionType;
 import io.milvus.v2.client.ConnectConfig;
@@ -25,8 +26,10 @@ import java.util.Map;
 /**
  * Milvus 客户端与集合引导（docs/32 Ph2 / Ph0 环境就绪）。
  *
- * <p>只在 {@code aioa.kb.store=milvus} 时装配。启动即完成三件事，任一失败就让应用起不来：</p>
+ * <p>只在 {@code aioa.kb.store=milvus} 时装配。启动即完成四件事，任一失败就让应用起不来：</p>
  * <ol>
+ *   <li><b>维度一致性校验</b>——嵌入 provider 的输出维度必须等于 {@code aioa.kb.milvus.dims}
+ *       （见 {@link #assertDimsAgree}）。这是**唯一**能拦住「上传成功但检索永远无命中」的地方；</li>
  *   <li><b>连通性探测</b>——{@code hasCollection} 能返回就说明 gRPC 通、鉴权过；</li>
  *   <li><b>集合自建</b>——不存在则按 schema 建（含 partition key 与索引）；存在则校验维度；</li>
  *   <li><b>load</b>——确保集合已加载可检索。</li>
@@ -125,9 +128,13 @@ public class MilvusConfig {
     }
 
     @Bean
-    public CollectionInfo milvusCollectionInfo(MilvusClientV2 client) {
+    public CollectionInfo milvusCollectionInfo(MilvusClientV2 client, EmbeddingProvider provider) {
         KbProperties.Milvus m = props.getMilvus();
         String name = m.getCollection();
+
+        // 先校「写入侧维度」再碰集合：嵌入 provider 的输出维度与集合维度必须一致。
+        // 放在最前面是因为不一致时**绝不能**按错误维度把集合建出来（建完就永久不可改）。
+        assertDimsAgree(provider.name(), provider.dims(), m.getDims(), name);
 
         boolean exists = Boolean.TRUE.equals(
                 client.hasCollection(HasCollectionReq.builder().collectionName(name).build()));
@@ -175,6 +182,47 @@ public class MilvusConfig {
 
         client.loadCollection(LoadCollectionReq.builder().collectionName(name).build());
         return new CollectionInfo(name, m.getDims(), bm25);
+    }
+
+    // ---------- 维度一致性 ----------
+
+    /**
+     * 校验「嵌入 provider 输出维度」与「Milvus 集合维度」一致，不一致即启动失败。
+     *
+     * <p><b>为什么必须是硬失败</b>：这两个值分处两个配置键（{@code aioa.kb.embedding.dims} /
+     * {@code aioa.kb.milvus.dims}），文档里只写了「两者必须一致」——那是约定，不是强制。
+     * 一旦不一致，后果**完全静默**：向量照常写进 MySQL，但
+     * {@code MilvusKnowledgeStore.indexChunk} 发现维度不符会跳过 upsert（Milvus 永远为空），
+     * 而检索侧 {@code EmbeddingProvider.cosine} 对维度不符的两个向量直接返回 0
+     * ⇒ 接口不报错、只是永远检不到东西。这正是本类要消灭的失败形态（决策 D6）。</p>
+     *
+     * <p>特别地，{@code provider=local} 的维度是**代码里写死的 256**（{@code EmbeddingProvider.local()}），
+     * 不受 {@code aioa.kb.embedding.dims} 影响——只改那个配置键治不好，必须同时把
+     * {@code aioa.kb.milvus.dims} 设为 256 并换一个集合名（维度建好不可改）。</p>
+     *
+     * @param providerName 嵌入 provider 标识（{@code local} / {@code http:model}）
+     * @param providerDims provider 实际输出维度
+     * @param milvusDims   配置的集合维度
+     * @param collection   集合名
+     */
+    static void assertDimsAgree(String providerName, int providerDims, int milvusDims, String collection) {
+        if (providerDims <= 0 || milvusDims <= 0 || providerDims == milvusDims) {
+            return;
+        }
+        String fix;
+        if (providerName != null && providerName.startsWith("local")) {
+            fix = "provider=local 的输出维度在代码里固定为 256 维（不受 aioa.kb.embedding.dims 影响），"
+                    + "因此请把 aioa.kb.milvus.dims 设为 256，"
+                    + "并把集合名换成一个新名字（如 kb_chunk_v1_256）——"
+                    + "已有集合的维度创建后不可改，只能新建后回填。";
+        } else {
+            fix = "请把 aioa.kb.milvus.dims 改成 " + providerDims + "（与嵌入端点的实际输出一致）；"
+                    + "若现有集合已按 " + milvusDims + " 维建好，则改为新建集合名并开回填。";
+        }
+        throw new IllegalStateException("嵌入 provider 与 Milvus 集合维度不一致：provider=" + providerName
+                + " 输出 " + providerDims + " 维，而 aioa.kb.milvus.dims=" + milvusDims
+                + "（集合 " + collection + "）。两者必须一致：" + fix
+                + " 不修的后果是静默的——切片照常入库 MySQL，但向量被跳过、Milvus 无数据、检索永不命中。");
     }
 
     // ---------- 建集合 ----------

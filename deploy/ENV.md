@@ -55,7 +55,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
 | `SPRING_PROFILES_ACTIVE` | Spring profile | `dev` | `prod` | — |
-| `AIOA_KB_STORE` | 知识库存储实现 | `mysql` | `mysql`（切向量库改 `milvus`） | — |
+| `AIOA_KB_STORE` | 知识库存储实现 | `mysql` | **`milvus`**（复用外部 Milvus；不可达则后端启动失败） | — |
 | `AIOA_REPO_PROVIDER` | 代码托管方，决定读 Gitee 段还是 Gitea 段 | `gitee` | `gitee` | — |
 
 ### 3.1 数据库 MySQL 8
@@ -157,19 +157,19 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| **`AIOA_KB_STORE`** | 存储实现 `mysql` \| `milvus`（**声明在 §0 档位区，勿重复声明**） | `mysql` | `mysql` | — |
-| `AIOA_KB_EMBEDDING_PROVIDER` | 嵌入实现 `local`（256 维 n-gram 哈希，零依赖但**无语义**）\| `http`（语义向量） | `local` | `http` | — |
+| **`AIOA_KB_STORE`** | 存储实现 `mysql` \| `milvus`（**声明在 §0 档位区，勿重复声明**） | `mysql` | **`milvus`** | — |
+| `AIOA_KB_EMBEDDING_PROVIDER` | 嵌入实现 `local`（256 维 n-gram 哈希，零依赖、**无需任何嵌入服务**但**无语义**）\| `http`（语义向量，需 Ollama/vLLM） | `local` | **`local`**（本次不部署 Ollama） | — |
 | `AIOA_KB_REEMBED_ON_START` | 启动时全量重算切片向量（换 provider / 模型后跑一次，跑完改回 `false`） | `false` | `false` | — |
-| `AIOA_KB_EMBEDDING_FORMAT` | 协议形态 `ollama`（`/api/embeddings` 或 `/api/embed`）\| `openai`（`/v1/embeddings`） | `ollama` | `ollama` | — |
-| `AIOA_KB_EMBEDDING_URL` | 嵌入服务地址（`provider=http` 时必填） | 空 | `<url>` | — |
-| `AIOA_KB_EMBEDDING_MODEL` | 模型名 | `bge-small-zh-v1.5` | 同 | — |
-| `AIOA_KB_EMBEDDING_DIMS` | 向量维度，**必须与 `AIOA_MILVUS_DIMS` 一致** | `512` | `512` | — |
-| `AIOA_KB_EMBEDDING_TIMEOUT_MS` | 嵌入请求超时（ms） | `15000` | `15000` | — |
+| `AIOA_KB_EMBEDDING_FORMAT` | 协议形态 `ollama`（`/api/embeddings` 或 `/api/embed`）\| `openai`（`/v1/embeddings`）**（仅 `provider=http` 时读取）** | `ollama` | `ollama` | — |
+| `AIOA_KB_EMBEDDING_URL` | 嵌入服务地址（`provider=http` 时必填）**（仅 `provider=http` 时读取）** | 空 | `http://ollama:11434/api/embeddings` | — |
+| `AIOA_KB_EMBEDDING_MODEL` | 模型名**（仅 `provider=http` 时读取）** | `bge-small-zh-v1.5` | `quentinz/bge-small-zh-v1.5`（512 维） | — |
+| `AIOA_KB_EMBEDDING_DIMS` | 向量维度，**必须与 `AIOA_MILVUS_DIMS` 一致**（`local` 档不读本键：provider 固定 256 维） | `512` | **`256`** | — |
+| `AIOA_KB_EMBEDDING_TIMEOUT_MS` | 嵌入请求超时（ms）**（仅 `provider=http` 时读取）** | `15000` | `15000` | — |
 | `AIOA_KB_EMBEDDING_API_KEY` | 可选 Bearer 令牌（vLLM 网关常需） | 空 | 空 | ★ |
 | `AIOA_MILVUS_URI` | Milvus gRPC 地址 | `http://127.0.0.1:19530` | **复用外部实例** `http://10.0.0.12:19530`（`milvus:19530` 只在 `--profile milvus` 自建栈时用，本部署**不开**该 profile） | — |
 | `AIOA_MILVUS_TOKEN` | 鉴权令牌（未开鉴权时留空） | 空 | **空** —— 本环境 Milvus 无鉴权，填了会认证失败 | ★ |
-| `AIOA_MILVUS_DATABASE` / `_COLLECTION` | 库名 / 集合名（**名字带版本后缀**，换嵌入模型必须新建集合再回填） | `default` / `kb_chunk_v1` | 同 | — |
-| `AIOA_MILVUS_DIMS` | 集合维度（**创建后不可改**） | `512` | `512` | — |
+| `AIOA_MILVUS_DATABASE` / `_COLLECTION` | 库名 / 集合名（**名字带版本+维度后缀**，换嵌入模型必须新建集合再回填） | `default` / `kb_chunk_v1` | `default` / **`kb_chunk_v1_256`**（配 `local` 的 256 维） | — |
+| `AIOA_MILVUS_DIMS` | 集合维度（**创建后不可改**；与嵌入 provider 输出维度不符时后端**启动失败**，见下 §注 2） | `512` | **`256`** | — |
 | `AIOA_MILVUS_METRIC` / `_INDEX` | 距离度量 `COSINE\|IP\|L2` / 索引 `HNSW\|AUTOINDEX\|FLAT` | `COSINE` / `HNSW` | 同 | — |
 | `AIOA_MILVUS_HNSW_M` / `_HNSW_EF` | HNSW 建图/检索参数 | `16` / `200` | 同 | — |
 | `AIOA_MILVUS_ENABLE_BM25` | 原生 BM25 混合检索（需 Milvus ≥ 2.5；建集合失败自动退回纯稠密并告警） | `true` | `true` | — |
@@ -183,6 +183,18 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 > **回滚 = 把 `AIOA_KB_STORE` 改回 `mysql`**（无需改代码）。
 > 首次切换前先 `AIOA_KB_REEMBED_ON_START=true` 补齐切片向量，再 `AIOA_MILVUS_BACKFILL=true` 回填（顺序不能反），
 > 详见 `docs/32-向量库迁移Milvus实施计划.md`。
+>
+> **本次档位（2026-09-21）：`milvus` + `local` + 256 维 —— 不部署 Ollama 也能真正落进 Milvus。**
+> `provider=local` 是**进程内**计算（256 维 char n-gram 哈希），不需要任何嵌入服务，
+> 因此切片与向量都照常产出、Milvus 照常接收；代价是向量腿**无语义**，召回主要靠原生 BM25 腿。
+> 两条必须知道的约束：
+>
+> 1. **维度必须三方对齐**：`local` 的输出维度**写死在代码里是 256**（不受 `AIOA_KB_EMBEDDING_DIMS` 影响），
+>    所以 `AIOA_MILVUS_DIMS` 也必须是 `256`，且集合名要换成一个 256 维的**新集合**（`kb_chunk_v1_256`）。
+> 2. **不存在「静默容忍」**：嵌入 provider 输出维度 ≠ `AIOA_MILVUS_DIMS` 时，后端**启动即失败**并给出该改成什么
+>    （`MilvusConfig.assertDimsAgree`）。这是刻意加硬校验——配错时 Milvus 会**一条都不收**、
+>    检索永远无命中，而接口全部返回成功，属于最难定位的一类故障。
+> 3. 新集合是空的，**首次接入必须手动回填一次** `AIOA_MILVUS_BACKFILL=true`（判据见手册 §6 第 9 条）。
 
 ### 3.8 对象存储 MinIO（★★ **当前未被使用** —— 留空即可）
 
@@ -245,7 +257,8 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 
 | 类别 | 本地开发 | 生产 |
 |---|---|---|
-| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**仍用服务名 `agent` `server` `ollama`（`minio` 已非默认起，见 §3.8） |
+| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**用服务名 `agent` `server`（`minio` 已非默认起，见 §3.8；`ollama` 本次不部署，见 §3.7） |
+| 知识库档位 | `mysql` + `local` + 512 维（仅作开发默认） | `milvus` + `local` + **256 维**（不部署 Ollama；集合 `kb_chunk_v1_256`，见 §3.7） |
 | 协议 | `http` | 本次 `http`（内网 80/81 或 8080，未接 TLS）；拿到公网域名后再上 `https` |
 | 域名 | 本机端口 | 本次直接用 IP `10.0.0.12`（**本次入口由宿主已有 nginx 提供**，见 §3.10）；有公网域名时替换 |
 | 凭据 | `DEV_ONLY__` / 空 | 全部 `CHANGE_ME__` 占位，部署前逐项替换 |

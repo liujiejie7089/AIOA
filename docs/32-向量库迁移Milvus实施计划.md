@@ -274,6 +274,17 @@ Ph0 决策+环境 ──► Ph1 嵌入升级(可独立验收/回滚) ──► P
 10. **嵌入 provider 的维度强校验** —— 响应维度 ≠ 配置 `dims` 直接失败。
     Milvus 集合维度创建后不可改（R1），写进去就是永久坏数据。
 
+12. **补上「provider 输出维度 ↔ 集合维度」这一对校验（2026-09-21 实测发现遗漏）** ——
+    上面第 10 条只校验了「HTTP 响应维度 vs 配置 `dims`」，但真正会出事的是**另一对**：
+    `EmbeddingProvider.dims()`（写入侧的真实维度）vs `aioa.kb.milvus.dims()`（集合维度）。
+    这两者分处两个配置键，此前只有文档一句「两者必须一致」，**没有任何机器强制**。
+    后果是**完全静默**的：向量照常写进 MySQL，`MilvusKnowledgeStore.indexChunk` 发现维度不符后
+    `log.debug` + 跳过 ⇒ Milvus 一条不收；检索侧 `EmbeddingProvider.cosine` 对维度不符的两个向量
+    返回 0 ⇒ 接口全部成功、只是永远检不到。
+    修法：① `MilvusConfig.assertDimsAgree` 在建集合**之前**硬校验，不一致直接启动失败并给出该改成什么
+    （`local` 固定 256 维这一事实也被写进提示）；② `indexChunk` 的 `debug` 升为 `warn` 并写明修复动作。
+    这条与 `ElasticKnowledgeStore`「静默返回空列表」是同一类风险（R8），只是藏在写入侧。
+
 11. **`.env.example` / `ENV.md` 补正（计划外）** —— 上一版 `ENV.md` §3.7 把嵌入与 Milvus 键写成
    「预留（注释）／后端未读取」，而代码已真实读取这 22 个键。这种「文档说它没用、代码在用」
    会让运维按旧文档判断「配了也不生效」⇒ 属于**事实错误**（与「展示字段必须与事实同源」同一类），
