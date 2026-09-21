@@ -103,14 +103,14 @@ class EnvFile:
 
     def set(self, key: str, value: str) -> None:
         pref = key + "="
-        newline = "\r\n" if (self.lines and self.lines[0].endswith("\r\n")) else "\n"
         out = []
         hit = 0
         for ln in self.lines:
             if ln.startswith(pref):
-                _, comment = split_comment(ln[len(pref):])
+                _, comment = split_comment(ln[len(pref):].rstrip("\r\n"))
                 tail = ("  " + comment.strip()) if comment.strip() else ""
-                out.append("%s=%s%s%s" % (key, quote_value(value), tail, newline))
+                # 一律用 LF：文件里含 \r 会被 compose/MySQL 当成口令的一部分 ⇒ 鉴权失败且极难查
+                out.append("%s=%s%s\n" % (key, quote_value(value), tail))
                 hit += 1
             else:
                 out.append(ln)
@@ -121,8 +121,14 @@ class EnvFile:
         self.lines = out
 
     def save(self) -> None:
+        crlf = sum(1 for ln in self.lines if ln.endswith("\r\n"))
+        body = "".join(ln[:-2] + "\n" if ln.endswith("\r\n") else ln for ln in self.lines)
+        if not body.endswith("\n"):
+            body += "\n"
         with open(self.path, "w", encoding="utf-8", newline="") as f:
-            f.write("".join(self.lines))
+            f.write(body)
+        if crlf:
+            print("  （已把 %d 处 CRLF 行尾统一成 LF —— 含 \\r 的值会让口令多一个隐藏字符）" % crlf)
 
 
 # ----------------------------------------------------------------- 报告

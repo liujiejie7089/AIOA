@@ -1,0 +1,12 @@
+# 行尾锁定（必须）
+# ------------------------------------------------------------------------------
+# 本仓库在 Windows 上 core.autocrlf=true ⇒ 默认检出会把 LF 换成 CRLF。
+# 但下面这些文件是要**直接放到 Linux 上执行 / 被 docker compose 解析**的：
+#   - *.sh       拷到服务器后 CRLF 会报 `\r: command not found` / `bad interpreter`
+#   - deploy/.env*  含 \r 的值会被当成口令的一部分 ⇒ 鉴权失败，且极难查
+# 所以这几类**强制 LF**（不论在哪个平台检出）。
+*.sh              text eol=lf
+deploy/ops/*.py   text eol=lf
+deploy/.env*      text eol=lf
+.env              text eol=lf
+.env.*            text eol=lf
