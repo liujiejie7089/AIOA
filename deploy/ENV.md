@@ -184,19 +184,49 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 > 首次切换前先 `AIOA_KB_REEMBED_ON_START=true` 补齐切片向量，再 `AIOA_MILVUS_BACKFILL=true` 回填（顺序不能反），
 > 详见 `docs/32-向量库迁移Milvus实施计划.md`。
 
-### 3.8 对象存储 MinIO
+### 3.8 对象存储 MinIO（★★ **当前未被使用** —— 留空即可）
+
+> **2026-09-21 核对结论（可复现）**：应用代码**不使用 MinIO** —— Java / Python / 前端源码里
+> 没有 `minio` 字样，也没有 S3 客户端（无 `S3Client` / `amazonaws` / OSS SDK）。
+> 文件上传落的是 **server 容器内的本地目录**：`FileController` 的
+> `@Value("${aioa.upload.dir:./uploads}")`（compose 已固定为 `/app/uploads` 并挂命名卷
+> `serveruploads` 持久化），元数据落 `sys_file` 表。
+>
+> 因此本组变量**改与不改都不影响功能**；且 compose 自带的 `minio` 服务已归入
+> `profile: [minio]`，默认 `docker compose up -d` **不会**再起它（历史上它靠
+> `server.depends_on: minio(healthy)` 被强制拉起，该依赖已移除）。
+> 目标机上别处已有的 MinIO（本次 `172.16.8.249`，控制台 `:9001`）**与本项目无关，不需要接**。
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | 管理凭据 | `aioa` / `DEV_ONLY__` | `aioa` / `CHANGE_ME__` | ★ |
-| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | 访问密钥 | 同 root | 同 root | ★ |
-| `MINIO_ENDPOINT` | 端点 | `http://127.0.0.1:9000` | `http://minio:9000` | — |
+| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | 仅供 `--profile minio` 起**自带** minio 时用 | 留空 | 留空 | ★ |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | server 容器会收到，但**无人读取** | 留空 | 留空 | ★ |
+| `MINIO_ENDPOINT` | 同上；真要启用时填 **数据端口** `http://<host>:9000`（**不是**控制台 9001） | 留空 | 留空 | — |
+
+> 想真接入对象存储，必须**同时**做两件事：① 应用侧补 S3 客户端实现 ② `.env` 填上面三个键。
+> 只填 `.env` 不会有任何效果（当前没有读取方）。
+>
+> 若你的本地 `.env.development` 里仍留着旧的 MinIO 值，可以忽略——它不会被任何代码读到。
 
 ### 3.9 观测
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码 | `admin` | `CHANGE_ME__` | ★ |
+
+### 3.10 入口与端口（本次「不用边缘 nginx」档）
+
+| 项 | 用自带 nginx（完整档） | **本次 10.0.0.12（后端档）** |
+|---|---|---|
+| 启动命令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent` |
+| 服务集合 | server + agent + web + nginx（+minio 不再默认起） | **只有 server + agent** |
+| 对外端口 | `80`（用户端 H5）、`81`（管理端） | `8080`（后端 API）、`8000`（agent，排查用） |
+| H5 / 管理端静态 | 由 nginx 容器直接提供 | **由宿主已有的 nginx 提供服务并反代 `/api/`** |
+| 需要的镜像 | minio + nginx + aioa-server + aioa-agent + aioa-web（5 个） | **aioa-server + aioa-agent（2 个）** |
+
+> 后端档下 `web` 与 `nginx` 容器都不需要：`aioa-web` 的运行底座**本身就是** `nginx:1.27-alpine`，
+> 所以连 nginx 镜像也不必搬。宿主 nginx 只要把 `/api/` 反代到 `http://127.0.0.1:8080/`。
+> 叠加文件只加 `ports`、不改任何环境变量，因此对「带 nginx」的既有部署零影响。
 
 ## 4. 前端 env **不在**上面两份文件
 
@@ -215,9 +245,9 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 
 | 类别 | 本地开发 | 生产 |
 |---|---|---|
-| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**仍用服务名 `agent` `server` `minio` `ollama` |
-| 协议 | `http` | 本次 `http`（内网 80/81，未接 TLS）；拿到公网域名后再上 `https` |
-| 域名 | 本机端口 | 本次直接用 IP `10.0.0.12`（80 / 81）；有公网域名时替换 |
+| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**仍用服务名 `agent` `server` `ollama`（`minio` 已非默认起，见 §3.8） |
+| 协议 | `http` | 本次 `http`（内网 80/81 或 8080，未接 TLS）；拿到公网域名后再上 `https` |
+| 域名 | 本机端口 | 本次直接用 IP `10.0.0.12`（**本次入口由宿主已有 nginx 提供**，见 §3.10）；有公网域名时替换 |
 | 凭据 | `DEV_ONLY__` / 空 | 全部 `CHANGE_ME__` 占位，部署前逐项替换 |
 | TLS | 不涉及 | `AIOA_GITEA_INSECURE_SKIP_VERIFY=false` + 自签 CA 信任库 |
 | 并发 | `AGENT_MAX_CONCURRENCY=4` | `8`（按容器规格） |

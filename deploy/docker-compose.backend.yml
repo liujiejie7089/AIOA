@@ -1,0 +1,32 @@
+# =============================================================================
+# AIOA · 只起后端的叠加文件（**不用边缘 nginx 时用**）
+# -----------------------------------------------------------------------------
+# 背景：主文件 `docker-compose.yml` 里只有 `nginx` 服务发布宿主端口（80 = 用户端 H5、
+#       81 = 管理端）；`server` / `agent` / `web` 都只有 `expose:`，只在 aioa-net 内可达。
+#       因此**不起 nginx 时，宿主机上 curl 不到 API** —— 本文件就是补这一件事：
+#       把 server 的 8080 与 agent 的 8000 发布到宿主。
+#
+# 它**只加 ports，不改任何环境变量**，所以不影响既有（带 nginx 的）部署。
+#
+# 用法（在 deploy/ 目录，两条 -f 叠加；`up` 只列要起的服务，nginx/web 不会被起）：
+#     docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent
+#     docker compose -f docker-compose.yml -f docker-compose.backend.yml ps
+#     docker compose -f docker-compose.yml -f docker-compose.backend.yml logs -f server agent
+#     # 停：
+#     docker compose -f docker-compose.yml -f docker-compose.backend.yml down
+#
+# 说明：
+#   - **minio 不会被带起**：它已归入 `profile: [minio]`，且 `server.depends_on` 已移除
+#     （应用代码不使用 MinIO —— 文件落本地盘 `/app/uploads`，已挂命名卷 `serveruploads`）。
+#     因此本档会起的**只有 server 与 agent 两个容器**。
+#   - 之后要接宿主机已有的 nginx 时，直接反代 http://127.0.0.1:8080/api/ 即可；此时可把下面
+#     两行改成 `127.0.0.1:8080:8080` / `127.0.0.1:8000:8000`，只对本机开放、不对内网暴露。
+#   - 端口占用：8080 / 8000。起之前 `ss -lntp | grep -E ':(8080|8000)\b'` 确认空闲。
+# =============================================================================
+services:
+  server:
+    ports:
+      - "8080:8080"     # 后端 API（对外经宿主 nginx 反代 /api/）
+  agent:
+    ports:
+      - "8000:8000"     # FastAPI Agent（后端容器内按服务名 agent:8000 访问，此映射只为排查）

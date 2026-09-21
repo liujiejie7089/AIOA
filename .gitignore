@@ -50,6 +50,12 @@ logs/
 # ---- Docs temp ----
 *.tmp
 
+# ---- 离线镜像/模型搬运产物（deploy/ops/offline-images.sh 生成，单个 1–2G）----
+# 绝不入库：docker save 的结果只该经 scp 走，仓库里留一份是纯负担。
+deploy/*.tar.gz
+deploy/.ollama-export-tmp/
+deploy/.ollama-import-tmp/
+
 # ---- AIOA 本地临时产物 / 密钥（一律不入库）----
 .aioa_login.json
 .diag.txt

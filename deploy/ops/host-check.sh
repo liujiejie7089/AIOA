@@ -153,14 +153,16 @@ hr "⑥ 镜像齐备度（对照 deploy/docker-compose.yml）"
 if command -v docker >/dev/null 2>&1; then
   have() { docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -qxF "$1"; }
   have_re() { docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -qE "$1"; }
-  echo "  -- 默认档（不做则服务起不来）--"
-  for img in minio/minio:latest nginx:1.27-alpine; do
-    have "$img" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s   ← 缺\n' "$img"
+  echo "  -- ★ 本次「后端档」（不用边缘 nginx / 不用 MinIO）只需要这 2 个 --"
+  for img in aioa-server aioa-agent; do
+    have_re "(^|/)$img:latest$|(^|/)$img$" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s   ← 缺（本地构建产物镜像，必须靠离线包）\n' "$img"
   done
-  for img in aioa-server aioa-agent aioa-web; do
-    have_re "(^|/)$img:latest$|(^|/)$img$" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s   ← 缺（本地构建产物镜像）\n' "$img"
+  echo "  -- 只有走「完整档」（自带 nginx，80=H5 / 81=管理端）才需要 --"
+  for img in minio/minio:latest nginx:1.27-alpine aioa-web; do
+    have "$img" && printf '    ✅ %s\n' "$img" || printf '    ⚪ %s   ← 未装；本档不需要\n' "$img"
   done
-  echo "  -- 构建三个应用镜像还需的基础镜像（只有要在这台机上 build 时才需要）--"
+  echo "    （注：aioa-web / nginx / minio 三张本次都不跑容器；aioa-web 只有 §5.2 取管理端静态时才用得上）"
+  echo "  -- 构建两个应用镜像还需的基础镜像（只有要在这台机上 build 时才需要）--"
   for img in maven:3.9-eclipse-temurin-21 eclipse-temurin:21-jre node:22-alpine python:3.13-slim; do
     have "$img" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s\n' "$img"
   done
@@ -168,7 +170,7 @@ if command -v docker >/dev/null 2>&1; then
   for img in ollama/ollama:latest vllm/vllm-openai:latest prom/prometheus:latest; do
     have "$img" && printf '    ✅ %s\n' "$img" || printf '    ⚪ %s（未装，非必需）\n' "$img"
   done
-  echo "  -- 是否有现成 minio 镜像可复用（宿主 milvus-minio 通常已有）--"
+  echo "  -- 现成的 minio 镜像（**本项目用不上**，仅供参考：宿主 milvus-minio 通常已有）--"
   docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -i '^minio/' | sed 's/^/    /' || echo "    (无)"
 fi
 

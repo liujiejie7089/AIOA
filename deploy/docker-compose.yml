@@ -1,17 +1,22 @@
 # =============================================================================
 # AIOA 一键部署（生产可用）
-# - 数据库 / Redis / Milvus：**都在外部主机、不由本 compose 托管**，地址由 .env 注入
-#     MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa）　Redis = 10.0.0.7:6379　Milvus = 10.0.0.12:19530
+# - 数据库 / Redis / Milvus / MinIO：**都在外部主机、不由本 compose 托管**，地址由 .env 注入
+#     MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa）　Redis = 10.0.0.7:6379
+#     Milvus = 10.0.0.12:19530（无鉴权）
+#     MinIO = 别处有（172.16.8.249:9000）但**应用代码根本不读它**，见文件内注释 ⇒ 不需要接、不需要搬镜像
 #     （下面 `${MYSQL_HOST:-…}` 的默认值只是「没传 .env 时的兜底」，**部署时必须用 .env 覆盖**；
 #      默认值已与本次环境对齐，但真实口令不在默认值里）
-# - 公网入口：nginx 两个端口 —— **80 = 用户端 H5**、**81 = 管理端**；
-#     server/agent/web 在 aioa-net 内互访，不直接对外
-#     H5（用户端单文件）由 nginx 以静态文件直接提供：http://<host>/（`/h5/` 为兼容路径）
+# - 公网入口两种走法：
+#     (A) 用自带 nginx：**80 = 用户端 H5**、**81 = 管理端**；server/agent/web 在 aioa-net 内互访、不对外
+#     (B) 不用边缘 nginx（目标机 10.0.0.12 本次采用）：叠加 `docker-compose.backend.yml`，
+#         把 server:8080 / agent:8000 发布到宿主，由**宿主已有的 nginx** 反代 /api/
+#         ⇒ 此走法只需 aioa-server + aioa-agent 两个镜像
 # - 健康检查 + 重启策略 + 日志轮转 + 资源限制 齐备
 #
 # 起停（在 deploy/ 目录）：
 #     cp .env.production .env && vim .env      # 填密钥；.env 已被 gitignore
-#     docker compose up -d --build             # 默认档（含 KB=mysql 时）
+#     docker compose up -d --build             # (A) 默认档
+#     docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent   # (B) 只起后端
 #     docker compose --profile model up -d     # 额外起 ollama（KB 用 http 嵌入 / 本地模型）
 #   详见 `deploy/生产部署手册.md`。
 # =============================================================================
@@ -63,9 +68,20 @@ name: aioa
 services:
 
   # ===========================================================================
-  # MinIO（对象存储，仅服务自身在容器内可达；控制台通过 9001 暴露给运维）
+  # MinIO（**可选，默认不启动**：profile=minio）
+  # ---------------------------------------------------------------------------
+  # ⚠️ 事实核对（2026-09-21 全仓 grep 验证）：**应用代码根本不使用 MinIO**。
+  #     全部 Java / Python / 前端源码里没有 `minio` 字样，也没有 S3 客户端
+  #     （无 `S3Client` / `amazonaws` / OSS SDK 依赖）。
+  #     文件上传走的是 **本地磁盘**：`FileController` 的 `@Value("${aioa.upload.dir:./uploads}")`
+  #     + 元数据落 `sys_file` 表。所以本服务与下方 `MINIO_*` 三个环境变量都是**历史遗留**，
+  #     一起起它只是白占 2G 内存与一个端口。
+  # ⇒ 因此把它归到 `profile: [minio]`：`docker compose up -d` **不会**再带起它；
+  #    只有显式 `--profile minio` 才会起（用于将来真接入对象存储时）。
+  #    目标机若已在别处有 MinIO（如 172.16.8.249:9001），**与本服务无关，不用接**。
   # ===========================================================================
   minio:
+    profiles: ["minio"]
     image: minio/minio:latest
     container_name: aioa-minio
     command: ["server", "/data", "--console-address", ":9001"]
@@ -122,9 +138,17 @@ services:
 
       # ---- Agent / MinIO ----
       AIOA_AGENT_BASE_URL: http://agent:8000
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aioa}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aioa_dev_minio}
+      # ⚠️ 下面三个 MINIO_* 键**当前无人读取**（全仓无 MinIO/S3 客户端；文件落本地盘）。
+      #    默认值故意留空 —— 不给一个「看起来已经接上了」的 IP 暗示。真想启用对象存储时，
+      #    在 .env 里填 MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY，**并同时**给应用侧补 S3 客户端。
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
+
+      # ---- 文件上传落盘目录（**这个是真正在用的**）----
+      # FileController 默认 ./uploads（= 容器内 /app/uploads，Dockerfile.server 的 WORKDIR）。
+      # 必须挂卷，否则容器重建一次上传的文件全丢，而 sys_file 记录还在 ⇒ 下载 404。
+      AIOA_UPLOAD_DIR: /app/uploads
 
       # ---- 知识库存储与嵌入（docs/32 向量库 Milvus）----
       # 默认 mysql（零新增依赖）。目标机 10.0.0.12 上**已有** milvus-standalone ⇒
@@ -196,16 +220,19 @@ services:
       TZ: Asia/Shanghai
     expose:
       - "8080"
+    volumes:
+      # 上传文件落盘目录（对齐上面的 AIOA_UPLOAD_DIR）。不挂卷 = 容器重建即丢文件。
+      - serveruploads:/app/uploads
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
-      # 首次冷启动 + Flyway 迁移（V1-V54）可能超过 60s，给到 3 分钟兜底
+      # 首次冷启动 + Flyway 迁移（V1–V58）可能超过 60s，给到 3 分钟兜底
       start_period: 180s
-    depends_on:
-      minio:
-        condition: service_healthy
+    # 注意：**不要**再写 `depends_on: minio(healthy)`。应用代码不用 MinIO（见上方注释），
+    # 一旦保留它会强制把可选的 minio 服务拉起来，且 minio 拉不到镜像时 server 直接起不来。
+    # MySQL / Redis / Milvus 都在外部主机，本 compose 无从「等待」，靠 server 自身重试 + 健康检查兜底。
     restart: unless-stopped
     logging:
       driver: json-file
@@ -517,6 +544,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  # server 上传文件（/app/uploads）。不声明会随容器重建丢失。
+  serveruploads:
+  # 仅 profile=minio 时用（默认不起）
   miniodata:
   hfcache:
   ollamadata:
