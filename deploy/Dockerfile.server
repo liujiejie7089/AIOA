@@ -1,6 +1,54 @@
-# AIOA Java 后端（多模块，构建 aioa-boot 可执行 jar）
+# AIOA 后端（多模块 Maven，构建 aioa-boot 可执行 jar）
+#
+# ★ 单端口部署（docs/33）：本镜像**同时**承载三块内容，不再需要边缘 nginx 与 aioa-web 镜像：
+#     /app/h5/index.html    用户端 H5（单文件）
+#     /app/web/**           管理端 dist（含 subapps/<name>/）
+#     /app/aioa-server.jar  业务接口（控制器仍是 /api/**，对外经 /aioa/api/** 前缀访问）
+#   前缀与目录的对应关系见 deploy/docker-compose.yml 的 AIOA_WEB_* 与
+#   aioa-boot/src/main/resources/application.yml 的 aioa.web.*。
+
+# =============================================================================
+# 阶段 1：前端构建（纯静态产物，不需要 nginx 参与）
+# =============================================================================
+FROM node:22-alpine AS web
+WORKDIR /build
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
+COPY web/pnpm-workspace.yaml web/package.json web/pnpm-lock.yaml* ./
+# ★ 必须 COPY 根 tsconfig：apps/*/tsconfig.json 与 packages/aioa-sdk/tsconfig.json 都
+#   `extends: "../../tsconfig.base.json"`，容器里即 /build/tsconfig.base.json。
+#   漏了它 ⇒ vue-tsc 拿不到 strict / esModuleInterop / moduleResolution:bundler / skipLibCheck，
+#   报的却不是「文件找不到」，而是一堆 element-plus 与 rollup/parseAst 的下游错误，极难定位。
+COPY web/tsconfig.base.json ./
+COPY web/packages ./packages
+COPY web/apps ./apps
+# 先尝试严格模式（lockfile 一致才构建）；fallback 显式放宽而非静默改 lockfile
+RUN pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+RUN pnpm -r build
+# 用户端 H5 是零构建的单文件，直接取仓库原件
+COPY user-client/index.html /out/h5/index.html
+# 组装静态根。子应用放到 web 根之下，与各前端 vite 的 base 一一对应：
+#   shell         → /aioa/web/
+#   demo-ticket   → /aioa/web/subapps/demo-ticket/
+#   demo-dispatch → /aioa/web/subapps/demo-dispatch/
+RUN mkdir -p /out/web/subapps/demo-ticket /out/web/subapps/demo-dispatch && \
+    cp -r apps/shell/dist/. /out/web/ && \
+    cp -r apps/demo-ticket/dist/. /out/web/subapps/demo-ticket/ && \
+    cp -r apps/demo-dispatch/dist/. /out/web/subapps/demo-dispatch/
+# ★ 构建期断言：产物内的资源必须是带前缀的绝对路径。
+#   漏了这两条，vite 的 base 一旦没生效（旧 dist / 被改回 '/'），部署后是「白屏 + 一堆 404」，
+#   而且要到用户在浏览器里打开时才发现 —— 构建期几毫秒就能拦住。
+RUN grep -q '/aioa/web/assets/' /out/web/index.html || \
+    { echo "❌ 管理端产物基址不对：/out/web/index.html 里找不到 /aioa/web/assets/（vite build 的 base 未生效）"; exit 1; }
+RUN grep -q 'aioa_session' /out/h5/index.html || \
+    { echo "❌ 用户端 H5 内容不对：/out/h5/index.html 里找不到 aioa_session（是不是拷错文件了）"; exit 1; }
+
+# =============================================================================
+# 阶段 2：Java 构建
+# =============================================================================
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
+# 逐个 COPY pom.xml 只为让 dependency:go-offline 能真正成功（拿到完整依赖图，构建更快）。
+# 少一个模块的 pom 这一步就会失败 —— 虽然下面 `|| true` 不会中断构建，但缓存层就废了。
 COPY server/pom.xml ./
 COPY server/aioa-common/pom.xml aioa-common/
 COPY server/aioa-security/pom.xml aioa-security/
@@ -8,11 +56,17 @@ COPY server/aioa-bridge/pom.xml aioa-bridge/
 COPY server/aioa-tool-sdk/pom.xml aioa-tool-sdk/
 COPY server/aioa-chat/pom.xml aioa-chat/
 COPY server/aioa-admin/pom.xml aioa-admin/
+COPY server/aioa-resource/pom.xml aioa-resource/
+COPY server/aioa-org/pom.xml aioa-org/
+COPY server/aioa-gitee/pom.xml aioa-gitee/
 COPY server/aioa-boot/pom.xml aioa-boot/
 RUN mvn -q -B dependency:go-offline -pl aioa-boot -am || true
 COPY server/ ./
 RUN mvn -q -B -DskipTests package -pl aioa-boot -am
 
+# =============================================================================
+# 阶段 3：运行镜像
+# =============================================================================
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 # 安装 tzdata 与 curl；JVM 需要 /etc/timezone 才能读到 TZ 环境变量
@@ -21,6 +75,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl tzdata && 
     echo "Asia/Shanghai" > /etc/timezone && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /build/aioa-boot/target/aioa-boot-*.jar /app/aioa-server.jar
+# 静态前端随镜像一起发布（compose 的 AIOA_WEB_H5_DIR / AIOA_WEB_WEB_DIR 指向这两处）
+COPY --from=web /out/h5 /app/h5
+COPY --from=web /out/web /app/web
+# 最后一道构建期自检：三块内容缺一不可。缺了的话服务能起来、但入口全 404，
+# 只有启动日志里一行 WARN（见 AioaStaticConfig）—— 在构建期拦住更省事。
+RUN test -f /app/aioa-server.jar && test -f /app/h5/index.html && test -f /app/web/index.html || \
+    { echo "❌ 镜像内容不全：需要同时存在 /app/aioa-server.jar、/app/h5/index.html、/app/web/index.html"; exit 1; }
 EXPOSE 8080
 # -Duser.timezone 保证 JVM 日志、定时任务（Flyway / cron）按北京时间跑
 ENV JAVA_OPTS="-Xms512m -Xmx2g -Duser.timezone=Asia/Shanghai"

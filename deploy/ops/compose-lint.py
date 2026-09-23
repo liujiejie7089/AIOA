@@ -18,7 +18,7 @@ AIOA · compose 静态体检（deploy/ops/compose-lint.py）
 用法：
     python deploy/ops/compose-lint.py                       # 默认查 docker-compose.yml + .env.production
     python deploy/ops/compose-lint.py --env deploy/.env
-    python deploy/ops/compose-lint.py --override deploy/docker-compose.backend.yml
+    python deploy/ops/compose-lint.py --override path/to/extra-compose.yml   # 可选叠加文件（本仓已无叠加文件）
 退出码：0 = 全部通过（允许有 WARN）；1 = 有 ERROR。
 """
 from __future__ import annotations
@@ -215,7 +215,7 @@ def main() -> int:
     deploy = os.path.dirname(here)
     ap = argparse.ArgumentParser(description="AIOA compose 静态体检（不需要 docker）")
     ap.add_argument("--compose", default=os.path.join(deploy, "docker-compose.yml"))
-    ap.add_argument("--override", default=None, help="可选叠加文件，如 docker-compose.backend.yml")
+    ap.add_argument("--override", default=None, help="可选叠加文件（本仓已无叠加文件，保留仅为通用性）")
     ap.add_argument("--env", default=os.path.join(deploy, ".env.production"),
                     help="用于核对 ${} 引用的环境文件；默认 .env.production")
     args = ap.parse_args()

@@ -53,6 +53,22 @@ mybatis-plus:
       logic-not-delete-value: 'null'
 
 aioa:
+  # ─── 单端口入口（docs/33）──────────────────────────────────────────────────
+  # 去掉对外部 nginx 的依赖：由本进程一个端口同时提供三块内容
+  #   {prefix}/h5/   用户端（H5 单文件所在目录）
+  #   {prefix}/web/  管理端（dist 产物，其下可有 subapps/<name>/ 各自回退首页）
+  #   {prefix}/api/  业务接口 —— 进入安全链之前剥成 /api/** 以复用既有控制器；
+  #                  同时 /api/** 原样保留（44 个既有套件与现场脚本均按此形态直连，
+  #                  改用 server.servlet.context-path 会让它们同时失效，故取「双前缀并存」）。
+  # 目录不可用时该入口整体 404（启动日志给 WARN 指明是哪个键），不会 500。
+  web:
+    enabled: ${AIOA_WEB_ENABLED:true}
+    prefix: ${AIOA_WEB_PREFIX:/aioa}
+    # 容器内挂载点：H5 单文件与 aioa-web 产物（见 deploy/docker-compose.yml）
+    h5-dir: ${AIOA_WEB_H5_DIR:/app/h5}
+    web-dir: ${AIOA_WEB_WEB_DIR:/app/web}
+    h5-index: index.html
+    web-index: index.html
   jwt:
     secret: ${AIOA_JWT_SECRET:aioa-dev-jwt-secret-please-change-in-production}
     access-ttl-seconds: 7200

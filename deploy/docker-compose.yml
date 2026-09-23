@@ -6,18 +6,22 @@
 #     MinIO = 别处有（172.16.8.249:9000）但**应用代码根本不读它**，见文件内注释 ⇒ 不需要接、不需要搬镜像
 #     （下面 `${MYSQL_HOST:-…}` 的默认值只是「没传 .env 时的兜底」，**部署时必须用 .env 覆盖**；
 #      默认值已与本次环境对齐，但真实口令不在默认值里）
-# - 公网入口两种走法：
-#     (A) 用自带 nginx：**80 = 用户端 H5**、**81 = 管理端**；server/agent/web 在 aioa-net 内互访、不对外
-#     (B) 不用边缘 nginx（目标机 10.0.0.12 本次采用）：叠加 `docker-compose.backend.yml`，
-#         把 server:8080 / agent:8000 发布到宿主，由**宿主已有的 nginx** 反代 /api/
-#         ⇒ 此走法只需 aioa-server + aioa-agent 两个镜像
+# - 公网入口：**只有 aioa-server 一个端口**（docs/33 单端口改造）
+#     aioa-server 自己同时提供三块内容（前缀可配，默认 /aioa）：
+#       /aioa/h5/   用户端 H5（镜像内的 /app/h5/index.html）
+#       /aioa/web/  管理端（镜像内的 /app/web/，含 subapps/<name>/）
+#       /aioa/api/  业务接口（进入安全链前剥成 /api/** 复用既有控制器；/api/** 亦原样保留）
+#     ⇒ **不需要边缘 nginx**（原 `nginx` + `web` 两个服务已删除），
+#       **只需要两张镜像**：aioa-server + aioa-agent（离线搬运量随之减半）。
+# - Ollama 已从部署组成里摘除：知识库改走 provider=local（256 维哈希，零外部依赖），
+#   原 `ollama` 服务与 `ollamadata` 卷已删除。取值口径见 docs/32。
 # - 健康检查 + 重启策略 + 日志轮转 + 资源限制 齐备
 #
 # 起停（在 deploy/ 目录）：
 #     cp .env.production .env && vim .env      # 填密钥；.env 已被 gitignore
-#     docker compose up -d --build             # (A) 默认档
-#     docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent   # (B) 只起后端
-#     docker compose --profile model up -d     # 额外起 ollama（KB 用 http 嵌入 / 本地模型）
+#     docker compose up -d server agent        # server 自带静态前端，8080 直接对外
+#     # 打开 http://<宿主>:8080/aioa/h5/  与  http://<宿主>:8080/aioa/web/
+#   （不再需要叠加文件：原 docker-compose.backend.yml 只为「发布 8080/8000」，已并入本文件）
 #   详见 `deploy/生产部署手册.md`。
 # =============================================================================
 
@@ -150,6 +154,17 @@ services:
       # 必须挂卷，否则容器重建一次上传的文件全丢，而 sys_file 记录还在 ⇒ 下载 404。
       AIOA_UPLOAD_DIR: /app/uploads
 
+      # ---- 单端口入口（docs/33）：H5 与管理端由本进程自己发，不需要边缘 nginx ----
+      # 这两份静态已随构建打进镜像（见 deploy/Dockerfile.server 的前端构建段）：
+      #   /app/h5/index.html  用户端（单文件）
+      #   /app/web/**         管理端 dist（含 subapps/<name>/）
+      # 目录路径写死为镜像内实际位置（不取自 .env）：它们必须与镜像布局一致，
+      # 做成可配只会多一个「配了但和镜像不符」的漂移点。
+      AIOA_WEB_ENABLED: ${AIOA_WEB_ENABLED:-true}
+      AIOA_WEB_PREFIX: ${AIOA_WEB_PREFIX:-/aioa}
+      AIOA_WEB_H5_DIR: /app/h5
+      AIOA_WEB_WEB_DIR: /app/web
+
       # ---- 知识库存储与嵌入（docs/32 向量库 Milvus）----
       # 默认 mysql（零新增依赖）。目标机 10.0.0.12 上**已有** milvus-standalone ⇒
       # 本部署用 .env 的 AIOA_KB_STORE=milvus + AIOA_MILVUS_URI=http://10.0.0.12:19530
@@ -159,11 +174,16 @@ services:
       # 两种走法下，Milvus 不可达 server 都会**启动失败**（决策 D6 fail-fast，不静默降级为空结果）。
       AIOA_KB_STORE: ${AIOA_KB_STORE:-mysql}
       AIOA_KB_EMBEDDING_PROVIDER: ${AIOA_KB_EMBEDDING_PROVIDER:-local}
+      # format/url/model/api-key 只在 provider=http 时被读。生产档是 local（256 维哈希、零外部依赖），
+      # ⇒ 默认值一律**留空**，不再指向已删除的 ollama 服务。
+      # 提示：format=ollama 描述的是「要对接的嵌入接口形态」（/api/embeddings），不代表要部署 Ollama。
       AIOA_KB_EMBEDDING_FORMAT: ${AIOA_KB_EMBEDDING_FORMAT:-ollama}
-      # 容器内互访：Ollama 走 ollama:11434，vLLM 走 vllm:8000
-      AIOA_KB_EMBEDDING_URL: ${AIOA_KB_EMBEDDING_URL:-http://ollama:11434/api/embeddings}
+      AIOA_KB_EMBEDDING_URL: ${AIOA_KB_EMBEDDING_URL:-}
       AIOA_KB_EMBEDDING_MODEL: ${AIOA_KB_EMBEDDING_MODEL:-bge-small-zh-v1.5}
-      AIOA_KB_EMBEDDING_DIMS: ${AIOA_KB_EMBEDDING_DIMS:-512}
+      # ★ 必须与 AIOA_MILVUS_DIMS 逐字一致：不一致会在**启动时硬失败**
+      #   （MilvusConfig.assertDimsAgree；provider=local 写死 256）。
+      #   这两个默认值以前是 512，与 .env 的 256 不一致 ⇒ 一旦没传 .env 就起不来。
+      AIOA_KB_EMBEDDING_DIMS: ${AIOA_KB_EMBEDDING_DIMS:-256}
       AIOA_KB_EMBEDDING_TIMEOUT_MS: ${AIOA_KB_EMBEDDING_TIMEOUT_MS:-15000}
       AIOA_KB_EMBEDDING_API_KEY: ${AIOA_KB_EMBEDDING_API_KEY:-}
       # 换 provider / 换模型后置 true 跑一次全量重算（幂等），跑完记得改回 false
@@ -172,8 +192,9 @@ services:
       AIOA_MILVUS_URI: ${AIOA_MILVUS_URI:-http://milvus:19530}
       AIOA_MILVUS_TOKEN: ${AIOA_MILVUS_TOKEN:-}
       AIOA_MILVUS_DATABASE: ${AIOA_MILVUS_DATABASE:-default}
-      AIOA_MILVUS_COLLECTION: ${AIOA_MILVUS_COLLECTION:-kb_chunk_v1}
-      AIOA_MILVUS_DIMS: ${AIOA_MILVUS_DIMS:-512}
+      # 集合名**带维度后缀**：维度创建后不可改，换嵌入模型必须新建集合再回填
+      AIOA_MILVUS_COLLECTION: ${AIOA_MILVUS_COLLECTION:-kb_chunk_v1_256}
+      AIOA_MILVUS_DIMS: ${AIOA_MILVUS_DIMS:-256}
       AIOA_MILVUS_METRIC: ${AIOA_MILVUS_METRIC:-COSINE}
       AIOA_MILVUS_INDEX: ${AIOA_MILVUS_INDEX:-HNSW}
       AIOA_MILVUS_HNSW_M: ${AIOA_MILVUS_HNSW_M:-16}
@@ -220,6 +241,12 @@ services:
       TZ: Asia/Shanghai
     expose:
       - "8080"
+    # ★ 单端口对外入口（docs/33）：H5 / 管理端 / 接口全由本进程提供 ⇒ 必须发布到宿主。
+    #   原 `docker-compose.backend.yml` 唯一的作用就是补这一行端口，现已并入主文件
+    #   （不存在「带 nginx 的另一种档」了 ⇒ 也就不用 `-f -f` 叠加）。
+    #   要多机部署时改绑内网地址，如 "10.0.0.12:8080:8080"。
+    ports:
+      - "8080:8080"
     volumes:
       # 上传文件落盘目录（对齐上面的 AIOA_UPLOAD_DIR）。不挂卷 = 容器重建即丢文件。
       - serveruploads:/app/uploads
@@ -259,10 +286,11 @@ services:
       # 模型网关按 `{KEY}_BASE_URL` / `{KEY}_API_KEY` 读取
       # （key ∈ echo|minimax|deepseek|dashscope|vllm|ollama，管理端新增的模型按其 providerKey 读取）。
       # ⚠️ 本地 provider 的 API Key 必须给**非空占位**，否则网关判定「缺 key」并静默降级 echo。
-      # ⚠️ 基址是 OpenAI 兼容基址，Ollama 必须带 `/v1`。
+      # ⚠️ 基址是 OpenAI 兼容基址（Ollama 形态必须带 `/v1`）。
       VLLM_BASE_URL: ${VLLM_BASE_URL:-http://vllm:8000/v1}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      # 本部署不托管 Ollama（服务与卷已删除）⇒ 默认留空。要接外部 Ollama 时在 .env 里给绝对地址。
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       # M1 骨架 agent 为回声模型，不直连数据库；后续如需持久化（如 LangGraph checkpointer）
       # 复用统一 MySQL，DSN 形如：
@@ -270,6 +298,10 @@ services:
       TZ: Asia/Shanghai
     expose:
       - "8000"
+    # agent 只被 server 在 aioa-net 内按 `agent:8000` 调用；这个宿主映射**只为排查**，
+    # 因此绑 127.0.0.1 —— agent 自身没有鉴权，绑 0.0.0.0 会等于把它暴露给整个内网。
+    ports:
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s
@@ -288,66 +320,11 @@ services:
     cpus: "1"
 
   # ===========================================================================
-  # Web（前端静态资源，仅容器内可达；走 nginx 出去）
-  # ===========================================================================
-  web:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.web
-    container_name: aioa-web
-    expose:
-      - "80"
-    depends_on:
-      - server
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options: { max-size: "50m", max-file: "5" }
-    networks: [aioa-net]
-    mem_limit: 256m
-    cpus: "0.5"
-
-  # ===========================================================================
-  # Nginx（对外两个端口：80 = 用户端 H5 / 81 = 管理端；
-  #        HTTPS 由前置 Nginx / 宝塔 / Cloudflare 处理）
-  # ===========================================================================
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: aioa-nginx
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # 80 与 81 两个 server 块**共用**的 API 反代 location 组。
-      # 抽成单独文件是为了避免「改了一个端口忘了另一个」——两端口必须行为一致。
-      - ./nginx/api-proxy.conf:/etc/nginx/api-proxy.conf:ro
-      # 用户端 H5：单文件应用，直接以静态文件挂进来，由本 nginx 在 **80** 端口提供
-      # （H5 内部调相对路径 /api，同源下无需任何前端配置）
-      - ../user-client/index.html:/usr/share/nginx/html/h5/index.html:ro
-    ports:
-      - "80:80"    # 用户端 H5（对外主入口）
-      - "81:81"    # 管理端 shell
-      # HTTPS 若要在本容器终止，把证书挂到 /etc/nginx/certs/ 并在 nginx.conf 加 listen 443
-      # 建议由宝塔前置 Nginx / Cloudflare 统一终止 HTTPS，避免在应用层重复签发
-    depends_on:
-      web:
-        condition: service_started
-      server:
-        condition: service_healthy
-      agent:
-        condition: service_healthy
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options: { max-size: "50m", max-file: "5" }
-    networks: [aioa-net]
-    mem_limit: 256m
-    cpus: "0.5"
-
-  # ===========================================================================
   # 可选：本地模型（profile=model）
-  #   - vllm：要 GPU 与大磁盘，**只在你真要用本地大模型时**才开（--profile model）
-  #   - ollama：知识库走 http 语义嵌入时**必须**有它（镜像与模型都很小），
-  #     它同时挂了 `ollama` 专有 profile ⇒ 可以只起它、不连带拉 vllm 的大镜像：
-  #         docker compose --profile ollama up -d
+  #   vllm：要 GPU 与大磁盘，**只在你真要用本地大模型时**才开（--profile model）。
+  #   注：原 `ollama` 服务与 `ollamadata` 卷已删除 —— 知识库改走 provider=local（256 维哈希，
+  #   零外部依赖）。若将来要接语义嵌入，把它当成「一个普通的 http 嵌入端点」来配
+  #   （AIOA_KB_EMBEDDING_PROVIDER=http + URL/MODEL/DIMS），不预设必须自建容器。
   # ===========================================================================
   vllm:
     image: vllm/vllm-openai:latest
@@ -366,21 +343,6 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
-    networks: [aioa-net]
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options: { max-size: "100m", max-file: "5" }
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: aioa-ollama
-    # 两个 profile：`model` 保持既有语义（连同 vllm 一起起），`ollama` 用于「只要嵌入服务」的场景
-    profiles: ["model", "ollama"]
-    volumes:
-      - ollamadata:/root/.ollama
-    ports:
-      - "11434:11434"
     networks: [aioa-net]
     restart: unless-stopped
     logging:
@@ -549,7 +511,6 @@ volumes:
   # 仅 profile=minio 时用（默认不起）
   miniodata:
   hfcache:
-  ollamadata:
   # Milvus 栈（profile=milvus）——三个都命名卷，避免 compose down 丢索引
   etcddata:
   milvusdata:

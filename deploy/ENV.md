@@ -98,7 +98,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 |---|---|---|---|---|
 | `AIOA_AGENT_BASE_URL` | 后端 → agent | `http://127.0.0.1:8000` | `http://agent:8000` | — |
 | `AIOA_SERVER_BASE_URL` | agent → 后端 | `http://127.0.0.1:8080` | `http://server:8080` | — |
-| `PUBLIC_BASE_URL` | 对外入口（OAuth 回跳以此为准） | `http://localhost` | `https://aioa.example.com` | — |
+| `PUBLIC_BASE_URL` | 对外入口（OAuth 回跳以此为准） | `http://localhost:8080` | `http://10.0.0.12:8080`（单端口，见 §3.10） | — |
 | `HOST` / `PORT` | agent 监听 | `0.0.0.0` / `8000` | 同 | — |
 | `LOG_LEVEL` | 日志级别 | `INFO` | `INFO` | — |
 | `AGENT_STREAM` / `AGENT_PARALLEL_TOOLS` | 流式 / 并行工具 | `true` | `true` | — |
@@ -226,19 +226,21 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 |---|---|---|---|---|
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码 | `admin` | `CHANGE_ME__` | ★ |
 
-### 3.10 入口与端口（本次「不用边缘 nginx」档）
+### 3.10 入口与端口（**单端口档**，2026-09-21 起 / docs/33）
 
-| 项 | 用自带 nginx（完整档） | **本次 10.0.0.12（后端档）** |
+| 项 | 旧「自带 nginx 完整档」（**已取消**） | **现在（单端口）** |
 |---|---|---|
-| 启动命令 | `docker compose up -d` | `docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent` |
-| 服务集合 | server + agent + web + nginx（+minio 不再默认起） | **只有 server + agent** |
-| 对外端口 | `80`（用户端 H5）、`81`（管理端） | `8080`（后端 API）、`8000`（agent，排查用） |
-| H5 / 管理端静态 | 由 nginx 容器直接提供 | **由宿主已有的 nginx 提供服务并反代 `/api/`** |
+| 启动命令 | `docker compose up -d` | `docker compose up -d server agent`（无叠加文件） |
+| 服务集合 | server + agent + web + nginx | **只有 server + agent** |
+| 对外端口 | `80`（用户端 H5）、`81`（管理端） | **`8080`（唯一入口：H5 + 管理端 + 接口）**、`127.0.0.1:8000`（agent，仅本机排查） |
+| H5 / 管理端静态 | 由 nginx 容器提供 | **由 aioa-server 自己托管**：`/aioa/h5/`、`/aioa/web/`（已打进镜像的 `/app/h5`、`/app/web`） |
+| 接口路径 | `/api/**` | `/aioa/api/**`（新增）+ `/api/**`（**保留**，既有调用方零改动） |
 | 需要的镜像 | minio + nginx + aioa-server + aioa-agent + aioa-web（5 个） | **aioa-server + aioa-agent（2 个）** |
+| 前缀与目录变量 | — | `AIOA_WEB_ENABLED` / `AIOA_WEB_PREFIX` / `AIOA_WEB_H5_DIR` / `AIOA_WEB_WEB_DIR`（见生产 env §4.1） |
 
-> 后端档下 `web` 与 `nginx` 容器都不需要：`aioa-web` 的运行底座**本身就是** `nginx:1.27-alpine`，
-> 所以连 nginx 镜像也不必搬。宿主 nginx 只要把 `/api/` 反代到 `http://127.0.0.1:8080/`。
-> 叠加文件只加 `ports`、不改任何环境变量，因此对「带 nginx」的既有部署零影响。
+> `aioa-web` 与 `nginx` 两个服务、`ollama` 服务与 `ollamadata` 卷**都已从 `docker-compose.yml` 摘除**；
+> `docker-compose.backend.yml` 叠加文件已删除（端口并入主文件）。
+> **不需要宿主 nginx**；若仍要用前置网关，把 `/aioa/` 整体反代到 `http://<主机>:8080` 即可（见手册 §9.4）。
 
 ## 4. 前端 env **不在**上面两份文件
 
@@ -259,8 +261,8 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 |---|---|---|
 | 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**用服务名 `agent` `server`（`minio` 已非默认起，见 §3.8；`ollama` 本次不部署，见 §3.7） |
 | 知识库档位 | `mysql` + `local` + 512 维（仅作开发默认） | `milvus` + `local` + **256 维**（不部署 Ollama；集合 `kb_chunk_v1_256`，见 §3.7） |
-| 协议 | `http` | 本次 `http`（内网 80/81 或 8080，未接 TLS）；拿到公网域名后再上 `https` |
-| 域名 | 本机端口 | 本次直接用 IP `10.0.0.12`（**本次入口由宿主已有 nginx 提供**，见 §3.10）；有公网域名时替换 |
+| 协议 | `http` | 本次 `http`（单端口 `8080`，未接 TLS）；拿到公网域名后再由前置网关终止 TLS |
+| 域名 | 本机端口 | 本次直接用 IP `10.0.0.12:8080`（**入口由 aioa-server 自己提供**，见 §3.10）；有公网域名时替换 |
 | 凭据 | `DEV_ONLY__` / 空 | 全部 `CHANGE_ME__` 占位，部署前逐项替换 |
 | TLS | 不涉及 | `AIOA_GITEA_INSECURE_SKIP_VERIFY=false` + 自签 CA 信任库 |
 | 并发 | `AGENT_MAX_CONCURRENCY=4` | `8`（按容器规格） |

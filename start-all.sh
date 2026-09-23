@@ -40,11 +40,15 @@ else
 fi
 
 # ---- Python Agent :8000 ----
+# --http 必须显式钉成 httptools：它决定「后端的 h2c 升级请求体会不会丢」——
+# 跑 httptools（= uvicorn[standard]，与 deploy/Dockerfile.agent 的生产镜像一致）时会丢，
+# 跑 h11 时会被 h11 悄悄兜住。auto 会让这个差异随 venv 是否装了 httptools 而漂移，
+# 于是「本地过、生产不过 / 本地掩盖了缺陷」都会发生。宁可启动即报错，也不要静默换实现。
 if port_up 8000; then
   echo "[skip] agent :8000 already running"
 else
-  echo "[start] agent :8000 (logs/agent.log)"
-  ( cd agent && "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 ) > logs/agent.log 2>&1 &
+  echo "[start] agent :8000 (logs/agent.log, --http httptools)"
+  ( cd agent && "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --http httptools ) > logs/agent.log 2>&1 &
 fi
 
 # ---- 用户端 H5 :5181（读 user-client/.env）----
