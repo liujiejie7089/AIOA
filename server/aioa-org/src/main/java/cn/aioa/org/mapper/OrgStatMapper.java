@@ -430,4 +430,15 @@ public interface OrgStatMapper {
     @Select("SELECT COUNT(*) FROM org_member WHERE deleted_at IS NULL "
             + "AND institution_id = #{institutionId} AND status = 'ACTIVE'")
     long countActiveMembers(@Param("institutionId") Long institutionId);
+
+    /**
+     * 本租户会话总数（V63 用户端首页「本组织数据」租户口径用）。
+     *
+     * <p>与机构/部门口径同源：都是对 {@code chat_conversation} 计数，
+     * 差别只在 user_id 的归属集合。口径同源才有可比性 —— 否则「机构数加起来不等于租户数」，
+     * 看板自身就自相矛盾。</p>
+     */
+    @Select("SELECT COUNT(*) FROM chat_conversation "
+            + "WHERE deleted_at IS NULL AND tenant_id = #{tenantId}")
+    long countConversationsOfTenant(@Param("tenantId") Long tenantId);
 }

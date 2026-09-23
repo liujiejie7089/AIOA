@@ -567,6 +567,52 @@
     border-top:1px dashed var(--border);padding-top:8px;
   }
   .stat-src b{color:var(--text-2);font-weight:600}
+  /* V63：本组织数据卡 —— 与「我的数据」同形，但口径由后端按角色放大，故加范围徽标 */
+  .org-badge{
+    font-size:10px;padding:2px 7px;border-radius:99px;
+    background:var(--blue-soft);color:var(--blue-dark);border:1px solid var(--blue-line);
+    white-space:nowrap;
+  }
+  /* V63：投诉与建议 —— 分类选择 + 输入框 + 记录条目 */
+  .fb-cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+  .fb-cat{
+    font-size:11px;padding:5px 11px;border-radius:99px;cursor:pointer;
+    background:var(--surface);border:1px solid var(--border);color:var(--text-2);
+    transition:all .14s ease;
+  }
+  .fb-cat:hover{border-color:var(--blue-line)}
+  .fb-cat.on{background:var(--blue-soft);border-color:var(--blue-line);color:var(--blue-dark);font-weight:600}
+  .fb-input{
+    width:100%;box-sizing:border-box;font-family:inherit;font-size:12.5px;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);
+    padding:9px 11px;color:var(--text);line-height:1.7;resize:vertical;
+  }
+  .fb-input:focus{outline:none;border-color:var(--blue-line)}
+  .fb-input + .fb-input{margin-top:8px}
+  .fb-anon{
+    display:flex;align-items:center;gap:6px;margin-top:9px;
+    font-size:11px;color:var(--text-2);cursor:pointer;
+  }
+  .fb-anon input{width:auto;margin:0}
+  .fb-item{
+    border:1px solid var(--border);border-radius:var(--r-sm);
+    padding:9px 11px;margin-bottom:8px;background:var(--surface);
+  }
+  .fb-item .fb-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px}
+  .fb-item .fb-cat-tag{font-size:10px;font-weight:600;color:var(--blue-dark)}
+  .fb-item .fb-time{font-size:10px;color:var(--text-3);white-space:nowrap}
+  .fb-item .fb-body{font-size:12px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word}
+  .fb-item .fb-route{
+    font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.6;
+    border-top:1px dashed var(--border);padding-top:6px;
+  }
+  .fb-item .fb-reply{
+    margin-top:7px;padding:8px 10px;border-radius:var(--r-sm);
+    background:var(--blue-soft);border:1px solid var(--blue-line);
+    font-size:11.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word;
+  }
+  .fb-reply-box{margin-top:8px;display:flex;gap:6px;align-items:flex-start}
+  .fb-reply-box .fb-input{flex:1}
   /* 批次三·D-3：卡片「⋯」溢出菜单 */
   .agent-menu{
     display:none;position:absolute;right:0;top:100%;margin-top:4px;z-index:30;
@@ -794,6 +840,22 @@
       <div class="greet reveal" id="greet" data-page-node-id="lzREkNmlOJKqpsFauarYbM">你好</div>
       <div class="greet-sub reveal" id="greetSub" data-page-node-id="5mCowKbIZEjnWasFQJjQH1">今天想让我帮你做点什么？</div>
 
+      <!-- V63：本组织数据 —— 按登录角色放大口径（机构管理员看本机构 / 部门负责人看本部门）。
+           范围由后端裁决（GET /api/v1/stats/org 的 scope 与 canSeeOrg），前端只负责渲染：
+           普通成员 / 未纳管账号 canSeeOrg=false，整卡隐藏（可见面按需求取最小）。 -->
+      <div class="card reveal" id="cardOrg" style="display:none" data-page-node-id="OrgScopeCardV63">
+        <div class="stat-head" data-page-node-id="OrgScopeHeadV63">
+          <div class="sec-title" style="margin:0" data-page-node-id="OrgScopeTitleV63">
+            <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="OrgScopeIconV63"><use href="#i-bank" data-page-node-id="OrgScopeIcon2V63"/></svg>
+            <span id="orgScopeLabel" data-page-node-id="OrgScopeLblV63">本组织数据</span>
+            <span class="sub" id="orgScopeName" data-page-node-id="OrgScopeNameV63"></span>
+          </div>
+          <span class="org-badge" id="orgRoleBadge" data-page-node-id="OrgScopeBadgeV63"></span>
+        </div>
+        <div class="kpi-grid" id="orgGrid" data-page-node-id="OrgScopeGridV63"></div>
+        <div class="stat-src" id="orgSrc" data-page-node-id="OrgScopeSrcV63"></div>
+      </div>
+
       <!-- 经营数据看板（V1.2 C 位）· V33：无数据时整卡折叠，见 collapse() -->
       <div class="card reveal" id="cardKpi" data-page-node-id="4Dvqx9H9zVDAZCqFYGZjkx">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px" data-page-node-id="18QJoxwBnHKebNq44GOyaF">
@@ -1007,8 +1069,9 @@
           <span style="display:flex;align-items:center;gap:8px" data-page-node-id="CMajVz80yWPHVn6NldFdA9"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="rEHcCm2GYhZ8w7r4253A8F"><use href="#i-log" data-page-node-id="t1TIMBU4D2ZGQeZlngWHcG"/></svg>我的操作记录</span>
           <span class="muted" data-page-node-id="QqcACzvLzjc2Ra7I363GcT">全程可查 ›</span>
         </div>
-        <div class="row click" onclick="toast('反馈入口：错误 / 有害 / 侵权')" data-page-node-id="JJx7W2FL48hxVqn9ywzrrj">
-          <span style="display:flex;align-items:center;gap:8px" data-page-node-id="oP8vfQRKmEJZVqJqgaYzxt"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="VOvy36PTavfgkvsyylm23s"><use href="#i-warn" data-page-node-id="8D4fdkGgnRic9HzTnVkS9u"/></svg>投诉与纠错</span><span class="muted" data-page-node-id="fKxbIBqa1l5t4AyKzI6MWp">›</span>
+        <div class="row click" onclick="openFeedback()" data-page-node-id="FbEntryRowV63">
+          <span style="display:flex;align-items:center;gap:8px" data-page-node-id="FbEntryLabelV63"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="FbEntryIconV63"><use href="#i-warn" data-page-node-id="FbEntryIcon2V63"/></svg>投诉与建议</span>
+          <span class="muted" id="fbEntryHint" data-page-node-id="FbEntryHintV63">›</span>
         </div>
         <div class="row" data-page-node-id="ePuVhBGG8WtjvbIqzu5ZFd">
           <span style="display:flex;align-items:center;gap:8px" data-page-node-id="DAAVXuQXDh0IPwhBtuGFQm"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)" data-page-node-id="2J7ieY6lA1um5n8SLUILhY"><use href="#i-gear" data-page-node-id="i4dE6hk6M5B39kYQ3pqcO6"/></svg>关于</span>
@@ -1126,6 +1189,59 @@
         <div id="permApplyList" data-page-node-id="PermApplyMineL360"></div>
       </div>
     </div>
+
+    <!-- ========== 投诉与建议（V63） ==========
+         闭环：用户提交 → 系统解析「本部门管理员 → 本机构管理员 → 租户管理员」→
+         站内通知接收人 → 接收人在这里的「收到的建议」中回复 → 提交人看到答复。
+         路由说明（fbRouteHint）由后端返回的 scope 驱动，不写死文案：写死的文案会在
+         组织调整后变成错的（例如部门新增了负责人，仍显示「上报到机构」）。 -->
+    <div class="page" id="page-feedback" data-page-node-id="FbPageV63">
+      <div class="sec-title reveal" data-page-node-id="FbTitleV63">投诉与建议</div>
+
+      <div class="card reveal" data-page-node-id="FbRouteCardV63">
+        <div class="muted" id="fbRouteHint" style="line-height:1.75;font-size:11.5px" data-page-node-id="FbRouteHintV63">
+          正在读取你的组织归属…
+        </div>
+      </div>
+
+      <div class="card reveal" data-page-node-id="FbFormCardV63">
+        <div class="sec-title" style="margin-top:0" data-page-node-id="FbFormTitleV63">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="FbFormIconV63"><use href="#i-pen" data-page-node-id="FbFormIcon2V63"/></svg>
+          我要反馈
+        </div>
+        <div class="fb-cats" id="fbCats" data-page-node-id="FbCatsV63"></div>
+        <textarea class="fb-input" id="fbContent" rows="4" maxlength="2000"
+                  placeholder="请描述你遇到的问题或建议（最多 2000 字）"
+                  oninput="onFbInput()" data-page-node-id="FbContentV63"></textarea>
+        <input class="fb-input" id="fbContact" type="text" maxlength="128"
+               placeholder="联系方式（可选，便于线下回复）" data-page-node-id="FbContactV63">
+        <label class="fb-anon" data-page-node-id="FbAnonWrapV63">
+          <input type="checkbox" id="fbAnonymous" data-page-node-id="FbAnonV63">
+          对上级匿名（你自己仍能看到记录与答复）
+        </label>
+        <div style="display:flex;gap:8px;margin-top:11px;align-items:center" data-page-node-id="FbActionsV63">
+          <button class="btn small" id="fbSubmitBtn" onclick="submitFeedback()" data-page-node-id="FbSubmitV63">提交</button>
+          <span class="muted" id="fbCount" data-page-node-id="FbCountV63">0 / 2000</span>
+        </div>
+      </div>
+
+      <!-- 收到的建议：只有「接收人本人」会拿到非空清单（后端按 assignee_user_id 过滤） -->
+      <div class="card reveal" id="fbInboxCard" style="display:none" data-page-node-id="FbInboxCardV63">
+        <div class="sec-title" style="margin-top:0" data-page-node-id="FbInboxTitleV63">
+          <svg class="ic" style="width:15px;height:15px;color:var(--accent)" data-page-node-id="FbInboxIconV63"><use href="#i-inbox" data-page-node-id="FbInboxIcon2V63"/></svg>
+          收到的建议 <span class="badge go" id="fbInboxCnt" data-page-node-id="FbInboxCntV63">0 条</span>
+        </div>
+        <div id="fbInboxList" data-page-node-id="FbInboxListV63"></div>
+      </div>
+
+      <div class="card reveal" data-page-node-id="FbMineCardV63">
+        <div class="sec-title" style="margin-top:0" data-page-node-id="FbMineTitleV63">
+          <svg class="ic" style="width:15px;height:15px;color:var(--blue)" data-page-node-id="FbMineIconV63"><use href="#i-log" data-page-node-id="FbMineIcon2V63"/></svg>
+          我的提交 <span class="sub" id="fbMineCnt" data-page-node-id="FbMineCntV63"></span>
+        </div>
+        <div id="fbMineList" data-page-node-id="FbMineListV63"></div>
+      </div>
+    </div>
   </div>
 
   <div class="tabbar" data-page-node-id="woBmHG36LFtYwDI6Uyd49i">
@@ -1175,6 +1291,8 @@ const state = {
   kpi:{month:null, quarter:null}, kpiMode:'month',
   workers:[], results:[], currentResult:null, editingWorker:null,
   myStats:null,
+  /* V63：本组织数据（按角色放大口径，范围由后端裁决）+ 投诉与建议 */
+  orgStats:null, fbCat:'ADVICE', fbMine:null, fbInbox:null,
   lastAnswer:'', lastQuery:''
 };
 
@@ -1340,6 +1458,14 @@ const API = {
   results(){ return this.req('/v1/results'); },
   /* V36：我的数据统计 —— 服务端按库表实时计数（与各业务列表同口径），前端不再拼装 */
   myStats(){ return this.req('/v1/stats/me'); },
+  /* V63：本组织数据 —— 后端按登录角色裁决 scope（TENANT/INSTITUTION/DEPARTMENT/NONE）
+     与 canSeeOrg；前端不参与判定，只渲染。 */
+  orgStats(){ return this.req('/v1/stats/org'); },
+  /* V63：投诉与建议 —— 提交 / 我的提交 / 收到的建议 / 回复 */
+  feedbackSubmit(body){ return this.req('/v1/feedback',{method:'POST',body:JSON.stringify(body)}); },
+  feedbackMine(){ return this.req('/v1/feedback/mine'); },
+  feedbackInbox(status){ return this.req('/v1/feedback/inbox'+(status?('?status='+encodeURIComponent(status)):'')); },
+  feedbackReply(id,content){ return this.req('/v1/feedback/'+id+'/reply',{method:'POST',body:JSON.stringify({content})}); },
   createResult(body){ return this.req('/v1/results',{method:'POST',body:JSON.stringify(body)}); },
   resultDetail(id){ return this.req('/v1/results/'+id); },
   updateResult(id, body){ return this.req('/v1/results/'+id,{method:'PUT',body:JSON.stringify(body)}); },
@@ -1480,7 +1606,7 @@ function go(id){
 const TITLES = {
   'page-home':'AIOA 智能工作台','page-todo':'待办','page-agent':'专家与员工','page-chat':'会话',
   'page-me':'我的','page-bill':'用量账单','page-buy':'购买词元包','page-log':'我的操作记录','page-result':'成果详情',
-  'page-perm':'权限申请'
+  'page-perm':'权限申请','page-feedback':'投诉与建议'
 };
 function setTitle(pid){
   const name = (pid === 'page-chat' && state.chatExpert) ? state.chatExpert.name : (TITLES[pid] || 'AIOA 智能工作台');
@@ -1601,6 +1727,10 @@ async function loadLiveData(){
     ['packages', ()=>API.packages()], ['workers', ()=>API.workers()], ['results', ()=>API.results()],
     ['roleTypes', ()=>API.roleTypes()],
     ['myStats', ()=>API.myStats()],
+    /* V63：本组织数据 + 投诉与建议（三个都是对象，不能走 asArray —— 会丢掉 scope/pending 等字段） */
+    ['orgStats', ()=>API.orgStats()],
+    ['fbMine', ()=>API.feedbackMine()],
+    ['fbInbox', ()=>API.feedbackInbox()],
     /* V36 需求①：权限申请（目录为对象，申请/持有为数组） */
     ['permCatalog', ()=>API.permissionCatalog()],
     ['permGrants', ()=>API.permissionMine()],
@@ -1614,6 +1744,9 @@ async function loadLiveData(){
       else if(k === 'kpiQuarter') state.kpi.quarter = v;
       else if(k === 'quotaInfo') state.quotaInfo = v;          // 对象，单独存放避免与额度数字混淆
       else if(k === 'myStats') state.myStats = v;              // 对象：我的数据统计（服务端实时计数）
+      else if(k === 'orgStats') state.orgStats = v;            // 对象：本组织数据（含 scope/canSeeOrg）
+      else if(k === 'fbMine') state.fbMine = v;                // 对象：我的提交（含 pending/total）
+      else if(k === 'fbInbox') state.fbInbox = v;              // 对象：收到的建议（含 pending）
       else if(k === 'permCatalog') state.permCatalog = v;      // 对象：权限目录（含我是否持有 / 在途）
       else if(k === 'notifs') state.notifs = v;                // {items, unread}，渲染时再解包
       else state[k] = asArray(v);
@@ -1654,9 +1787,9 @@ function collapse(id, hasData){
   const el = (typeof id === 'string') ? document.getElementById(id) : id;
   if(el) el.style.display = hasData ? '' : 'none';
 }
-/* 工作台四块全空时给一句兜底说明，避免「折叠后整页只剩一句问候」被误读成加载失败 */
+/* 工作台各块全空时给一句兜底说明，避免「折叠后整页只剩一句问候」被误读成加载失败 */
 function collapseHomeFallback(){
-  const ids = ['cardKpi','cardToday','secSkills','secExperts'];
+  const ids = ['cardOrg','cardKpi','cardToday','secSkills','secExperts'];
   const any = ids.some(function(id){
     const el = document.getElementById(id);
     return el && el.style.display !== 'none';
@@ -1666,9 +1799,9 @@ function collapseHomeFallback(){
 
 /* 逐块渲染并隔离异常：任一区块出错只影响自身，不会让整页变空白 */
 function renderAll(){
-  const steps = [renderGreet, renderKPI, renderToday, renderSkills, renderExperts,
+  const steps = [renderGreet, renderOrgScope, renderKPI, renderToday, renderSkills, renderExperts,
                  renderTodo, renderAgents, renderResults, renderPermission, renderMyStats, renderMe, renderBill,
-                 renderLog, renderKb, renderPackages, updateQuotaUI, collapseHomeFallback];
+                 renderLog, renderKb, renderPackages, renderFeedback, updateQuotaUI, collapseHomeFallback];
   steps.forEach(fn=>{
     try{ fn(); }
     catch(e){ console.error('[render] ' + fn.name + ' failed: ' + (e && e.message ? e.message : e)); }
@@ -3156,6 +3289,226 @@ function renderMyStats(){
   $('myStatsSrc').innerHTML =
     '<b>数据来源</b>：本平台数据库实时统计（单一权威源），与「我的申请 / 数字员工 / 会话」各页同口径；' +
     '成果与知识库见「我的成果 / 我的知识库」，词元用量见「额度与账单」，均非前端估算。';
+}
+
+/* ============================================================================
+   V63-① 本组织数据（用户端首页）
+   ----------------------------------------------------------------------------
+   口径由后端 GET /api/v1/stats/org 裁决：
+     TENANT      平台/租户管理员 → 本租户
+     INSTITUTION 机构管理员       → 本机构
+     DEPARTMENT  部门负责人       → 本部门
+     NONE        普通成员         → 不展示
+   前端唯一职责是把 scope 如实渲染出来。**刻意不做任何角色判断** —— 前端判断角色
+   就等于把范围口径复制成两份，两边迟早不一致（历史缺陷：用户端 isAdmin 与后端
+   OrgGuard 口径打架，导致机构管理员看不到入口）。
+   ============================================================================ */
+function renderOrgScope(){
+  const card = $('cardOrg');
+  if(!card) return;
+  const s = state.orgStats;
+  const metrics = (s && asArray(s.metrics)) || [];
+  // 无权限 或 无指标 ⇒ 整卡折叠（不给普通成员看到一个空的「本组织数据」）
+  if(!s || !s.canSeeOrg || !metrics.length){
+    collapse(card, false);
+    return;
+  }
+  collapse(card, true);
+  $('orgScopeLabel').textContent = (s.scopeLabel || '本组织') + '数据';
+  $('orgScopeName').textContent = s.scopeName ? ('· ' + s.scopeName) : '';
+  $('orgRoleBadge').textContent = s.roleLabel || '';
+  $('orgGrid').innerHTML = metrics.map(function(m){
+    return '<div class="kpi plain">'+
+      '<div class="k-label"><span>'+esc(m.label)+'</span></div>'+
+      '<div class="k-num">'+esc(fmt(m.value))+'<span class="k-unit">'+esc(m.unit||'')+'</span></div>'+
+    '</div>';
+  }).join('');
+  const at = s.generatedAt ? String(s.generatedAt).replace('T',' ').slice(0,16) : '—';
+  const led = asArray(s.ledDepartments);
+  $('orgSrc').innerHTML =
+    '<b>数据范围</b>：' + esc(s.scopeLabel||'') + (s.scopeName ? ('（' + esc(s.scopeName) + '）') : '') +
+    '，由服务端按你的角色裁决（前端不参与判定）；计数口径与各业务页同源，生成于 ' + esc(at) + '。' +
+    (led.length > 1 ? '你负责 ' + led.length + ' 个部门：' + led.map(esc).join('、') + '，此处展示主部门。' : '');
+}
+
+/* ============================================================================
+   V63-② 投诉与建议（用户端「我的」→ 投诉与建议）
+   ----------------------------------------------------------------------------
+   接收人由后端按「本部门负责人 → 本部门正职 → 本机构管理员 → 租户管理员」解析；
+   前端只展示后端返回的 assigneeScopeLabel / assigneeReason —— 路由说明不是写死文案，
+   因为「派给谁」取决于组织当前配置，写死会在部门新增负责人之后变成错的。
+   ============================================================================ */
+const FB_CATS = [
+  ['ADVICE','建议'], ['COMPLAINT','投诉'], ['BUG','功能异常'],
+  ['SERVICE','服务态度'], ['OTHER','其他']
+];
+const FB_STATUS_CLASS = {PENDING:'wait', REPLIED:'ok', CLOSED:'off'};
+
+function openFeedback(){
+  go('page-feedback');
+  setTitle('page-feedback');
+  // 打开时刷新一次：管理员可能刚回复（通知已到达，但列表还是旧的）
+  reloadFeedback().then(renderFeedback).catch(function(){ renderFeedback(); });
+  renderFbCats();
+  onFbInput();
+}
+
+function renderFbCats(){
+  const box = $('fbCats');
+  if(!box) return;
+  box.innerHTML = FB_CATS.map(function(c){
+    return '<span class="fb-cat'+(state.fbCat===c[0]?' on':'')+'" data-cat="'+c[0]+'" onclick="pickFbCat(this)">'
+      + esc(c[1]) + '</span>';
+  }).join('');
+}
+function pickFbCat(el){
+  state.fbCat = (el && el.dataset && el.dataset.cat) || 'ADVICE';
+  renderFbCats();
+}
+function onFbInput(){
+  const el = $('fbContent');
+  const cnt = $('fbCount');
+  if(el && cnt) cnt.textContent = el.value.length + ' / 2000';
+}
+
+async function submitFeedback(){
+  const el = $('fbContent');
+  const content = ((el && el.value) || '').trim();
+  if(!content){ toast('请先填写反馈内容'); return; }
+  const btn = $('fbSubmitBtn');
+  if(btn) btn.disabled = true;
+  try{
+    const r = await API.feedbackSubmit({
+      category: state.fbCat,
+      content: content,
+      contact: ((($('fbContact')||{}).value) || '').trim() || null,
+      anonymous: !!((($('fbAnonymous')||{}).checked))
+    });
+    // 送达情况如实转述：delivered=false 表示已记录但逐级上溯后无人可派（不是提交失败）
+    if(r && r.delivered){
+      toast('已提交，' + (r.assigneeScopeLabel || '管理员') + (r.assigneeName ? '（' + r.assigneeName + '）' : '') + ' 会收到通知');
+    }else{
+      toast((r && r.deliveryNote) || '已记录，暂无可派管理员');
+    }
+    el.value = ''; onFbInput();
+    const c = $('fbContact'); if(c) c.value = '';
+    const a = $('fbAnonymous'); if(a) a.checked = false;
+    await reloadFeedback();
+    renderFeedback();
+  }catch(e){
+    toast('提交失败：' + (e && e.message ? e.message : e));
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+
+async function reloadFeedback(){
+  try{ state.fbMine = await API.feedbackMine(); }catch(e){ /* 单项失败不影响已渲染内容 */ }
+  try{ state.fbInbox = await API.feedbackInbox(); }catch(e){ /* 同上 */ }
+}
+
+function renderFeedback(){
+  renderFbRoute();
+  renderFbMine();
+  renderFbInbox();
+}
+
+function renderFbRoute(){
+  const el = $('fbRouteHint');
+  if(!el) return;
+  const inboxPending = (state.fbInbox && typeof state.fbInbox.pending === 'number') ? state.fbInbox.pending : 0;
+  const mine = (state.fbMine && asArray(state.fbMine.items)) || [];
+  let line;
+  if(mine.length){
+    // 用「最近一条的实际接收层级」说明路由 —— 这是事实，不是推测
+    const f = mine[0];
+    line = '你最近一条反馈派给了 <b>' + esc(f.assigneeScopeLabel || '待人工指派') + '</b>'
+      + (f.assigneeName ? ('（' + esc(f.assigneeName) + '）') : '')
+      + '。派给谁由服务端按「本部门负责人 → 本机构管理员 → 租户管理员」逐级上溯决定，'
+      + '越靠前越贴近你的实际情况；原因写在每条记录里。';
+  }else{
+    line = '你的反馈会派给 <b>本部门的管理员</b>；若本部门未配置负责人，会自动上溯到本机构管理员，'
+      + '再上溯到租户管理员。派给了谁、为什么，都会写在记录里 —— 可在下方「我的提交」随时查看。';
+  }
+  if(inboxPending > 0){
+    line += '<br><b>你名下有 ' + inboxPending + ' 条待处理反馈</b>，见下方「收到的建议」。';
+  }
+  el.innerHTML = line;
+  const hint = $('fbEntryHint');
+  if(hint) hint.textContent = inboxPending > 0 ? ('待处理 ' + inboxPending + ' ›') : '›';
+}
+
+/** 单条反馈卡片。forInbox=true 时按「接收人视角」渲染：给回复框、显示联系方式。 */
+function fbItemHtml(f, forInbox){
+  const h = [];
+  h.push('<div class="fb-item">');
+  h.push('<div class="fb-head">'
+    + '<span class="fb-cat-tag">'+esc(f.categoryLabel||'建议')+'</span>'
+    + '<span class="fb-time">'+esc(String(f.createdAt||'').replace('T',' ').slice(0,16))
+    + ' · '+esc(f.statusLabel||'')+'</span></div>');
+  h.push('<div class="fb-body">'+esc(f.content||'')+'</div>');
+  h.push('<div class="fb-route">提交人：'+esc(f.submitterName||'—')
+    + (f.submitterDeptName ? ('（'+esc(f.submitterDeptName)+'）') : '')
+    + ' · 派给：'+esc(f.assigneeScopeLabel||'待人工指派')
+    + (f.assigneeName ? (' '+esc(f.assigneeName)) : '')
+    + (forInbox && f.contact ? (' · 联系方式：'+esc(f.contact)) : '')
+    + '</div>');
+  if(f.replyContent){
+    h.push('<div class="fb-reply"><b>答复'+esc(f.repliedByName?('（'+f.repliedByName+'）'):'')+'</b><br>'
+      + esc(f.replyContent)+'</div>');
+  }else if(forInbox){
+    // 已关闭的不给回复框（后端也会拒绝，这里只是不让用户白点）
+    if(f.status !== 'CLOSED'){
+      h.push('<div class="fb-reply-box">'
+        + '<input class="fb-input" id="fbReply'+f.id+'" maxlength="2000" '
+        + 'placeholder="写下你的答复，提交人会收到站内通知">'
+        + '<button class="btn small" onclick="replyFeedback('+f.id+')">回复</button></div>');
+    }
+  }
+  h.push('</div>');
+  return h.join('');
+}
+
+function renderFbMine(){
+  const box = $('fbMineList');
+  if(!box) return;
+  const items = (state.fbMine && asArray(state.fbMine.items)) || [];
+  box.innerHTML = items.length
+    ? items.map(function(f){ return fbItemHtml(f, false); }).join('')
+    : '<div class="muted" style="padding:4px 0">还没有提交过反馈</div>';
+  const cnt = $('fbMineCnt');
+  if(cnt){
+    cnt.textContent = '· 共 ' + items.length + ' 条，待处理 '
+      + ((state.fbMine && state.fbMine.pending) || 0) + ' 条';
+  }
+}
+
+function renderFbInbox(){
+  const card = $('fbInboxCard');
+  if(!card) return;
+  const items = (state.fbInbox && asArray(state.fbInbox.items)) || [];
+  collapse(card, items.length > 0);
+  if(!items.length) return;
+  $('fbInboxList').innerHTML = items.map(function(f){ return fbItemHtml(f, true); }).join('');
+  const cnt = $('fbInboxCnt');
+  if(cnt){
+    cnt.textContent = '待处理 ' + ((state.fbInbox && state.fbInbox.pending) || 0)
+      + ' / 共 ' + items.length + ' 条';
+  }
+}
+
+async function replyFeedback(id){
+  const el = $('fbReply'+id);
+  const content = ((el && el.value) || '').trim();
+  if(!content){ toast('请先填写答复内容'); return; }
+  try{
+    await API.feedbackReply(id, content);
+    toast('已回复，提交人会收到站内通知');
+    await reloadFeedback();
+    renderFeedback();
+  }catch(e){
+    toast('回复失败：' + (e && e.message ? e.message : e));
+  }
 }
 
 /* V36 需求①：权限申请页渲染。

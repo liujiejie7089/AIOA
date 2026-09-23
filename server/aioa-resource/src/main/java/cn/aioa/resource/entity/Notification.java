@@ -23,6 +23,12 @@ public class Notification {
     /** 数字员工定时任务执行完成提醒（弹窗提醒数据源） */
     public static final String TYPE_WORKER = "WORKER";
 
+    /**
+     * 投诉与建议（V63）—— 用户提交反馈后，通知「本部门管理员」有新反馈待处理；
+     * 管理员回复后，通知提交人结果。
+     */
+    public static final String TYPE_FEEDBACK = "FEEDBACK";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
