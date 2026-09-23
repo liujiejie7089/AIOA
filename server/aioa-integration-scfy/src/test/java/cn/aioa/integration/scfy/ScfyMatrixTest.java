@@ -352,7 +352,7 @@ class ScfyMatrixTest {
             byGroup.computeIfAbsent(r.group(), k -> new ArrayList<>()).add(r);
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("# scfy 端到端只读矩阵报告（全 56 接口真实调用）\n\n");
+        sb.append("# scfy 端到端只读矩阵报告（契约全部可用接口逐个真实调用）\n\n");
         sb.append("> 生成方式：`server/aioa-integration-scfy` 的 `ScfyMatrixTest`，")
                 .append("`mvn -pl aioa-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true`。\n");
         sb.append("> 环境：`").append(targetBaseUrl)

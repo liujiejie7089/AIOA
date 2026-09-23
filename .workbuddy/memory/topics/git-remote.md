@@ -6,6 +6,10 @@
   - 与本地**已分叉**：`origin/main = 179547e「删除目录 .workbuddy」`，合并基 `42e2aa2`；本地 `main` 相对 origin **ahead 78 / behind 1** ⇒ 对 origin 的推送**不是快进**，需先 merge 或 rebase。
 - `github` = `github.com/liujiejie7089/AIOA.git`。HTTPS 默认不可用（schannel 证书吊销检查失败 `CRYPT_E_NO_REVOCATION_CHECK 0x80092012`；`-c http.schannelCheckRevoke=false` 同样失败；换 `-c http.sslBackend=openssl` 报 `unable to get local issuer certificate`）。
   - ✅ **2026-09-23 实测：加 `-c http.sslVerify=false` 后 HTTPS 直接推送成功**（`git -c http.sslVerify=false push github main`），比 SSH over 443 简单，**无需 escalation**。代价是跳过证书校验（有中间人风险），**只对推自己仓库用，不要设成全局**。
+  - ❌ **2026-09-23 当日更晚复测：同一条命令已推不动**。诊断：`curl -sS -m 12 https://github.com` 立即失败（`exit 35` SSL connect error，0.02s 返回，非超时）⇒ **到 github.com 的 HTTPS 路径在本环境已不可用**；`git push` 则表现为**几分钟零输出地挂起**（未加 `GIT_TERMINAL_PROMPT=0` 时无法区分「等网络」与「等凭证交互」）。
+    应对：① 先 `curl -m 12 https://github.com` 判连通性；② TCP 层其实可连（`/dev/tcp/github.com/443` 通），失败发生在 TLS 之后 —— 沙箱内直接执行 `git push` 会被**强杀（SIGTERM，连 `echo` 的输出都没落盘）**，后台任务则**零输出挂起 9 分钟以上**（`GIT_TERMINAL_PROMPT=0` + `lowSpeedLimit` 也救不回来，因为进程没被正常调度）。
+    ⇒ 本环境下推 GitHub 需走 **escalation（沙箱旁路审批）** 或**由用户在自有终端执行**；不要在同一轮里反复重试等它。
+    内网 `origin` 当前可达（`info/refs` 返回 401 = 需凭据，TCP/HTTP 通）⇒ **内网链路与公网链路是两条独立的路径，不能互相推定**。
   - SSH over 443 仍是更安全的备选（见下节）。
 
 ## 沙箱限制（2026-09-20 更新：旧「推不了」结论已作废）

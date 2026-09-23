@@ -1,4 +1,4 @@
-# scfy 端到端只读矩阵报告（全 56 接口真实调用）
+# scfy 端到端只读矩阵报告（契约全部可用接口逐个真实调用）
 
 > 生成方式：`server/aioa-integration-scfy` 的 `ScfyMatrixTest`，`mvn -pl aioa-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true`。
 > 环境：`https://szbhpt.tsichuan.com/scfy`。只发 GET，无写操作。
