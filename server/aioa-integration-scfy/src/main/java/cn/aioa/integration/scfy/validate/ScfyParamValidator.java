@@ -18,6 +18,7 @@ import java.util.Map;
  * <ul>
  *   <li>{@code area=甘孜藏族自治州}（文档给的全称）→ 返回 0 条，HTTP 200，code=0；</li>
  *   <li>{@code level=un} → 返回未过滤的全省数据，同样 200/0。</li>
+ *   <li>{@code area=青羊区}（行政区划编码类参数传了名称）→ 返回全零，同样 200/0。</li>
  * </ul>
  * 这类错误如果放过，模型会把「查不到」当成事实回答用户，而真实原因是参数写错了 ——
  * <b>错误会伪装成结论</b>。所以本校验器宁可拦下并要求用户澄清，也不放行。</p>
@@ -104,6 +105,21 @@ public class ScfyParamValidator {
                     continue;
                 }
                 normalized.put(p.name(), num);
+                continue;
+            }
+
+            // 行政区划编码（areaCode）：这类参数传错不报错、只静默返回全零，
+            // 所以必须按格式拦下 —— 否则「查不到」会被当成「这个地方没有非遗资源」回答用户。
+            if ("areaCode".equals(p.type())) {
+                if (!sv.matches("\\d{12}")) {
+                    errors.add("参数「" + p.name() + "」应为 12 位行政区划编码（如 510105000000=青羊区、"
+                            + "510100000000=成都市），实际是「" + sv + "」。"
+                            + "传市州简称（如「青羊区」）或 6 位编码实测返回全零且不报错，故在此拦下；"
+                            + "合法编码可从 tourist_county_list 接口取得（返回 id=编码、short_name=名称），"
+                            + "不传则返回全省。");
+                    continue;
+                }
+                normalized.put(p.name(), sv);
                 continue;
             }
 

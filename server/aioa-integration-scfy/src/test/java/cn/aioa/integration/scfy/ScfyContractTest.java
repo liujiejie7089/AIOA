@@ -63,9 +63,11 @@ class ScfyContractTest {
                 assertTrue(ep.params().isEmpty(), "废弃接口不应携带参数契约：" + ep.id());
             }
         }
-        // 数字与调试文档一一对应：56 可用 + 11 废弃 = 67（全量探测数）
-        assertEquals(56, ScfyCatalog.availableCount(), "可用接口数应与实测通过的接口数一致");
-        assertEquals(11, ScfyCatalog.deprecated().size(), "废弃接口数应与实测废弃清单一致");
+        // 数字与实测报告一一对应：55 可用 + 12 废弃 = 67（全量探测数）
+        // 覆盖率以端到端矩阵（ScfyMatrixTest）为准：它断言「探到的接口数 == 可用接口数」。
+        assertEquals(55, ScfyCatalog.availableCount(),
+                "可用接口数应与端到端矩阵实测通过的接口数一致");
+        assertEquals(12, ScfyCatalog.deprecated().size(), "废弃接口数应与实测废弃清单一致");
         assertEquals(67, ScfyCatalog.all().size(), "契约总数应等于全量探测的 67 个接口");
     }
 

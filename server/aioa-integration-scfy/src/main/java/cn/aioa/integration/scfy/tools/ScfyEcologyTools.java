@@ -84,19 +84,9 @@ public class ScfyEcologyTools {
         return support.call("eco_road_distribute", ScfyArgs.of("ecologicalAreaId", ecologicalAreaId, "areaId", areaId));
     }
 
-    @AioaTool(code = "scfy_eco_area_image",
-            name = "生态保护区-指定对象图片",
-            description = "查询保护区内指定对象的图片地址。需提供保护区 id、城市编码、对象类型与对象 id 四个参数。"
-                    + "若只想拿该保护区的全部图片，改用 scfy_eco_all_image。",
-            domain = "scfy", riskLevel = "LOW", owner = "integration")
-    public Map<String, Object> areaImage(
-            @AioaToolParam(name = "ecologicalAreaId", description = "保护区 id", required = true) String ecologicalAreaId,
-            @AioaToolParam(name = "areaId", description = "城市编码，如 510100000000", required = true) String areaId,
-            @AioaToolParam(name = "type", description = "对象类型编码", required = true) String type,
-            @AioaToolParam(name = "dataId", description = "对象 id", required = true) String dataId) {
-        return support.call("eco_area_image",
-                ScfyArgs.of("ecologicalAreaId", ecologicalAreaId, "areaId", areaId, "type", type, "dataId", dataId));
-    }
+    // 原 scfy_eco_area_image（/getEcologicalAreaImageUrl）已废弃：
+    // type 取值语义未明确且错配即 500，无法给模型可靠的取值指引。
+    // 图片需求由 scfy_eco_all_image 与 scfy_eco_details 覆盖。废弃原因见 ScfyCatalog。
 
     @AioaTool(code = "scfy_eco_all_image",
             name = "生态保护区-全部图片",
@@ -109,10 +99,11 @@ public class ScfyEcologyTools {
 
     @AioaTool(code = "scfy_eco_details",
             name = "生态保护区-数据详情",
-            description = "查询保护区内某条数据的详情（名称、类型、地址、简介、图片）。",
+            description = "查询保护区内某条数据的详情（名称、类型、地址、简介、图片）。"
+                    + "type 实测只有 1 与 5 返回数据、2/3/4 返回空对象；dataId 传不存在的值同样返回空对象。",
             domain = "scfy", riskLevel = "LOW", owner = "integration")
     public Map<String, Object> details(
-            @AioaToolParam(name = "type", description = "对象类型编码", required = true) String type,
+            @AioaToolParam(name = "type", description = "对象类型编码，实测 1（或用 5）能取到数据", required = true) String type,
             @AioaToolParam(name = "dataId", description = "对象 id", required = true) String dataId) {
         return support.call("eco_details", ScfyArgs.of("type", type, "dataId", dataId));
     }
@@ -145,10 +136,11 @@ public class ScfyEcologyTools {
 
     @AioaTool(code = "scfy_eco_tourist_county_data",
             name = "生态保护区-县域非遗资源",
-            description = "查询某个县/市州的非遗资源汇总（代表性传承人、非遗项目、名录项目）。",
+            description = "查询某个县/市州的非遗资源汇总（代表性传承人、非遗项目、名录项目）。"
+                    + "area 是 12 位行政区划编码（如 510105000000=青羊区），不是县名 —— 传名称会返回全零。",
             domain = "scfy", riskLevel = "LOW", owner = "integration")
     public Map<String, Object> touristCountyData(
-            @AioaToolParam(name = "area", description = "县或市州名称（简称，如 成都市）", required = true) String area) {
+            @AioaToolParam(name = "area", description = "12 位行政区划编码，如 510105000000（青羊区）；可从 scfy_eco_tourist_county_list 取得", required = false) String area) {
         return support.call("eco_tourist_county_data", ScfyArgs.of("area", area));
     }
 }

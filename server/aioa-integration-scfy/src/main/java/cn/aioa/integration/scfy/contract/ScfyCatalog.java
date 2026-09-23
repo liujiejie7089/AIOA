@@ -25,7 +25,7 @@ public final class ScfyCatalog {
     }
 
     // ==================== 参数构造器 ====================
-    // 复用同一份实测结论，避免 56 个接口各自复述一遍导致口径漂移。
+    // 复用同一份实测结论，避免每个接口各自复述一遍导致口径漂移。
 
     /** 市州参数：实测必须用简称。 */
     private static ScfyParam area(String desc, boolean required) {
@@ -59,6 +59,23 @@ public final class ScfyCatalog {
                 "市州名称。" + ScfyEnums.CITY_NAME_WARNING,
                 ScfyEnums.CITIES, "成都市",
                 "文档未说明简称/全称；经同类接口实测，同样必须用简称");
+    }
+
+    /**
+     * 行政区划编码形态的 {@code area} 参数。
+     * <p>参数名一样是 {@code area}，但取值语义与市州简称完全不同：
+     * 实测传简称一律返回全零（不报错），传 12 位编码才有数据。
+     * 用 {@code type="areaCode"} 让校验器按格式拦截，
+     * 否则「传了简称 → 返回空 → 被当成『这个地方没有非遗资源』」会伪装成结论。</p>
+     */
+    private static ScfyParam areaCode() {
+        return new ScfyParam("area", false, "areaCode",
+                "行政区划编码（12 位，如 510105000000=青羊区、510100000000=成都市）。"
+                        + "不是市州简称 —— 传「青羊区」「成都市」这类简称实测返回全零且不报错；"
+                        + "编码可由 tourist_county_list 接口取得（返回 id=编码、short_name=名称）",
+                null, "510105000000",
+                "文档只写参数名 area、未说取值形态。实测：简称全零 / 6 位编码（510100）也全零 / "
+                        + "12 位编码返回真实数据；不传返回全省（省级项目 35 项）");
     }
 
     // ==================== 废弃原因 ====================
@@ -228,21 +245,21 @@ public final class ScfyCatalog {
                     "查保护区内资源的分布统计（项目/集聚区/体验基地三组）。",
                     List.of(new ScfyParam("ecologicalAreaId", true, "string", "保护区 id", null, null, null),
                             new ScfyParam("areaId", true, "string", "区域编码 city_code", null, "510100000000", null))),
-            ScfyEndpoint.available("eco_area_image", "保护区", "/show/ecologicalArea", "/getEcologicalAreaImageUrl",
-                    "查保护区内指定对象的图片地址。",
-                    List.of(new ScfyParam("ecologicalAreaId", true, "string", "保护区 id", null, null, null),
-                            new ScfyParam("areaId", true, "string", "区域编码 city_code", null, null, null),
-                            new ScfyParam("type", true, "string", "对象类型编码", null, null, null),
-                            new ScfyParam("dataId", true, "string", "对象 id", null, null, null))),
             ScfyEndpoint.available("eco_all_image", "保护区", "/show/ecologicalArea", "/getAllTravelImageUrl",
                     "查保护区的全部图片（实测用真实 id 可返回非空 imageList）。",
                     List.of(new ScfyParam("ecologicalAreaId", true, "string", "保护区 id", null, null, null))),
             ScfyEndpoint.available("eco_details", "保护区", "/show/ecologicalArea", "/getDetailsData",
                     "查保护区某条数据的详情（名称、类型、地址、简介、图片）。",
-                    List.of(new ScfyParam("type", true, "string", "对象类型编码", null, null, null),
-                            new ScfyParam("dataId", true, "string", "对象 id", null, null, null))),
+                    List.of(new ScfyParam("type", true, "string", "对象类型编码", null, "1",
+                                    "实测 type=1 与 5 返回同一条真实数据（青城山--都江堰旅游景区，area_type=5A），"
+                                            + "type=2/3/4 返回空对象 {} 且 code=0。文档未说明取值含义，"
+                                            + "故不臆造枚举，只把实测可用值写入说明"),
+                            new ScfyParam("dataId", true, "string", "对象 id", null, "1",
+                                    "实测传不存在的 id 同样返回空对象 {} 且 code=0"))),
             ScfyEndpoint.available("eco_nmch_base", "保护区", "/show/ecologicalArea", "/getNmchBaseData",
-                    "查非遗体验基地/非遗工坊基地列表（保护区口径）。",
+                    "查非遗体验基地列表（保护区口径）。"
+                            + "实测本前缀下恒为空列表（调用成功、code=0、无数据），"
+                            + "体验基地数据请改用 travel_nmch_base（实测 21 个城市、约 405 个字段值）。",
                     List.of()),
             ScfyEndpoint.available("eco_nmch_popup", "保护区", "/show/ecologicalArea", "/getNmchBasePopupData",
                     "查非遗体验基地弹窗详情（简介、产品）。",
@@ -252,8 +269,9 @@ public final class ScfyCatalog {
                     "查非遗旅游重点县列表（含名称、经纬度），这是获取合法 areaId 的入口。",
                     List.of()),
             ScfyEndpoint.available("eco_tourist_county_data", "保护区", "/show/ecologicalArea", "/getTouristCountyData",
-                    "查某县的非遗资源汇总（代表性传承人、非遗项目、名录项目）。",
-                    List.of(area("县/市州名称", true))),
+                    "查某个县/市州的非遗资源汇总（代表性传承人、非遗项目、名录项目）。"
+                            + "area 收行政区划编码，编码可由 eco_tourist_county_list 取得。",
+                    List.of(areaCode())),
 
             // ---------- 旅游线路（/show/travel）----------
             ScfyEndpoint.available("travel_route_top_list", "旅游", "/show/travel", "/getRoutesTopFewList",
@@ -283,24 +301,36 @@ public final class ScfyCatalog {
                             pageNum(), pageSize())),
             ScfyEndpoint.available("travel_road_detail", "旅游", "/show/travel", "/getTravelRoadDataDetail",
                     "查线路中某条资源的详情（简介、图片、路线）。",
-                    List.of(new ScfyParam("dataId", true, "string", "资源 id", null, null, null),
-                            new ScfyParam("type", true, "string", "资源类型编码", null, null, null))),
+                    List.of(new ScfyParam("dataId", true, "string",
+                            "资源 id，取自 travel_road_by_type 返回的 dataList[].project_base_id"
+                                    + "（形如 05760cdf947f4f32968cf79d3c695b2b）",
+                            null, "05760cdf947f4f32968cf79d3c695b2b",
+                            "实测传不存在的 id（如 1）返回空对象 {} 且 code=0 —— 空结果不等于「资源没有详情」"),
+                            new ScfyParam("type", true, "string", "资源类型编码", null, "1",
+                                    "实测 type 被忽略：1/2/3/4 返回同一份详情"))),
             ScfyEndpoint.available("travel_road_distribute", "旅游", "/show/travel", "/getTravelRoadDistributeData",
                     "查某条线路的资源分布统计。",
                     List.of(new ScfyParam("travelId", true, "string",
                             "线路 id", null, null,
                             "文档标注「必填参数：—」，实测必填 travelId（漏标）"))),
             ScfyEndpoint.available("travel_image", "旅游", "/show/travel", "/getTravelImageUrl",
-                    "查某条线路的图片地址。",
+                    "查某条线路下某一类对象的图片地址（含图片名）。",
                     List.of(new ScfyParam("travelId", true, "string", "线路 id", null, null, null),
-                            new ScfyParam("type", false, "string", "图片类型，可选", null, null, null))),
+                            new ScfyParam("type", true, "string",
+                                    "图片对象类型：2=项目图片、3=体验基地图片",
+                                    List.of("2", "3"), "2",
+                                    "文档未给取值。实测 type 实质必填：不传、或传 1/4/5 都返回空 imageList "
+                                            + "（不报错）；type=2 返回该线路的项目图片（实测 155 条）、"
+                                            + "type=3 返回体验基地图片（实测 9 条），且不同 travelId 返回不同结果"))),
             ScfyEndpoint.available("travel_all_image", "旅游", "/show/travel", "/getAllTravelImageUrl",
                     "查某条线路的全部图片（实测可返回非空 imageList）。",
                     List.of(new ScfyParam("travelId", true, "string", "线路 id", null, null, null))),
             ScfyEndpoint.available("travel_details", "旅游", "/show/travel", "/getDetailsData",
                     "查线路中某条数据的详情。",
-                    List.of(new ScfyParam("type", true, "string", "对象类型编码", null, null, null),
-                            new ScfyParam("dataId", true, "string", "对象 id", null, null, null))),
+                    List.of(new ScfyParam("type", true, "string", "对象类型编码", null, "1",
+                                    "与保护区同名的 getDetailsData 返回结构完全一致；实测 type=1/5 有数据、"
+                                            + "2/3/4 返回空对象 {} 且 code=0，取值含义文档未说明"),
+                            new ScfyParam("dataId", true, "string", "对象 id", null, "1", null))),
             ScfyEndpoint.available("travel_nmch_base", "旅游", "/show/travel", "/getNmchBaseData",
                     "查非遗体验基地列表（旅游口径，实测 21 条，比保护区口径更全）。",
                     List.of()),
@@ -312,8 +342,9 @@ public final class ScfyCatalog {
                     "查非遗旅游重点县列表（旅游口径）。",
                     List.of()),
             ScfyEndpoint.available("travel_tourist_county_data", "旅游", "/show/travel", "/getTouristCountyData",
-                    "查某县的非遗资源汇总（旅游口径）。",
-                    List.of(area("县/市州名称", true))),
+                    "查某个县/市州的非遗资源汇总（旅游口径）。"
+                            + "area 收行政区划编码，编码可由 travel_tourist_county_list 取得。",
+                    List.of(areaCode())),
 
             // ==================== 废弃项（登记原因，不注册为工具）====================
 
@@ -337,6 +368,14 @@ public final class ScfyCatalog {
                     "工坊列表 v2", DEPRECATED_SHOPS_V2),
             ScfyEndpoint.deprecated("deprecated_shopv2_pie", "工坊v2(废弃)", "/show/shopv2", "/pieChartAndStores",
                     "工坊饼图 v2", DEPRECATED_SHOPS_V2),
+            ScfyEndpoint.deprecated("deprecated_eco_area_image", "保护区(废弃)", "/show/ecologicalArea",
+                    "/getEcologicalAreaImageUrl",
+                    "保护区指定对象图片",
+                    "type 取值语义未明确，且错配即报错：实测同一保护区下，项目类对象只有 type=2 不报错、"
+                            + "集聚区类对象只有 type=1/4/5 不报错，其余取值一律 code=500 "
+                            + "「Incorrect result size: expected 1, actual 0」。"
+                            + "既然无法告诉模型该传什么 type，按「不确定即废弃」处理 —— "
+                            + "图片需求改用 eco_all_image（实测 123 个字段值）与 eco_details（返回 image_url）。"),
             ScfyEndpoint.deprecated("deprecated_eco_pager_image", "保护区(废弃)", "/show/ecologicalArea", "/getPagerTravelImageUrl",
                     "保护区分页图片", "实测只返回 {pager:{...}} 分页器，**没有任何数据列表字段**，"
                     + "调用方拿不到图片；改用 eco_all_image / eco_area_image。")

@@ -93,11 +93,13 @@ public class ScfyTravelTools {
 
     @AioaTool(code = "scfy_travel_road_detail",
             name = "非遗旅游线路-资源详情",
-            description = "查询线路中某条资源的详情（简介、图片、路线）。",
+            description = "查询线路中某条资源的详情（简介、图片、路线）。"
+                    + "dataId 要传 scfy_travel_road_by_type 返回的 project_base_id —— "
+                    + "传不存在的 id 会返回空对象而不报错；type 实测被忽略。",
             domain = "scfy", riskLevel = "LOW", owner = "integration")
     public Map<String, Object> roadDetail(
-            @AioaToolParam(name = "dataId", description = "资源 id", required = true) String dataId,
-            @AioaToolParam(name = "type", description = "资源类型编码", required = true) String type) {
+            @AioaToolParam(name = "dataId", description = "资源 id，取自 scfy_travel_road_by_type 的 dataList[].project_base_id", required = true) String dataId,
+            @AioaToolParam(name = "type", description = "资源类型编码，实测 1/2/3/4 返回同一份详情", required = true) String type) {
         return support.call("travel_road_detail", ScfyArgs.of("dataId", dataId, "type", type));
     }
 
@@ -114,12 +116,12 @@ public class ScfyTravelTools {
 
     @AioaTool(code = "scfy_travel_image",
             name = "非遗旅游线路-图片",
-            description = "查询某条线路的图片地址（实测仅传 travelId 时 imageList 可能为空，"
-                    + "要全部图片改用 scfy_travel_all_image）。",
+            description = "查询某条线路下某一类对象的图片（含图片名）。type 实质必填：2=项目图片、3=体验基地图片；"
+                    + "不传或传其他值会返回空列表而不报错。要该线路全部图片也可用 scfy_travel_all_image。",
             domain = "scfy", riskLevel = "LOW", owner = "integration")
     public Map<String, Object> image(
             @AioaToolParam(name = "travelId", description = "线路 id", required = true) String travelId,
-            @AioaToolParam(name = "type", description = "图片类型，可选", required = false) String type) {
+            @AioaToolParam(name = "type", description = "图片对象类型：2=项目图片、3=体验基地图片", required = true) String type) {
         return support.call("travel_image", ScfyArgs.of("travelId", travelId, "type", type));
     }
 
@@ -134,10 +136,10 @@ public class ScfyTravelTools {
 
     @AioaTool(code = "scfy_travel_details",
             name = "非遗旅游线路-数据详情",
-            description = "查询线路中某条数据的详情。",
+            description = "查询线路中某条数据的详情。type 实测 1 与 5 有数据、2/3/4 返回空对象。",
             domain = "scfy", riskLevel = "LOW", owner = "integration")
     public Map<String, Object> details(
-            @AioaToolParam(name = "type", description = "对象类型编码", required = true) String type,
+            @AioaToolParam(name = "type", description = "对象类型编码，实测 1（或用 5）能取到数据", required = true) String type,
             @AioaToolParam(name = "dataId", description = "对象 id", required = true) String dataId) {
         return support.call("travel_details", ScfyArgs.of("type", type, "dataId", dataId));
     }
@@ -170,10 +172,11 @@ public class ScfyTravelTools {
 
     @AioaTool(code = "scfy_travel_tourist_county_data",
             name = "非遗旅游线路-县域非遗资源",
-            description = "查询某县的非遗资源汇总（旅游口径：代表性传承人、非遗项目、名录项目）。",
+            description = "查询某个县/市州的非遗资源汇总（旅游口径：代表性传承人、非遗项目、名录项目）。"
+                    + "area 是 12 位行政区划编码（如 510105000000=青羊区），不是县名 —— 传名称会返回全零。",
             domain = "scfy", riskLevel = "LOW", owner = "integration")
     public Map<String, Object> touristCountyData(
-            @AioaToolParam(name = "area", description = "县或市州名称（简称）", required = true) String area) {
+            @AioaToolParam(name = "area", description = "12 位行政区划编码，如 510105000000（青羊区）；可从 scfy_travel_tourist_county_list 取得", required = false) String area) {
         return support.call("travel_tourist_county_data", ScfyArgs.of("area", area));
     }
 }
