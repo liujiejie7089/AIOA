@@ -98,6 +98,17 @@ proxy-run*.log
 # ---- WorkBuddy 工作区临时产物（截图/调试/文档抽取，不入库）----
 .workbuddy/*.png
 .workbuddy/*.txt
+# 版式截图目录（scripts/_shot_h5_layout.py 产出，人工核对用，随时可重生成）
+.workbuddy/shots/
+# 验收截图产物（可随时重跑套件再生成）
+.workbuddy/artifacts/
+
+# ---- 第三方系统对接资料（含凭证，严禁入库）----
+# 非遗四川接口文档原文含 SSO clientSecret / AES 密钥 / JWT 签名密钥，
+# 一旦随仓库外发即为凭证泄露。映射表与缺失清单（无凭证）才入库。
+docs/_incoming/非违接口文档.txt
+# 全量探测原始结果（含响应体），可由 scripts/_probe_fy_show.py 重生成
+docs/_incoming/probe_show_result.json
 .workbuddy/doc_*.json
 .workbuddy/p0_*.json
 .workbuddy/p0_*.txt
