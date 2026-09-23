@@ -5,6 +5,7 @@ import cn.aioa.integration.scfy.adapter.ScfyResponse;
 import cn.aioa.integration.scfy.contract.ScfyCatalog;
 import cn.aioa.integration.scfy.contract.ScfyEndpoint;
 import cn.aioa.integration.scfy.contract.ScfyParam;
+import cn.aioa.integration.scfy.contract.ScfyResultEnvelope;
 import cn.aioa.integration.scfy.validate.ScfyParamValidator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
@@ -28,6 +29,10 @@ import java.util.Map;
  * 传承人列表全省 1821 条）。不裁剪就会把上下文撑爆，且模型也用不上。
  * 裁剪时明确标注 {@code truncated=true} 与实际总数，
  * 让模型知道「这不是全部」—— 静默截断是缺陷（参考 KB 列表那次），不是优化。</p>
+ *
+ * <p><b>信封键名一律取自 {@link ScfyResultEnvelope}</b>，不再写字面量：
+ * 「返回结构」要对外声明给模型看，若实现与声明各写一份，模型会照着不存在的字段取值。
+ * 用常量把这层锁死，声明与产出就不可能不一致。</p>
  */
 public class ScfyToolSupport {
 
@@ -61,13 +66,13 @@ public class ScfyToolSupport {
         ScfyParamValidator.Result vr = validator.validate(ep, params);
         if (!vr.ok()) {
             Map<String, Object> out = base(ep);
-            out.put("ok", false);
+            out.put(ScfyResultEnvelope.OK, false);
             if (vr.askUser() != null) {
-                out.put("needUserInput", true);
-                out.put("askUser", vr.askUser());
+                out.put(ScfyResultEnvelope.NEED_USER_INPUT, true);
+                out.put(ScfyResultEnvelope.ASK_USER, vr.askUser());
             }
             if (!vr.errors().isEmpty()) {
-                out.put("errors", vr.errors());
+                out.put(ScfyResultEnvelope.ERRORS, vr.errors());
             }
             addWarnings(out, vr.warnings());
             return out;
@@ -79,29 +84,29 @@ public class ScfyToolSupport {
         } catch (Exception e) {
             log.warn("scfy 工具调用异常 endpoint={} params={}", endpointId, vr.normalized(), e);
             Map<String, Object> out = base(ep);
-            out.put("ok", false);
-            out.put("errors", List.of("调用异常：" + e.getMessage()));
+            out.put(ScfyResultEnvelope.OK, false);
+            out.put(ScfyResultEnvelope.ERRORS, List.of("调用异常：" + e.getMessage()));
             return out;
         }
 
         Map<String, Object> out = base(ep);
         if (!resp.ok()) {
-            out.put("ok", false);
-            out.put("errors", List.of(resp.reason()));
-            out.put("httpStatus", resp.httpStatus());
-            out.put("code", resp.code());
+            out.put(ScfyResultEnvelope.OK, false);
+            out.put(ScfyResultEnvelope.ERRORS, List.of(resp.reason()));
+            out.put(ScfyResultEnvelope.HTTP_STATUS, resp.httpStatus());
+            out.put(ScfyResultEnvelope.CODE, resp.code());
             addWarnings(out, vr.warnings());
             return out;
         }
 
-        out.put("ok", true);
+        out.put(ScfyResultEnvelope.OK, true);
         Object data = toPlain(resp.data());
-        out.put("data", trim(data, out));
+        out.put(ScfyResultEnvelope.DATA, trim(data, out));
         addWarnings(out, vr.warnings());
-        out.put("elapsedMs", resp.elapsedMs());
+        out.put(ScfyResultEnvelope.ELAPSED_MS, resp.elapsedMs());
         if (resp.truncated()) {
             // 响应体被字节上限截断 —— 与「条目裁剪」是两件事，分别标注
-            out.put("responseTruncated", true);
+            out.put(ScfyResultEnvelope.RESPONSE_TRUNCATED, true);
         }
         return out;
     }
@@ -113,8 +118,8 @@ public class ScfyToolSupport {
      */
     private Map<String, Object> base(ScfyEndpoint ep) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("endpoint", ep.id());
-        out.put("source", "非遗四川 2023 / " + ep.fullPath());
+        out.put(ScfyResultEnvelope.ENDPOINT, ep.id());
+        out.put(ScfyResultEnvelope.SOURCE, "非遗四川 2023 / " + ep.fullPath());
         if (ep.hasDocMismatch()) {
             List<String> notes = new ArrayList<>();
             for (ScfyParam p : ep.params()) {
@@ -122,14 +127,14 @@ public class ScfyToolSupport {
                     notes.add(p.name() + "：" + p.docNote());
                 }
             }
-            out.put("docMismatch", notes);
+            out.put(ScfyResultEnvelope.DOC_MISMATCH, notes);
         }
         return out;
     }
 
     private void addWarnings(Map<String, Object> out, List<String> warnings) {
         if (warnings != null && !warnings.isEmpty()) {
-            out.put("warnings", warnings);
+            out.put(ScfyResultEnvelope.WARNINGS, warnings);
         }
     }
 
@@ -142,9 +147,9 @@ public class ScfyToolSupport {
     private Object trim(Object data, Map<String, Object> out) {
         if (data instanceof List<?> list) {
             if (list.size() > MAX_ITEMS) {
-                out.put("truncated", true);
-                out.put("totalItems", list.size());
-                out.put("returnedItems", MAX_ITEMS);
+                out.put(ScfyResultEnvelope.TRUNCATED, true);
+                out.put(ScfyResultEnvelope.TOTAL_ITEMS, list.size());
+                out.put(ScfyResultEnvelope.RETURNED_ITEMS, MAX_ITEMS);
                 return list.subList(0, MAX_ITEMS);
             }
             return list;
@@ -153,10 +158,10 @@ public class ScfyToolSupport {
             Map<String, Object> m = (Map<String, Object>) map;
             for (Map.Entry<String, Object> e : m.entrySet()) {
                 if (e.getValue() instanceof List<?> l && l.size() > MAX_ITEMS) {
-                    out.put("truncated", true);
-                    out.put("truncatedField", e.getKey());
-                    out.put("totalItems", l.size());
-                    out.put("returnedItems", MAX_ITEMS);
+                    out.put(ScfyResultEnvelope.TRUNCATED, true);
+                    out.put(ScfyResultEnvelope.TRUNCATED_FIELD, e.getKey());
+                    out.put(ScfyResultEnvelope.TOTAL_ITEMS, l.size());
+                    out.put(ScfyResultEnvelope.RETURNED_ITEMS, MAX_ITEMS);
                     m.put(e.getKey(), l.subList(0, MAX_ITEMS));
                 }
             }

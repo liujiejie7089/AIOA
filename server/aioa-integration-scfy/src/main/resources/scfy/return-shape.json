@@ -1,0 +1,1320 @@
+{
+  "generatedBy" : "ScfyMatrixTest",
+  "generatedFrom" : "https://szbhpt.tsichuan.com/scfy",
+  "coverage" : 55,
+  "discoveredIds" : {
+    "INH_ID" : "6df60302-f201-4fee-8758-e93d0e4c3112_country",
+    "PROJ_ID" : "2-UN-1",
+    "SHOP_ID" : "140",
+    "TRAVEL_ID" : "43c4f5188de54c46b2b03094ff1e5da0",
+    "ECO_ID" : "5f199a336e2e44efab9c5541f4138fe9",
+    "CITY_CODE" : "510100000000",
+    "COUNTY_CODE" : "510105000000",
+    "ROAD_DATA_ID" : "05760cdf947f4f32968cf79d3c695b2b"
+  },
+  "endpoints" : {
+    "eco_all_image" : {
+      "path" : "/show/ecologicalArea/getAllTravelImageUrl",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "imageList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "image_data" : "array<object>",
+            "area_short_name" : "string"
+          }
+        }
+      }
+    },
+    "eco_area_count" : {
+      "path" : "/show/ecologicalArea/getAreasNum",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "country" : "string",
+        "province" : "string"
+      }
+    },
+    "eco_area_top_list" : {
+      "path" : "/show/ecologicalArea/getAreasTopFewList",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "areasTopFewList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "area_name" : "string",
+            "latitude" : "string",
+            "ecologicalarea_id" : "string",
+            "show_index" : "number",
+            "area_level" : "string",
+            "introduction" : "string",
+            "longitude" : "string"
+          }
+        }
+      }
+    },
+    "eco_city_round" : {
+      "path" : "/show/ecologicalArea/getCityRoundByAreaId",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "cityPointData" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "city_name" : "string",
+            "code" : "string",
+            "latitude" : "string",
+            "city_id" : "string",
+            "longitude" : "string"
+          }
+        }
+      }
+    },
+    "eco_details" : {
+      "path" : "/show/ecologicalArea/getDetailsData",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "area_name" : "string",
+        "area_type" : "string",
+        "address" : "string",
+        "introduction" : "string",
+        "image_url" : "string"
+      }
+    },
+    "eco_nmch_base" : {
+      "path" : "/show/ecologicalArea/getNmchBaseData",
+      "group" : "保护区",
+      "observed" : "OK_EMPTY",
+      "dataKind" : "object",
+      "fields" : {
+        "nmchBaseDataList" : {
+          "kind" : "array",
+          "elementKind" : "unknown"
+        }
+      }
+    },
+    "eco_nmch_popup" : {
+      "path" : "/show/ecologicalArea/getNmchBasePopupData",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "popupDataList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "base_code" : "string",
+            "base_name" : "string",
+            "longitude" : "string",
+            "latitude" : "string"
+          }
+        }
+      }
+    },
+    "eco_road_data" : {
+      "path" : "/show/ecologicalArea/getEcologicalAreaRoadData",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "projectData" : {
+          "kind" : "object",
+          "fields" : {
+            "pageCount" : "number",
+            "pageNumber" : "number",
+            "dataList" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "project_base_id" : "string",
+                "latitude" : "string",
+                "imageUrl" : "string",
+                "project_code" : "string",
+                "area_short_name" : "string",
+                "project_level" : "string",
+                "project_name" : "string",
+                "area_id" : "string",
+                "longitude" : "string"
+              }
+            },
+            "pageSize" : "number",
+            "totalCount" : "number"
+          }
+        },
+        "agglomerationAreaData" : {
+          "kind" : "object",
+          "fields" : {
+            "pageCount" : "number",
+            "pageNumber" : "number",
+            "dataList" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "area_name" : "string",
+                "latitude" : "string",
+                "area_short_name" : "string",
+                "id" : "string",
+                "introduction" : "string",
+                "longitude" : "string"
+              }
+            },
+            "pageSize" : "number",
+            "totalCount" : "number"
+          }
+        },
+        "projectLevelData" : {
+          "kind" : "object",
+          "fields" : {
+            "country" : "number",
+            "province" : "number",
+            "un" : "number"
+          }
+        },
+        "nmchBaseData" : {
+          "kind" : "object",
+          "fields" : {
+            "pageCount" : "number",
+            "pageNumber" : "number",
+            "dataList" : {
+              "kind" : "array",
+              "elementKind" : "unknown"
+            },
+            "pageSize" : "number",
+            "totalCount" : "number"
+          }
+        }
+      }
+    },
+    "eco_road_distribute" : {
+      "path" : "/show/ecologicalArea/getRoadDistributeData",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "projectData" : {
+          "kind" : "array",
+          "elementKind" : "unknown"
+        },
+        "agglomerationAreaData" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "area_name" : "string",
+            "latitude" : "string",
+            "area_short_name" : "string",
+            "id" : "string",
+            "introduction" : "string",
+            "longitude" : "string"
+          }
+        },
+        "nmchBaseData" : {
+          "kind" : "array",
+          "elementKind" : "unknown"
+        }
+      }
+    },
+    "eco_tourist_county_data" : {
+      "path" : "/show/ecologicalArea/getTouristCountyData",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "typicalInheritors" : {
+          "kind" : "object",
+          "fields" : {
+            "listData" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "id" : "string",
+                "inheritor_name" : "string",
+                "inheritor_level" : "string",
+                "area_short_name" : "string"
+              }
+            },
+            "provinceNum" : "number",
+            "countryNum" : "number"
+          }
+        },
+        "touristUnProject" : {
+          "kind" : "object",
+          "fields" : {
+            "listData" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "project_base_id" : "string",
+                "project_name" : "string",
+                "project_level" : "string",
+                "area_short_name" : "string"
+              }
+            },
+            "num" : "number"
+          }
+        },
+        "touristDirectoryProject" : {
+          "kind" : "object",
+          "fields" : {
+            "listData" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "project_base_id" : "string",
+                "project_name" : "string",
+                "project_level" : "string",
+                "area_short_name" : "string"
+              }
+            },
+            "provinceNum" : "number",
+            "countryNum" : "number"
+          }
+        }
+      }
+    },
+    "eco_tourist_county_list" : {
+      "path" : "/show/ecologicalArea/getTouristCountyList",
+      "group" : "保护区",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "touristCounty" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "short_name" : "string",
+            "longitude" : "string",
+            "latitude" : "string"
+          }
+        }
+      }
+    },
+    "inheritor_birthday_data" : {
+      "path" : "/show/inheritor/getInheritorBirthday",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "total" : "number",
+        "data" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        }
+      }
+    },
+    "inheritor_count_by_area" : {
+      "path" : "/show/inheritor/getAreaInheritorData",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "array",
+      "elementKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "short_name" : "string",
+        "country_inheritor" : "string",
+        "province_inheritor" : "string",
+        "city_inheritor" : "string",
+        "county_inheritor" : "string",
+        "all" : "string"
+      }
+    },
+    "inheritor_detail" : {
+      "path" : "/show/inheritor/getInheritorDetail",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "name" : "string",
+        "inheritor_level" : "string",
+        "unit" : "string",
+        "resume" : "string",
+        "image_url" : "string"
+      }
+    },
+    "inheritor_education_data" : {
+      "path" : "/show/inheritor/getInheritorWhcd",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "country" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        },
+        "province" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        }
+      }
+    },
+    "inheritor_gender_data" : {
+      "path" : "/show/inheritor/getGenderNumDataByLevel",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "manCount" : "number",
+        "womanCount" : "number",
+        "totalCount" : "number"
+      }
+    },
+    "inheritor_list_by_area" : {
+      "path" : "/show/inheritor/getInheritorListByArea",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "pageCount" : "number",
+        "pageNumber" : "number",
+        "dataList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "inheritor_base_id" : "string",
+            "name" : "string",
+            "resume" : "string",
+            "inheritor_level" : "string",
+            "level_name" : "string"
+          }
+        },
+        "pageSize" : "number",
+        "totalCount" : "number"
+      }
+    },
+    "inheritor_type_data" : {
+      "path" : "/show/inheritor/getInheritorTypeData",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "total" : "number",
+        "data" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        },
+        "projectTypeMap" : {
+          "kind" : "object",
+          "fields" : {
+            "folkLiterature" : "number",
+            "traditionalArt" : "number",
+            "quyi" : "number",
+            "sports" : "number",
+            "traditionalDancing" : "number",
+            "folk" : "number",
+            "traditionalOpera" : "number",
+            "medicine" : "number",
+            "traditionalSkills" : "number",
+            "classicalMusic" : "number"
+          }
+        },
+        "name" : "string"
+      }
+    },
+    "inheritor_video" : {
+      "path" : "/show/inheritor/viewVideo",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "exist" : "boolean",
+        "viewUrl" : "string"
+      }
+    },
+    "inheritor_yhwd_data" : {
+      "path" : "/show/inheritor/getYhwdInheritorData",
+      "group" : "传承人",
+      "observed" : "OK_DATA",
+      "dataKind" : "array",
+      "elementKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "area" : "string",
+        "country_inheritor" : "string",
+        "province_inheritor" : "string",
+        "name" : "string",
+        "all" : "number"
+      }
+    },
+    "project_area_summary" : {
+      "path" : "/show/project/getAreaProjectData",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "array",
+      "elementKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "short_name" : "string",
+        "un_project" : "string",
+        "country_project" : "string",
+        "province_project" : "string",
+        "city_project" : "string",
+        "county_project" : "string",
+        "all" : "string"
+      }
+    },
+    "project_batch_data" : {
+      "path" : "/show/project/getProjectBatchData",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "line_province" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        },
+        "bar_country" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        },
+        "bar_province" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        },
+        "line_country" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        }
+      }
+    },
+    "project_count_by_area" : {
+      "path" : "/show/project/getProjectCountByArea",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "array",
+      "elementKind" : "object",
+      "fields" : {
+        "level_name" : "string",
+        "num" : "number"
+      }
+    },
+    "project_detail" : {
+      "path" : "/show/project/getProjectDetail",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "project_base_id" : "string",
+        "project_name" : "string",
+        "protection_unit" : "string",
+        "project_level" : "string",
+        "pedigree" : "string",
+        "description" : "string",
+        "image_url" : "string"
+      }
+    },
+    "project_list_by_area" : {
+      "path" : "/show/project/getProjectListByArea",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "pageCount" : "number",
+        "pageNumber" : "number",
+        "dataList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "project_base_id" : "string",
+            "project_name" : "string",
+            "project_level" : "string",
+            "level_name" : "string"
+          }
+        },
+        "pageSize" : "number",
+        "totalCount" : "number"
+      }
+    },
+    "project_type_data" : {
+      "path" : "/show/project/getProjectTypeData",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "total" : "number",
+        "data" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "name" : "string",
+            "value" : "number"
+          }
+        },
+        "projectTypeMap" : {
+          "kind" : "object",
+          "fields" : {
+            "folkLiterature" : "number",
+            "traditionalArt" : "number",
+            "quyi" : "number",
+            "sports" : "number",
+            "traditionalDancing" : "number",
+            "folk" : "number",
+            "traditionalOpera" : "number",
+            "medicine" : "number",
+            "traditionalSkills" : "number",
+            "classicalMusic" : "number"
+          }
+        },
+        "name" : "string"
+      }
+    },
+    "project_video" : {
+      "path" : "/show/project/viewVideo",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "exist" : "boolean",
+        "viewUrl" : "string"
+      }
+    },
+    "project_yhwd_data" : {
+      "path" : "/show/project/getYhwdProjectData",
+      "group" : "项目",
+      "observed" : "OK_DATA",
+      "dataKind" : "array",
+      "elementKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "area" : "string",
+        "un_project" : "string",
+        "country_project" : "string",
+        "province_project" : "string",
+        "city_project" : "string",
+        "district_project" : "string",
+        "name" : "string",
+        "all" : "number"
+      }
+    },
+    "shop_address_distribution" : {
+      "path" : "/show/shop/addrDistribution",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "total" : {
+          "kind" : "object",
+          "fields" : {
+            "accountLevel1" : "number",
+            "accountLevel2" : "number",
+            "accountLevel3" : "number",
+            "accountLevel4" : "number",
+            "accountType2" : "number"
+          }
+        },
+        "type2" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "addr_id" : "string",
+            "name" : "string",
+            "level" : "string",
+            "addr" : "string",
+            "type" : "string",
+            "city" : "string",
+            "lng" : "string",
+            "lat" : "string",
+            "texts" : "array<object>"
+          }
+        },
+        "type1" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "account" : "number",
+            "city" : "string",
+            "level" : "string"
+          }
+        }
+      }
+    },
+    "shop_area_map_chart" : {
+      "path" : "/show/shop/areaMapChart",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "type3" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "area" : "string",
+            "level" : "string",
+            "account" : "number"
+          }
+        },
+        "type2" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "area" : "string",
+            "yhwd" : "string"
+          }
+        },
+        "type1" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "area" : "string",
+            "level" : "string",
+            "account" : "number"
+          }
+        }
+      }
+    },
+    "shop_bar_chart" : {
+      "path" : "/show/shop/barChart",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "list" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "num" : "number",
+            "platform_name" : "string"
+          }
+        }
+      }
+    },
+    "shop_category_sum" : {
+      "path" : "/show/shop/categorySum",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "offlineSales" : "number",
+        "onlineSales" : "number",
+        "laozihaoZh" : "number",
+        "projectLevelCity" : "number",
+        "onlineEntrust" : "number",
+        "laozihaoSc" : "number",
+        "inheritorLevelCountry" : "number",
+        "inheritorLevelArea" : "number",
+        "inheritorLevelCity" : "number",
+        "projectLevelCountry" : "number",
+        "projectLevelArea" : "number",
+        "onlineJoin" : "number",
+        "inheritorLevelNonRepresentativeness" : "number",
+        "provertyCountyLevelNo" : "number",
+        "offlineSalesNum" : "number",
+        "onlineIndependent" : "number",
+        "onlineOther" : "number",
+        "provertyCountyLevelProvince" : "number",
+        "provertyCountyLevelCounty" : "number",
+        "projectLevelProvince" : "number",
+        "inheritorLevelExpert" : "number",
+        "inheritorLevelProvince" : "number",
+        "onlineSalesNum" : "number"
+      }
+    },
+    "shop_detail" : {
+      "path" : "/show/shop/shopDetail",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "online" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "platform_name" : "string",
+            "store_name" : "string",
+            "online_website" : "string"
+          }
+        },
+        "introduction" : {
+          "kind" : "object",
+          "fields" : {
+            "introduction" : "string",
+            "subject_name" : "string",
+            "sales_form" : "string",
+            "city" : "string",
+            "poverty_county_level" : "string",
+            "project_num" : "number",
+            "user_num" : "number"
+          }
+        }
+      }
+    },
+    "shop_inheritor" : {
+      "path" : "/show/shop/shopInheritor",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "list" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "inheritor_img" : "array",
+            "inheritor_img_inch" : "string",
+            "inheritor_name" : "string",
+            "inheritor_sex" : "string",
+            "inheritor_tel" : "string",
+            "inheritor_nation" : "string",
+            "inheritor_level" : "string",
+            "project_type" : "string",
+            "project_name" : "string",
+            "project_level" : "string"
+          }
+        }
+      }
+    },
+    "shop_map_chart" : {
+      "path" : "/show/shop/mapChart",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "type3" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "city" : "string",
+            "level" : "string",
+            "account" : "number"
+          }
+        },
+        "type2" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "city" : "string",
+            "yhwd" : "string"
+          }
+        },
+        "type1" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "city" : "string",
+            "level" : "string",
+            "account" : "number"
+          }
+        }
+      }
+    },
+    "shop_pie_and_stores" : {
+      "path" : "/show/shop/pieChartAndStores",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "stores" : "number",
+        "pieChartList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "num" : "number",
+            "project_type" : "string"
+          }
+        }
+      }
+    },
+    "shop_project_type_pie" : {
+      "path" : "/show/shop/shopProjectTypePieChart",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "list" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "num" : "number",
+            "project_type" : "string"
+          }
+        }
+      }
+    },
+    "shop_sales" : {
+      "path" : "/show/shop/shopSales",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "online_sales_num" : "number",
+        "sales_num" : "number",
+        "offline_sales" : "number",
+        "offline_sales_num" : "number",
+        "online_sales" : "number",
+        "sales" : "number"
+      }
+    },
+    "shop_sales_and_amount" : {
+      "path" : "/show/shop/salesAndSalesAmount",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "salesNum" : "number",
+        "sales" : "number"
+      }
+    },
+    "shop_sales_num_pie" : {
+      "path" : "/show/shop/shopSalesAndNumPieChart",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "salesNum" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "num" : "number",
+            "platform_name" : "string"
+          }
+        },
+        "sales" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "num" : "number",
+            "platform_name" : "string"
+          }
+        }
+      }
+    },
+    "shop_table" : {
+      "path" : "/show/shop/shopTable",
+      "group" : "工坊",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "list" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "subject_name" : "string",
+            "num" : "number",
+            "platform_name" : "string",
+            "project_name" : "string",
+            "sales_form" : "string",
+            "sales" : "number",
+            "sales_num" : "number"
+          }
+        }
+      }
+    },
+    "travel_all_image" : {
+      "path" : "/show/travel/getAllTravelImageUrl",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "imageList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "image_data" : "array",
+            "area_short_name" : "string",
+            "show_index" : "string",
+            "city_id" : "string"
+          }
+        }
+      }
+    },
+    "travel_city_round" : {
+      "path" : "/show/travel/getCityRoundByTravelId",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "cityPointData" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "city_name" : "string",
+            "code" : "string",
+            "latitude" : "string",
+            "city_id" : "string",
+            "longitude" : "string"
+          }
+        },
+        "centerLatitude" : "string",
+        "coordinateSet" : "string",
+        "centerLongitude" : "string"
+      }
+    },
+    "travel_details" : {
+      "path" : "/show/travel/getDetailsData",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "id" : "string",
+        "area_name" : "string",
+        "area_type" : "string",
+        "address" : "string",
+        "introduction" : "string",
+        "image_url" : "string"
+      }
+    },
+    "travel_image" : {
+      "path" : "/show/travel/getTravelImageUrl",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "imageList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "image_url" : "string",
+            "bizid" : "string",
+            "name" : "string"
+          }
+        }
+      }
+    },
+    "travel_nmch_base" : {
+      "path" : "/show/travel/getNmchBaseData",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "nmchBaseDataList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "city_code" : "string",
+            "city_name" : "string",
+            "base_num" : "number",
+            "info_list" : "array<object>"
+          }
+        }
+      }
+    },
+    "travel_nmch_popup" : {
+      "path" : "/show/travel/getNmchBasePopupData",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "popupDataList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "base_code" : "string",
+            "base_name" : "string",
+            "longitude" : "string",
+            "latitude" : "string"
+          }
+        }
+      }
+    },
+    "travel_road_by_type" : {
+      "path" : "/show/travel/getTravelRoadDataByType",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "pageCount" : "number",
+        "pageNumber" : "number",
+        "dataList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "project_base_id" : "string",
+            "latitude" : "string",
+            "project_code" : "string",
+            "area_short_name" : "string",
+            "project_name" : "string",
+            "area_id" : "string",
+            "longitude" : "string"
+          }
+        },
+        "pageSize" : "number",
+        "totalCount" : "number"
+      }
+    },
+    "travel_road_data" : {
+      "path" : "/show/travel/getTravelRoadData",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "projectData" : {
+          "kind" : "object",
+          "fields" : {
+            "pageCount" : "number",
+            "pageNumber" : "number",
+            "dataList" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "project_base_id" : "string",
+                "latitude" : "string",
+                "project_code" : "string",
+                "area_short_name" : "string",
+                "project_name" : "string",
+                "area_id" : "string",
+                "longitude" : "string"
+              }
+            },
+            "pageSize" : "number",
+            "totalCount" : "number"
+          }
+        },
+        "agglomerationAreaData" : {
+          "kind" : "object",
+          "fields" : {
+            "pageCount" : "number",
+            "pageNumber" : "number",
+            "dataList" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "area_name" : "string",
+                "latitude" : "string",
+                "area_short_name" : "string",
+                "id" : "string",
+                "introduction" : "string",
+                "longitude" : "string"
+              }
+            },
+            "pageSize" : "number",
+            "totalCount" : "number"
+          }
+        },
+        "nmchBaseData" : {
+          "kind" : "object",
+          "fields" : {
+            "pageCount" : "number",
+            "pageNumber" : "number",
+            "dataList" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "base_name" : "string",
+                "latitude" : "string",
+                "base_code" : "string",
+                "area_short_name" : "string",
+                "id" : "string",
+                "area_id" : "string",
+                "longitude" : "string"
+              }
+            },
+            "pageSize" : "number",
+            "totalCount" : "number"
+          }
+        }
+      }
+    },
+    "travel_road_detail" : {
+      "path" : "/show/travel/getTravelRoadDataDetail",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "protection_unit" : "string",
+        "pedigree" : "string",
+        "project_base_id" : "string",
+        "image_url" : "string",
+        "description" : "string",
+        "project_level" : "string",
+        "project_name" : "string"
+      }
+    },
+    "travel_road_distribute" : {
+      "path" : "/show/travel/getTravelRoadDistributeData",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "projectData" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "project_base_id" : "string",
+            "project_code" : "string",
+            "project_name" : "string",
+            "longitude" : "string",
+            "latitude" : "string",
+            "area_id" : "string",
+            "area_short_name" : "string"
+          }
+        },
+        "agglomerationAreaData" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "area_name" : "string",
+            "introduction" : "string",
+            "longitude" : "string",
+            "latitude" : "string",
+            "area_short_name" : "string"
+          }
+        },
+        "nmchBaseData" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "base_code" : "string",
+            "base_name" : "string",
+            "longitude" : "string",
+            "latitude" : "string",
+            "area_id" : "string",
+            "area_short_name" : "string"
+          }
+        }
+      }
+    },
+    "travel_road_type_count" : {
+      "path" : "/show/travel/getTravelRoadTypeCount",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "project" : "string",
+        "travelArea" : "string",
+        "base" : "string"
+      }
+    },
+    "travel_route_top_list" : {
+      "path" : "/show/travel/getRoutesTopFewList",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "routesTopFewList" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "travel_id" : "string",
+            "coverPictureUrl" : "string",
+            "line_name" : "string"
+          }
+        }
+      }
+    },
+    "travel_tourist_county_data" : {
+      "path" : "/show/travel/getTouristCountyData",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "typicalInheritors" : {
+          "kind" : "object",
+          "fields" : {
+            "listData" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "id" : "string",
+                "inheritor_name" : "string",
+                "inheritor_level" : "string",
+                "area_short_name" : "string"
+              }
+            },
+            "provinceNum" : "number",
+            "countryNum" : "number"
+          }
+        },
+        "touristUnProject" : {
+          "kind" : "object",
+          "fields" : {
+            "listData" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "project_base_id" : "string",
+                "project_name" : "string",
+                "project_level" : "string",
+                "area_short_name" : "string"
+              }
+            },
+            "num" : "number"
+          }
+        },
+        "touristDirectoryProject" : {
+          "kind" : "object",
+          "fields" : {
+            "listData" : {
+              "kind" : "array",
+              "elementKind" : "object",
+              "fields" : {
+                "project_base_id" : "string",
+                "project_name" : "string",
+                "project_level" : "string",
+                "area_short_name" : "string"
+              }
+            },
+            "provinceNum" : "number",
+            "countryNum" : "number"
+          }
+        }
+      }
+    },
+    "travel_tourist_county_list" : {
+      "path" : "/show/travel/getTouristCountyList",
+      "group" : "旅游",
+      "observed" : "OK_DATA",
+      "dataKind" : "object",
+      "fields" : {
+        "touristCounty" : {
+          "kind" : "array",
+          "elementKind" : "object",
+          "fields" : {
+            "id" : "string",
+            "short_name" : "string",
+            "longitude" : "string",
+            "latitude" : "string"
+          }
+        }
+      }
+    }
+  }
+}

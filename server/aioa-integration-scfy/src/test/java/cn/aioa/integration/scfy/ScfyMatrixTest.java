@@ -54,9 +54,19 @@ class ScfyMatrixTest {
     /** 报告落点：优先取 -Dscfy.report=<绝对路径>，否则落到仓库 docs/_incoming/。 */
     private static final String REPORT_PROP = "scfy.report";
 
+    /** 返回结构落点：优先取 -Dscfy.shape=<绝对路径>，否则落到模块 src/main/resources/scfy/。 */
+    private static final String SHAPE_PROP = "scfy.shape";
+
     private static ScfyToolSupport support;
     /** 本次矩阵实际打的目标环境，会写进报告头部。 */
     private static String targetBaseUrl;
+
+    /**
+     * 实测采集到的返回结构：契约 id → data 形状。
+     * <p>它是 {@code ScfyAgentCatalog} 里「返回结构」一项的<b>唯一来源</b> ——
+     * 手写返回结构等于第二份真相，必然与真实响应漂移。</p>
+     */
+    private static final Map<String, Map<String, Object>> SHAPES = new LinkedHashMap<>();
 
     @BeforeAll
     static void setUp() {
@@ -90,6 +100,7 @@ class ScfyMatrixTest {
 
         assertSelfCheck(rows, ids);
         writeReport(rows, ids);
+        writeShapeCatalog(rows, ids);
         printMachine(rows);
 
         assertEquals(ScfyCatalog.availableCount(), rows.size(),
@@ -296,6 +307,7 @@ class ScfyMatrixTest {
             leaves = leaves(res.get("data"));
             status = leaves > 0 ? "OK_DATA" : "OK_EMPTY";
         }
+        SHAPES.put(ep.id(), shapeOf(res.get("data")));
         System.out.println("[scfy-matrix] " + status + "\t" + ep.id() + "\t" + ep.fullPath()
                 + "\tcode=" + code + "\tleaves=" + leaves
                 + (err == null ? "" : "\terr=" + err));
@@ -313,6 +325,237 @@ class ScfyMatrixTest {
             return s;
         }
         return o == null ? List.of() : List.of(String.valueOf(o));
+    }
+
+    // ==================== 返回结构采集 ====================
+
+    /**
+     * 把一个真实响应体的 {@code data} 压成「形状」——这是返回结构的实测来源。
+     *
+     * <p>深度刻意受限（data → 字段 → 数组元素字段，不再往深处递归）：
+     * 再深一层就会把「某条记录偶然多出的可选字段」当成契约的一部分，
+     * 于是每次数据变动都要改形状文件，反而没人维护。这个粒度足够让模型知道
+     * 「能取到哪些字段」，又不会随数据抖动。</p>
+     *
+     * <p>键名一律<b>原样保留</b>（不转驼峰、不改大小写）：模型要照着字段名取值，
+     * 归一化过的名字会让它取到 null。</p>
+     *
+     * <p>形状的表示：标量字段写成类型名（{@code "string"}）；
+     * 数组/对象字段写成一个带 {@code kind} 的子结构（元素字段在 {@code fields} 里），
+     * 这样「{@code dataList} 是数组、元素有哪些字段」能一次说清。</p>
+     */
+    private static Map<String, Object> shapeOf(Object data) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (data == null) {
+            out.put("dataKind", "null");
+            out.put("fields", Map.of());
+            return out;
+        }
+        if (data instanceof List<?> list) {
+            out.put("dataKind", "array");
+            out.put("elementCount", list.size());
+            Map<String, Object> fields = new LinkedHashMap<>();
+            if (!list.isEmpty() && list.get(0) instanceof Map<?, ?> fm) {
+                out.put("elementKind", "object");
+                for (Map.Entry<?, ?> e : fm.entrySet()) {
+                    fields.put(String.valueOf(e.getKey()), valueSpec(e.getValue(), 1));
+                }
+            } else {
+                out.put("elementKind", list.isEmpty() ? "unknown" : kindOf(list.get(0)));
+            }
+            out.put("fields", fields);
+            return out;
+        }
+        if (data instanceof Map<?, ?> m) {
+            out.put("dataKind", "object");
+            Map<String, Object> fields = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                fields.put(String.valueOf(e.getKey()), valueSpec(e.getValue(), 2));
+            }
+            out.put("fields", fields);
+            return out;
+        }
+        out.put("dataKind", "scalar");
+        out.put("scalarKind", kindOf(data));
+        out.put("fields", Map.of());
+        return out;
+    }
+
+    /**
+     * 单个字段值的形状：标量返回类型名，数组/对象返回带 {@code kind} 的子结构。
+     *
+     * @param depth 还能往下展开几层；为 0 时一律退化成类型名，防止无限递归
+     */
+    private static Object valueSpec(Object v, int depth) {
+        if (v instanceof List<?> l) {
+            Map<String, Object> spec = new LinkedHashMap<>();
+            spec.put("kind", "array");
+            if (l.isEmpty()) {
+                spec.put("elementKind", "unknown");
+            } else if (l.get(0) instanceof Map<?, ?> fm && depth > 0) {
+                spec.put("elementKind", "object");
+                Map<String, Object> f = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> e : fm.entrySet()) {
+                    f.put(String.valueOf(e.getKey()), kindOf(e.getValue()));
+                }
+                spec.put("fields", f);
+            } else {
+                spec.put("elementKind", kindOf(l.get(0)));
+            }
+            return spec;
+        }
+        if (v instanceof Map<?, ?> m && depth > 0) {
+            Map<String, Object> spec = new LinkedHashMap<>();
+            spec.put("kind", "object");
+            Map<String, Object> f = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                f.put(String.valueOf(e.getKey()), valueSpec(e.getValue(), depth - 1));
+            }
+            spec.put("fields", f);
+            return spec;
+        }
+        return kindOf(v);
+    }
+
+    /** 单个值的类型描述（不展开）。 */
+    private static String kindOf(Object v) {
+        if (v == null) {
+            return "null";
+        }
+        if (v instanceof Map<?, ?>) {
+            return "object";
+        }
+        if (v instanceof List<?> l) {
+            return l.isEmpty() ? "array" : "array<" + kindOf(l.get(0)) + ">";
+        }
+        if (v instanceof Number) {
+            return "number";
+        }
+        if (v instanceof Boolean) {
+            return "boolean";
+        }
+        return "string";
+    }
+
+    /**
+     * 落盘返回结构目录（机器可读）。
+     *
+     * <p><b>为什么由测试生成、而不是手写</b>：这是「返回结构」唯一可能与真实响应保持一致的做法。
+     * 手写的结构表在第一次后端改字段名之后就变成误导，而没有任何测试会失败。</p>
+     */
+    private void writeShapeCatalog(List<Row> rows, Map<String, String> ids) throws IOException {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("generatedBy", "ScfyMatrixTest");
+        root.put("generatedFrom", targetBaseUrl);
+        root.put("coverage", ScfyCatalog.availableCount());
+        root.put("discoveredIds", ids);
+        Map<String, Object> eps = new TreeMap<>();
+        for (Row r : rows) {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("path", r.path());
+            one.put("group", r.group());
+            // 只有「调用成功且非空」的观测才能当结构事实；空集/失败时结构未知，必须如实标注
+            one.put("observed", r.status());
+            Map<String, Object> sh = SHAPES.getOrDefault(r.endpointId(), Map.of());
+            one.put("dataKind", sh.getOrDefault("dataKind", "unknown"));
+            if (sh.containsKey("elementKind")) {
+                one.put("elementKind", sh.get("elementKind"));
+            }
+            one.put("fields", sh.getOrDefault("fields", Map.of()));
+            eps.put(r.endpointId(), one);
+        }
+        root.put("endpoints", eps);
+
+        Path out = shapePath();
+        Files.createDirectories(out.getParent());
+        Files.writeString(out, new ObjectMapper().writerWithDefaultPrettyPrinter()
+                .writeValueAsString(root), StandardCharsets.UTF_8);
+        System.out.println("[scfy-matrix] 返回结构已写入 " + out.toAbsolutePath());
+
+        writeShapeDoc(rows, ids);
+    }
+
+    /** 同一份数据的可读版，供人查阅与评审（内容与 JSON 同源，不会各说各话）。 */
+    private void writeShapeDoc(List<Row> rows, Map<String, String> ids) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# scfy 接口返回结构实测表\n\n");
+        sb.append("> 由 `ScfyMatrixTest` 在**真实调用**时采集：环境 `").append(targetBaseUrl).append("`，")
+                .append("覆盖 ").append(rows.size()).append(" 个接口，只发 GET。\n");
+        sb.append("> 机器可读版：`server/aioa-integration-scfy/src/main/resources/scfy/return-shape.json`")
+                .append("（`ScfyAgentCatalog` 直接消费它作为「返回结构」）。\n\n");
+        sb.append("口径：`observed` 为本次实测结果。**只有 `OK_DATA` 的行才是真实的返回结构**；")
+                .append("`OK_EMPTY` 表示本次调用成功但该条件下无数据，结构无从观测，不得当成「该接口返回空」的结论。\n\n");
+        sb.append("字段表示法：`名:类型`；数组写成 `名[n]:{元素字段}`；`?` 表示实测为空、类型未能观测。\n\n");
+        sb.append("发现的依赖 id：").append(ids).append("\n\n");
+        sb.append("| 契约 id | 分组 | observed | data | 返回字段 |\n|---|---|---|---|---|\n");
+        for (Row r : rows) {
+            Map<String, Object> sh = SHAPES.getOrDefault(r.endpointId(), Map.of());
+            String kind = String.valueOf(sh.getOrDefault("dataKind", "unknown"));
+            if (sh.get("elementKind") != null && !"object".equals(sh.get("elementKind"))) {
+                kind = kind + "<" + sh.get("elementKind") + ">";
+            } else if ("array".equals(kind)) {
+                kind = "array<object>";
+            }
+            sb.append("| `").append(r.endpointId()).append("` | ").append(r.group())
+                    .append(" | ").append(r.status()).append(" | ").append(kind).append(" | ")
+                    .append(renderShape(sh.get("fields"))).append(" |\n");
+        }
+        Path out = shapeDocPath();
+        Files.createDirectories(out.getParent());
+        Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
+        System.out.println("[scfy-matrix] 返回结构表已写入 " + out.toAbsolutePath());
+    }
+
+    /** 把形状递归渲染成一行可读文本。 */
+    @SuppressWarnings("unchecked")
+    private static String renderShape(Object fields) {
+        if (!(fields instanceof Map<?, ?> m) || m.isEmpty()) {
+            return "—";
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<?, ?> e : m.entrySet()) {
+            Object v = e.getValue();
+            if (v instanceof Map<?, ?> nested) {
+                Object inner = nested.get("fields");
+                String innerText = inner == null ? "?" : renderShape(inner);
+                parts.add(e.getKey() + ("array".equals(nested.get("kind"))
+                        ? "[n]:{" + innerText + "}"
+                        : ":{" + innerText + "}"));
+            } else {
+                parts.add(e.getKey() + ":" + v);
+            }
+        }
+        return String.join(", ", parts);
+    }
+
+    private static Path shapeDocPath() {
+        Path p = Path.of("").toAbsolutePath();
+        for (int i = 0; i < 4 && p != null; i++, p = p.getParent()) {
+            if (Files.isDirectory(p.resolve("docs/_incoming"))) {
+                return p.resolve("docs/_incoming/非遗scfy-返回结构实测.md");
+            }
+        }
+        return Path.of("").toAbsolutePath().resolve("非遗scfy-返回结构实测.md");
+    }
+
+    private static Path shapePath() {
+        String explicit = System.getProperty(SHAPE_PROP);
+        if (explicit != null && !explicit.isBlank()) {
+            return Path.of(explicit);
+        }
+        // surefire 的工作目录是模块目录：直接落到本模块的资源目录，随代码一起纳管
+        Path module = Path.of("").toAbsolutePath();
+        Path candidate = module.resolve("src/main/resources/scfy/return-shape.json");
+        if (Files.isDirectory(module.resolve("src/main/resources"))) {
+            return candidate;
+        }
+        // 兜底：从当前目录向上找模块
+        for (int i = 0; i < 4 && module != null; i++, module = module.getParent()) {
+            if (Files.isDirectory(module.resolve("aioa-integration-scfy/src/main/resources"))) {
+                return module.resolve("aioa-integration-scfy/src/main/resources/scfy/return-shape.json");
+            }
+        }
+        return candidate;
     }
 
     /** 叶子值计数：{@code {list:[]}} → 0（空集但调用成功），{@code {country:"1",province:"6"}} → 2。 */
