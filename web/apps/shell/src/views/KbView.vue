@@ -40,7 +40,7 @@
       <template #header>
         <div class="card-header">
           <el-tabs v-model="tab" class="flex-tabs" @tab-change="reload">
-            <el-tab-pane label="租户全部资料" name="tenant" />
+            <el-tab-pane v-if="canReadTenant" label="租户全部资料" name="tenant" />
             <el-tab-pane label="我的资料" name="mine" />
           </el-tabs>
           <div class="actions">
@@ -99,6 +99,7 @@
         <el-table-column label="可见范围" width="120">
           <template #default="{ row }">
             <el-select
+              v-if="canModify(row)"
               v-model="row.scope"
               size="small"
               style="width: 100px"
@@ -107,6 +108,9 @@
               <el-option label="租户共享" value="TENANT" />
               <el-option label="仅我个人" value="PERSONAL" />
             </el-select>
+            <el-tag v-else size="small" effect="plain" type="info">
+              {{ row.scope === 'TENANT' ? '租户共享' : '仅其个人' }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column v-if="tab === 'tenant'" label="归属用户" width="100">
@@ -117,9 +121,14 @@
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.state !== 'ok'" text type="warning" size="small" @click="retry(row)">重试</el-button>
-            <el-button text type="primary" size="small" @click="rename(row)">重命名</el-button>
-            <el-button text type="danger" size="small" @click="remove(row)">删除</el-button>
+            <!-- 他人共享的资料对非租户管理员是只读的：按钮不渲染，避免「点了必 403」
+                 （与用户端 H5「仅本人上传的资料可删除，他人共享资料只读」同一规则）。 -->
+            <template v-if="canModify(row)">
+              <el-button v-if="row.state !== 'ok'" text type="warning" size="small" @click="retry(row)">重试</el-button>
+              <el-button text type="primary" size="small" @click="rename(row)">重命名</el-button>
+              <el-button text type="danger" size="small" @click="remove(row)">删除</el-button>
+            </template>
+            <span v-else style="color: #909399; font-size: 12px">只读</span>
           </template>
         </el-table-column>
         <template #empty>
@@ -137,6 +146,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus'
+import { TENANT_SCOPE_ROLES, hasAnyRole } from '@/constants/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   KB_ACCEPT,
   KB_MAX_MB,
@@ -150,7 +161,34 @@ import {
   type KbHit,
 } from '@/api/resource'
 
-const tab = ref<'tenant' | 'mine'>('tenant')
+const auth = useAuthStore()
+
+/**
+ * 能否读「租户全部资料」。
+ *
+ * 判据与后端 KbController.list(scope=tenant) 同源（PermissionCatalog.isAdmin）：
+ * 系统管理员 或 租户管理员。这里复用前端唯一入口 TENANT_SCOPE_ROLES。
+ *
+ * 为什么要拿它决定默认 tab：本页原先把 tab 初值写死 'tenant'，于是企业管理员/普通成员
+ * 一进页面就落在「租户全部资料」——后端 403、表格渲染「租户内暂无资料」，
+ * 症状就是「（上级/自己）共享出去的资料，点进知识库一条都看不到」。默认 tab 必须落在
+ * 当前角色真有权限读取的那个页签上。
+ */
+const canReadTenant = computed(() => hasAnyRole(auth.roles, TENANT_SCOPE_ROLES))
+
+/**
+ * 能否修改这一行（改可见范围 / 重命名 / 删除 / 重试）。
+ *
+ * 与后端 KbController 的 PermissionCatalog.isAdmin 同源：租户管理员（含平台管理员）
+ * 可管本租户任意资料，其余只能管本人上传的。判据在前后端各写一套的老路正是
+ * 「菜单能点但接口 403」的来源，故此处只用这一个函数。
+ */
+function canModify(row: KbDoc): boolean {
+  if (canReadTenant.value) return true
+  return !!auth.user?.id && String(row.ownerUserId) === String(auth.user.id)
+}
+
+const tab = ref<'tenant' | 'mine'>(canReadTenant.value ? 'tenant' : 'mine')
 const loading = ref(false)
 const tenantRows = ref<KbDoc[]>([])
 const mineRows = ref<KbDoc[]>([])
@@ -224,7 +262,12 @@ async function loadMine() {
 async function reload() {
   loading.value = true
   try {
-    await Promise.allSettled([loadTenant(), loadMine()])
+    // 无权读租户总览时不发这一发注定 403 的请求（否则只会在控制台留一条噪音 403，
+    // 并把 tenantForbidden 置真、渲染出一段「仅租户管理员可见」的误导提示）。
+    await Promise.allSettled([
+      canReadTenant.value ? loadTenant() : Promise.resolve(),
+      loadMine()
+    ])
   } finally {
     loading.value = false
   }

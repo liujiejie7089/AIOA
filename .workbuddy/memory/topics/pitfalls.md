@@ -57,4 +57,87 @@
 41. **`.gitignore` / `.dockerignore` 裸目录模式会吞掉源码（两处必须同改）**：不以 `/` 开头的模式（`data/`、`logs/`、`dist/`）匹配**任意层级**。本项目 `data/` 造成**两个独立原因**同时成立：① `.gitignore` 使 `web/apps/demo-ticket/src/data/` 从未入过库（`git log --all -- <路径>` 无记录，随 `c1dca22` 引入 compose 起就缺）；② `.dockerignore` 使该目录**即便源码拷全也被排除出构建上下文**（所以 rsync 拷贝也照样失败）。两个文件都有 `data/`，**修一个不修另一个，重建仍挂**。凡「本地过、CI/容器不过」，先跑：`git check-ignore -v <文件>` + `git status --porcelain --ignored`。修法：目录模式一律**锚定根**（`/data/`）。另注意 `--ignored` 里出现 `scripts/e2e_*.py` / `start-backend.bat` 属**约定不入库**（本地回归台与本地启动器），不是缺陷。
 42. **`docker compose restart` 不重读 `.env`**：它只把同一个容器停掉再启动，**不重新渲染服务定义**，环境变量保持旧值 ⇒ 改完 `.env` 执行 `restart` 等于白改（现象：日志里地址/Key 还是老的）。正解 `docker compose up -d <svc>`（配置哈希变了会自动重建）。**不需要** `--force-recreate`。生效判据看 `docker exec <c> printenv <VAR>`，**不是**「容器重启成功了」。
 43. **「镜像构建所需的、不在 COPY 清单里的文件」是同一类静默缺陷**：`Dockerfile.web` 漏 `COPY web/tsconfig.base.json ./` ⇒ 容器内 `apps/*/tsconfig.json` 的 `extends: "../../tsconfig.base.json"` 失效，丢的是 `strict`/`esModuleInterop`/`moduleResolution:bundler`/`skipLibCheck`，**报错却指向 element-plus 与 `rollup/parseAst`**，与真实原因毫无关联。排查手法：把 Dockerfile 的 `COPY` 指令解析成「`/build` 下的文件清单」，再校验每个 `extends`/被引用路径是否在清单内（本次用 20 行脚本验证 4 个 tsconfig 全部命中）。
+44. **重打包前必须列出「所有」后端实例，jar 锁可能来自另一个端口**：本机同时跑着 8080（主档，`aioa` 库）与 8081（`aioa_prodtest` 库）两个后端，**它们共用同一个 fat-jar 文件**。只停 8080 后 `mvnw clean package` 仍失败：`Failed to clean project: Failed to delete .../aioa-boot-...jar` / `mv: Device or resource busy` —— 持锁的是 8081 那个 JVM。定位手法（本环境 PowerShell 工具**不回显 stdout**，必须写文件再 `Read`；`wmic` 已不可用）：用 PowerShell 工具跑 `Get-CimInstance Win32_Process -Filter "Name='java.exe'"` 取 `ProcessId` + `CommandLine`，`Select-Object` 后 `Set-Content logs/_probe_java.txt`，再 Read 该文件。**判据**：`CommandLine` 里含 `--server.port=<别的端口>` 且含 `aioa-boot/target/aioa-boot-*.jar` 的 java 就是第二实例。本机另有 3 个 java **不能动**：FinalShell（`finalshell.jar`）、VS Code 的 `redhat.java` JDT LS、IDEA 的 Maven embedder。**绝不**用 `Get-Process java | Stop-Process` 一把梭。停用借来的实例后要**按原参数原样恢复**（含原日志文件名与 `--spring.datasource.url`）。另：`mvnw ... | tail -20` 的退出码是 `tail` 的，**永远是 0** —— 判成败要看 `BUILD SUCCESS`/`FAILURE` 文本，别信 `$?`。产物大小兜底判据：fat-jar 应 ~110MB，若掉到 ~20KB = 被 rename 成的 stripped-jar（说明没停 JVM 就重打包了）。
+
+**配置参数（sys_config / 默认口径）**
+45. **「有行但留空」与「没有这一行」是两种语义，不能都当「没配」**：`chat.default_expert_key` 的留空是**明确不做兜底**（管理员关掉），缺行只是**参数还没物化**。若写成 `if (own != null && !own.isBlank()) { …回落… }`，管理员把值清空后仍会偷偷回落到平台/出厂值 ⇒ **关不掉**，且用户端还照旧标记默认 AI。正解：本租户**有行**即以该值为最终口径（空 ⇒ 返回 null ⇒ 不标记、不回落）；只有**没行**才继续「平台默认 → 出厂常量」。单测锁死（`CatalogServiceTest#blankValueMeansExplicitlyDisabled`）。
+46. **新增 sys_config 键时，绝不能给「一行都没有的租户」插单行**：`AdminConfigController.loadTenantConfigs` 是**开关式**逻辑——本租户 0 行才整份克隆（克隆源 = 平台默认表，空则 `BUILTIN_DEFAULTS`）。给「空的租户 0」插进新键 1 行，等于把它钉死在「非空」，**从此再也拿不到其余出厂参数**（管理端只剩 1 个参数）。迁移写成 `INSERT … SELECT … FROM (SELECT DISTINCT tenant_id FROM sys_config) t ON DUPLICATE KEY UPDATE config_key=config_key`：只补「已经有行的租户」，空租户交给克隆路径。代码侧必须配三档回落（本租户行 → 平台行 → 出厂常量），否则「新环境/新租户在管理员打开配置页之前」读不到该参数。
+47. **改完源码后拿旧 jar 判行为 = 自欺**：先打包（12:23）→ 再改 Java（`defaultExpertKey` 的留空语义）→ 直接跑 E2E，看到的是**旧行为**（留空仍标记 general），差点被当成新代码的 bug 去改断言。纪律：**改 Java 后必须重打包 + 重启，再判行为**；打包时刻与改动时刻对不上时，先把「刚才那次是不是旧代码」排除掉。
+
+**验收脚本自身**
+48. **验收脚本必须自己建立前置状态**：上一轮手工探测把租户 3 的默认 AI 参数留成了空串，下一轮套件 C4/C5 立刻红（「从全局补一条默认 AI」那条路径在空值语义下本就不成立）。修法：套件开头显式归位（本次加了 `C0 前置：默认 AI 归位为 general`）、结尾复原，**连跑两次结果一致**，红绿才有信息量。
+49. **「按文本包含」判定状态，在多义处必错**：管理端「默认 AI」列里非默认行有一枚文案为「设为默认」的按钮 ⇒ `row.innerText.includes('默认')` 把**每一行**都判成默认（断言既恒真又恒假，E2 当初就是假绿）。改用无歧义信号（**这一行有没有那枚按钮**）。同理：断言 H5「某提示已消失」不能 grep 文案——注释里写「已移除『请先选择一位专家』」也含那几个字，要 grep **调用本身**（`toast('请先选择一位专家')`）。
+
+**单文件 H5 布局**
+50. **「手机壳」就是真机上左右黑边 + 顶部占高的根因**：`.phone{width:400px;height:820px;border:10px solid #14181f}` 由 body flex 居中 ⇒ 视口一宽于 400px 两侧就露出 body 底色与那圈近黑描边；壳内自绘的 34px 假状态栏又与系统状态栏同处屏幕最上方，白占一条可视区。
+    - **V62 初版修法是错的（本条已更正，勿回退到它）**：把满屏规则放进 `@media (max-width:560px),(pointer:coarse)`，桌面保持原壳。**用户看到的黑边依旧**——真机上开着「请求桌面网站」或落在宽视口 WebView 时，视口可能是 980px 且 `pointer` 是 `fine`，两个条件都不成立 ⇒ 又套回手机壳。**凡「真机 vs 桌面」的判定，媒体查询只能用来兜「反向例外」，不能用来开「正向功能」。**
+    - **正确做法（2026-09-22 定稿）**：满屏是**基样式**、不设开关 —— `body{display:block;padding:0;overflow:hidden;background:var(--bg)}`、`.phone{width:100%;height:100vh;height:100dvh;margin:0 auto;border:0;border-radius:0;box-shadow:none}`、`.statusbar{display:none}`、`.mp-header{padding-top:calc(8px + env(safe-area-inset-top))}`、`.tabbar`/`.page`/`#page-chat` 各叠 `env(safe-area-inset-bottom)`。媒体查询**只剩两条**：① 宽屏反例 `@media (min-width:720px) and (min-height:620px){.phone{max-width:560px}}`（正文横贯 1440px 无法阅读；两侧与页面**同色**故读起来仍是满屏，且**必须同时要求 min-height**才不误伤 844×390 横屏手机）；② 横屏收窄 Tab 到 56px。`body::before/::after` 的「氛围层」随壳一起删（壳不透明，它们本来就被盖住，留着会在宽屏收窄后于两侧露出色差 ⇒ 接缝）。
+    - 注意 `viewport-fit=cover` 早就有了，但**只有配了 `env(safe-area-inset-*)` 才有意义**。
+    - 验收判据（`e2e_v62` D 组）：390×844 与 844×390 都「宽高贴合视口、`border`/`radius` 为 0、`.statusbar` 为 none」；1280×800 下「宽 560、居中、`body` 底色 == `.phone` 底色、无横向溢出」。
+51. **引导/推荐块必须按「当前这一轮问句」筛选，且要允许「筛完为空」**：默认 AI 回答后那块「转给更专业的同事」原先是把专家目录**顺序**前 N 个搬出来，与问句毫无关系 ⇒ 用户看到「问劳动合同，推荐数据分析师」。做法：只做**专家侧**词表（`tags` 是运营在管理端填的业务标签，最可信；再按标点切名称与简介）→ 做「词 ∈ 问句」的包含判定并打分；**命中为 0 时只留兜底入口（创建数字员工），不塞任何专家**（宁可少推荐）。理由：H5 单文件里没有分词器，反过来切问句的字符 bigram 会把「怎么/可以」算成命中，等于没过滤。
+    - 连带纪律：**改这块必须同步改 `e2e_v62` B 组**（它 `extract_js` 抽真实源码在 node 里跑）。`buildGuidance` 依赖 `expertKeywords`/`scoreExpert`，**三个函数要一起抽**，少抽一个就不是「跑真实源码」而是「跑另一份实现」。
+52. **行内按钮从「复制链接」换成「重新回答」后，点击验证必须用 `send` 探针接住，不能真发模型**：`window.send = function(){...}` 可覆盖（顶层 `function` 声明会挂到 global），`reAnswer` 里的裸调用会走到探针。若真发模型，随后的 `page.goto` 会留下在途请求，让「全程无 JS 运行时异常」变成随机红。
+53. **列表标记要有「固定宽度标记盒」，否则混排出毛边**：`.ans-li` 若是 `padding-left:15px;text-indent:-11px` + `::before{content:'· '}`，有序项再另写一套 `22px/-22px`，则圆点、序号、标题三者首字缩进各不相同（实测 67/63/74），一段回答里混排看着就是参差。统一为 `.ans-li{padding-left:20px;text-indent:-20px}` + `::before{display:inline-block;width:20px;text-align:center}`，有序项用 `.ans-no{display:inline-block;width:20px;text-align:center}` 顶掉 `::before`。
+54. **改 H5 版式后，`scripts/_shot_h5_layout.py` 出三张图目视核对**（竖屏 / 横屏 / 桌面宽屏 + 会话页回答版式）。套件只能守可度量项（尺寸、颜色一致、无描边），「好不好看/齐不齐」只能看。<br>踩过的坑：截图脚本里把答案文本当 **Python 值**传给 `evaluate` 时，`\\n` 会变成字面量反斜杠+n（不再换行）；只有写在内联 JS 源码里才该用 `\\n`。
+
+**后端 → agent 的传输（2026-09-22 定案）**
+55. **`java.net.http.HttpClient` 默认 HTTP/2 优先 ⇒ 对明文 `http://` 会先发 h2c 升级，并把请求体推迟到升级之后单独发一包 ⇒ agent 收空 body ⇒ FastAPI 422。**
+    用户可见症状：「新建定时数字员工，报错无响应 / **agent 服务返回 HTTP 422**」。实测原始字节（抓取桩 `scripts/_raw_dump_srv.py` + `scripts/_probe_httpclient/ProbeHttp.java`）：
+    ```
+    POST /internal/v1/complete HTTP/1.1
+    Connection: Upgrade, HTTP2-Settings
+    Upgrade: h2c
+    HTTP2-Settings: AAEAAEAAAAIAAAA...
+    Content-Length: 44          <- 声明了长度
+    （空行，**随后并无 body**）
+    ```
+    **修法（已落地）**：`server/aioa-common/.../cn/aioa/common/http/AgentHttpClient.java` 作为「后端访问 agent」的唯一入口，客户端级 `version(HTTP_1_1)`；4 处调用点（`WorkerScheduleService`/`KpiInsightService`/`WorkerIntakeService`/`ModelConfigService`）全部改走它。
+    **判据不是「跑通一次」而是三件套**：① 静态守卫 `scripts/_check_agent_httpclient.py`（正向 8/8 + 负向自检 4/4，禁止新的裸 `newBuilder()`，且禁止把该工厂套到 Gitee/网关/embedding 等外网客户端上）；② 行为回归 `scripts/e2e_worker_schedule_exec.py`（手动 + 到点两条分支）；③ 判别探针 `scripts/_probe_agent_h2c.py`。
+    **别只修 `/complete`**：同一坏客户端还在打 `/internal/v1/worker-intent`（意图识别，**8/8 全 422**，只是被 `local-fallback` 静默兜住了，所以没人报障）、`/internal/v1/models/check|apply`（V61 手动添加模型）、`/internal/v1/complete`（KPI 经营解读）。
+    **反证（写进注释防回退）**：走 Spring `WebClient`（Reactor Netty，明文默认 HTTP/1.1）的 `/internal/v1/runs`、`/tasks` 一直是 200 —— 「只有带 body 的 POST + `java.net.http.HttpClient` 这一组合会炸」，所以极难在常规验证里撞见。
+56. **同一缺陷「跑 httptools 时显形、跑 h11 时被掩盖」—— 一个 venv 之差就能吃掉整个验收面。** 对照实验（本机实测）：
+
+    | agent 实现 | Java 默认客户端 |
+    |---|---|
+    | `--http httptools`（= `uvicorn[standard]` = `deploy/Dockerfile.agent` 的生产镜像） | **422**（httptools 在请求头就抛 `HttpParserUpgrade`，uvicorn 只打 `Unsupported upgrade request.`，body 再也不被读入） |
+    | `--http h11`（裸 `uvicorn`，无 httptools 时 auto 的回落） | **200**（h11 恰好保住了 body） |
+
+    于是：`agent/.venv`（有 httptools，2026-09-06 就装了）⇒ 显形；`envs/default`（原先只有裸 uvicorn）⇒ 掩盖。**生产镜像装的是 `uvicorn[standard]`，所以这是会打到生产的真缺陷，不是本地怪象。**
+    纪律（已落地）：① `start-all.sh` 显式 `--http httptools`（宁可启动即报错，也不要静默换实现）；② `envs/default` 补装 `httptools`（注意：**清华镜像没有 cp313 win 轮子**，`pip install httptools` 会报 `from versions: none`，要 `-i https://pypi.org/simple`）；③ 新套件**开头先证明未被掩盖**（`_probe_agent_h2c.py` 返回 422 才算前置成立），否则 agent 跑在 h11 时套件会**假绿**。
+57. **⚠️ 把真实缺陷写成「套件假红」并留绕法，是记录失真，代价是缺陷多活 11 天。** 本文件原第 12 行（`topics/e2e-suites.md`）记着：`h5_v33_render` 的 AI 解读段「若用 `agent/.venv` + `127.0.0.1` 起 agent，请求体被丢弃 → 422 假红；**必须按 `start-all.sh` 口径**（`envs/default` python + `--host 0.0.0.0`）重启 agent 后再判」。事实是**反过来**的：那不是假红，是真缺陷；`envs/default` 之所以「能过」只是因为它缺 httptools 而落到了 h11。**判据**：凡是靠「换个启动姿势就不红了」的结论，必须先把「两种姿势到底哪一步行为不同」查清（本次是 `_probe_agent_h2c.py` 一句话判定），**不允许把无法解释的红直接归给套件**。
+58. **同一处「默认配置」散落在多个调用点时，修一处不算修。** 本缺陷的坏客户端在 4 个模块各写了一份 `HttpClient.newBuilder()`（admin/chat/resource×2）。这类「复制粘贴的默认值」必须收成唯一入口 + 静态守卫，否则第 5 个调用点出现时必然重犯（`HttpClient.newBuilder()` 编译得过、单测过得去，只有真打 agent 才炸）。判定守卫是否有效：**每条检查项至少有一条突变能让它报红**（`--selftest`）。
+59. **「共享了 X，接收方却看不到」多半不在可见性判定里 —— 先分清两面：①数据可见性（谁该看到）；②页面默认落地（打开页面时默认查哪一面）。**
+    本例（知识库共享，2026-09-21）实测**两面都正常**：`GET /kb/documents` 对 tenant 2 的**全部 12 个账号**
+    （租户管理员 / 3 个机构管理员 / 部门负责人 / 普通成员）**一律返回**那条共享资料，H5 `#kbList` 用真浏览器也渲染出来了
+    —— 所以「数据没共享出去 / 迁移漏了」这个方向是**错的**，越查越远。
+    真缺陷在**管理端 `KbView.vue`**：`tab` 初值写死 `'tenant'`，而 `?scope=tenant` 当时只有平台管理员能过 ⇒
+    大数据管理局（租户管理员）点进「知识库」看到的是**空表「租户内暂无资料」+ 一句「仅租户管理员可见」**（他正是租户管理员）。
+    **一眼判据**：界面提示语与当前用户身份**自相矛盾**（「仅 X 可见」但本人就是 X）⇒ 几乎一定是**判定口径写错**，不是数据没了、也不是前端过滤。
+    **排查顺序（照抄）**：① 先用纯 HTTP 探针扫**全部**相关账号的列表接口（`scripts/_probe_kb_accounts.py`）——
+    只要有一个账号拿到数据，就别再往「数据/迁移/软删」方向查；② 再用真浏览器打开**那个页面**，看它默认落在哪一屏、
+    以及那一屏对应的请求返回什么（`scripts/_probe_kb_console.py` + 截图）。**别拿「接口对了」当「页面对了」**：本缺陷正是「接口全对、页面全空」。
+    **修法**：默认 tab 必须由权限推导（`canReadTenant ? 'tenant' : 'mine'`），无权读的 tab 直接 `v-if` 不渲染，
+    且**不该发那一发注定 403 的请求**（否则控制台留噪音 403，还会把 `tenantForbidden` 置真、渲染出误导提示）。
+60. **`KbController` 曾是全仓唯一裸判 `ROLE_ADMIN` 的知识库入口**（`list(scope=tenant)` / `update` / `remove` / `isVisible` 共 4 处），
+    其余管理端控制器（AdminQuota / AdminConfig / AdminAudit / AdminBizSystem / AdminResult / AdminKpi）一律写「平台管理员 ∨ 租户管理员」。
+    唯一入口是 `PermissionCatalog.isAdmin(user)`；该类的注释里**已记载过同一类缺陷**（`/api/v1/workers` 也犯过，提示语同样自相矛盾）⇒ 这是**复发**，不是新问题。
+    **「能看」与「能改」是同一个决策点**，必须同源：只放宽 `list` 会留下「列表里看得到、改可见范围被 403」——
+    而**改可见范围就是「共享/取消共享」这个动作本身**。故 4 处一起改，并加静态守卫 `scripts/_check_kb_permission.py`（6 项 + 4 条突变自检）锁死。
+    **不放宽的部分照旧**（写进套件反断言）：机构管理员/普通成员对 `?scope=tenant` 仍 403；对**他人**资料仍 403「只能修改/删除本人上传的资料」。
+    **另一条 UI 纪律**：列表里对**无权修改的行**不要渲染「可见范围 select / 重命名 / 删除」——那是「点了必 403」的陷阱
+    （用户端 H5 早就是「他人共享资料只读」，管理端缺这条）；判据与后端同源，用一个 `canModify(row)` 收口。
+61. **「看不到」还有第三面：列表静默截断。** `user-client/index.html` 的 `renderKb()` 原是 `list.slice(0,6)`，
+    **没有提示、也没有展开入口**，而标题旁边照样写「· 共 N 份」⇒ 可见资料超过 6 份时，
+    **较早共享出去的那条永远看不到**，用户看到的就是「共 11 份，但我要找的那条不在里面」。
+    与 #59 是同一症状、同一面（用户端知识库）的第三条成因 —— 修了权限和默认 tab 仍不算完。
+    **判据**：**截断可以有，但不能静默**；凡「只渲染前 N 条」，必须同屏给出「展开全部（共 N 份）」入口
+    （本次修法：`KB_PAGE=6` + `state.kbExpanded` + 全局 `toggleKbList()`）。
+    ⚠️ **本机演示库不会自然触发**（可见资料只有 1~3 份）⇒ 这类缺陷只能靠**读代码/写构造用例**发现，
+    等它复现等于不查。构造用例（`e2e_kb_share_visible.py` F 组）必须造「>N 条 + 一条最早的」，
+    否则 F1 会因 `list.length <= 6` 而**恒真**（`chk(name, True, "")` 那类假断言）。
+62. **「读得到文本」≠「用户看得到」——H5 探针必须断言 `is_visible`，且先切到承载页。**
+    `#kbList` 在「我的」页（`#page-me`）里，首屏 DOM 里就存在但**不可见**。第一版 F 组只读 `inner_text()`，
+    文本全对、`query_selector_all` 也数得对，于是**假绿**；真去 `click()` 时 Playwright 报
+    `element is not visible`（30s 超时）才暴露。修法：探针先 `page.evaluate("go('page-me')")` 切页再操作，
+    并补一条 `is_visible("#kbList")`。**凡「页面元素」类断言，都要问一句：它在当前这一屏吗？**
 

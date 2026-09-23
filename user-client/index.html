@@ -13,13 +13,15 @@
 <!--
   ============================================================================
   设计定调（Design Direction）
-    受众：企业内普通员工，移动端 H5（小程序形态，400×820 手机壳）
+    受众：企业内普通员工，移动端 H5（满屏形态，不做手机壳）
     方向：工业实用 Industrial —— 仪表盘密度、等宽数字、发丝边框、状态色体系。
           放弃 emoji，全部图标为描边 SVG（currentColor），靠信息层级建立专业感。
     字体：IBM Plex Sans（展示/正文）+ IBM Plex Mono（数值与计量），中文回退
           PingFang SC / Microsoft YaHei；数值统一 tabular-nums 对齐。
     配色：品牌蓝 #2f6fed 主导（60%），琥珀 #f59e0b 作唯一强调色（10%），
           语义绿/红仅作状态；底色冷灰 #f4f6fa，卡片纯白 + 发丝边框。
+    版式：真机满屏（宽度撑满、高度 100dvh、头部避让安全区）；桌面浏览器收窄为居中阅读列，
+          两侧与页面同色 —— 见 §2 与 §15。曾用过 400×820 手机壳做桌面预览，已退役。
     记忆点：① 底部凸起的会话 FAB（主入口）② 首页经营数据看板（等宽数字 + 趋势柱）
     动效：页面级错峰入场（60ms 递进），仅动 transform/opacity，
           prefers-reduced-motion 下全部关闭。
@@ -50,42 +52,29 @@
 
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
+  /* 页面底色与「应用列」同色：满屏时两侧不存在第二种颜色，天然无边框、无留白。
+     原先桌面预览用的 400×820 手机壳（含 10px 近黑描边）已退役——它在真机上会变成
+     两条黑边（视口宽于 400px 时露出壳外底色），正是本次要修的现象。 */
   body{
-    font-family:var(--font-body); background:#dde2ec; color:var(--text);
-    display:flex; align-items:center; justify-content:center; padding:20px 0;
-    min-height:100vh; -webkit-font-smoothing:antialiased;
+    font-family:var(--font-body); background:var(--bg); color:var(--text);
+    display:block; padding:0; overflow:hidden;
+    min-height:100%; -webkit-font-smoothing:antialiased;
     font-size:13px; line-height:1.6;
   }
-  /* 氛围层：极淡径向渐变 + 噪点，替代纯色平铺 */
-  body::before{
-    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-    background:
-      radial-gradient(52rem 34rem at 10% -8%, rgba(47,111,237,.20), transparent 60%),
-      radial-gradient(44rem 30rem at 100% 4%, rgba(245,158,11,.12), transparent 58%);
-  }
-  body::after{
-    content:""; position:fixed; inset:0; pointer-events:none; z-index:1; opacity:.035;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  }
 
-  /* ---------- 2. 手机壳与骨架 ---------- */
+  /* ---------- 2. 应用骨架（满屏，无壳） ---------- */
+  /* 唯一事实来源：.phone 就是「整块屏幕」，不是屏幕里的一个手机模型。
+     宽屏（桌面浏览器）下由 §15 收窄为居中列，两侧与页面同色 ⇒ 仍读作满屏。 */
   .phone{
-    position:relative; z-index:2; width:400px; height:820px; background:var(--bg);
-    border-radius:42px; border:10px solid #14181f; overflow:hidden;
-    display:flex; flex-direction:column; box-shadow:var(--sh-3);
+    position:relative; z-index:2; width:100%; height:100vh; height:100dvh; background:var(--bg);
+    margin:0 auto; border:0; border-radius:0; box-shadow:none; overflow:hidden;
+    display:flex; flex-direction:column;
   }
-  .statusbar{
-    height:34px; background:var(--surface); display:flex; align-items:center;
-    justify-content:space-between; padding:0 22px; font-size:11.5px; font-weight:600;
-    font-family:var(--font-mono); flex-shrink:0; color:var(--text);
-  }
-  .statusbar .sig{display:flex;align-items:center;gap:4px}
-  .statusbar .bars{display:flex;align-items:flex-end;gap:1.5px;height:9px}
-  .statusbar .bars i{width:2.5px;background:var(--text);border-radius:.5px}
-  .statusbar .bars i:nth-child(1){height:3px}.statusbar .bars i:nth-child(2){height:5px}
-  .statusbar .bars i:nth-child(3){height:7px}.statusbar .bars i:nth-child(4){height:9px}
+  /* 系统状态栏已经在屏幕最上方，壳内不再自绘一条（自绘 = 凭空少一条可视区且内容整体下移）。
+     DOM 里的占位标记保留但永不显示：规则只此一处。 */
+  .statusbar{display:none}
   .mp-header{
-    background:var(--surface); padding:8px 16px 11px; display:flex; align-items:center;
+    background:var(--surface); padding:calc(8px + env(safe-area-inset-top)) 16px 11px; display:flex; align-items:center;
     justify-content:space-between; border-bottom:1px solid var(--border); flex-shrink:0;
   }
   .mp-title{font-size:15.5px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:6px}
@@ -102,17 +91,17 @@
   .capsule .dots i{width:3.5px;height:3.5px;border-radius:50%;background:var(--text-3)}
 
   .pages{flex:1;overflow:hidden;position:relative}
-  .page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px 96px;display:none;scrollbar-width:thin}
+  .page{position:absolute;inset:0;overflow-y:auto;padding:14px 14px calc(96px + env(safe-area-inset-bottom));display:none;scrollbar-width:thin}
   .page.active{display:block}
   .page.flush{padding:0}
   /* 会话页为满屏布局（flush），需自行避让绝对定位的 Tab 栏（76px），
-     否则输入框被 Tab 栏盖住 —— 其余页面由 .page 的 96px 下内边距避让 */
-  #page-chat{padding-bottom:76px}
+     否则输入框被 Tab 栏盖住 —— 其余页面由 .page 的下内边距（96px + 安全区）避让 */
+  #page-chat{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 
   /* ---------- 3. 底部 Tab（会话为凸起 FAB 主入口） ---------- */
   .tabbar{
-    position:absolute;bottom:0;left:0;right:0;height:76px;background:var(--surface);
-    border-top:1px solid var(--border);display:none;padding-bottom:12px;z-index:20;
+    position:absolute;bottom:0;left:0;right:0;height:calc(76px + env(safe-area-inset-bottom));background:var(--surface);
+    border-top:1px solid var(--border);display:none;padding-bottom:calc(12px + env(safe-area-inset-bottom));z-index:20;
     box-shadow:0 -2px 12px rgba(20,26,38,.04);
   }
   body.auth .tabbar{display:flex}
@@ -368,16 +357,42 @@
   /* 「专家与员工」页操作区：单按钮居中，尺寸收敛为舒适可点的胶囊（不再拉满整行） */
   .agent-actions{display:flex;justify-content:center;margin:6px 0 18px}
   .agent-actions .btn{min-width:176px;min-height:40px;padding:10px 24px;font-size:13.5px;font-weight:600}
-  /* 数字员工回答的富文本层级：标题放大 / 列表缩进 / 重点加粗放大 */
-  .bubble.ans{white-space:normal}
-  .ans .ans-h{display:block;font-size:13.5px;font-weight:800;color:var(--text);margin:10px 0 4px}
+  /* AI 回答的富文本层级：标题带色条 / 列表缩进（有序保留序号）/ 重点与数字高亮 / 引用块。
+     对所有 AI 回答生效（默认助手、租户专家、数字员工、历史回放），不再只限数字员工会话。 */
+  .bubble.ans{white-space:normal;font-size:12.8px;line-height:1.72}
+  .ans>div{margin:3px 0}
+  .ans .ans-h{
+    display:block;font-size:13.5px;font-weight:800;color:var(--text);
+    margin:11px 0 5px;padding-left:8px;border-left:3px solid var(--blue);
+  }
   .ans .ans-h:first-child{margin-top:2px}
-  .ans .ans-li{display:block;padding-left:15px;text-indent:-11px;margin:3px 0}
-  .ans .ans-li::before{content:'· ';color:var(--blue);font-weight:800}
-  .ans .ans-quote{display:block;margin:6px 0;padding:6px 9px;border-left:3px solid var(--blue);
-    background:var(--blue-soft);border-radius:0 8px 8px 0;color:var(--text-2)}
+  /* 列表：无序圆点与有序序号共用同一个「20px 标记盒 + 正文从盒后开始」的版式，
+     否则两种标记的首字缩进不同，一段回答里混排时左边缘会出现毛边。 */
+  .ans .ans-li{display:block;padding-left:20px;text-indent:-20px;margin:3px 0}
+  .ans .ans-li::before{
+    content:'•';display:inline-block;width:20px;text-indent:0;text-align:center;
+    color:var(--blue);font-weight:800;
+  }
+  /* 有序列表：保留原始序号（丢掉序号会让「第 3 步」这类语义在视觉上消失） */
+  .ans .ans-li.num::before{content:none}
+  .ans .ans-no{
+    display:inline-block;width:20px;text-indent:0;text-align:center;font-style:normal;
+    font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums;
+  }
+  .ans .ans-quote{
+    display:block;margin:7px 0;padding:7px 10px;border-left:3px solid var(--blue);
+    background:var(--blue-soft);border-radius:0 8px 8px 0;color:var(--text-2);
+  }
+  .ans .ans-hr{height:1px;background:var(--border);margin:10px 0;border:0}
+  .ans .ans-code{
+    display:block;margin:6px 0;padding:7px 9px;border:1px solid var(--border);
+    border-radius:8px;background:var(--surface-2);color:var(--text-2);
+    font-family:var(--font-mono);font-size:11px;line-height:1.6;white-space:pre-wrap;
+  }
   .ans b{font-weight:800;color:var(--text)}
-  .ans .ans-key{font-size:14.5px;font-weight:800;color:var(--blue)}
+  .ans .ans-key{
+    font-size:14px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums;
+  }
 
   /* ---------- 8. 会话 ---------- */
   .chat{display:flex;flex-direction:column;height:100%}
@@ -422,6 +437,25 @@
     display:block;margin-top:6px;font-size:10.5px;color:var(--blue);background:var(--blue-soft);
     border:1px solid var(--blue-line);border-radius:6px;padding:4px 8px;
   }
+  /* ---------- 默认 AI 的业务引导块（确定性渲染，不依赖模型输出） ---------- */
+  .guide-block{
+    margin-top:8px; max-width:82%; background:var(--surface);
+    border:1px solid var(--blue-line); border-left:3px solid var(--blue);
+    border-radius:10px; padding:9px 10px;
+  }
+  .guide-head{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+  .guide-head b{font-size:11.5px;color:var(--text)}
+  .guide-tip{font-size:10px;color:var(--text-3)}
+  .guide-row{display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px dashed var(--border)}
+  .guide-head + .guide-row{border-top:none;padding-top:2px}
+  .guide-main{flex:1;min-width:0;cursor:pointer}
+  .guide-label{font-size:11.5px;font-weight:600;color:var(--blue)}
+  .guide-main:hover .guide-label{text-decoration:underline}
+  .guide-desc{font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 「重新回答」：就地重跑同一个问题（换成这一行的专家来答），替代原先的「复制链接」——
+     链接要用户自己去粘、去分发，对「答得不对想再问一次」这个真实诉求是无效动作。 */
+  .guide-reanswer{flex-shrink:0;white-space:nowrap}
+
   .typing{display:inline-flex;gap:3px;align-items:center}
   .typing i{width:4px;height:4px;border-radius:50%;background:var(--text-3);animation:blink 1.2s infinite}
   .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
@@ -660,6 +694,31 @@
   @media (prefers-reduced-motion: reduce){
     *{animation-duration:.01ms!important;transition-duration:.01ms!important}
     .reveal{opacity:1;transform:none}
+  }
+
+  /* ---------- 15. 宽屏不再拉伸（窄屏 / 手机恒为满屏） ----------
+     满屏规则已经写在 §2 的基样式里（.phone 满宽 + dvh + 无描边、假状态栏常隐、
+     头部与 Tab 各自叠加安全区），**不设任何媒体查询开关**：真机上开着「请求桌面网站」
+     或落在系统 WebView 里，视口可能是 980px 且指针是 fine，按 `max-width` / `pointer:coarse`
+     去判定就会漏掉，于是又套回手机壳、又出现黑边——这正是上一版按媒体查询适配的漏洞。
+     唯一还需要媒体查询的是「桌面浏览器」这一种：视口又宽又高时，正文横贯 1440px 无法阅读
+     （气泡 max-width:82% 会变成一行上千字）。这里只收窄应用列，两侧与页面同色故无可见边框。
+     守卫同时要求 min-height，是为了不误伤横屏手机（844×390 这类宽但矮的视口）。 */
+  @media (min-width: 720px) and (min-height: 620px){
+    .phone{ max-width: 560px; }
+  }
+
+  /* 横屏：可视高度常只剩 375~430px，底部 Tab 按竖屏高度会吃掉近两成，
+     收窄到 56px 并压缩页头，保证内容区仍是主体。 */
+  @media (orientation: landscape) and (max-height: 560px) and (max-width: 1024px){
+    .mp-header{padding-top:calc(4px + env(safe-area-inset-top)); padding-bottom:6px}
+    .mp-title{font-size:14px}
+    .tabbar{
+      height:calc(56px + env(safe-area-inset-bottom));
+      padding-bottom:calc(4px + env(safe-area-inset-bottom));
+    }
+    .page{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+    #page-chat{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
   }
   :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
 </style>
@@ -1106,7 +1165,7 @@ const state = {
   /* 三期：未读知会数（summary.ccUnread 与本地列表同源；只减 tab 内未读数，不动「待办」角标） */
   ccUnread:0,
   conversationId:null, runId:null, controller:null,
-  experts:[], skills:[], kbDocs:[], bill:[], log:[],
+  experts:[], skills:[], kbDocs:[], kbExpanded:false, bill:[], log:[],
   approvals:[], notifs:[], unread:0, packages:[], conversations:[],
   /* 抄送我的（知会 / 待阅）：与 approvals（我发起的）分账 —— 前者是我要知情的，后者是我发起的 */
   ccApprovals:[],
@@ -1159,9 +1218,11 @@ function workerRoleText(roles){
 
 /* ============================================================================
    2. API 适配层（经 serve.py 同域代理到 :8080，规避 CORS）
+   接口基址不写死：生产入口带前缀（https://host/aioa/h5/ ⇒ 接口在 /aioa/api），
+   本地直连是 http://127.0.0.1:5181/ ⇒ 接口在 /api。由 pathname 推导，见 apiBaseFromPath()。
    ============================================================================ */
 const API = {
-  base:'/api',
+  base:apiBaseFromPath(location.pathname),
   async req(path, opts={}){
     const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
     if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
@@ -1582,6 +1643,8 @@ async function loadLiveData(){
   renderAll();
   // 适用场景是配置驱动的独立请求，失败不阻塞首屏（页面其他部分已渲染完）
   renderPkgScenes();
+  // 深链必须等目录就绪后再落（?expert 要按 key 命中 state.experts）
+  applyDeepLink();
 }
 
 /* V33：无数据的卡片 / 模块自动折叠。
@@ -1610,7 +1673,9 @@ function renderAll(){
     try{ fn(); }
     catch(e){ console.error('[render] ' + fn.name + ' failed: ' + (e && e.message ? e.message : e)); }
   });
-  if(!state.chatExpert && state.experts.length) state.chatExpert = state.experts[0];
+  // 未选专家时也要有对话对象（默认 AI）——否则「进来就问」会被 send 的硬拦截挡回去。
+  // 这里只确定对象，不导航（renderAll 期间跳页会打断其他区块的渲染）。
+  if(!state.chatExpert) ensureDefaultChatTarget();
 }
 
 function renderGreet(){
@@ -1792,6 +1857,12 @@ function gotoWorkerByName(name){
     setTimeout(()=>el.classList.remove('flash'), 1600);
   }
 }
+/* 知识库列表默认展示条数。超过时必须给「展开全部」入口 ——
+   原先这里是 list.slice(0,6) 且**没有任何提示或展开入口**，于是租户里资料超过 6 份时，
+   较早共享出去的那条（比如上级共享的制度文件）在页面上**永远看不到**，而标题却写着「共 N 份」，
+   用户只会认为「共享了却没共享给我」。截断可以有，但不能静默。 */
+const KB_PAGE = 6;
+function toggleKbList(){ state.kbExpanded = !state.kbExpanded; renderKb(); }
 function renderKb(){
   const box = $('kbList');
   const list = state.kbDocs||[];
@@ -1801,7 +1872,15 @@ function renderKb(){
   if(cnt) cnt.textContent = '· 共 ' + list.length + ' 份';
   if(!list.length){ box.innerHTML = emptyBox('还没有资料，上传 PDF/Word/Excel 后可在会话中被引用'); return; }
   const meId = state.user && state.user.id;
-  box.innerHTML = list.slice(0,6).map(d=>{
+  const over = list.length > KB_PAGE;                  // 超出默认展示条数 ⇒ 必须给入口
+  const shown = (over && !state.kbExpanded) ? list.slice(0,KB_PAGE) : list;
+  const more = over
+    ? '<div class="row" style="justify-content:center">'+
+        '<button class="btn ghost small" onclick="toggleKbList()">'+
+          (state.kbExpanded ? '收起' : ('展开全部（共 '+list.length+' 份）'))+
+        '</button></div>'
+    : '';
+  box.innerHTML = shown.map(d=>{
     const st = d.state === 'ok' ? ['ok','已入库'] : (d.state === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
     // 上传时间（yyyy-MM-ddTHH:mm:ss → MM-dd HH:mm）
     const tm = d.createdAt ? String(d.createdAt).replace('T',' ').slice(5,16) : '';
@@ -1816,7 +1895,7 @@ function renderKb(){
       : '';
     return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'<span class="muted" style="font-size:11px">'+(meta?' · '+meta:'')+'</span></span>'+
       '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+acts+del+'</span></div>';
-  }).join('');
+  }).join('') + more;
 }
 /* 文件上传入库（FR-F1/F2）：选择本地 pdf/docx/doc/xlsx/xls/txt，后端解析后切片入库 */
 function pickKbFile(){ const el = $('kbFileInput'); if(el) el.click(); }
@@ -3431,6 +3510,251 @@ function updateQuotaUI(){
 /* ============================================================================
    14. 会话（SSE 流式 + 技能参数卡 + 审批卡点 + 存为成果）
    ============================================================================ */
+/* ============================================================================
+   14.0 默认 AI（用户进入后未选择任何功能时的兜底）
+   ----------------------------------------------------------------------------
+   口径：谁是默认 AI 由**后端**按系统参数 chat.default_expert_key 判定（接口返回
+   isDefault），这里只消费标记，不自己判一次 —— 否则「配置页说的默认」与「用户端
+   实际落的默认」会各判各的、迟早打架。
+
+   但兜底必须**无条件成立**：专家目录为空、目录接口还没返回、接口失败，都不能让
+   用户在首句提问时被挡回来（这正是「进来就问 → 弹『请先选择一位专家』」的成因：
+   那是一条硬拦截，只认 state.chatExpert 是否已就绪）。所以这里保底合成一位本地
+   通用助手，用户永远有对话对象。
+   ============================================================================ */
+const DEFAULT_AI = {
+  key: 'general',
+  name: '通用助手',
+  icon: 'bot',
+  isDefault: true,
+  intro: '我是通用助手，日常问题可以直接问我。若问题涉及审批、办文、法务、政策申报等具体业务，我会提示你转给对应的专家，或帮你创建一个专属数字员工。',
+  recs: ['帮我起草一份会议通知', '这段工作总结怎么改得更精炼？', '公司要采购一批设备，我该走什么流程？']
+};
+/* 解析兜底对象（纯函数，只挑对象，不导航）：真实目录里的默认 AI 优先 */
+function resolveDefaultExpert(){
+  const def = (state.experts||[]).find(e => e && e.isDefault);
+  return def || Object.assign({}, DEFAULT_AI);
+}
+/* 当前会话是否就是「默认 AI 会话」——决定要不要出业务引导块。
+   数字员工会话（chatWorker 已绑定）不算：那是明确的业务对象，不该再劝用户挑专家。 */
+function isDefaultAiChat(){
+  const e = state.chatExpert;
+  if(!e || state.chatWorker) return false;
+  if(e.isDefault) return true;
+  return !e.key || e.key === DEFAULT_AI.key;
+}
+/* 进入默认 AI 会话（深链回落与目录为空时使用） */
+function startDefaultChat(){
+  state.chatExpert = resolveDefaultExpert();
+  state.conversationId = null;
+  setChatWorker(null);
+  $('chatName').textContent = state.chatExpert.name;
+  $('chatModel').textContent = '模型：智能路由';
+  go('page-chat'); activateChatTab(); setTitle('page-chat');
+  const e = state.chatExpert;
+  const recs = (e.recs||[]).map(q =>
+    '<span class="chip" onclick="quickAsk(this,\''+esc(q).replace(/'/g,"\\'")+'\')">'+esc(q)+'</span>').join('');
+  const m = $('msgs');
+  m.innerHTML = '<div class="msg"><div class="avatar">'+icon(iconKey(e.icon))+'</div><div class="bubble">'+
+    '你好，我是'+esc(e.name)+'。'+esc(e.intro||'有什么可以帮到你？')+
+    (recs ? '<div class="chips">'+recs+'</div>' : '')+'</div></div>';
+  m.scrollTop = m.scrollHeight;
+}
+/* 未选专家时的统一入口，供 renderAll 与 send 复用（避免两处各写一遍兜底） */
+function ensureDefaultChatTarget(){
+  if(state.chatExpert) return;
+  state.chatExpert = resolveDefaultExpert();
+  state.conversationId = null;
+  setChatWorker(null);
+  $('chatName').textContent = state.chatExpert.name;
+  $('chatModel').textContent = '模型：智能路由';
+}
+/* 保证会话页是激活的：send() 也会被首页推荐问句等入口调用，
+   此时若会话页未激活，回答会被写进隐藏容器 —— 用户看到的现象是「点了没反应」。 */
+function ensureChatPage(){
+  const p = $('page-chat');
+  if(p && !p.classList.contains('active')){ go('page-chat'); activateChatTab(); setTitle('page-chat'); }
+}
+/* ---------- 深链（引导块给出的「链接地址」靠它落地） ----------
+   ?expert=<key> 直接进该专家会话；?page=agent 进「专家与员工」页。
+   链接会被转发、也可能会过期（专家被停用/改名），所以命中不了一律静默回落默认 AI，不弹错。
+   落地后把参数从地址栏摘掉：同一次会话里 loadLiveData 再被调用时不会又导航一次。 */
+function applyDeepLink(){
+  const search = location.search || '';
+  if(!search || search === '?') return;
+  let sp;
+  try{ sp = new URLSearchParams(search); }catch(e){ return; }
+  const expertKey = sp.get('expert');
+  const pageParam = sp.get('page');
+  if(!expertKey && !pageParam) return;
+  stripDeepLinkParams();
+  if(expertKey){
+    const i = (state.experts||[]).findIndex(e => e && e.key === expertKey);
+    if(i >= 0){ startChat(i); return; }
+    startDefaultChat();
+    toast('该专家当前不可用，已为你切到通用助手');
+    return;
+  }
+  const pid = pageParam.indexOf('page-') === 0 ? pageParam : ('page-' + pageParam);
+  // 白名单：只认 TITLES 里登记过的页；page-chat 由 ?expert 负责，避免两条通道各走一半
+  if(pid !== 'page-chat' && TITLES[pid]){ go(pid); setTitle(pid); }
+}
+function stripDeepLinkParams(){
+  try{
+    const u = new URL(location.href);
+    u.searchParams.delete('expert');
+    u.searchParams.delete('page');
+    history.replaceState(null, '', u.pathname + (u.search || '') + u.hash);
+  }catch(e){ /* 老浏览器 / file:// 下忽略即可，不影响功能 */ }
+}
+
+/* ---------- 业务引导块（确定性，不用模型输出） ----------
+   为什么不做成「让 AI 在回答里自己指路」：那条链现在是断的
+   （expert_config.systemPrompt 没有下发给模型），而且模型输出不可断言、可能不出现。
+   这里改由前端在默认 AI 的每次回答后固定渲染一个入口块，保证「一定出现、可被断言」。 */
+/* 纯函数：由「当前页所在目录」推导接口基址。
+   为什么与 h5BaseUrl() 放在一起：两者都是「本页地址 → 对外地址」的推导，同一处维护不易漂移。
+   形态：
+     生产  .../aioa/h5/  或 .../aioa/h5   → /aioa/api
+     本地  /  或 /index.html              → /api（serve.py 把 /api 代理到 :8080）
+   规则：把路径里最后出现的 h5 段换成 api；找不到 h5 段就退回 /api。
+   稳定性：不依赖 origin / 端口 / 是否有尾斜杠；末段含扩展名（如 index.html）按文件名丢弃。 */
+function apiBaseFromPath(pathname){
+  const segs = String(pathname || '/').split('/').filter(function(s){ return s !== ''; });
+  if(segs.length && segs[segs.length-1].indexOf('.') >= 0) segs.pop();
+  if(segs.length && segs[segs.length-1] === 'h5'){
+    segs[segs.length-1] = 'api';
+    return '/' + segs.join('/');
+  }
+  return '/api';
+}
+/* 当前页所在目录，用于拼「链接地址」：
+   生产是 https://host/aioa/h5/，本地直连是 http://127.0.0.1:5181/ —— 都由 pathname 推导，
+   不写死前缀，避免测试环境与生产环境各写一份。 */
+function h5BaseUrl(){
+  let p = location.pathname || '/';
+  p = p.replace(/[^/]*$/, '');
+  if(p.charAt(p.length-1) !== '/') p += '/';
+  return location.origin + p;
+}
+/* 纯函数：把一位专家的「可匹配词」摊平。
+   为什么不用「把问句分词」：H5 单文件里没有分词器，硬切字符 bigram 会把「怎么」「可以」
+   这类通用词也算命中，等于没过滤。反过来把**专家侧**的词表固定下来（tags 是运营在
+   管理端填的业务标签，最可信；名称与简介再按标点切一次），只做「词 ∈ 问句」的包含判定，
+   既不需要分词器，也天然不会把通用词当命中的理由。 */
+function expertKeywords(e){
+  const out = [];
+  const push = v => {
+    const s = String(v == null ? '' : v).trim().toLowerCase();
+    if(s.length >= 2) out.push(s);
+  };
+  (e.tags || []).forEach(push);
+  String(e.name || '').split(/[\s·、,，/|（）()【】\[\]]+/).forEach(push);
+  String(e.desc || e.description || e.summary || e.intro || '')
+    .split(/[\s、，,。；;：:！!？?/|（）()【】\[\]"'“”‘’]+/).forEach(push);
+  return out;
+}
+/* 纯函数：问句与专家的相关度。0 表示不相关（不展示）。
+   权重按「词的判别力」给：整名命中 > tags（运营标注的业务标签）> 简介里的普通词；
+   长词比短词更具体，故再加一档长度加成。同分时由调用方按名称稳定排序，保证可断言。 */
+function scoreExpert(e, q){
+  const s = String(q == null ? '' : q).trim().toLowerCase();
+  if(!s) return 0;
+  let score = 0;
+  const name = String(e.name || '').trim().toLowerCase();
+  if(name && s.indexOf(name) >= 0) score += 10;
+  const tags = (e.tags || []).map(t => String(t == null ? '' : t).trim().toLowerCase())
+    .filter(Boolean);
+  const seen = {};
+  expertKeywords(e).forEach(function(k){
+    if(seen[k]) return;
+    seen[k] = 1;
+    if(s.indexOf(k) < 0) return;
+    const inTag = tags.indexOf(k) >= 0;
+    score += (inTag ? 4 : 2) + (k.length >= 4 ? 2 : k.length >= 3 ? 1 : 0);
+  });
+  return score;
+}
+/* 纯函数：把「专家目录 + 基址 + 当前问句」映射为引导条目。
+   query 缺省为空 ⇒ 没有任何专家算相关 ⇒ 只出「创建数字员工」这一条，
+   这是刻意的：宁可少推荐，也不给一条与本次问答无关的入口（「避免展示无关推荐」）。
+   url 仍是深链地址的唯一生产者（?expert=<key> / ?page=agent，由 applyDeepLink 消费）——
+   块内不再提供复制按钮，但对外分享该地址依旧直达同一处。 */
+function buildGuidance(experts, baseUrl, limit, query){
+  const cap = limit || 4;
+  const out = [{
+    // 动作与链接都是「去创建数字员工」这一条路：动作走最短路径（当场进创建流程），
+    // 链接落地到「专家与员工」页（该页有创建入口，也是别人打开链接后能自己找到路的地方）
+    label: '＋ 创建数字员工',
+    desc: '把重复的活儿交给它，到点自动跑',
+    action: 'create',
+    url: baseUrl + '?page=agent'
+  }];
+  const scored = (experts||[])
+    .filter(e => e && e.key && e.key !== DEFAULT_AI.key && !e.isDefault)
+    .map(e => ({ e: e, s: scoreExpert(e, query) }))
+    .filter(x => x.s > 0)
+    .sort((a, b) => (b.s - a.s) ||
+      String(a.e.name || '').localeCompare(String(b.e.name || ''), 'zh-Hans-CN'));
+  scored.slice(0, cap).forEach(x => out.push({
+    label: '询问「' + x.e.name + '」',
+    desc: x.e.desc || x.e.description || x.e.summary || '',
+    action: 'chat:' + x.e.key,
+    url: baseUrl + '?expert=' + encodeURIComponent(x.e.key)
+  }));
+  return out;
+}
+function guidanceGo(action, url){
+  if(action === 'create'){ createAgentFlow(); return; }
+  if(String(action).indexOf('chat:') === 0){
+    const key = String(action).slice(5);
+    const i = (state.experts||[]).findIndex(e => e && e.key === key);
+    if(i >= 0) startChat(i);
+    else toast('该专家当前不可用，请在「专家与员工」页查看');
+  }
+}
+/* 重新回答：把上一个问题原样再问一次。
+   action 是 chat:<key> ⇒ 先切到该专家（startChat 会重置会话），再由它来答；否则原地重跑。
+   之所以不是「让模型换个说法」：这里要给用户的确定动作是「这个问题换个更对口的同事再答一遍」，
+   所以既重发原问句、也切换角色，两步都在同一次点击里完成。 */
+function reAnswer(action){
+  if(state.busy){ toast('正在生成，请稍候'); return; }
+  const q = state.lastQuery;
+  if(!q){ toast('还没有可重答的问题'); return; }
+  const a = String(action == null ? '' : action);
+  if(a.indexOf('chat:') === 0){
+    const key = a.slice(5);
+    const i = (state.experts||[]).findIndex(e => e && e.key === key);
+    if(i < 0){ toast('该专家当前不可用，请在「专家与员工」页查看'); return; }
+    startChat(i);
+  }else{
+    ensureChatPage();
+  }
+  $('chatInput').value = q;
+  send();
+}
+function guidanceBlock(){
+  // 用「当前这一轮的问句」作为匹配依据：state.lastQuery 在 send() 里就已落定，
+  // 因此回答回来时它一定就是本条回答对应的问题（不会串到上一条）。
+  const items = buildGuidance(state.experts, h5BaseUrl(), 4, state.lastQuery);
+  const box = document.createElement('div');
+  box.className = 'guide-block';
+  box.innerHTML = '<div class="guide-head"><b>需要我转给更专业的同事吗？</b>'+
+    '<span class="guide-tip">点名称切换对话，或点「重新回答」用他再答一遍</span></div>'+
+    items.map(it =>
+      '<div class="guide-row">'+
+        '<div class="guide-main" onclick="guidanceGo(\''+esc(it.action).replace(/'/g,"\\'")+'\',\''+
+            esc(it.url).replace(/'/g,"\\'")+'\')">'+
+          '<div class="guide-label">'+esc(it.label)+'</div>'+
+          (it.desc ? '<div class="guide-desc">'+esc(it.desc)+'</div>' : '')+
+        '</div>'+
+        '<button type="button" class="btn ghost small guide-reanswer" title="用这一项重新回答上一个问题" '+
+            'onclick="event.stopPropagation();reAnswer(\''+
+            esc(it.action).replace(/'/g,"\\'")+'\')">重新回答</button>'+
+      '</div>').join('');
+  return box;
+}
+
 function startChat(i){
   const e = state.experts[i]; if(!e) return;
   state.chatExpert = e;
@@ -3469,7 +3793,10 @@ async function send(){
   const input = $('chatInput');
   const q = input.value.trim();
   if(!q){ toast('请输入问题'); return; }
-  if(!state.chatExpert){ toast('请先选择一位专家'); return; }
+  // 未选任何功能时不再拦人：直接落到默认 AI（内置通用助手）承接本轮对话，
+  // 因此这里没有「请先选择一位专家」这条断头路。
+  if(!state.chatExpert) ensureDefaultChatTarget();
+  ensureChatPage();
   input.value = '';
   state.lastQuery = q;
   const m = $('msgs');
@@ -3530,8 +3857,9 @@ async function send(){
     });
     state.lastAnswer = text;
     if(!text) bubble.textContent = '（本次未返回内容）';
-    // 数字员工会话：回答做层级化突出（标题放大 / 列表缩进 / 重点加粗放大）
-    else if(state.chatWorker){ bubble.classList.add('ans'); bubble.innerHTML = formatAnswer(text); }
+    // 回答统一做层级化突出（标题 / 列表 / 重点 / 数字），不再只限数字员工会话：
+    // 默认助手与租户专家的回答同样是长文，纯文本铺开一样难读。
+    else { bubble.classList.add('ans'); bubble.innerHTML = formatAnswer(text); }
     // 产出后的收口动作
     afterAnswer(bubble, text);
   }catch(e){
@@ -3550,8 +3878,11 @@ async function send(){
 function historyBubble(m){
   const mine = m.role === 'user';
   const ico = mine ? 'user' : iconKey(state.chatExpert && state.chatExpert.icon);
+  // AI 侧同样走 formatAnswer：回看历史时读到的是同一种版式，不出现「当场看是富文本、
+  // 翻记录变一坨纯文本」的不一致。
+  const body = mine ? esc(m.content||'') : formatAnswer(m.content||'');
   return '<div class="msg'+(mine?' me':'')+'"><div class="avatar">'+icon(ico)+'</div>'+
-         '<div class="bubble">'+esc(m.content||'')+'</div></div>';
+         '<div class="bubble'+(mine?'':' ans')+'">'+body+'</div></div>';
 }
 async function openHistory(){
   const mask = document.createElement('div');
@@ -3619,9 +3950,11 @@ async function resumeConversation(id){
 }
 
 /* ============================================================================
-   14c. 数字员工回答的富文本渲染
-   目的：把回答里的「重点」显性化——小节标题放大、列表缩进、关键数字/结论加粗放大，
-   让长回答更醒目、层次更清晰。先整体转义，再做白名单转换，不引入任何 HTML 注入面。
+   14c. AI 回答的富文本渲染
+   目的：把回答里的「重点」显性化——小节标题放大、列表缩进（有序保留序号）、
+   关键数字/结论加粗放大，让长回答更醒目、层次更清晰。
+   先整体转义，再做白名单转换，不引入任何 HTML 注入面（渲染全程不出现原始模型的裸文本）。
+   适用范围：默认助手 / 租户专家 / 数字员工 / 会话记录回放，全部走这一个函数 —— 一处实现。
    ============================================================================ */
 /* 行内重点：**粗体** / `代码` → 加粗；数量·单位·百分比 → 放大加粗高亮 */
 function ansInline(s){
@@ -3631,21 +3964,40 @@ function ansInline(s){
     .replace(/([0-9]+(?:\.[0-9]+)?\s*(?:个工作日|工作日|小时|天|日|%|％|元|次|人|份))/g,
              '<span class="ans-key">$1</span>');
 }
-/* 逐行判定层级：标题 / 列表（含缩进）/ 引用 / 缩进段落 / 普通段落 */
+/* 逐行判定层级：代码块 / 分隔线 / 标题 / 列表（含缩进与序号）/ 引用 / 缩进段落 / 普通段落 */
 function formatAnswer(raw){
   const lines = String(raw == null ? '' : raw).replace(/\r/g, '').split('\n');
   const out = [];
+  let inCode = false, code = [];
   for (let i = 0; i < lines.length; i++) {
-    const t = esc(lines[i]);
+    const line = lines[i];
+    // 代码围栏：内部原样保留（不做行内加粗/高亮替换，否则代码里的 ** 会被改写）
+    if (/^\s*```/.test(line)) {
+      if (inCode) {
+        out.push('<span class="ans-code">' + esc(code.join('\n')) + '</span>');
+        code = []; inCode = false;
+      } else inCode = true;
+      continue;
+    }
+    if (inCode) { code.push(line); continue; }
+    const t = esc(line);
     if (!t.trim()) { out.push('<div style="height:6px"></div>'); continue; }
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(t)) { out.push('<hr class="ans-hr">'); continue; }
     let m = t.match(/^\s*#{1,4}\s*(.+?)\s*$/);
     if (m) { out.push('<span class="ans-h">' + ansInline(m[1]) + '</span>'); continue; }
     m = t.match(/^\s*(?:\*\*|__)?\s*(【[^】]{2,30}】)\s*(?:\*\*|__)?\s*$/);
     if (m) { out.push('<span class="ans-h">' + m[1] + '</span>'); continue; }
-    m = t.match(/^(\s*)(?:[-*•]|\d+[.、)])\s+(.+)$/);
+    // 中文公文式小节（「一、」「二、」）——官方文书里这就是小节标题，不是无序列表
+    m = t.match(/^\s*([一二三四五六七八九十]+[、.])\s*(\S.*)$/);
+    if (m) { out.push('<span class="ans-h">' + ansInline(m[1] + m[2]) + '</span>'); continue; }
+    m = t.match(/^(\s*)([-*•]|\d+[.、)])\s+(.+)$/);
     if (m) {
       const depth = Math.min(2, Math.floor(m[1].replace(/\t/g, '  ').length / 2));
-      out.push('<span class="ans-li" style="margin-left:' + (depth * 14) + 'px">' + ansInline(m[2]) + '</span>');
+      const ordered = /\d/.test(m[2]);
+      out.push('<span class="ans-li' + (ordered ? ' num' : '') + '" style="margin-left:' +
+        (depth * 14) + 'px">' +
+        (ordered ? '<i class="ans-no">' + esc(m[2]) + '</i>' : '') +
+        ansInline(m[3]) + '</span>');
       continue;
     }
     m = t.match(/^\s*&gt;\s?(.*)$/);
@@ -3657,6 +4009,7 @@ function formatAnswer(raw){
     }
     out.push('<div>' + ansInline(t) + '</div>');
   }
+  if (inCode && code.length) out.push('<span class="ans-code">' + esc(code.join('\n')) + '</span>');
   return out.join('');
 }
 
@@ -3684,6 +4037,11 @@ function afterAnswer(bubble, text){
   const wrap = bubble.parentNode;
   // V36：产出过长时折叠展示（约 12 行），先给「收起 + 展开全文」，其余收口按钮仍然可见
   autoClamp(bubble, 300, 260);
+  // 默认 AI 会话：回答后固定给一个「转给更专业的同事」入口块（业务引导）。
+  // 只加一次（同一气泡不重复注入），且不依赖模型输出，保证每次都会出现。
+  if (isDefaultAiChat() && !wrap.querySelector('.guide-block')) {
+    wrap.appendChild(guidanceBlock());
+  }
   // 用户请求请假 → 由请假类数字员工发放《请假申请》（未请求、或非请假类数字员工则完全不出现）
   if (isLeaveRequest(state.lastQuery) && isLeaveCapable() && !document.getElementById('leaveForm')) {
     wrap.closest('.msg').insertAdjacentHTML('afterend',

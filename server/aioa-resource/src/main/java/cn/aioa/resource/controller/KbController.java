@@ -8,6 +8,7 @@ import cn.aioa.resource.service.KbFileParser;
 import cn.aioa.resource.service.KbService;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
+import cn.aioa.security.PermissionCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,7 +31,7 @@ import java.util.Map;
  * 用户端知识库（FR-F）：上传入库、三态清单、失败重试、删除留痕、检索测试。
  *
  * GET    /api/v1/kb/documents              —— 我的资料（默认）
- * GET    /api/v1/kb/documents?scope=tenant —— 租户全部资料（仅租户管理员）
+ * GET    /api/v1/kb/documents?scope=tenant —— 租户全部资料（仅租户管理员，含平台管理员）
  * POST   /api/v1/kb/documents              —— 上传（携带正文则同步切片入库）
  * POST   /api/v1/kb/documents/{id}/retry   —— 失败重试
  * DELETE /api/v1/kb/documents/{id}         —— 删除资料（留痕）
@@ -87,8 +88,16 @@ public class KbController {
         AuthUser user = AuthUserContext.require();
         List<KbDocument> docs;
         if ("tenant".equalsIgnoreCase(scope)) {
-            // 租户视角：仅租户管理员（手动检查，同 ApprovalController 的 403 语义）
-            if (!user.getRoles().contains("ROLE_ADMIN")) {
+            // 租户视角：租户管理员（含系统管理员）。
+            //
+            // 判据必须走 PermissionCatalog.isAdmin —— 它才是「谁来管本租户」的唯一入口
+            // （AdminQuota/AdminConfig/AdminAudit/AdminBizSystem 等管理端控制器全部按此口径）。
+            // 此处曾是全仓唯一一处裸判 ROLE_ADMIN 的知识库入口，后果有两个，且互相印证：
+            //   1) 租户管理员点「知识库」页（默认 tab 就是本分支）拿到 403，
+            //      列表渲染成「租户内暂无资料」，而他刚刚共享出去的资料在上面一条都看不到；
+            //   2) 提示语「仅租户管理员可访问」把租户管理员本人拒之门外 —— 自相矛盾。
+            // 这与 PermissionCatalog#isAdmin 注释里记载的历史缺陷是同一类，此处属复发。
+            if (!PermissionCatalog.isAdmin(user)) {
                 throw BizException.forbidden("租户资料总览仅租户管理员可访问");
             }
             docs = kbService.listTenant(user.getTenantId());
@@ -143,11 +152,17 @@ public class KbController {
         return ApiResponse.ok(DocView.from(doc));
     }
 
-    /** 修改资料：重命名 / 可见范围（PERSONAL 个人、TENANT 租户共享）。 */
+    /**
+     * 修改资料：重命名 / 可见范围（PERSONAL 个人、TENANT 租户共享）。
+     *
+     * <p>「谁能改别人的资料」与「谁能看租户全部资料」是**同一个决策点**，必须同源
+     * （{@link PermissionCatalog#isAdmin}）。两处若各写一套，就会出现「列表里看得到、
+     * 想改可见范围却被 403」——而改可见范围正是「共享/取消共享」这个动作本身。</p>
+     */
     @PutMapping("/documents/{id}")
     public ApiResponse<DocView> update(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
         AuthUser user = AuthUserContext.require();
-        boolean admin = user.getRoles().contains("ROLE_ADMIN");
+        boolean admin = PermissionCatalog.isAdmin(user);
         KbDocument exist0 = kbService.findOne(id);
         if (exist0 == null) {
             throw BizException.notFound("资料不存在：" + id);
@@ -190,7 +205,7 @@ public class KbController {
     @DeleteMapping("/documents/{id}")
     public ApiResponse<Map<String, Object>> remove(@PathVariable Long id) {
         AuthUser user = AuthUserContext.require();
-        boolean admin = user.getRoles().contains("ROLE_ADMIN");
+        boolean admin = PermissionCatalog.isAdmin(user);
         KbDocument doc = kbService.findOne(id);
         if (doc == null) {
             throw BizException.notFound("资料不存在：" + id);
@@ -199,7 +214,8 @@ public class KbController {
         if (doc.getTenantId() == null || doc.getTenantId().longValue() != user.getTenantId().longValue()) {
             throw BizException.forbidden("无权操作其他租户的资料");
         }
-        // 管理员可删除本租户任意资料；普通用户只能删自己的
+        // 租户管理员（含平台管理员）可删除本租户任意资料；普通用户只能删自己的。
+        // 与 list(scope=tenant) / update 同一判据（PermissionCatalog.isAdmin），勿分叉。
         if (!admin && !doc.getUserId().equals(user.getUserId())) {
             throw BizException.forbidden("只能删除本人上传的资料");
         }
@@ -271,7 +287,7 @@ public class KbController {
         if (doc == null) {
             return false;
         }
-        boolean admin = user.getRoles().contains("ROLE_ADMIN");
+        boolean admin = PermissionCatalog.isAdmin(user);
         boolean sameTenant = doc.getTenantId() != null
                 && user.getTenantId() != null
                 && doc.getTenantId().longValue() == user.getTenantId().longValue();
