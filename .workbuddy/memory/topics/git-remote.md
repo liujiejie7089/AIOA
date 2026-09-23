@@ -9,6 +9,9 @@
   - ❌ **2026-09-23 当日更晚复测：同一条命令已推不动**。诊断：`curl -sS -m 12 https://github.com` 立即失败（`exit 35` SSL connect error，0.02s 返回，非超时）⇒ **到 github.com 的 HTTPS 路径在本环境已不可用**；`git push` 则表现为**几分钟零输出地挂起**（未加 `GIT_TERMINAL_PROMPT=0` 时无法区分「等网络」与「等凭证交互」）。
     应对：① 先 `curl -m 12 https://github.com` 判连通性；② TCP 层其实可连（`/dev/tcp/github.com/443` 通），失败发生在 TLS 之后 —— 沙箱内直接执行 `git push` 会被**强杀（SIGTERM，连 `echo` 的输出都没落盘）**，后台任务则**零输出挂起 9 分钟以上**（`GIT_TERMINAL_PROMPT=0` + `lowSpeedLimit` 也救不回来，因为进程没被正常调度）。
     ⇒ 本环境下推 GitHub 需走 **escalation（沙箱旁路审批）** 或**由用户在自有终端执行**；不要在同一轮里反复重试等它。
+    ✅ **同日实测：带 escalation 后一次成功**（`7dfab50..df7429e`，命令即 `GIT_TERMINAL_PROMPT=0 git -c http.sslVerify=false push github HEAD:main`，秒级返回）。
+    ⇒ 判据固定为：**沙箱内直连 = 必失败（强杀/挂起），同一命令加沙箱旁路 = 成功**。所以先别试，直接带旁路。
+    收口仍按 SHA 比对（`git rev-parse HEAD` vs `git -c http.sslVerify=false ls-remote github refs/heads/main`），不看返回码。
     内网 `origin` 当前可达（`info/refs` 返回 401 = 需凭据，TCP/HTTP 通）⇒ **内网链路与公网链路是两条独立的路径，不能互相推定**。
   - SSH over 443 仍是更安全的备选（见下节）。
 
