@@ -24,11 +24,11 @@ public class CatalogController {
     private final CatalogService catalogService;
 
     public record ExpertView(String key, String name, String icon, String desc,
-                             List<Object> tags, String intro, List<Object> recs) {
+                             List<Object> tags, String intro, List<Object> recs, Boolean isDefault) {
 
         static ExpertView from(AiExpert e) {
             return new ExpertView(e.getExpertKey(), e.getName(), e.getIcon(), e.getSummary(),
-                    e.getTags(), e.getIntro(), e.getRecs());
+                    e.getTags(), e.getIntro(), e.getRecs(), Boolean.TRUE.equals(e.getIsDefault()));
         }
     }
 

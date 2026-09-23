@@ -4,6 +4,7 @@ import cn.aioa.admin.entity.ModelConfig;
 import cn.aioa.admin.mapper.ModelConfigMapper;
 import cn.aioa.admin.support.ModelKeyCodec;
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.http.AgentHttpClient;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -57,7 +58,7 @@ public class ModelConfigService {
     private final ModelConfigMapper mapper;
     private final ObjectMapper objectMapper;
     private final ModelKeyCodec keyCodec;
-    private final HttpClient httpClient = HttpClient.newBuilder()
+    private final HttpClient httpClient = AgentHttpClient.agentBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 

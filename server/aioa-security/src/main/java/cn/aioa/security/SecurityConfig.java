@@ -42,6 +42,19 @@ public class SecurityConfig {
             // OAuth2 回调是浏览器从 Gitee 跳回，同样无 JWT；
             // 身份由发起时下发的一次性 state 承载（防 CSRF + 防重放）
             "/api/v1/gitee/bind/callback",
+            // 单端口部署（docs/33）下由 aioa-server 自己发的两块静态前端：
+            // 用户端 /aioa/h5/** 与 管理端 /aioa/web/**。登录页就在里面，必须匿名可读。
+            // ⚠️ 这里的放行是「可读静态资源」而非「可读业务数据」：接口仍在 /api/** 之下受鉴权保护
+            //    （前缀剥离发生在安全链之前，见 AioaPathPrefixFilter）。
+            "/aioa/h5/**",
+            "/aioa/web/**",
+            "/aioa/h5",
+            "/aioa/web",
+            // 容器级错误派发（ERROR dispatch）：ResourceHttpRequestHandler 对不存在的静态资源
+            // 走 response.sendError(404)，会再派发到 /error。若不放行，.anyRequest().authenticated()
+            // 会把匿名请求的 404 改写成 401 —— 现象是「少一个 js 文件，浏览器拿到的是未授权」。
+            // /error 只输出 Boot 默认错误体（默认不含异常消息与堆栈，见 application.yml 无 include-* 覆盖）。
+            "/error",
             "/actuator/health",
             "/actuator/health/**",
             "/v3/api-docs/**",

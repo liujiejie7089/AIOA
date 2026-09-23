@@ -1,5 +1,6 @@
 package cn.aioa.chat.service;
 
+import cn.aioa.common.http.AgentHttpClient;
 import cn.aioa.org.entity.OrgDepartment;
 import cn.aioa.org.entity.OrgMember;
 import cn.aioa.org.mapper.OrgDepartmentMapper;
@@ -78,7 +79,7 @@ public class WorkerIntakeService {
     @Value("${aioa.agent.base-url:http://localhost:8000}")
     private String agentBaseUrl;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private final HttpClient http = AgentHttpClient.agentBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
 

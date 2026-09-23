@@ -4,6 +4,29 @@
  */
 import { http, unwrap } from './index'
 
+/**
+ * 专家领域分类（与后端迁移 V27 对 `ai_expert.category` 的注释同源：
+ * LEGAL/LABOR/CONTRACT/IP/COMPLIANCE/TAX/DATA，另加 GENERAL 兜底）。
+ *
+ * 单独放这里作为**前端唯一入口** —— 模板表单与列表回显都用它，
+ * 不在视图里另起一份字面量（否则新增分类时会出现「后端认、下拉里选不到」）。
+ */
+export const EXPERT_CATEGORIES = [
+  { value: 'LEGAL', label: '法律' },
+  { value: 'LABOR', label: '劳动用工' },
+  { value: 'CONTRACT', label: '合同' },
+  { value: 'IP', label: '知识产权' },
+  { value: 'COMPLIANCE', label: '合规风控' },
+  { value: 'TAX', label: '财税' },
+  { value: 'DATA', label: '数据分析' },
+  { value: 'GENERAL', label: '通用' }
+] as const
+
+/** 领域分类码 → 中文名；未收录时原样显示分类码，不静默吞掉。 */
+export const EXPERT_CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
+  EXPERT_CATEGORIES.map((c) => [c.value, c.label])
+) as Record<string, string>
+
 // ================================================================== 类型
 export interface ExpertSetting {
   enabled?: boolean
@@ -60,6 +83,43 @@ export function importTemplate(key: string): Promise<{ id: number; expertKey: st
   return http
     .post(`/expert-config/templates/${key}/import`)
     .then((r) => unwrap<{ id: number; expertKey: string; created: boolean }>(r))
+}
+
+/** 新建/更新全局专家模板的入参（config 为运行参数，落 GLOBAL 层配置片段）。 */
+export interface ExpertTemplatePayload {
+  /** 模板标识：小写字母开头、2–32 位 a-z0-9_（如 legal / data_analyst）；幂等键 */
+  key: string
+  name: string
+  icon?: string
+  summary?: string
+  intro?: string
+  tags?: string[]
+  recs?: string[]
+  category?: string
+  agentCode?: string
+  templateVersion?: string
+  visibleScope?: string
+  kbScope?: string
+  defaultEnabled?: boolean
+  sort?: number
+  config?: Record<string, unknown>
+}
+
+/**
+ * 新建/更新全局专家模板（写入 tenant_id=0）。
+ *
+ * 仅平台管理员可调用（后端 `PermissionCatalog.isPlatformAdmin` 把关，非平台管理员 403）。
+ * 幂等键 = `key`：同 key 重复提交是「更新模板」，不会产生第二份；
+ * 已导入的租户副本不会自动同步，需租户再点一次「从模板导入」。
+ */
+export function createTemplate(
+  payload: ExpertTemplatePayload
+): Promise<{ id: number; expertKey: string; created: boolean; templateVersion?: string; hint?: string }> {
+  return http
+    .post('/expert-config/templates', payload)
+    .then((r) =>
+      unwrap<{ id: number; expertKey: string; created: boolean; templateVersion?: string; hint?: string }>(r)
+    )
 }
 
 /** 写入/替换某层配置片段。 */

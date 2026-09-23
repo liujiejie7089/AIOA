@@ -86,9 +86,14 @@
             <p class="cfg-card-desc">{{ c.description }}</p>
 
             <div class="cfg-card-control">
+              <!-- 默认 AI：全站唯一写入口在「专家配置」页（那里能连专家名一起选），
+                   本页只读展示，避免同一决策点两处可改 -->
+              <el-input v-if="isDefaultAi(c)" :model-value="c.configValue" disabled style="width: 100%">
+                <template #append>见「专家配置」页</template>
+              </el-input>
               <!-- 布尔：开关 -->
               <el-switch
-                v-if="c.valueType === 'BOOL'"
+                v-else-if="c.valueType === 'BOOL'"
                 :model-value="draft[c.configKey] === 'true'"
                 :disabled="!c.editable"
                 active-text="开启"
@@ -126,6 +131,7 @@
                 <template v-if="c.minValue !== null || c.maxValue !== null">
                   取值 {{ c.minValue ?? '—' }} ~ {{ c.maxValue ?? '—' }}{{ c.unit || '' }}
                 </template>
+                <template v-else-if="isDefaultAi(c)">在「专家配置」页选择，本页不可改</template>
                 <template v-else-if="c.valueType === 'BOOL'">布尔开关</template>
                 <template v-else>自由文本（≤500 字符）</template>
               </span>
@@ -135,7 +141,7 @@
                   link
                   type="warning"
                   size="small"
-                  :disabled="!c.editable || c.configValue === c.defaultValue"
+                  :disabled="!c.editable || isDefaultAi(c) || c.configValue === c.defaultValue"
                   @click="doResetOne(c)"
                 >
                   恢复默认
@@ -179,7 +185,15 @@ const draft = reactive<Record<string, string>>({})
 
 const dirtyCount = computed(() => items.value.filter((c) => isDirty(c)).length)
 
+/** 默认 AI 的取值由「专家配置」页统一维护（那里能连专家名一起选），本页只读展示。
+ *  两个入口都能改同一个参数，就会出现「这页改完那页又改回去」的扯皮，故此处禁写。 */
+const DEFAULT_AI_KEY = 'chat.default_expert_key'
+function isDefaultAi(c: SysConfigItem) {
+  return c.configKey === DEFAULT_AI_KEY
+}
+
 function isDirty(c: SysConfigItem) {
+  if (isDefaultAi(c)) return false
   return draft[c.configKey] !== undefined && draft[c.configKey] !== c.configValue
 }
 

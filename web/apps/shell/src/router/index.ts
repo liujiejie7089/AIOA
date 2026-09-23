@@ -182,7 +182,9 @@ function tierOf(roles: string[]): number {
 }
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 基址跟随构建基址：生产是 /aioa/web/（由 aioa-server 单端口下发，见 docs/33），
+  // dev 是 /。写死 '/' 会让生产环境把 /aioa/web/org-structure 当成路由 /aioa/web/org-structure。
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 

@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
+import java.util.regex.Pattern;
 
 /**
  * 多租户专家配置（方案 P1 / B2–B6）。
@@ -40,6 +42,7 @@ import java.util.Map;
  * DELETE /api/v1/expert-config/experts/{key}/config    —— 删除某层配置片段
  * POST   /api/v1/expert-config/templates/{key}/import  —— 从全局模板导入为租户副本
  * GET    /api/v1/expert-config/templates               —— 全局模板清单
+ * POST   /api/v1/expert-config/templates               —— 新建/更新全局模板（**仅平台管理员**）
  * </pre>
  *
  * <p>权限（V33 明确归属）：读接口对所有登录用户开放（按可见范围过滤）；
@@ -246,6 +249,98 @@ public class ExpertConfigController {
         return ApiResponse.ok(Map.of("id", copy.getId(), "expertKey", key, "created", created));
     }
 
+    /** 平台管理员新建 / 更新全局模板的入参。{@code config} 为运行参数（落 GLOBAL 层片段）。 */
+    public record TemplateBody(
+            String key, String name, String icon, String summary, String intro,
+            List<Object> tags, List<Object> recs, String category, String agentCode,
+            String templateVersion, String visibleScope, String kbScope, Boolean defaultEnabled,
+            Integer sort, Map<String, Object> config) {
+    }
+
+    /**
+     * 平台管理员新建 / 更新一个**全局专家模板**（写入 {@code tenant_id=0}）。
+     *
+     * <p>本端点是「模板」这一能力的**唯一产入口**。在它之前，{@code tenant_id=0} 的模板只能由
+     * seed 脚本（{@code scripts/seed_expert_templates.py}）与迁移（V62）写入 ——
+     * 管理端既不能新建模板、也不能把自建专家发布为模板，
+     * 于是「租户从模板导入」面对的是一个**冻结的模板库**。
+     * 补上产入口后，读（{@link #templates()}）— 产（本方法）— 消费（{@link #importTemplate}）三者闭环。</p>
+     *
+     * <p>权限：**仅平台管理员**。租户 / 企业管理员不应能改全局模板（那是全平台共享内容）；
+     * 他们的入口是「从模板导入」，得到的是**本租户副本**（{@code source_template_id} 指回本模板）。</p>
+     *
+     * <p>幂等：按唯一键 {@code (tenant_id=0, expert_key)} upsert —— 重复提交同一 key 是
+     * 「更新模板」，不报错也不产生第二份。已导入的租户副本**不会**被自动同步：
+     * 租户副本是独立行，需租户再点一次「导入」才更新，避免平台改模板时误改租户的在架内容。</p>
+     */
+    @PostMapping("/templates")
+    public ApiResponse<Map<String, Object>> saveTemplate(@RequestBody(required = false) TemplateBody body) {
+        AuthUser user = requireUser();
+        if (!PermissionCatalog.isPlatformAdmin(user)) {
+            throw BizException.forbidden("只有平台管理员可以新建/修改全局专家模板（全平台共享）。"
+                    + "租户请用「从模板导入」，得到本租户副本后自行调整");
+        }
+        if (body == null || body.name() == null || body.name().isBlank()) {
+            throw BizException.badRequest("模板名称（name）必填");
+        }
+        String key = normalizeTemplateKey(body.key());
+
+        AiExpert row = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                .eq(AiExpert::getTenantId, 0L)
+                .eq(AiExpert::getExpertKey, key));
+        boolean created = row == null;
+        if (created) {
+            row = new AiExpert();
+            row.setTenantId(0L);
+            row.setExpertKey(key);
+            row.setCreatedBy(user.getUserId());
+        }
+        row.setName(body.name().trim());
+        row.setIcon(blankTo(body.icon(), "🧠"));
+        row.setSummary(blankTo(body.summary(), ""));
+        row.setIntro(blankTo(body.intro(), ""));
+        row.setTags(body.tags());
+        row.setRecs(body.recs());
+        row.setAgentCode(body.agentCode());
+        row.setCategory(blankTo(body.category(), "GENERAL").toUpperCase());
+        row.setTemplateVersion(blankTo(body.templateVersion(), "1.0"));
+        row.setSourceTemplateId(null);                                  // 全局模板不指向别的模板
+        row.setVisibleScope(blankTo(body.visibleScope(), "ALL").toUpperCase());
+        row.setKbScope(blankTo(body.kbScope(), "ALL"));
+        row.setDefaultEnabled(Boolean.TRUE.equals(body.defaultEnabled()));
+        row.setEnabled(true);
+        row.setSort(body.sort() == null ? 100 : body.sort());
+        // 平台管理员自建即生效：内容是平台自己写的，不需要「自己审自己」
+        row.setAuditStatus(ContentReviewService.APPROVED);
+        row.setAuditNote(null);
+        row.setReviewedBy(user.getUserId());
+        row.setReviewedAt(LocalDateTime.now());
+        if (created) {
+            expertMapper.insert(row);
+        } else {
+            expertMapper.updateById(row);
+        }
+
+        // 运行参数落 GLOBAL 层片段，口径与 seed 脚本一致：tenant=0 / scope=GLOBAL / scopeId=0。
+        // 租户导入副本后靠 resolve() 回落继承这段配置（importTemplate 不复制 expert_config 行）。
+        boolean hasConfig = body.config() != null && !body.config().isEmpty();
+        if (hasConfig) {
+            configService.save(0L, ExpertConfig.GLOBAL, 0L, key, body.config(), false,
+                    user.getUserId(), ExpertConfig.AUDIT_APPROVED);
+        }
+        log.info("expert template saved: key={} created={} withConfig={}", key, created, hasConfig);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", row.getId());
+        out.put("expertKey", key);
+        out.put("created", created);
+        out.put("templateVersion", row.getTemplateVersion());
+        out.put("hint", created
+                ? "模板已创建，租户端「从模板导入」即可看到并导入"
+                : "模板已更新；已导入的租户副本不会自动同步，需租户再次导入");
+        return ApiResponse.ok(out);
+    }
+
     // ---------- 内部 ----------
 
     /**
@@ -266,6 +361,32 @@ public class ExpertConfigController {
                 ? "配置已生效"
                 : "已提交平台管理员审核，审核通过后生效（当前仍使用原配置）");
         return out;
+    }
+
+    /** 模板标识允许的形态：小写字母开头、2–32 位、仅 a-z0-9_（与 seed 脚本的 legal / data_analyst 同口径）。 */
+    private static final Pattern TEMPLATE_KEY_RE = Pattern.compile("^[a-z][a-z0-9_]{1,31}$");
+
+    /**
+     * 校验并规范化模板 key。
+     *
+     * <p>为什么要卡格式：key 既是 {@code ai_expert} 唯一键的一半，又出现在 URL 路径里
+     * （{@code /templates/{key}/import}），放任意字符串会带来路径歧义；
+     * H5 深链 {@code ?expert=<key>} 也直接用它。seed 脚本产出的 key 全部满足本规则。</p>
+     */
+    private static String normalizeTemplateKey(String raw) {
+        String key = raw == null ? "" : raw.trim().toLowerCase();
+        if (ExpertConfig.WILDCARD.equals(key)) {
+            throw BizException.badRequest("`*` 是全局默认配置片段的保留标识，不能作为专家 key");
+        }
+        if (!TEMPLATE_KEY_RE.matcher(key).matches()) {
+            throw BizException.badRequest("模板标识（key）必须是小写字母开头的 2–32 位 a-z0-9_"
+                    + "（如 legal / data_analyst）；收到：" + raw);
+        }
+        return key;
+    }
+
+    private static String blankTo(String v, String fallback) {
+        return v == null || v.isBlank() ? fallback : v.trim();
     }
 
     private AuthUser requireUser() {

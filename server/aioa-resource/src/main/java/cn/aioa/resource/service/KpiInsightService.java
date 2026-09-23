@@ -1,6 +1,7 @@
 package cn.aioa.resource.service;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.http.AgentHttpClient;
 import cn.aioa.resource.entity.BizKpi;
 import cn.aioa.resource.entity.BizKpiInsight;
 import cn.aioa.resource.entity.BizKpiTrend;
@@ -57,7 +58,7 @@ public class KpiInsightService {
     @Value("${aioa.agent.base-url:http://localhost:8000}")
     private String agentBaseUrl;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private final HttpClient http = AgentHttpClient.agentBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 

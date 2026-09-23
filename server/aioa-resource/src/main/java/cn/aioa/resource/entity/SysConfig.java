@@ -29,6 +29,17 @@ public class SysConfig {
     public static final String TYPE_STRING = "STRING";
     public static final String TYPE_JSON = "JSON";
 
+    /**
+     * 「默认 AI」参数键：用户端**未选择任何专家**时的兜底对象，取值为 {@code ai_expert.expert_key}。
+     *
+     * <p>单一事实源：迁移 V62 写入参数行、{@code AdminConfigController.BUILTIN_DEFAULTS} 写入
+     * 出厂兜底、{@code CatalogService} 读取并标记 —— 三处必须引用本常量，不得各写字符串字面量。</p>
+     */
+    public static final String KEY_DEFAULT_EXPERT = "chat.default_expert_key";
+
+    /** {@link #KEY_DEFAULT_EXPERT} 的出厂取值：V62 内置的全局专家 {@code general}。 */
+    public static final String DEFAULT_EXPERT_KEY = "general";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 

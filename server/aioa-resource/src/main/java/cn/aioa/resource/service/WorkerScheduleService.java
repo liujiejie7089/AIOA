@@ -1,5 +1,6 @@
 package cn.aioa.resource.service;
 
+import cn.aioa.common.http.AgentHttpClient;
 import cn.aioa.resource.entity.AgentWorker;
 import cn.aioa.resource.entity.AgentWorkerRun;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
@@ -52,7 +53,7 @@ public class WorkerScheduleService {
     @Value("${aioa.agent.base-url:http://localhost:8000}")
     private String agentBaseUrl;
 
-    private final HttpClient http = HttpClient.newBuilder()
+    private final HttpClient http = AgentHttpClient.agentBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 

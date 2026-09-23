@@ -62,8 +62,8 @@ public class GlobalExceptionHandler {
             org.springframework.beans.TypeMismatchException.class
     })
     public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(Exception e, HttpServletRequest request) {
-        log.warn("Parameter type mismatch on {} {}: {}", request.getMethod(), request.getRequestURI(),
-                e.getMessage());
+        log.warn("Parameter type mismatch on {} {}: {}", request.getMethod(),
+                AioaRequestAttributes.originalUri(request), e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(400, "参数类型不正确：" + e.getMessage()));
     }
@@ -86,9 +86,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleNotFound(
             org.springframework.web.servlet.resource.NoResourceFoundException e, HttpServletRequest request) {
-        log.warn("No handler for {} {}", request.getMethod(), request.getRequestURI());
+        // 用「客户端原始 URI」：单端口部署下这里可能已被 /aioa 前缀剥离改写，
+        // 若直接回显 getRequestURI()，用户会看到一条他没请求过的路径（见 AioaRequestAttributes）。
+        String uri = AioaRequestAttributes.originalUri(request);
+        log.warn("No handler for {} {}", request.getMethod(), uri);
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ApiResponse.fail(404, "接口不存在：" + request.getRequestURI()));
+                .body(ApiResponse.fail(404, "接口不存在：" + uri));
     }
 
     @ExceptionHandler(Exception.class)

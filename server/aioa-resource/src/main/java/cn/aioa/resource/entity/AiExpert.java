@@ -84,4 +84,13 @@ public class AiExpert {
 
     @TableLogic
     private LocalDateTime deletedAt;
+
+    /**
+     * 是否为「默认 AI」：用户端未选择任何专家时的兜底对象。
+     *
+     * <p>不是库表列，由 {@code CatalogService} 按系统参数
+     * {@link SysConfig#KEY_DEFAULT_EXPERT} 派生后回填，保证「展示」与「兜底判据」同源。</p>
+     */
+    @TableField(exist = false)
+    private Boolean isDefault;
 }

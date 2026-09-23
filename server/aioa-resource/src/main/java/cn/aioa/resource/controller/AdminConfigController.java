@@ -333,6 +333,11 @@ public class AdminConfigController {
                 "智能体最大推理步数", "单轮任务主循环最大步数（架构设计 5）", "步", "8", "1", "32", 30));
         list.add(d("chat.default_model_route", "auto", SysConfig.TYPE_STRING, SysConfig.GROUP_CONVERSATION,
                 "默认模型路由", "auto=平台智能路由；亦可指定已上架模型标识（P0 FR-D4）", "", "auto", null, null, 40));
+        // V62 默认 AI：用户端未选任何专家时的兜底专家（取 ai_expert.expert_key）
+        list.add(d(SysConfig.KEY_DEFAULT_EXPERT, SysConfig.DEFAULT_EXPERT_KEY, SysConfig.TYPE_STRING,
+                SysConfig.GROUP_CONVERSATION, "默认 AI（未选专家时）",
+                "用户端未选择任何专家时的兜底 AI，取值为专家标识；留空表示不做兜底", "",
+                SysConfig.DEFAULT_EXPERT_KEY, null, null, 45));
         list.add(d("quota.low_balance_percent", "20", SysConfig.TYPE_DECIMAL, SysConfig.GROUP_QUOTA,
                 "额度低余额提醒阈值", "剩余额度占比低于该值时卡片变色提醒（P0 FR-G1）", "%", "20", "0", "100", 10));
         list.add(d("quota.daily_free_tokens", "20000", SysConfig.TYPE_INT, SysConfig.GROUP_QUOTA,
