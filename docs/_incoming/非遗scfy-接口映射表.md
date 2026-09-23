@@ -191,3 +191,30 @@ ERROR: relation "t_shop" does not exist
 - `/show/travel/getTouristCountyList`：⚠️ 文档说 `[{id,name}]`，实测多一层 `{touristCounty:[{id, short_name, longitude, latitude}]}`
 - `/show/inheritor/getInheritorListByArea`：⚠️ 文档说 `{list,total}`，实测 `{pageCount, pageNumber, dataList, pageSize, totalCount}`
 - `/show/project/getProjectListByArea`：⚠️ 文档说 `{list,total}`，实测 `{pageCount, pageNumber, dataList, pageSize, totalCount}`
+
+---
+
+## 修订（端到端矩阵实测后，2026-09-23）—— 覆盖上表 5 处判定
+
+> 上表由首轮探测生成，判定口径是「HTTP 200 且 code=0」。端到端矩阵
+> （`server/aioa-integration-scfy` 的 `ScfyMatrixTest`，报告见同目录 `非遗scfy-端到端矩阵报告.md`）
+> 逐个接口带真实依赖 id 复测后，发现**「code=0」不等于「可用」**：有接口恒返回空、有接口参数形态判断错。
+> 本条修订以上表之外的事实为准，上表对应行作废。
+
+| 接口 | 上表判定 | 复测事实 | 修订后处置 |
+|---|---|---|---|
+| `/show/ecologicalArea/getTouristCountyData`、`/show/travel/getTouristCountyData` | OK | `area` 收 **12 位行政区划编码**（`510105000000`=青羊区 → 真实数据）；传市州简称（`青羊区`/`成都市`）或 6 位编码（`510100`）**返回全零且不报错**；不传返回全省 | 参数语义改为 `areaCode`（格式校验 12 位），并说明编码可由 `getTouristCountyList` 取得 |
+| `/show/travel/getTravelImageUrl` | OK（`{imageList:[]}`） | `type` 实质必填：不传 / 1 / 4 / 5 → 空；**2 = 项目图片（155 条，name 为项目名）、3 = 体验基地图片（9 条，bizid 形如 TYJD-28）**；不同 travelId 返回不同结果（说明确实按线路过滤） | `type` 改为必填 + 枚举 `[2,3]` |
+| `/show/travel/getTravelRoadDataDetail` | 空（需真实ID） | `dataId` 必须是 `getTravelRoadDataByType` 返回的 `project_base_id`（如实测 `05760cdf947f4f32968cf79d3c695b2b`）；**传不存在的 id 返回 `{}` 且 code=0**；`type` 实测被忽略（1/2/3/4 同一份详情） | 补 `dataId` 来源说明 + 「空 ≠ 资源没有详情」 |
+| `/show/ecologicalArea/getDetailsData`、`/show/travel/getDetailsData` | OK | `type=1` 与 `5` 返回同一条真实数据（青城山--都江堰旅游景区，`area_type=5A`）；`type=2/3/4` 返回空对象且 code=0。文档未说明取值含义 | 补说明，**不臆造枚举**（避免再次把合法调用拦死） |
+| `/show/ecologicalArea/getEcologicalAreaImageUrl` | OK | `type` 错配即 **code=500**（`Incorrect result size: expected 1, actual 0`）：项目类对象只有 `type=2` 不报错、集聚区类只有 `type=1/4/5` 不报错；语义未明 | **废弃**。图片需求改用 `getAllTravelImageUrl`（实测 123 个字段值）与 `getDetailsData`（含 `image_url`） |
+
+另一类需要提醒后续使用者的现象（均为 code=0，不会报错，只能靠实测发现）：
+
+| 接口 | 现象 |
+|---|---|
+| `/show/ecologicalArea/getNmchBaseData` | 调用成功但**恒为空列表**；同名接口在 `/show/travel` 下返回 21 个城市（体验基地数据用旅游口径） |
+| `/show/project/getProjectListByArea` | `level` **完全被忽略**：传 `country` 与不传同为全省 1411 条（与其它接口「只有 country 生效」不同，更彻底） |
+| 各 `level` 参数 | 只有 `level=country` 真正筛选；`un/province/city/county` 返回未过滤结果且不报错 |
+
+首轮判定的 8 个 `/show/data/*` code=500、2 个 `/show/shopv2/*`（v1/v2 生命周期不明）结论**维持不变**，仍为废弃。
