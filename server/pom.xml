@@ -28,6 +28,7 @@
     <module>aioa-resource</module>
     <module>aioa-org</module>
     <module>aioa-gitee</module>
+    <module>aioa-integration-scfy</module>
     <module>aioa-boot</module>
   </modules>
 

@@ -77,6 +77,31 @@ aioa:
     secret: ${AIOA_SERVICE_JWT_SECRET:aioa-dev-service-jwt-secret-please-change}
   agent:
     base-url: ${AIOA_AGENT_BASE_URL:http://localhost:8000}
+  # ─── 非遗四川 2023（scfy）只读接入 ──────────────────────────────────────────
+  # 默认关闭：这段配置不开 = 不注册任何工具、不出现在模型能力清单里（可插拔）。
+  # 开启后提供 56 个只读查询工具（传承人 9 / 项目 8 / 工坊 13 / 保护区 12 / 旅游 14），
+  # 全部走免登录的 /show/* 接口，不提供任何增删改能力。
+  #
+  # base-url 默认指向生产西昌：2026-09-23 实测四套环境仅该地址可达
+  # （本地 7777 返 502 / 测试 172.16.9.19 内网不可达 / 自贡 scfy-zigong 404）。
+  # 后台测试服务就绪后，改这里即可，无需改代码。
+  integration:
+    scfy:
+      enabled: ${AIOA_SCFY_ENABLED:false}
+      base-url: ${AIOA_SCFY_BASE_URL:https://szbhpt.tsichuan.com/scfy}
+      connect-timeout-ms: 5000
+      read-timeout-ms: 15000
+      max-bytes: 524288          # 单次响应字节上限，超出即截断并置 responseTruncated
+      max-attempts: 2            # 幂等 GET 的重试次数（仅网络异常/5xx）
+      retry-backoff-ms: 300
+      verify-ssl: true
+      # 需登录接口（后台 CRUD / 小程序）暂不接入：当前阶段业务约束是只读，
+      # 且 /show/* 全部免登录。待后台测试服务提供账号后再开。
+      # login-enabled: true 时必须同时给 username/password，
+      # 否则启动即失败 —— 不允许静默降级成匿名，那会让需登录接口以 401 伪装成「无数据」。
+      login-enabled: false
+      # username: ${AIOA_SCFY_USERNAME:}
+      # password: ${AIOA_SCFY_PASSWORD:}
   kb:
     # ─── 知识库存储与嵌入（docs/32「向量库重建为 Milvus」）───────────────────────
     # 存储实现：mysql（默认，切片 + 向量 BLOB + 应用层余弦）/ milvus（向量库 + 原生混合检索）。

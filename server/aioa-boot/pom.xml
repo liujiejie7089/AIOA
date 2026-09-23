@@ -59,6 +59,13 @@
             <artifactId>aioa-gitee</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
+        <!-- 非遗四川 2023（scfy）只读接入。整模块由 aioa.integration.scfy.enabled
+             开关控制，默认关闭 ⇒ 不注册任何工具、模型能力清单里不出现。 -->
+        <dependency>
+            <groupId>cn.aioa</groupId>
+            <artifactId>aioa-integration-scfy</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
