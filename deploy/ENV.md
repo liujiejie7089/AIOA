@@ -98,6 +98,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 |---|---|---|---|---|
 | `AIOA_AGENT_BASE_URL` | 后端 → agent | `http://127.0.0.1:8000` | `http://agent:8000` | — |
 | `AIOA_SERVER_BASE_URL` | agent → 后端 | `http://127.0.0.1:8080` | `http://server:8080` | — |
+| `AIOA_AGENT_HOST_PORT` | agent 发布到宿主的端口（仅绑 `127.0.0.1`） | `8000` | `8000`；宿主 8000 被占用时改（如 `18000`） | — |
 | `PUBLIC_BASE_URL` | 对外入口（OAuth 回跳以此为准） | `http://localhost:8080` | `http://10.0.0.3:8080`（单端口，见 §3.10） | — |
 | `HOST` / `PORT` | agent 监听 | `0.0.0.0` / `8000` | 同 | — |
 | `LOG_LEVEL` | 日志级别 | `INFO` | `INFO` | — |

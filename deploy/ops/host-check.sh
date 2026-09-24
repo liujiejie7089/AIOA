@@ -175,8 +175,12 @@ if command -v docker >/dev/null 2>&1; then
   for img in maven:3.9-eclipse-temurin-21 eclipse-temurin:21-jre node:22-alpine python:3.13-slim; do
     have "$img" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s\n' "$img"
   done
+  echo "  -- 可选：入口 nginx（profile=entry，只在要 /web、/user 短路径时才起）--"
+  for img in nginx:1.27-alpine; do
+    have "$img" && printf '    %s %s（要短路径入口就齐了）\n' "✅" "$img" || printf '    %s %s   ← 缺；不起入口不影响功能（起法见部署手册 §0.1）\n' "⚪" "$img"
+  done
   echo "  -- 已摘除的边缘组件（单端口改造后不再需要；列出来只为确认宿主上没有陈旧容器还占着端口）--"
-  for img in nginx:1.27-alpine aioa-web ollama/ollama:latest minio/minio:latest; do
+  for img in aioa-web ollama/ollama:latest minio/minio:latest; do
     have "$img" && printf '    ⚠  %s（镜像仍在，但 compose 已不声明该服务，不会启动）\n' "$img" || printf '    ⚪ %s（已不在，符合预期）\n' "$img"
   done
 fi

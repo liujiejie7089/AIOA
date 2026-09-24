@@ -137,8 +137,12 @@ def c3_ports() -> tuple[list, list]:
     text = read(COMPOSE)
     if not re.search(r"^\s*-\s*[\"']8080:8080[\"']\s*$", text, re.M):
         f.append("%s 未把 server 的 8080 发布到宿主（没有这一行，入口就出不了容器）" % COMPOSE)
-    if not re.search(r"^\s*-\s*[\"']127\.0\.0\.1:8000:8000[\"']\s*$", text, re.M):
-        f.append("%s 的 agent 端口应为 `127.0.0.1:8000:8000`（仅本机排查用，不对内网暴露）" % COMPOSE)
+    # agent 宿主端口允许写成 `${AIOA_AGENT_HOST_PORT:-8000}`（默认值仍是 8000；目标机常被占用，
+    # 让用户改 .env 而不是改受版本控制的 compose）。**「只绑 127.0.0.1」这一条不许放宽**。
+    if not re.search(r"^\s*-\s*[\"']127\.0\.0\.1:(?:\$\{AIOA_AGENT_HOST_PORT:-8000\}|8000):8000[\"']\s*$",
+                     text, re.M):
+        f.append("%s 的 agent 端口应为 `127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000`"
+                 "（仅本机排查用，不对内网暴露）" % COMPOSE)
     return f, w
 
 
@@ -301,6 +305,7 @@ def c11_nginx_entry() -> tuple[list, list]:
       ③ 配置里少 `/api/` ⇒ /user 下 H5 推导出的接口基址是 `/api`，登录就失败。
     以及一条**方向性**约定：`/web` 必须是 302 到 `/aioa/web/`，不能改成内部改写 ——
     管理端 base 固定为 `/aioa/web/`，地址栏停在 `/web/` 时 vue-router 会落在 base 之外。
+    另有 ④ **门控**：nginx 必须在 `profiles: ["entry"]`（默认 `up -d` 不起它，见该处注释）。
     """
     f, w = [], []
     text = read(COMPOSE)
@@ -311,6 +316,17 @@ def c11_nginx_entry() -> tuple[list, list]:
         f.append("%s 的 nginx 未发布 80 端口（入口出不了容器）" % COMPOSE)
     if "./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro" not in text:
         f.append("%s 未把 %s 挂成 /etc/nginx/conf.d/default.conf" % (COMPOSE, NGINX_CONF))
+
+    # ④ 入口层必须**默认不起**：门控在 profile=entry。
+    #    理由有二：默认部署与「两张镜像就能跑」的离线包口径一致；
+    #    且应用机拉不到 Docker Hub，裸 `up -d` 若带上 nginx 会卡在拉镜像。
+    nginx_block = ""
+    m = re.search(r"^  nginx:\n(.*?)(?=^  [a-z_][a-z0-9_-]*:\s*$|\Z)", text, re.M | re.S)
+    if m:
+        nginx_block = m.group(1)
+    if not re.search(r"^\s{4}profiles:\s*\[\s*[\"']entry[\"']\s*\]\s*$", nginx_block, re.M):
+        f.append("%s 的 nginx 未做 `profiles: [\"entry\"]` 门控 —— 裸跑 `docker compose up -d` "
+                 "会连它一起拉起（应用机拉不到 Docker Hub 时会卡死）" % COMPOSE)
 
     if not exists(NGINX_CONF):
         f.append("找不到入口配置 %s" % NGINX_CONF)
@@ -371,7 +387,8 @@ MUTATIONS = [
     ("c3", "server 端口改成 9090:8080", COMPOSE,
      lambda t: t.replace('"8080:8080"', '"9090:8080"', 1)),
     ("c3", "agent 端口改成 0.0.0.0", COMPOSE,
-     lambda t: t.replace('"127.0.0.1:8000:8000"', '"8000:8000"', 1)),
+     lambda t: t.replace('"127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000"',
+                          '"${AIOA_AGENT_HOST_PORT:-8000}:8000"', 1)),
     ("c4", "重建叠加文件", "deploy/docker-compose.backend.yml",
      lambda t: "services:\n  server:\n    ports:\n      - \"8080:8080\"\n"),
     # 钉住 c4 的**文本扫描**分支（上面那条只测「文件存在」分支）。
@@ -401,7 +418,9 @@ MUTATIONS = [
      lambda t: t.replace('"/aioa/web/**",\n', "", 1)),
     ("c9", "H5 API.base 写回字面 /api", H5,
      lambda t: t.replace("base:apiBaseFromPath(location.pathname)", "base:'/api'", 1)),
-    # ---- c11 入口 nginx（2026-09-24）：服务定义与配置三处都要能被弄坏即报红 ----
+    # ---- c11 入口 nginx（2026-09-24）：服务定义与配置四处都要能被弄坏即报红 ----
+    ("c11", "nginx 去掉 `profiles: [entry]` 门控", COMPOSE,
+     lambda t: t.replace('    profiles: ["entry"]\n', "", 1)),
     ("c11", "nginx 未发布 80 端口", COMPOSE,
      lambda t: t.replace('      - "80:80"\n', "", 1)),
     ("c11", "nginx 未挂入口配置", COMPOSE,
