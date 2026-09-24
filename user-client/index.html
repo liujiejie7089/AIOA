@@ -253,11 +253,14 @@
   .kpi.plain:hover{border-color:var(--border);background:var(--surface)}
   .kpi .k-unit{font-size:10.5px;font-weight:500;color:var(--text-3);margin-left:3px;letter-spacing:0}
   .delta{font-family:var(--font-mono);font-size:9.5px;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:2px;font-weight:600}
-  .delta.up{color:var(--green);background:var(--green-soft)}
-  .delta.down{color:var(--red);background:var(--red-soft)}
-  .bars{display:flex;align-items:flex-end;gap:9px;height:74px;padding-bottom:18px;border-bottom:1px solid var(--border);position:relative;margin-top:8px}
-  .bar{flex:1;background:var(--blue-line);border-radius:3px 3px 0 0;position:relative;transition:height var(--dur-slow) var(--ease)}
+  /* 涨跌配色按中国口径：涨=红、跌=绿（与 stock/财报展示一致）。
+     此前是 up→绿、down→红（欧美口径），同一屏里与其余中文财务表达相反。 */
+  .delta.up{color:var(--red);background:var(--red-soft)}
+  .delta.down{color:var(--green);background:var(--green-soft)}
+  .bars{display:flex;align-items:flex-end;justify-content:center;gap:9px;height:100px;padding-bottom:18px;border-bottom:1px solid var(--border);position:relative;margin-top:8px}
+  .bar{flex:1 1 0;max-width:34px;background:var(--blue-line);border-radius:3px 3px 0 0;position:relative;transition:height var(--dur-slow) var(--ease)}
   .bar.hot{background:linear-gradient(180deg,var(--blue),#5b8cff)}
+  .bar i{position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-style:normal;font-size:9px;color:var(--text-2);font-family:var(--font-mono);white-space:nowrap}
   .bar span{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font-size:9px;color:var(--text-3);font-family:var(--font-mono)}
   .insight{
     margin-top:20px;padding:9px 11px;background:var(--blue-soft);border:1px solid var(--blue-line);
@@ -869,7 +872,7 @@
           </div>
         </div>
         <div class="kpi-grid" id="kpiGrid" data-page-node-id="sy48jMBajGENx9NGCyoggA"></div>
-        <div style="margin:15px 0 0;font-weight:700;font-size:12px" data-page-node-id="Qm5iJsn3oqHQmh89M15EVd">近 6 个月销售额趋势<span class="muted" style="font-weight:400;font-size:10.5px" data-page-node-id="PKTmCNS09gB3axERftLdE1">（万元）</span></div>
+        <div style="margin:15px 0 0;font-weight:700;font-size:12px" data-page-node-id="Qm5iJsn3oqHQmh89M15EVd"><span id="kpiTrendHead" data-page-node-id="KpiTrendHeadV64">近 6 个月销售额趋势</span><span class="muted" style="font-weight:400;font-size:10.5px" data-page-node-id="PKTmCNS09gB3axERftLdE1">（万元）</span></div>
         <div class="bars" id="kpiBars" data-page-node-id="aP7oSNYz1s1b7wImaXbQXp"></div>
         <div class="insight" id="kpiInsight" data-page-node-id="pnmeNEd3MoUMZ3BAQwqlU7"></div>
         <div style="display:flex;gap:8px;margin-top:11px" data-page-node-id="JYXvVxPSJYpVlhnIrtMg15">
@@ -1832,6 +1835,23 @@ function setKpiMode(mode){
   $('segQuarter').classList.toggle('on', mode==='quarter');
   renderKPI();
 }
+/* 数值展示：整数值不带小数（4 而不是 4.00），非整数保留到两位。 */
+function fmtNum(n){
+  const r = Math.round((Number(n)||0) * 100) / 100;
+  return String(r);
+}
+
+/* 轴标签口径统一。
+   管理端录入是自由文本，同一条轴上出现「1月」和「2」这种半带单位半不带的组合，
+   看起来就是没对齐。这里只做**展示层**规整：纯数字按当前口径补单位，
+   已经带单位的原样保留（不改用户填的原文）。 */
+function axisLabel(v){
+  const s = (v==null ? '' : String(v)).trim();
+  if(!s) return '';
+  if(!/^\d+$/.test(s)) return s;
+  return s + (state.kpiMode==='quarter' ? '季' : '月');
+}
+
 function renderKPI(){
   const b = state.kpi[state.kpiMode];
   const grid = $('kpiGrid'), bars = $('kpiBars');
@@ -1851,11 +1871,23 @@ function renderKPI(){
       '</div>'+
     '</div>').join('');
 
-  const max = Math.max(1, ...(b.trend||[]).map(t=>Number(t.value)||0));
-  bars.innerHTML = (b.trend||[]).map(t=>{
-    const h = Math.max(4, Math.round((Number(t.value)||0) / max * 70));
-    return '<div class="bar'+(t.hot?' hot':'')+'" style="height:'+h+'px"><span>'+esc(t.label)+'</span></div>';
+  // 柱高上限 70px 必须与 .bars 的可用高度对齐（100px 总高 - 18px 轴标签 - 12px 数值标签），
+  // 否则柱子会顶穿到标题上。数据点少时若让柱宽随容器拉伸，2 个点会变成两块满宽色板
+  // —— 这正是实测「用户端经营数据展示不协调」的形态（.bar 已加 max-width + 居中收口）。
+  const trend = b.trend || [];
+  const max = Math.max(1, ...trend.map(t=>Number(t.value)||0));
+  bars.innerHTML = trend.map(t=>{
+    const v = Number(t.value)||0;
+    const h = Math.max(4, Math.round(v / max * 70));
+    return '<div class="bar'+(t.hot?' hot':'')+'" style="height:'+h+'px">'+
+             '<i>'+esc(fmtNum(v))+'</i>'+
+             '<span>'+esc(axisLabel(t.label))+'</span>'+
+           '</div>';
   }).join('') || '<div class="muted">暂无趋势数据</div>';
+
+  // 标题跟随真实点数：写死「近 6 个月」而实际只有 2 个点时，标题本身就是在传达错的事实。
+  const head = $('kpiTrendHead');
+  if(head) head.textContent = trend.length ? ('近 ' + trend.length + ' 个月销售额趋势') : '销售额趋势';
 
   $('kpiInsight').innerHTML = b.insight
     ? '<b>AI 解读：</b>' + esc(b.insight)

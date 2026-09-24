@@ -44,14 +44,14 @@
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.enabled === 1 || row.enabled === true ? 'success' : 'info'" effect="plain" size="small">
-              {{ row.enabled === 1 || row.enabled === true ? '已启用' : '已停用' }}
+            <el-tag :type="isOn(row) ? 'success' : 'info'" effect="plain" size="small">
+              {{ isOn(row) ? '已启用' : '已停用' }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" size="small" @click="toggle(row)">{{ row.enabled === 1 || row.enabled === true ? '停用' : '启用' }}</el-button>
+            <el-button text type="primary" size="small" @click="toggle(row)">{{ isOn(row) ? '停用' : '启用' }}</el-button>
             <el-button text type="danger" size="small" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -146,10 +146,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ApiError } from '@/api'
 import {
   getGrantCatalog, listGrants, createGrant, batchGrant, toggleGrant, deleteGrant, listInstitutions,
   type ResourceGrant, type GrantCatalog, type Institution
 } from '@/api/org'
+
+/** 当前是否已启用。后端下发的是 JSON 布尔，但历史数据里也可能是 1/0，两种都认。 */
+function isOn(row: ResourceGrant) { return row.enabled === true || row.enabled === 1 }
+
+/** 业务失败是 HTTP 200 + code≠0，异常体是 ApiError（只有 .message，没有 .response）。 */
+function errText(e: unknown, fallback: string) {
+  if (e instanceof ApiError) return e.message || fallback
+  const d = (e as { response?: { data?: { message?: string } } })?.response?.data
+  return d?.message || fallback
+}
 
 interface CatItem { id: number; resKey?: string; name?: string; providerKey?: string }
 
@@ -255,11 +266,16 @@ async function submit() {
 }
 
 async function toggle(row: ResourceGrant) {
+  // 显式传目标状态（当前的反面）：不能依赖「不带 body 的后端默认值」——
+  // 旧后端把缺省当成启用，于是点「停用」永远变成「启用」，表现为操作无效。
+  const target = !isOn(row)
   try {
-    await toggleGrant(row.id!)
+    await toggleGrant(row.id!, target)
+    // 成功必须给回执：此前静默成功 + 状态没变，用户无法区分「生效了」和「没反应」。
+    ElMessage.success(target ? '已启用' : '已停用')
     await loadGrants()
   } catch (e: unknown) {
-    ElMessage.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message || '操作失败')
+    ElMessage.error(errText(e, target ? '启用失败' : '停用失败'))
   }
 }
 

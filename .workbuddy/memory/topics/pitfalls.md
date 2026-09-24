@@ -141,3 +141,43 @@
     `element is not visible`（30s 超时）才暴露。修法：探针先 `page.evaluate("go('page-me')")` 切页再操作，
     并补一条 `is_visible("#kbList")`。**凡「页面元素」类断言，都要问一句：它在当前这一屏吗？**
 
+
+63. **`AuthUser.nickname` 在请求期恒为 null ⇒ 回填用户可见姓名时绝不能依赖它。**
+    令牌签发处从不给 `nickname` 赋值，而 `AuditRecorder.displayName(actor)` 在它为空时**回落到登录用户名**。
+    于是 V63 投诉建议里 `submitterName` 显示成了内部登录 id `e2emem0170785` 而不是「E2E成员」。
+    **修法**：组织域内一律用 `FeedbackService.displayNameOf(userId, actor)` 读 **`org_member.name`**（组织域权威姓名源）。
+    **通则**：**凡要展示给人看的姓名，取数源必须是人员主数据，不是安全上下文的便捷字段。**
+    ⚠️ 这类缺陷**只有端到端能抓到**：单测里 `nickname` 常被手工填好，接口测试若只看 `code==0` 也不会看姓名内容
+    ——必须「真登录 → 真调接口 → 真读回显」。
+64. **`GlobalExceptionHandler` 的 HTTP 状态口径：只有 401/403/404 映射成 HTTP 状态码，
+    其余（含 400 参数校验）一律 HTTP 200 + `body.code=400`。**
+    ⇒ 断言 400 **必须校验业务 `code` 字段**（`scripts/e2e_v63_org_feedback.py` 的 `biz_reject()`），
+    看 HTTP 状态码会一次性产生 4 条**假失败**，进而诱使人去「放宽断言」——正好踩铁律 #7。
+    另：登录返回字段是 **`accessToken`** 不是 `token`（e2e 首个失败就栽这）。
+
+65. **写路径与读路径的「作用租户」必须同源 —— 只改读侧＝半修复。**
+    `OrgGuard.resolveScopeTenant` 的注释早已写明读侧那次修复（「平台管理员的 tenantId 恒为 0…
+    四个页面全是空态」），但**写侧从未跟着改**：
+    `InstitutionService` 的 `create/update/changeStatus/assignAdmin` 四处仍用**裸** `actor.getTenantId()`。
+    ⇒ 平台管理员建的机构落到 `tenant_id=0`，而列表按 `resolveRequestTenant` 得到的业务租户（2）过滤
+    ⇒ **任何租户的列表都查不到它**（实测留痕 `org_institution id=87 code='ttt'`）。
+    **判据**：凡「按某个作用域落库」，写入端必须与列表/详情端调**同一个** resolver，
+    不能一处 `resolveRequestTenant`、一处裸 `getTenantId()`。改完要**连读带写一起扫**。
+    **数据修复范式**：`V64`。⚠️ MySQL **Error 1093**（UPDATE 的目标表出现在子查询 FROM 里）
+    会把这种回填写死 —— 正解是**先落临时表算好目标值，再让 UPDATE 只读临时表**；
+    且失败迁移必须在 `flyway_schema_history` 里清掉 `success=0` 那行，否则后续迁移全被挡。
+66. **`toggle` 类端点不带 body 时，默认值绝不能偏袒一侧。**
+    `enabled = body == null || !Boolean.FALSE.equals(body.get("enabled"))` 看着只是「默认启用」，
+    但前端调 `toggle` 时**本来就不带 body** ⇒ `body==null` 恒真 ⇒ **单向恒真**：
+    点「停用」永远变成「启用」，记录永远停在已启用 ⇒ 用户看到的就是「停用操作无效」。
+    **通则**：名字叫 toggle 就必须**按当前值翻转**（`explicit != null ? explicit : !current`）；
+    需要幂等就**显式传目标值**，不要靠「缺省值恰好等于我想要的」。
+    另：这类「静默成功 + 状态没变」必须补**成功回执**，否则用户无法区分「生效了」和「没反应」。
+67. **柱状图：柱高算法与容器可用高度必须同源；`flex:1` 在数据点少时会把柱拉成色板。**
+    ① 渲染器按 `min(v/max*70, …)` 算柱高，但容器 `height:74px;padding-bottom:18px` ⇒ 可用只有 **56px**
+    ⇒ 柱顶**顶穿到标题上**。② `.bar{flex:1}` ⇒ 只有 2 个数据点时每根占半屏 ⇒ 两块满宽色板
+    （实测截图就是「近 6 个月趋势」下面两块大色板）。
+    ③ 标题**写死**「近 6 个月」而实际 2 个点 ⇒ **标题本身在传达错的事实**。
+    **判据**：柱高上限必须写成与容器高度绑定的显式常量（本次：100 = 70 柱 + 12 数值 + 18 轴标签）；
+    柱宽要有 `max-width`；标题里的「N」必须由实际点数推导。
+    另：涨跌配色按**中国口径（涨=红 / 跌=绿）**，此前 `.delta.up→绿 / .down→红` 是欧美口径。

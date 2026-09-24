@@ -293,12 +293,25 @@ public class TenantAdminController {
         return ApiResponse.ok(grantService.batchGrant(tenantId(u), u, body));
     }
 
+    /**
+     * 启用 / 停用一条资源授权。
+     *
+     * <p><b>语义</b>：显式传 {@code {"enabled": false}} 时按该值设置（幂等，便于重试）；
+     * <b>不传时按当前值真翻转</b> —— 与端点名 toggle 一致。</p>
+     *
+     * <p><b>为什么不能默认成 true</b>：旧实现是
+     * {@code enabled = body == null || !Boolean.FALSE.equals(body.get("enabled"))}，
+     * 而管理端调用时**不带 body**，于是 body==null ⇒ enabled=true
+     * ⇒ 每次点「停用」都被当成「启用」，记录始终是已启用，
+     * 表现为「停用操作无效」（实测缺陷）。默认值必须与「翻转」语义一致，不能偏袒启用。</p>
+     */
     @PostMapping("/grants/{id}/toggle")
     public ApiResponse<Map<String, Object>> toggleGrant(@PathVariable Long id,
                                                         @RequestBody(required = false) Map<String, Object> body) {
         AuthUser u = guard.requireTenantAdmin();
-        boolean enabled = body == null || !Boolean.FALSE.equals(body.get("enabled"));
-        return ApiResponse.ok(grantService.setEnabled(tenantId(u), id, enabled, u));
+        Object raw = body == null ? null : body.get("enabled");
+        Boolean explicit = raw == null ? null : Boolean.valueOf(String.valueOf(raw));
+        return ApiResponse.ok(grantService.setEnabled(tenantId(u), id, explicit, u));
     }
 
     @DeleteMapping("/grants/{id}")

@@ -173,12 +173,20 @@ public class ResourceGrantService implements ApprovalCallback {
         return Map.of("revoked", id);
     }
 
+    /**
+     * 启用 / 停用资源授权。
+     *
+     * @param explicit 期望的目标状态；传 {@code null} 表示「按当前值翻转」
+     */
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> setEnabled(Long tenantId, Long id, boolean enabled, AuthUser actor) {
+    public Map<String, Object> setEnabled(Long tenantId, Long id, Boolean explicit, AuthUser actor) {
         ResourceGrant g = grantMapper.selectById(id);
         if (g == null || !g.getTenantId().equals(tenantId)) {
             throw BizException.notFound("授权记录不存在：" + id);
         }
+        // 不传目标值时真翻转。**绝不能默认成 true** —— 调用方不带 body 时那会把
+        // 「停用」静默变成「启用」，记录始终是已启用（实测缺陷「停用操作无效」）。
+        boolean enabled = explicit != null ? explicit : !Boolean.TRUE.equals(g.getEnabled());
         Map<String, Object> before = view(g);
         g.setEnabled(enabled);
         g.setUpdatedAt(LocalDateTime.now());

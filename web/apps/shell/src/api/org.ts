@@ -263,8 +263,14 @@ export function createGrant(body: Partial<ResourceGrant>): Promise<ResourceGrant
 export function batchGrant(body: Record<string, unknown>): Promise<Record<string, unknown>> {
   return http.post('/tenant/grants/batch', body).then((r) => unwrap<Record<string, unknown>>(r))
 }
-export function toggleGrant(id: number): Promise<ResourceGrant> {
-  return http.post('/tenant/grants/' + id + '/toggle').then((r) => unwrap<ResourceGrant>(r))
+/**
+ * 启用 / 停用一条资源授权。
+ *
+ * <p>必须**显式传目标状态**：后端在缺省时会「按当前值翻转」，前端带上期望值才能
+ * 保证「我点的是停用，结果就是停用」——也可避免连点两次来回抖动。</p>
+ */
+export function toggleGrant(id: number, enabled: boolean): Promise<ResourceGrant> {
+  return http.post('/tenant/grants/' + id + '/toggle', { enabled }).then((r) => unwrap<ResourceGrant>(r))
 }
 export function deleteGrant(id: number): Promise<unknown> {
   return http.delete('/tenant/grants/' + id).then((r) => unwrap<unknown>(r))

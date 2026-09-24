@@ -115,7 +115,10 @@ public class InstitutionService {
 
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> create(AuthUser actor, Map<String, Object> body) {
-        Long tenantId = actor.getTenantId() == null ? 0L : actor.getTenantId();
+        // 作用租户必须与**列表/详情**同一口径（resolveRequestTenant），否则平台管理员
+        // （tenantId 恒为 0）建出来的机构会落到 tenant_id=0，任何租户的列表都查不到它
+        // —— 实测缺陷「admin 新增机构后不显示」的根因（留痕：org_institution id=87 code=ttt）。
+        Long tenantId = guard.resolveRequestTenant(actor);
         String name = Vals.require(body, "name", "机构名称");
         String code = Vals.require(body, "code", "机构编码");
         String orgType = Vals.str(body, "orgType", OrgInstitution.TYPE_ENTERPRISE);
@@ -164,7 +167,7 @@ public class InstitutionService {
 
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> update(AuthUser actor, Long id, Map<String, Object> body) {
-        Long tenantId = actor.getTenantId() == null ? 0L : actor.getTenantId();
+        Long tenantId = guard.resolveRequestTenant(actor);
         OrgInstitution it = require(tenantId, id);
         Map<String, Object> before = toView(it);
 
@@ -213,7 +216,7 @@ public class InstitutionService {
     /** FR-B1：停用 / 恢复 / 注销（敏感操作，前后值全量留痕）。 */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> changeStatus(AuthUser actor, Long id, String action, String reason) {
-        Long tenantId = actor.getTenantId() == null ? 0L : actor.getTenantId();
+        Long tenantId = guard.resolveRequestTenant(actor);
         OrgInstitution it = require(tenantId, id);
         Map<String, Object> before = toView(it);
 
@@ -247,7 +250,7 @@ public class InstitutionService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> assignAdmin(AuthUser actor, Long institutionId,
                                            Map<String, Object> body) {
-        Long tenantId = actor.getTenantId() == null ? 0L : actor.getTenantId();
+        Long tenantId = guard.resolveRequestTenant(actor);
         OrgInstitution it = require(tenantId, institutionId);
         Map<String, Object> before = toView(it);
         Long adminUserId = Vals.lngObj(body, "userId");
