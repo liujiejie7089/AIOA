@@ -16,6 +16,11 @@
     ⇒ 正确做法：**后台+旁路发起 push 后就别管它、更别 kill**（本次就是留着没 kill 才成的），
       下次会话用 `ls-remote` 复核 SHA 收口。**同一轮里不要换着花样反复重试**（会并发抢同一个远端 ref）。
     ⇒ 仍是**不看返回码、只看 SHA 比对**：`git rev-parse HEAD` vs `ls-remote github refs/heads/main`。
+    🔁 **2026-09-24 第二次实测（耗时不稳定，别用时长做判据）**：同一条命令（后台 + 旁路）
+    本次 **19m49s** 就返回 `a73a537..6e8df92 HEAD -> main`（exit 0），`ls-remote` SHA 与本地 HEAD 一致。
+    ⇒ 与上一条的 **6h46m** 相差 20 倍 ⇒ **耗时完全不可预测（20min ~ 7h 都正常）**，
+      唯一可靠做法：**后台+旁路发起 → 不 kill、不重试 → 用 `ls-remote` 比对 SHA 收口**；
+      `ls-remote`（只读）始终秒级，可随时用来判「落了没有」。
     收口按 SHA 比对（`git rev-parse HEAD` vs `git -c http.sslVerify=false ls-remote github refs/heads/main`），不看返回码。
     内网 `origin` 当前可达（`info/refs` 返回 401 = 需凭据，TCP/HTTP 通）⇒ **内网链路与公网链路是两条独立的路径，不能互相推定**。
   - SSH over 443 仍是更安全的备选（见下节）。

@@ -47,6 +47,12 @@ if [ -d "$REPO/.git" ]; then
   if [ -f "$PRODF" ]; then
     kv "模板含 10.0.0.5:13049" "$(grep -c 'MYSQL_PORT=13049' "$PRODF" 2>/dev/null) 处"
     kv "模板含 10.0.0.7" "$(grep -c 'REDIS_HOST=10.0.0.7' "$PRODF" 2>/dev/null) 处"
+    # Milvus 与应用机**不同机**（2026-09-24 用户确认：Milvus 在 10.0.0.12，无密码）
+    kv "模板含 10.0.0.12:19530" "$(grep -c 'AIOA_MILVUS_URI="http://10.0.0.12:19530"' "$PRODF" 2>/dev/null) 处"
+    _mwrong=$(grep -cE '10\.0\.0\.3:19530' "$PRODF" 2>/dev/null)
+    if [ "${_mwrong:-0}" != "0" ]; then
+      kv "⚠ 模板仍有 10.0.0.3:19530" "$_mwrong 处 ← Milvus 不在应用机，应为 10.0.0.12"
+    fi
   fi
 else
   echo "  !! $REPO 不是 git 仓库（或路径不对）"
@@ -129,6 +135,13 @@ probe https://docker.m.daocloud.io/v2/            '加速器 docker.m.daocloud.i
 probe https://dockerproxy.net/v2/                 '加速器 dockerproxy.net'
 probe https://hub-mirror.c.163.com/v2/            '加速器 hub-mirror.c.163.com'
 probe https://mirror.ccs.tencentyun.com/v2/       '加速器 mirror.ccs.tencentyun.com'
+echo "  -- ★ 构建期依赖（§5.0-A「在这台机上 build」是否可行的真正判据）--"
+probe https://repo.maven.apache.org/maven2/        'Maven Central（server 构建）'
+probe https://registry.npmjs.org/                  'npm registry（管理端构建）'
+probe https://pypi.org/simple/                     'PyPI（agent 构建）'
+probe https://mirrors.aliyun.com/npm/              '备选：阿里云 npm 镜像'
+probe https://maven.aliyun.com/repository/public/  '备选：阿里云 Maven 镜像'
+probe https://pypi.tuna.tsinghua.edu.cn/simple/    '备选：清华 PyPI 镜像'
 echo "  -- ★ 内网可达性（真实服务器虽然没外网，但可能能碰内网 registry / Gitea）--"
 probe http://172.16.8.249:3000                     '内网 Gitea 172.16.8.249:3000'
 probe http://172.16.8.249:3000/api/v1/version       '内网 Gitea API'

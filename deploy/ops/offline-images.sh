@@ -8,8 +8,10 @@
 # ★ 单端口部署（docs/33）后，需要搬的镜像**只有 2 张**，而且全是本地构建：
 #       aioa-server   （同时提供 H5 / 管理端 / 接口，见 deploy/Dockerfile.server）
 #       aioa-agent
-#   不再需要：nginx:1.27-alpine、aioa-web（静态已打进 server 镜像）、
-#             ollama/ollama（知识库走 provider=local，零外部依赖）、minio（应用代码不读它）。
+#   必需的就是这 2 张；此外 **可选** 1 张：nginx:1.27-alpine
+#   （只在要 /web、/user 短路径入口时才需要 → 导出时加 `--with-nginx`）。
+#   已彻底不需要：aioa-web（静态已打进 server 镜像）、
+#                ollama/ollama（知识库走 provider=local，零外部依赖）、minio（应用代码不读它）。
 #   ⇒ 目标机无需能上外网，也无需任何基础镜像。
 #
 # ⚠️ 关键前提：`deploy/docker-compose.yml` 顶层写了 `name: aioa`，
@@ -39,6 +41,10 @@ DEPLOY_DIR="$(cd "$SELF_DIR/.." && pwd)"
 BUILT_IMAGES=(aioa-server aioa-agent)
 # 需要构建的 compose 服务名
 BUILD_SERVICES=(server agent)
+# ★ 可选镜像：入口 nginx（deploy/nginx/aioa-entry.conf，提供 /web、/user 短路径，见手册 §0.1）。
+#   它是**外部镜像**（Docker Hub），目标机往往拉不到 ⇒ 默认不搬。
+#   要短路径入口就在导出时加 --with-nginx，把它一起打进包。
+OPTIONAL_IMAGES=(nginx:1.27-alpine)
 
 hr() { printf '\n\033[36m===== %s =====\033[0m\n' "$*"; }
 die() { printf '\033[31m!! %s\033[0m\n' "$*" >&2; exit 1; }
@@ -46,11 +52,12 @@ need_docker() { command -v docker >/dev/null 2>&1 || die "本机没有 docker"; 
 
 # ---------------------------------------------------------------- export
 do_export() {
-  local out="aioa-images.tar.gz"
+  local out="aioa-images.tar.gz" with_nginx=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --out) out="$2"; shift 2 ;;
-      *) die "未知参数：$1（可用：--out FILE）" ;;
+      --with-nginx) with_nginx=1; shift ;;
+      *) die "未知参数：$1（可用：--out FILE / --with-nginx）" ;;
     esac
   done
   need_docker
@@ -77,12 +84,26 @@ do_export() {
   done
   [ "$miss" = 0 ] || die "有镜像缺失，已中止。请把上面清单发我。"
 
+  # 可选：把入口 nginx 一起打进包（手册 §0.1 的 /web、/user 短路径入口要用它）
+  local save_images=("${BUILT_IMAGES[@]}")
+  if [ "$with_nginx" = 1 ]; then
+    hr "2b) 可选：入口 nginx（--with-nginx）"
+    if docker image inspect "${OPTIONAL_IMAGES[0]}" >/dev/null 2>&1; then
+      printf '  ✅ %s（本机已有）\n' "${OPTIONAL_IMAGES[0]}"
+    else
+      printf '  ↓ 本机没有，尝试拉取 %s …\n' "${OPTIONAL_IMAGES[0]}"
+      docker pull "${OPTIONAL_IMAGES[0]}" \
+        || die "拉不到 ${OPTIONAL_IMAGES[0]}：导出机需能上外网（或配好加速器）；也可以不用入口 nginx。"
+    fi
+    save_images+=("${OPTIONAL_IMAGES[@]}")
+  fi
+
   hr "3) 导出为一个包（docker save | gzip）"
   local out_abs="$out"
   case "$out" in /*) ;; *) out_abs="$PWD/$out" ;; esac
-  echo "  含：${BUILT_IMAGES[*]}"
+  echo "  含：${save_images[*]}"
   echo "  文件：$out_abs"
-  docker save "${BUILT_IMAGES[@]}" | gzip -1 > "$out_abs" || die "docker save 失败"
+  docker save "${save_images[@]}" | gzip -1 > "$out_abs" || die "docker save 失败"
   ls -lh "$out_abs" | sed 's/^/  /'
 
   hr "完成：把包拷到目标机（用隧道机 → 真实服务器那条既有通道）"
@@ -118,6 +139,13 @@ do_list() {
   for img in "${BUILT_IMAGES[@]}"; do
     if docker image inspect "$img" >/dev/null 2>&1; then printf '  ✅ %s\n' "$img"; else printf '  ❌ %s  ← 缺\n' "$img"; fi
   done
+  for img in "${OPTIONAL_IMAGES[@]}"; do
+    if docker image inspect "$img" >/dev/null 2>&1; then
+      printf '  ✅ %s（可选：入口 /web、/user）\n' "$img"
+    else
+      printf '  ⚪ %s（可选，不在包里：不用短路径入口就无需它）\n' "$img"
+    fi
+  done
   echo "  现有全部镜像："
   docker images --format '    {{.Repository}}:{{.Tag}}  {{.Size}}' | head -40
 }
@@ -128,15 +156,19 @@ case "${1:-}" in
   list)   shift; do_list "$@" ;;
   *) cat <<'EOF'
 用法：
-  # 在能上外网的机器上导出（只需 2 张镜像：aioa-server + aioa-agent，均为本地构建）
-  bash deploy/ops/offline-images.sh export [--out FILE]
+  # 在能上外网的机器上导出（必需 2 张：aioa-server + aioa-agent，均为本地构建）
+  bash deploy/ops/offline-images.sh export [--out FILE] [--with-nginx]
+  #   --with-nginx  额外把入口 nginx（nginx:1.27-alpine）打进包，
+  #                 用于 /web、/user 短路径入口（手册 §0.1）；不用短路径就别加。
 
   # 在目标机上导入
   bash deploy/ops/offline-images.sh import <aioa-images.tar.gz>
   bash deploy/ops/offline-images.sh list              # 核对镜像齐备度
 
-说明：单端口部署（docs/33）后不再需要 nginx / aioa-web / ollama / minio 镜像，
-      管理端与用户端静态已随 aioa-server 镜像一起发布。
+说明：单端口部署（docs/33）后，管理端与用户端静态已随 aioa-server 镜像一起发布，
+      aioa-web / ollama / minio 镜像都不再需要。
+      入口 nginx 是**可选**的：只是把 /web、/user 这两个短路径映射到 /aioa/web/、/aioa/h5/，
+      不加它也能用原生地址 http://<host>:8080/aioa/web/ 与 /aioa/h5/。
 EOF
      exit 1 ;;
 esac

@@ -35,11 +35,16 @@
 - 探端口 `netstat -ano|grep LISTENING|grep ":<port> "`，**不接 `| head`**。
 - **单端口入口（docs/33，已落地）**：`:8080` 一个端口服三块 —— `/aioa/h5/`（H5）、`/aioa/web/`（管理端产物）、
   `/aioa/api/`（接口，进安全链前被剥成 `/api`）。**`/api/**` 根路径原样保留**（44 个既有套件 + 现场脚本零改动）。
-  部署**不再需要 nginx**（compose 已无 nginx/ollama 服务）。两个前缀并存是**刻意的**，不是遗留。
+  两个前缀并存是**刻意的**，不是遗留。
+  ⚠️ **2026-09-24 更新：compose 现在有一个「可选」的入口 nginx**（用户要求 `10.0.0.3/web`→管理端、
+  `10.0.0.3/user`→用户端）—— 配置 `deploy/nginx/aioa-entry.conf`、compose 服务 `aioa-nginx`（**只监听 80**，
+  `81` 仍不存在）。**后端 :8080 的单端口入口照旧独立可用**（nginx 只是短路径别名，去掉它不影响任何套件）。
+  口径：`/web` **302 跳** `/aioa/web/`（SPA base 限制，rewrite 会白屏）；`/user/` **rewrite** 到 `/aioa/h5/`
+  （H5 自包含、API base 由 `location.pathname` 推）。细节见 `deploy/生产部署手册.md` §0.1。
   静态托管实现：`server/aioa-boot/.../web/AioaStaticConfig.java`（SPA 回退 + 扩展名白名单 + 防 `../` 穿越）；
   前缀剥离：`AioaPathPrefixFilter.java`（`setOrder(Integer.MIN_VALUE)`，**必须早于安全链**，否则登录 401）。
-  改这四类东西后必跑：`scripts/_check_single_port.py`（10 项 + 18 项负向自检）、`deploy/ops/compose-lint.py`、
-  `scripts/e2e_v63_single_port.py`。
+  改这四类东西后必跑：`scripts/_check_single_port.py`（**11** 项含 `c11_nginx_entry` + **21** 项负向自检）、
+  `deploy/ops/compose-lint.py`、`scripts/e2e_v63_single_port.py`。
 
 ## 4. 账号与口令
 - 租户侧全 `User@123`（含 `dsj_admin`）；平台 `admin/Admin@123`。

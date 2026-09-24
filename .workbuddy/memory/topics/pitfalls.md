@@ -181,3 +181,43 @@
     **判据**：柱高上限必须写成与容器高度绑定的显式常量（本次：100 = 70 柱 + 12 数值 + 18 轴标签）；
     柱宽要有 `max-width`；标题里的「N」必须由实际点数推导。
     另：涨跌配色按**中国口径（涨=红 / 跌=绿）**，此前 `.delta.up→绿 / .down→红` 是欧美口径。
+68. **「同一决策点两处判定」的经典样本：专家启用态被读了两遍，且其中一处永远是 `true`。**
+    管理端表格读**配置层**（`expert_config` → `ExpertConfigService.resolve`），而用户端目录
+    `CatalogService.enabledExperts` **只读 `ai_expert.enabled` 列**；该列**从来没有任何代码写过 `false`**
+    （`importTemplate` / `saveTemplate` 均硬编码 `setEnabled(true)`，`defaults()` 也是 `true`）
+    ⇒ 管理员点「停用」只把管理端列表变灰，**用户端照旧能选能用**（用户报的就是这个）。
+    **判据**：一个「是否可见 / 是否生效」的判据只能有**一个实现**（本次收敛到 `ExpertConfigService.isEnabled`），
+    其它读路径（列表、目录、删除守卫、默认兜底）**全部调它**。附带两条：
+    ① **写入口漏了「意图字段」是同源缺陷**：`saveTemplate` 硬编码 `setEnabled(true)` ⇒
+       前端新建对话框勾「不启用」**不生效**（前端 `config.enabled` 是唯一意图来源，后端必须读它）。
+    ② **凡断言「A 之后 B 不可见」，必须先断言「A 之前 B 可见」**，否则极易写出恒真断言：
+       本次第一版 e2e 的「租户停用后看不到」就是**假通过** —— 租户**压根没导入**那个平台模板
+       （用户端只列本租户行 + 默认 AI 兜底），断言与修复无关地成立。
+       **先造出前置态，再断言变化**（铁律 #7）。
+69. **删专家必须级联清 `expert_config`，且要清「跨租户的孤儿片段」；并且必须物理删除。**
+    ① 不级联 ⇒ 同一 `expert_key` 日后重建时旧片段**静默复活**（上一轮设过的 `enabled=false` /
+       旧 `systemPrompt` 直接生效）⇒ 表现为「新建的专家一上来就是关的」。
+    ② 只清调用者自己名下（`tenant_id = tid`）**不够**：租户可以在**没导入副本**时写过片段
+       （典型：把这个专家停用过）。实测平台删全局模板后
+       `SELECT * FROM expert_config WHERE expert_key=?` **仍剩 1 条**（tenant_id=2 / TENANT / `{"enabled":true}`）。
+       **判据**：片段有意义 ⇔ 它的 `(tenant_id, expert_key)` 或 `(0, expert_key)` 还有存活 `ai_expert` 行。
+       ⇒ 删完后若**已无 `tenant_id=0` 存活行**，则 `deleteAllExceptTenants(key, 仍持有副本的租户)`；
+       **全局模板仍在时绝不能清**（各租户对它的覆盖片段仍然有意义，清了就是删别人的数据）。
+    ③ **必须物理删**：`UNIQUE(tenant_id, expert_key)` **不含 `deleted_at`** ⇒ 软删会让同一 key
+       **再也建不回来**（所以 `AiExpertMapper` / `AiSkillMapper` 用 `@Delete` 手写 SQL）。
+    ④ 删全局模板前要拦「已被 N 个租户导入」⇒ 用 **409**（可 force 的软拒绝）而非 400，
+       前端据 `code===409` 弹二次确认后带 `force=true` 重试。
+    ⑤ ⚠️ **附带发现（本轮未改，属 V36 既有设计）**：`ContentReviewService.needsReviewForConfig`
+       ⇒ 非平台管理员写非 `USER` 层片段一律 **PENDING**，待审片段被 `resolve()` 跳过。
+       故**租户管理员点「停用」不会立刻生效**（要等平台放行）。UI 若不给「待审」提示，
+       用户会再次体验成「停用无效」。要改需单开需求，别顺手改审计语义。
+70. **SPA 的短路径别名不能用 rewrite，必须 302。**
+    入口 nginx 想让 `10.0.0.3/web` 指向管理端：管理端产物是 `base=/aioa/web/` +
+    `createWebHistory(BASE_URL)` 的 SPA ⇒ **地址栏必须落在 SPA base 之下**，
+    用 `rewrite` 会让 `assets/*` 相对路径解析错而**白屏**；`/web` 只能 `return 302 /aioa/web/`。
+    反之 H5 是**自包含单文件**、API base 由 `location.pathname` 推导（`/user/` ⇒ `/api`），
+    所以 `/user/` 可以用**内部 rewrite** 到 `/aioa/h5/` 而不跳转。
+    **通则**：**先判断目标的 base 语义**（有没有 base path / 是不是单文件 / 是否按 pathname 推 API），
+    再决定 redirect 还是 rewrite —— 两者不可互换。改这类入口后要跑
+    `scripts/_check_single_port.py`（现 **11 项 + 21 项负向 mutation**）确认 `/web` 的 302 跳转语义与
+    `/user/` 的 rewrite 语义都还在。

@@ -1,13 +1,17 @@
 # 生产部署（目标机 10.0.0.3）
 
 > 2026-09-19 建立；**2026-09-20 目标机由 192.168.2.130 改为 10.0.0.12**；
-> **2026-09-24 应用机由 `10.0.0.12` 改为 `10.0.0.3`**（用户确认口径：**只换应用机**，
-> Milvus 随应用机变为 `10.0.0.3:19530`；MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` **不动**）。
-> Milvus `19530`、**无鉴权**。
+> **2026-09-24 应用机由 `10.0.0.12` 改为 `10.0.0.3`**（用户确认口径：**只换应用机**；
+> MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` **不动**）。
+> ⚠️ **同日更正**：当时我推断「Milvus 随应用机」→ 写成 `10.0.0.3:19530`，**这是错的**。
+> 用户随后明确：**Milvus 一直在 `10.0.0.12`（可通）、无密码**，与应用机**不同机**。
+> 已全量改回 `http://10.0.0.12:19530`（`docs/33` 里本来就写着 10.0.0.12，可佐证）。
 > **2026-09-20 第二批：三件套全部落到已有外部实例** —— MySQL `10.0.0.5:13049`（**非默认端口**）/ 库 `aioa` / 用户 `aioa`；
-> Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus 仍是 `10.0.0.3:19530` 无鉴权。真实口令只在 `deploy/.env`。
+> Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus `19530` 无鉴权（**该行原写 10.0.0.3 有误，见上「同日更正」：Milvus 在 10.0.0.12**）。真实口令只在 `deploy/.env`。
 > **2026-09-21 第三批（定案）：五件基础设施全在外部 / 用户不用边缘 nginx / MinIO 被证实未被使用。**
-> 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ §5.2 静态前端放哪 + 验收 + 故障对照表）。
+> **2026-09-24 第四批（覆盖上面那条「不用 nginx」）：用户要求短路径入口，compose 重新加入一个
+> 「可选」nginx** —— `10.0.0.3/web`→管理端、`10.0.0.3/user`→用户端。见下方「★ 2026-09-24 入口 nginx」。
+> 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ §0.1 入口 Nginx + §5.2 静态前端放哪 + 验收 + 故障对照表）。
 
 ## ★ 定案（2026-09-21）：本次走「后端档」
 
@@ -22,6 +26,24 @@
   · 管理端 = `aioa-web` 镜像里的 `/usr/share/nginx/html`，**不必跑容器**：
     `docker create _tmpweb aioa-web` + `docker cp _tmpweb:/usr/share/nginx/html/. <root>` + `docker rm _tmpweb`。
   · 宿主 nginx 把 `/api/` 反代到 `http://10.0.0.3:8080/`（抄 `deploy/nginx/api-proxy.conf`）。
+
+## ★ 2026-09-24 入口 nginx（**覆盖** 09-21 的「不用 nginx」）
+
+- 用户口径变更：`我现在的服务器是10.0.0.3，你给我配置一下nginx，我希望用10.0.0.3/web访问管理端，
+  10.0.0.3/user访问用户端`。⇒ 从「宿主自带 nginx 反代 `/api/`」升级为**compose 托管一个入口 nginx**。
+- `deploy/nginx/aioa-entry.conf`（挂成 `nginx:1.27-alpine` 的 `conf.d/default.conf`），
+  compose 服务 `nginx` / 容器 `aioa-nginx`、`ports: ["80:80"]`、`depends_on: [server]`。
+- ⚠️ **与 09-21 的「80=H5 / 81=管理端」不是同一套**：现在**只用 80**，两个前端**靠路径区分**
+  （`81` 仍然不存在）。旧的 `deploy/nginx/nginx.conf`（双 server 块 80/81）与 `api-proxy.conf`
+  是**历史文件**，只有「宿主 nginx 反代」场景还抄 `api-proxy.conf`。
+- 路由口径（**必须区分对待，否则白屏**）：
+  · `/web`、`/web/` → **302** → `/aioa/web/`（管理端是 `base=/aioa/web/` 的 SPA，地址栏必须落在 base 之下）；
+  · `/user/` → **内部 rewrite** → `/aioa/h5/`（H5 自包含单文件，API base 由 `location.pathname` 推）；
+  · `/api/`、`/aioa/` → proxy_pass；SSE `location ~ ^/(?:aioa/)?api/v1/runs/[^/]+/events$` + `proxy_buffering off`。
+- **可选**：不加该服务、`80` 不通时，`:8080/aioa/web/` 与 `:8080/aioa/h5/` **照旧直接可用**
+  ⇒ 既有套件（44 个走 `:8080/api`）与单端口入口**零影响**。
+- 守护口径同步：`scripts/_check_single_port.py` 的 nginx 从「禁止出现」名单**移出**，
+  新增 `c11_nginx_entry`；现在是 **11 项检查 + 21 项负向 mutation**（全红才算有效）。
 
 ## ★★ MinIO 被证实「应用代码不使用」（2026-09-21 全仓核对）
 
@@ -43,11 +65,14 @@
 - 备份口径随之从「MinIO 卷」改成 **`aioa_serveruploads` 卷**。
 
 ## 拓扑与「复用而非托管」原则
-- 单机 Docker Compose。**本次入口由用户已有的 nginx 提供**（在别的机器上）：
-  `/api/` 反代 `http://10.0.0.3:8080/`，H5 与管理端静态按 §5.2 放。
-- **MySQL / Redis / Milvus / MinIO / nginx 全在外部**，本 compose **不托管**它们。
-- 完整档（自带 nginx，80=H5 / 81=管理端）仍然保留可用：不叠加 backend.yml 即可，
-  `deploy/nginx/nginx.conf` = 两个 `server` 块（80 静态托管 H5、81 代理 `aioa_web`），
+- 单机 Docker Compose。
+- ⚠️ **2026-09-24 起这句话只在「宿主 nginx 档」成立**：`/api/` 反代 `http://10.0.0.3:8080/`，
+  H5 与管理端静态按 §5.2 放。**默认档已改为 compose 自带入口 nginx**（见上方 09-24 段：
+  `/web`→管理端、`/user`→用户端，只用 80）。
+- **MySQL / Redis / Milvus / MinIO 全在外部**，本 compose **不托管**它们；
+  **nginx 例外**（09-24 起 compose 托管一个可选入口 nginx，不加该服务即回到「外部 nginx / 直连 :8080」）。
+- **旧「完整档」（自带 nginx，80=H5 / 81=管理端）已不再是默认**：`81` 不存在了；
+  `deploy/nginx/nginx.conf`（双 server 块）+ `api-proxy.conf` 保留为**历史/宿主反代参考**。
   两块 `/api/`、SSE、`/openapi/` 都来自**同一份** `deploy/nginx/api-proxy.conf`（`include`，防漂移）。
 - **H5 不是容器**：`user-client/index.html`；完整档下由卷挂载进边缘 nginx 静态托管。
   因此 `user-client/serve.py`（本地联调服务器，默认 :5181 只绑 127.0.0.1）**不在生产链路里**
@@ -70,7 +95,7 @@
 |---|---|---|
 | `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.5` / `13049` / `aioa` / `aioa` / （见 `.env`） | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*`。**13049 不是 3306** —— 写错端口现象是连不上/超时，不是鉴权失败 |
 | `REDIS_HOST` / `_PORT` + `SPRING_REDIS_PASSWORD` / `SPRING_REDIS_DATABASE` | `10.0.0.7` / `6379` / （有口令，见 `.env`） / `0` | **★真正生效的 Redis 键**。该实例**有 requirepass** ⇒ 口令漏填现象是 `NOAUTH Authentication required` |
-| `AIOA_MILVUS_URI` | `http://10.0.0.3:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
+| `AIOA_MILVUS_URI` | `http://10.0.0.12:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
 | `AIOA_MILVUS_TOKEN` | 空 | 该 Milvus **无鉴权** ⇒ 必须留空（填了会认证失败） |
 | `AIOA_KB_STORE` | `milvus` | Milvus 不可达 ⇒ 后端**启动失败**（刻意 fail-fast） |
 | `AIOA_KB_EMBEDDING_PROVIDER` | `http` | `local`=256 维哈希无语义，生产必须 `http` |
@@ -233,7 +258,7 @@
 
 | 容器 | 镜像 | 对 AIOA |
 |---|---|---|
-| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（`AIOA_MILVUS_URI=http://10.0.0.3:19530`）；`≥2.5` ⇒ BM25 可开 |
+| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（在 **10.0.0.12**，`AIOA_MILVUS_URI=http://10.0.0.12:19530`；应用机 10.0.0.3 上**只有 `milvus-attu` 控制台**，没有 19530 在听）；`≥2.5` ⇒ BM25 可开 |
 | `milvus-etcd` | `etcd:v3.5.25` | ➖ Milvus 配套，不用单独连 |
 | `mongodb` | `mongo:latest` | ❌ 别的系统 |
 | `rmqbroker` / `rmqnamesrv` | `apache/rocketmq:4.9.6` | ❌ 别的系统 |

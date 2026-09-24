@@ -166,7 +166,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 | `AIOA_KB_EMBEDDING_DIMS` | 向量维度，**必须与 `AIOA_MILVUS_DIMS` 一致**（`local` 档不读本键：provider 固定 256 维） | `512` | **`256`** | — |
 | `AIOA_KB_EMBEDDING_TIMEOUT_MS` | 嵌入请求超时（ms）**（仅 `provider=http` 时读取）** | `15000` | `15000` | — |
 | `AIOA_KB_EMBEDDING_API_KEY` | 可选 Bearer 令牌（vLLM 网关常需） | 空 | 空 | ★ |
-| `AIOA_MILVUS_URI` | Milvus gRPC 地址 | `http://127.0.0.1:19530` | **复用外部实例** `http://10.0.0.3:19530`（`milvus:19530` 只在 `--profile milvus` 自建栈时用，本部署**不开**该 profile） | — |
+| `AIOA_MILVUS_URI` | Milvus gRPC 地址 | `http://127.0.0.1:19530` | **复用外部实例** `http://10.0.0.12:19530`（`milvus:19530` 只在 `--profile milvus` 自建栈时用，本部署**不开**该 profile） | — |
 | `AIOA_MILVUS_TOKEN` | 鉴权令牌（未开鉴权时留空） | 空 | **空** —— 本环境 Milvus 无鉴权，填了会认证失败 | ★ |
 | `AIOA_MILVUS_DATABASE` / `_COLLECTION` | 库名 / 集合名（**名字带版本+维度后缀**，换嵌入模型必须新建集合再回填） | `default` / `kb_chunk_v1` | `default` / **`kb_chunk_v1_256`**（配 `local` 的 256 维） | — |
 | `AIOA_MILVUS_DIMS` | 集合维度（**创建后不可改**；与嵌入 provider 输出维度不符时后端**启动失败**，见下 §注 2） | `512` | **`256`** | — |
@@ -259,7 +259,7 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 
 | 类别 | 本地开发 | 生产 |
 |---|---|---|
-| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.3:19530`；**容器之间**用服务名 `agent` `server`（`minio` 已非默认起，见 §3.8；`ollama` 本次不部署，见 §3.7） |
+| 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**用服务名 `agent` `server`（`minio` 已非默认起，见 §3.8；`ollama` 本次不部署，见 §3.7） |
 | 知识库档位 | `mysql` + `local` + 512 维（仅作开发默认） | `milvus` + `local` + **256 维**（不部署 Ollama；集合 `kb_chunk_v1_256`，见 §3.7） |
 | 协议 | `http` | 本次 `http`（单端口 `8080`，未接 TLS）；拿到公网域名后再由前置网关终止 TLS |
 | 域名 | 本机端口 | 本次直接用 IP `10.0.0.3:8080`（**入口由 aioa-server 自己提供**，见 §3.10）；有公网域名时替换 |
