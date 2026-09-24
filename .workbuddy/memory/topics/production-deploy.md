@@ -43,7 +43,24 @@
 - **可选**：不加该服务、`80` 不通时，`:8080/aioa/web/` 与 `:8080/aioa/h5/` **照旧直接可用**
   ⇒ 既有套件（44 个走 `:8080/api`）与单端口入口**零影响**。
 - 守护口径同步：`scripts/_check_single_port.py` 的 nginx 从「禁止出现」名单**移出**，
-  新增 `c11_nginx_entry`；现在是 **11 项检查 + 21 项负向 mutation**（全红才算有效）。
+  新增 `c11_nginx_entry`；现在是 **11 项检查 + 22 项负向 mutation**（全红才算有效；见下条 ④）。
+
+### ★ 同日两处收紧（提交 `f44ba8c`，**覆盖**上面「无门控」与固定 8000 的口径）
+
+1. **入口 nginx 已门控进 `profiles: ["entry"]`** ⇒ 默认 `docker compose up -d` 只起 **`{server, agent}`**。
+   - 起因：无门控时裸跑 `up -d` 会连带拉 `nginx:1.27-alpine`，而应用机 **Hub 返回 `000`** ⇒ 卡死；
+     也与「离线包只有两张镜像就能跑」的口径自相矛盾。
+   - 现在起它要显式：**`docker compose --profile entry up -d nginx`**（手册 §0.1 已反向改写：
+     「⚠ 不要裸跑 up -d」→「✅ 裸跑是安全的」）。
+   - 守卫：`c11` 增第 ④ 条「nginx 必须 profiles=["entry"]」（**块内**匹配，非全文件）；
+     负向 mutation **21 → 22**。
+2. **agent 宿主端口可覆盖：`.env` 的 `AIOA_AGENT_HOST_PORT`（默认 8000）**
+   - compose 写 `127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000`；**容器内恒为 8000**，
+     server 走服务名 `agent:8000` ⇒ 改左端口不影响任何功能。
+   - 起因：目标机 `0.0.0.0:8000` 已被别的容器占用 ⇒ 不改就是 `port is already allocated`。
+   - **现场只在 `.env` 改**（改 compose 会在下次 `git pull` 冲突）。`ENV.md` / 手册故障表已补。
+3. 顺带修正 `deploy/ops/host-check.sh` §⑥ 的**失实归类**：nginx 原先被归进「已摘除的边缘组件」
+   并打印「compose 已不声明该服务」（已不成立）⇒ 拆出独立「**可选：入口 nginx**」组。
 
 ## ★★ MinIO 被证实「应用代码不使用」（2026-09-21 全仓核对）
 

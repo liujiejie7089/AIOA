@@ -219,5 +219,29 @@
     所以 `/user/` 可以用**内部 rewrite** 到 `/aioa/h5/` 而不跳转。
     **通则**：**先判断目标的 base 语义**（有没有 base path / 是不是单文件 / 是否按 pathname 推 API），
     再决定 redirect 还是 rewrite —— 两者不可互换。改这类入口后要跑
-    `scripts/_check_single_port.py`（现 **11 项 + 21 项负向 mutation**）确认 `/web` 的 302 跳转语义与
+    `scripts/_check_single_port.py`（现 **11 项 + 22 项负向 mutation**）确认 `/web` 的 302 跳转语义与
     `/user/` 的 rewrite 语义都还在。
+71. **「固定宿主端口」在目标机上被占用 ⇒ 部署就起不来；覆盖口必须走 `.env`，不能靠改 compose。**
+    现象：`docker compose up -d server agent` 报 `port is already allocated`。本案是 `0.0.0.0:8000`
+    被目标机上一个**无关容器**占着，而 compose 把 agent 固定发布 `127.0.0.1:8000:8000`。
+    修法：compose 写成 `127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000`（**默认值不变**），
+    并在 `.env` / `.env.production` **声明该键**（compose 引用的每个 `${VAR}` 都要在 env 里有出处，
+    否则 `compose-lint` 会警告「引用了未声明的键」）。
+    ★ **现场只改 `.env`，不要改 compose** —— 改 compose 会在用户下次 `git pull` 时冲突，
+    而 `.env` 本来就被 gitignore。**容器内端口恒为 8000**，服务间走服务名（`agent:8000`），
+    改的只是宿主映射，功能零影响（但本机 e2e 若硬编码 `127.0.0.1:8000` 探活要同步）。
+    **通则**：凡「宿主映射」类取值，只要目标机可能被占，就留 `${VAR:-默认}` 口子并给默认值；
+    同时把该键写进两个 env 模板 + `ENV.md` + 手册故障表（症状→改哪一行）。
+
+72. **新增「可选」服务必须做 profile 门控，否则「默认 up」的口径立刻与离线包/网络受限环境矛盾。**
+    现象：给 compose 加了一个**可选**的入口 nginx（不加也能跑），但没写 `profiles:` ⇒
+    它落进默认 `up` 集合 ⇒ 裸跑 `docker compose up -d` 就会去 Docker Hub 拉 `nginx:1.27-alpine`，
+    而应用机 **Hub 返回 `000`** ⇒ 卡死。更糟的是文档同时写着「离线包只需两张镜像就能跑」，
+    **两处口径互相矛盾**（铁律 #1：同一决策只能有一个判定点）。
+    修法：`profiles: ["entry"]`；默认 `up` 恢复为 `{server, agent}`；要短路径就
+    `docker compose --profile entry up -d nginx`。
+    ★ 连带要改的：**文档里原本那句「不要裸跑 `up -d`」应当删掉/反转**（它是在为这个坑打补丁），
+    改成「裸跑是安全的」+ 带 `--profile` 的起法；`host-check.sh` 里该镜像的**归类也要改**
+    （不能再算「已摘除的边缘组件…compose 已不声明该服务」）。
+    **通则**：加可选服务时，先问「它会不会进默认 `up` 集合」；会，就门控。
+    并顺手检查三类文档里对它的**历史描述**是否已失真。
