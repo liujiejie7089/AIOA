@@ -48,11 +48,19 @@ PREFIX = "/aioa"
 H5_DIR = "/app/h5"
 WEB_DIR = "/app/web"
 
-# 已摘除的边缘组件：其**服务定义行**不得再出现在 compose 里
-REMOVED_SERVICES = ("nginx", "ollama", "web")
+# 已摘除的边缘组件：其**服务定义行**不得再出现在 compose 里。
+# ★ 2026-09-24：`nginx` 从本名单移出 —— 它回来了，但**不是**当年那层边缘代理
+#   （当年那层：80=H5 / 81=管理端 / web 容器存静态），而是「**入口别名**」：
+#       /web → 管理端、/user → 用户端，后端仍是 server:8080 单端口（docs/33 不变）。
+#   所以对它的约束从「禁止存在」改成「形态正确」——见 c11。
+#   当年一起摘掉的 `web` 容器与 `ollama` 仍然禁止复活。
+REMOVED_SERVICES = ("ollama", "web")
+
+# 入口 nginx（2026-09-24 新增）：compose 服务定义与配置文件必须同源
+NGINX_CONF = "deploy/nginx/aioa-entry.conf"
 
 FILES = [COMPOSE, DOCKERFILE, APP_YML, PROPS, PREFIX_CFG, SUPPORT, STATIC_CFG, SECURITY,
-         SHELL_ROUTER, H5, *VITE.values()]
+         SHELL_ROUTER, H5, NGINX_CONF, *VITE.values()]
 
 _OVERRIDES: dict[str, str | None] = {}   # selftest 用：rel -> 替换文本（None = 视为不存在）
 
@@ -99,17 +107,22 @@ def c1_compose_services() -> tuple[list, list]:
 
 
 def c2_compose_no_stale_artifacts() -> tuple[list, list]:
-    """已摘除组件的**具体配置行**不得残留（注释里说明它被摘除是允许的）。"""
+    """已摘除组件的**具体配置行**不得残留（注释里说明它被摘除是允许的）。
+
+    ★ 2026-09-24：`image: nginx:*` 与 `80:80` 已从本名单移出 —— 入口 nginx 现在
+      就应该是这个形态（正断言在 c11）。仍然禁止的是**当年那层边缘 nginx**的痕迹：
+      81 端口、以及与它配套的历史配置文件（api-proxy.conf / nginx.conf）。
+    """
     f, w = [], []
     text = read(COMPOSE)
     stale = [
-        (r"^\s*image:\s*[\"']?nginx[:\"']", "nginx 镜像行"),
         (r"^\s*image:\s*[\"']?ollama/ollama", "ollama 镜像行"),
         (r"^\s*-\s*ollamadata\s*:", "ollamadata 卷挂载"),
         (r"^\s*ollamadata:\s*$", "ollamadata 卷定义"),
-        (r"^\s*-\s*[\"']?80:80", "80 端口发布（原边缘 nginx）"),
-        (r"^\s*-\s*[\"']?81:81", "81 端口发布（原边缘 nginx）"),
-        (r"api-proxy\.conf|nginx\.conf", "nginx 配置文件挂载"),
+        (r"^\s*-\s*[\"']?81:81", "81 端口发布（当年那层边缘 nginx 的双端口档）"),
+        # 入口 nginx 应挂 nginx/aioa-entry.conf；挂回历史档说明在照抄旧部署资料。
+        # （注意 `nginx/aioa-entry.conf` 不含 `nginx.conf` 子串，不会误报。）
+        (r"api-proxy\.conf|nginx\.conf", "历史 nginx 配置文件挂载（现应为 nginx/aioa-entry.conf）"),
     ]
     for pat, what in stale:
         for m in re.finditer(pat, text, re.M):
@@ -279,6 +292,49 @@ def c10_static_root_local_note() -> tuple[list, list]:
     return f, w
 
 
+def c11_nginx_entry() -> tuple[list, list]:
+    """入口 nginx（2026-09-24）：/web 管理端 · /user 用户端。
+
+    这层最容易漂移的三处：
+      ① compose 里有服务、但没挂配置文件（或挂成历史档）⇒ 现场起的是默认站点；
+      ② 配置里少 `/aioa/` ⇒ 管理端白屏（静态资源全打到 nginx 上 404）；
+      ③ 配置里少 `/api/` ⇒ /user 下 H5 推导出的接口基址是 `/api`，登录就失败。
+    以及一条**方向性**约定：`/web` 必须是 302 到 `/aioa/web/`，不能改成内部改写 ——
+    管理端 base 固定为 `/aioa/web/`，地址栏停在 `/web/` 时 vue-router 会落在 base 之外。
+    """
+    f, w = [], []
+    text = read(COMPOSE)
+    svc = set(re.findall(r"^  ([a-z][a-z0-9_-]*):\s*$", text, re.M))
+    if "nginx" not in svc:
+        f.append("%s 缺少 `nginx:` 入口服务（/web 与 /user 靠它提供）" % COMPOSE)
+    if not re.search(r"^\s*-\s*[\"']?80:80[\"']?\s*$", text, re.M):
+        f.append("%s 的 nginx 未发布 80 端口（入口出不了容器）" % COMPOSE)
+    if "./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro" not in text:
+        f.append("%s 未把 %s 挂成 /etc/nginx/conf.d/default.conf" % (COMPOSE, NGINX_CONF))
+
+    if not exists(NGINX_CONF):
+        f.append("找不到入口配置 %s" % NGINX_CONF)
+        return f, w
+    conf = read(NGINX_CONF)
+
+    must = [
+        (r"location\s*=\s*/user\b", "/user 入口"),
+        (r"location\s*/user/", "/user/（H5 内部改写回 /aioa/h5/）"),
+        (r"location\s*=\s*/web\b", "/web 入口"),
+        (r"location\s*/aioa/", "/aioa/（后端单端口三前缀）"),
+        (r"location\s*/api/", "/api/（旧根前缀；/user 下 H5 推导到的就是它）"),
+        (r"proxy_buffering\s+off", "SSE 关缓冲"),
+    ]
+    for pat, what in must:
+        if not re.search(pat, conf, re.M):
+            f.append("%s 缺少 %s" % (NGINX_CONF, what))
+
+    if not re.search(r"return\s+302\s+/aioa/web/", conf):
+        f.append("%s 的 /web 未 302 到 /aioa/web/（管理端 base 固定，内部改写会让"
+                 "vue-router 落在 base 之外 ⇒ 白屏）" % NGINX_CONF)
+    return f, w
+
+
 CHECKS = [
     ("compose 服务集合", c1_compose_services),
     ("compose 无残留行", c2_compose_no_stale_artifacts),
@@ -290,6 +346,7 @@ CHECKS = [
     ("剥离顺序与安全放行", c8_filter_and_security),
     ("H5 基址推导", c9_h5_base_derivation),
     ("静态根本地提示", c10_static_root_local_note),
+    ("入口 nginx（/web · /user）", c11_nginx_entry),
 ]
 
 
@@ -305,8 +362,6 @@ def run() -> tuple[list, list]:
 # --------------------------------------------------------------------------- 负向自检
 # 把每项断言**故意弄坏**，断言它必须报红 —— 否则这条检查是「恒真断言」，比没有更危险。
 MUTATIONS = [
-    ("c1", "compose 复活 nginx 服务", COMPOSE,
-     lambda t: t.replace("  server:\n", "  nginx:\n    image: nginx:1.27-alpine\n  server:\n", 1)),
     ("c1", "compose 复活 ollama 服务", COMPOSE,
      lambda t: t + "\n  ollama:\n    image: ollama/ollama:latest\n"),
     ("c2", "compose 残留 ollamadata 卷", COMPOSE,
@@ -346,6 +401,15 @@ MUTATIONS = [
      lambda t: t.replace('"/aioa/web/**",\n', "", 1)),
     ("c9", "H5 API.base 写回字面 /api", H5,
      lambda t: t.replace("base:apiBaseFromPath(location.pathname)", "base:'/api'", 1)),
+    # ---- c11 入口 nginx（2026-09-24）：服务定义与配置三处都要能被弄坏即报红 ----
+    ("c11", "nginx 未发布 80 端口", COMPOSE,
+     lambda t: t.replace('      - "80:80"\n', "", 1)),
+    ("c11", "nginx 未挂入口配置", COMPOSE,
+     lambda t: t.replace("      - ./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro\n", "", 1)),
+    ("c11", "/web 不再跳到 SPA base", NGINX_CONF,
+     lambda t: t.replace("return 302 /aioa/web/;", "return 302 /web/;")),
+    ("c11", "/user 路由被删", NGINX_CONF,
+     lambda t: t.replace("location /user/ {", "location /nope/ {", 1)),
 ]
 
 

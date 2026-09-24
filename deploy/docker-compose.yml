@@ -505,6 +505,32 @@ services:
     networks: [aioa-net]
     restart: unless-stopped
 
+  # ===========================================================================
+  # 入口 Nginx（:80）—— /web 管理端 · /user 用户端（配置见 nginx/aioa-entry.conf）
+  #
+  # 定位：**纯入口别名**，不是新的「边缘层」。H5 / 管理端 / 接口仍由 server:8080
+  # 单端口提供（docs/33），本服务只把更短的路径映射过去并补 SSE 关缓冲：
+  #     /web   → 302 → /aioa/web/   （管理端 SPA base 固定，必须跳转，原因见配置注释）
+  #     /user  → 内部改写回 /aioa/h5/（地址栏保持 /user/，H5 自推导接口基址为 /api）
+  #     /aioa/ 与 /api/ → server:8080
+  # 所以 8080 仍需发布（既有探活/脚本直连它）；若只想暴露 80，可把 server 的
+  # `ports: "8080:8080"` 收成 `expose`，但那会让「绕过 nginx 直连」的排障手段失效。
+  # ===========================================================================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: aioa-nginx
+    volumes:
+      - ./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+    networks: [aioa-net]
+
 volumes:
   # server 上传文件（/app/uploads）。不声明会随容器重建丢失。
   serveruploads:
