@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -238,6 +239,82 @@ public class ExpertConfigService {
                 .eq(ExpertConfig::getScopeType, scopeType)
                 .eq(ExpertConfig::getScopeId, scopeId == null ? 0L : scopeId)
                 .eq(ExpertConfig::getExpertKey, expertKey));
+    }
+
+    /**
+     * 删除某租户下某 experts 的**全部**配置片段（删除专家时级联）。
+     *
+     * <p>为什么必须级联：片段是按 {@code expert_key} 挂的，专家行被删后这些片段就成了
+     * 「没有主人的孤儿」。若同一 key 日后被重新创建，旧片段会**静默复活**
+     * （例如上一轮设过的 {@code enabled=false} / 旧 systemPrompt 直接生效），
+     * 表现为「新建的专家一上来就是关的 / 提示词是别人留下的」。物理删除，语义明确。</p>
+     *
+     * <p>只删 {@code tenantId} 名下的片段：平台模板（tenant 0）与租户副本（tenant N）
+     * 各管各的，删租户副本不该动全局模板的片段。</p>
+     *
+     * @return 实际删除的片段条数
+     */
+    public int deleteAll(Long tenantId, String expertKey) {
+        if (expertKey == null || expertKey.isBlank()) {
+            throw BizException.badRequest("expertKey 不能为空");
+        }
+        int n = configMapper.delete(new LambdaQueryWrapper<ExpertConfig>()
+                .eq(ExpertConfig::getTenantId, tenantId == null ? 0L : tenantId)
+                .eq(ExpertConfig::getExpertKey, expertKey));
+        log.info("expert_config purged: tenant={} expert={} rows={}", tenantId, expertKey, n);
+        return n;
+    }
+
+    /**
+     * 删除某 key 下、**除了 {@code keepTenantIds} 之外**的全部配置片段。
+     *
+     * <p><b>为什么还需要一个「跨租户」的清理</b>：{@link #deleteAll(Long, String)} 只清调用者
+     * 自己名下（{@code tenantId}）的片段。但租户可以在**没有导入副本**的情况下写过片段 ——
+     * 最典型的就是「某租户把这位专家停用了」（{@code expert_config(tenant_id=2, expert_key=x,
+     * enabled=false)}）。此时平台管理员删除全局模板，这条片段就没主人了。</p>
+     *
+     * <p>危害不是「多一行垃圾」，而是<b>同一 key 日后被重建时旧片段静默复活</b>：
+     * 新专家在租户 2 那里一上来就是「关」的（或提示词是上一轮留下的）。
+     * 2026-09-24 实测：删除专家后 {@code SELECT * FROM expert_config WHERE expert_key=?}
+     * 仍剩 1 条 {@code {"enabled": true}}（tenant_id=2、PENDING），即为此类孤儿。</p>
+     *
+     * <p><b>判据（谁该保留）</b>：只有「该租户名下还有存活的 {@code ai_expert} 行」才保留；
+     * 全局模板仍在时，各租户对它的覆盖片段依然有意义，因此<b>调用方不应传 keepTenantIds 为空</b>去清跨租户片段 ——
+     * 这个前提由调用方（删除专家端点）判定，本方法只负责执行。</p>
+     *
+     * @param keepTenantIds 仍需保留片段的租户；传<b>空集合</b>表示「这个 key 已彻底不存在，全清」
+     * @return 物理删除的片段条数
+     */
+    public int deleteAllExceptTenants(String expertKey, Collection<Long> keepTenantIds) {
+        if (expertKey == null || expertKey.isBlank()) {
+            throw BizException.badRequest("expertKey 不能为空");
+        }
+        LambdaQueryWrapper<ExpertConfig> w = new LambdaQueryWrapper<ExpertConfig>()
+                .eq(ExpertConfig::getExpertKey, expertKey);
+        if (keepTenantIds != null && !keepTenantIds.isEmpty()) {
+            w.notIn(ExpertConfig::getTenantId, keepTenantIds);
+        }
+        int n = configMapper.delete(w);
+        log.info("expert_config purged(orphan): expert={} keepTenants={} rows={}", expertKey, keepTenantIds, n);
+        return n;
+    }
+
+    /**
+     * 「专家在某用户上下文下是否启用」的<b>唯一判据</b>。
+     *
+     * <p>口径 = <b>配置层</b> {@code enabled}（五层 merge 之后的结果），而<b>不是</b>
+     * {@code ai_expert.enabled} 列。管理端「启用 / 停用」开关写的就是配置层，
+     * 所以用户端目录必须走这里。</p>
+     *
+     * <p>为什么单独抽出来：2026-09-24 实测缺陷 —— 管理端停用只写了
+     * {@code expert_config}，而用户端 {@code CatalogService} 只按 {@code ai_expert.enabled}
+     * 列过滤（该列**从来没有任何代码写过 false**，两处写入都硬编码 true），
+     * 于是出现「管理员明确停用了，用户端照旧能选能用」。
+     * 这正是铁律 #1 禁止的「同一决策点两处判定」：本方法把它收敛回一处。</p>
+     */
+    public boolean isEnabled(Long tenantId, Long institutionId, Long deptId, Long userId, String expertKey) {
+        return Boolean.TRUE.equals(
+                resolve(tenantId, institutionId, deptId, userId, expertKey).settings().getEnabled());
     }
 
     /** 列出某专家在某租户下的所有配置片段（管理端展示覆盖链路）。 */

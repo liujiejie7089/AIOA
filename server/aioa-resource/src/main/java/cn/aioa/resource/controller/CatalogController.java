@@ -41,7 +41,9 @@ public class CatalogController {
 
     @GetMapping("/experts")
     public ApiResponse<List<ExpertView>> experts() {
-        return ApiResponse.ok(catalogService.experts(AuthUserContext.tenantIdOrDefault())
+        // 传完整 AuthUser（而不只是 tenantId）：专家是否启用由「五层配置」判定，
+        // 其中 INSTITUTION / DEPT / USER 三层需要机构 / 部门 / 用户 ID 才能解析。
+        return ApiResponse.ok(catalogService.experts(AuthUserContext.get())
                 .stream().map(ExpertView::from).toList());
     }
 

@@ -53,10 +53,15 @@
       <el-table-column label="检索模式" width="100">
         <template #default="{ row }">{{ row.retrievalMode }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="edit(row)">配置</el-button>
           <el-button size="small" type="danger" text @click="importOne(row)">导入</el-button>
+          <!-- 删除：租户副本归本租户管理员删；全局模板只有平台管理员能删。
+               入口与能力同源，避免「按钮能点、点了必失败」；后端仍会再判一次。 -->
+          <el-button v-if="canDelete(row)" size="small" type="danger" text @click="remove(row)">
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -181,6 +186,14 @@
           />
         </el-form-item>
 
+        <el-form-item label="启用">
+          <el-switch v-model="tpl.enabled" />
+          <div class="tpl-tip">
+            关闭则模板创建后<b>用户端看不到</b>；之后可在列表的「开关」列随时开启。
+            （两处写的是同一层配置，口径同源。）
+          </div>
+        </el-form-item>
+
         <el-divider content-position="left">运行参数（写入 GLOBAL 层配置片段，租户导入副本后按继承生效）</el-divider>
 
         <el-form-item label="模型">
@@ -219,9 +232,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createTemplate,
+  deleteExpert,
   EXPERT_CATEGORIES,
   importTemplate,
   listExperts,
@@ -269,6 +283,8 @@ const TPL_DEFAULT = {
   intro: '',
   tagsText: '',
   recsText: '',
+  /** 新建即上架？关闭则用户端看不到，之后可在列表的「开关」列随时开启。 */
+  enabled: true,
   model: 'mock-default',
   temperature: 0.3,
   topK: 5,
@@ -396,6 +412,66 @@ async function importOne(row: ExpertView) {
   }
 }
 
+/**
+ * 该行能否删除。
+ *
+ * 口径与后端同源：后端按「调用者 tenantId 名下那一行」定位 ——
+ * 租户 / 企业管理员删本租户副本，平台管理员删全局模板。因此：
+ * - 租户副本（isTenantCopy）⇒ 本租户管理员可删；
+ * - 全局模板 ⇒ 只有平台管理员可删（租户管理员删的是自己那份副本，不是模板）。
+ */
+function canDelete(row: ExpertView): boolean {
+  return !!row.isTenantCopy || canPublishTemplate.value
+}
+
+/**
+ * 删除专家（二次确认 + 级联清理）。
+ *
+ * 后端的两类拒绝在界面上要区别对待：默认 AI 不可删是**硬拒绝**（直接提示去改默认 AI）；
+ * 全局模板已被租户导入是可 force 的**软拒绝**（code=409），此处升级为第二次确认后再重试 ——
+ * 常规删除不被多余警告打扰，而影响面大的操作必须让人明确点头。
+ */
+async function remove(row: ExpertView) {
+  if (!row.expertKey) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除专家「${row.name}」？其配置片段与挂靠技能会被一并清理，且不可恢复。`,
+      '删除专家',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  try {
+    const r = await deleteExpert(row.expertKey)
+    ElMessage.success(r.hint || `已删除「${row.name}」`)
+    await reload()
+  } catch (e: any) {
+    if (e?.code === 409) {
+      // 软拒绝：模板已被若干租户导入。展示后端给的原文（含副本数量）后要求再次确认。
+      try {
+        await ElMessageBox.confirm(e.message || '该模板已被租户导入', '该模板已被租户导入', {
+          type: 'warning',
+          confirmButtonText: '仍然删除',
+          cancelButtonText: '取消'
+        })
+      } catch {
+        return
+      }
+      try {
+        const r = await deleteExpert(row.expertKey, true)
+        ElMessage.success(r.hint || `已删除「${row.name}」`)
+        await reload()
+      } catch (e2: any) {
+        ElMessage.error('删除失败：' + (e2?.message || e2))
+      }
+      return
+    }
+    ElMessage.error('删除失败：' + (e?.message || e))
+  }
+}
+
 /** 打开「新建模板」表单（每次清空，避免上一次的残留被误当成本次输入）。 */
 function openCreate() {
   Object.assign(tpl, TPL_DEFAULT)
@@ -430,7 +506,9 @@ async function submitCreate() {
       visibleScope: 'ALL',
       kbScope: 'ALL',
       config: {
-        enabled: true,
+        // 唯一意图来源：此值同时决定 GLOBAL 层配置片段与 ai_expert.enabled，
+        // 后端 saveTemplate 据此落库（此前硬编码 true ⇒ 建不出「未启用」的专家）。
+        enabled: tpl.enabled,
         model: tpl.model,
         temperature: tpl.temperature,
         topK: tpl.topK,

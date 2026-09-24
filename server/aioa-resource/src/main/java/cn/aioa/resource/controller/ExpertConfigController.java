@@ -3,8 +3,11 @@ package cn.aioa.resource.controller;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.resource.entity.AiExpert;
+import cn.aioa.resource.entity.AiSkill;
 import cn.aioa.resource.entity.ExpertConfig;
 import cn.aioa.resource.mapper.AiExpertMapper;
+import cn.aioa.resource.mapper.AiSkillMapper;
+import cn.aioa.resource.service.CatalogService;
 import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.ExpertConfigService;
 import cn.aioa.security.PermissionCatalog;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 多租户专家配置（方案 P1 / B2–B6）。
@@ -43,6 +47,7 @@ import java.util.regex.Pattern;
  * POST   /api/v1/expert-config/templates/{key}/import  —— 从全局模板导入为租户副本
  * GET    /api/v1/expert-config/templates               —— 全局模板清单
  * POST   /api/v1/expert-config/templates               —— 新建/更新全局模板（**仅平台管理员**）
+ * DELETE /api/v1/expert-config/experts/{key}           —— 删除专家（平台管理员删全局模板 / 租户管理员删本租户副本）
  * </pre>
  *
  * <p>权限（V33 明确归属）：读接口对所有登录用户开放（按可见范围过滤）；
@@ -58,7 +63,9 @@ import java.util.regex.Pattern;
 public class ExpertConfigController {
 
     private final ExpertConfigService configService;
+    private final CatalogService catalogService;
     private final AiExpertMapper expertMapper;
+    private final AiSkillMapper skillMapper;
     private final ContentReviewService reviewService;
 
     // ---------- 读 ----------
@@ -308,7 +315,9 @@ public class ExpertConfigController {
         row.setVisibleScope(blankTo(body.visibleScope(), "ALL").toUpperCase());
         row.setKbScope(blankTo(body.kbScope(), "ALL"));
         row.setDefaultEnabled(Boolean.TRUE.equals(body.defaultEnabled()));
-        row.setEnabled(true);
+        // 「新建即可不启用」：以 config.enabled 为唯一意图来源（缺省启用，保持既有行为）。
+        // 此前硬编码 true ⇒ 管理员即便想先建后审也建不出「未启用」的专家。
+        row.setEnabled(enabledIntent(body.config()));
         row.setSort(body.sort() == null ? 100 : body.sort());
         // 平台管理员自建即生效：内容是平台自己写的，不需要「自己审自己」
         row.setAuditStatus(ContentReviewService.APPROVED);
@@ -338,6 +347,107 @@ public class ExpertConfigController {
         out.put("hint", created
                 ? "模板已创建，租户端「从模板导入」即可看到并导入"
                 : "模板已更新；已导入的租户副本不会自动同步，需租户再次导入");
+        return ApiResponse.ok(out);
+    }
+
+    /**
+     * 删除专家。
+     *
+     * <p><b>删的是「调用者自己名下的那一行」</b>，与列表口径同源（铁律 #1）：
+     * 平台管理员 → 全局模板（{@code tenant_id=0}）；租户 / 企业管理员 → 本租户副本。
+     * 这也解释了平台管理员的列表里只有全局模板 —— 他没有「别人的租户副本」可删。</p>
+     *
+     * <p><b>级联</b>：{@code expert_config} 中该 {@code expert_key} 的片段
+     * + 挂靠它的 {@code ai_skill} 行。不做级联会让同一 key 日后被重建时旧片段
+     * <b>静默复活</b>（表现为「新建的专家一上来就是关的 / 提示词是上一轮留下的」）。</p>
+     *
+     * <p>片段要分两段清：先清<b>调用者自己名下</b>的（{@link ExpertConfigService#deleteAll}），
+     * 再在「该 key 已全局消失」时清<b>跨租户的孤儿片段</b>
+     * （{@link ExpertConfigService#deleteAllExceptTenants}，保留仍持有副本的租户）。
+     * 只清前者会漏掉「某租户没导入副本、只是把它停用过」而留下的片段 ——
+     * 实测正是这条会在重建时把新专家置为「关」。</p>
+     *
+     * <p><b>守卫</b>（都返回明确文案，绝不静默成功）：</p>
+     * <ul>
+     *   <li><b>默认 AI 不可删</b> —— 否则用户端「未选功能」时会落到一个已不存在的专家；
+     *       判据与目录兜底同源（{@link CatalogService#defaultExpertKey}），不另判一次；</li>
+     *   <li><b>全局模板已被租户导入</b> —— 默认拒绝并告知副本数量，需显式 {@code force=true}
+     *       才继续，避免一次点击静默让多个租户的目录缺角。</li>
+     * </ul>
+     */
+    @DeleteMapping("/experts/{key}")
+    public ApiResponse<Map<String, Object>> deleteExpert(@PathVariable("key") String key,
+                                                         @RequestParam(value = "force", required = false) Boolean force) {
+        AuthUser user = requireAdmin();
+        long tid = user.getTenantId() == null ? 0L : user.getTenantId();
+
+        AiExpert row = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                .eq(AiExpert::getTenantId, tid)
+                .eq(AiExpert::getExpertKey, key));
+        if (row == null) {
+            throw BizException.notFound("未找到可删除的专家：" + key
+                    + (tid == 0L ? "（平台管理员删除的是全局模板）" : "（租户管理员删除的是本租户副本）"));
+        }
+
+        // 守卫①：默认 AI 不可删（判据与用户端兜底同源）
+        if (key.equals(catalogService.defaultExpertKey(tid))) {
+            throw BizException.badRequest("「" + row.getName() + "」当前是默认 AI，不能删除；"
+                    + "请先把默认 AI 换成其他专家，再删除它");
+        }
+
+        // 守卫②：删全局模板前确认没有租户已导入副本
+        List<AiExpert> copies = List.of();
+        if (tid == 0L) {
+            copies = expertMapper.selectList(new LambdaQueryWrapper<AiExpert>()
+                    .ne(AiExpert::getTenantId, 0L)
+                    .eq(AiExpert::getExpertKey, key));
+            if (!copies.isEmpty() && !Boolean.TRUE.equals(force)) {
+                // 用 409 而不是 400：前端据此判断「这是可 force 的软拒绝」并弹二次确认，
+                // 无需去匹配文案（GlobalExceptionHandler 只把 401/403/404 映射成 HTTP 状态，
+                // 409 仍是 HTTP 200 + code=409，走统一信封）。
+                throw new BizException(409, "该模板已被 " + copies.size()
+                        + " 个租户导入为副本，删除后它们仍需自行处理；如确认要删，请带 force=true 重试");
+            }
+        }
+
+        // 级联：配置片段 + 挂靠技能（都是物理删除，理由见两个 mapper 的注释）
+        int purgedConfigs = configService.deleteAll(tid, key);
+        int purgedSkills = skillMapper.hardDeleteByExpert(tid, key);
+        int deletedRows = expertMapper.hardDeleteById(row.getId());
+        if (deletedRows == 0) {
+            // 并发下被别人先删了：不静默，明确告知本次未删到东西
+            throw BizException.notFound("专家已被删除或不存在：" + key);
+        }
+
+        // 级联兜底：清掉**跨租户的孤儿片段**。
+        // 为什么需要：deleteAll(tid, key) 只清了调用者自己名下的片段，而租户可以在
+        // **没有导入副本**的情况下写过片段（典型：某租户把这个专家停用了，
+        // 落一条 expert_config(tenant_id=2, expert_key=x, enabled=false)）。
+        // 这些片段留着不会「立刻」出错，但同一 key 日后重建时会**静默复活** ——
+        // 新专家在那个租户那里一上来就是「关」的，正是本轮用户报的那类缺陷。
+        //
+        // 只在「该 key 已全局消失」时才清：全局模板仍在时，各租户对它的覆盖片段
+        // （含「本租户停用它」）依然有意义，动了就是删别人的数据。
+        List<Long> aliveTenants = expertMapper.selectList(new LambdaQueryWrapper<AiExpert>()
+                        .eq(AiExpert::getExpertKey, key))
+                .stream().map(AiExpert::getTenantId).distinct().collect(Collectors.toList());
+        if (!aliveTenants.contains(0L)) {
+            purgedConfigs += configService.deleteAllExceptTenants(key, aliveTenants);
+        }
+
+        log.info("expert deleted: tenant={} expert={} by={} configs={} skills={} copiesLeft={}",
+                tid, key, user.getUsername(), purgedConfigs, purgedSkills, copies.size());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("expertKey", key);
+        out.put("name", row.getName());
+        out.put("tenantId", tid);
+        out.put("purgedConfigs", purgedConfigs);
+        out.put("purgedSkills", purgedSkills);
+        out.put("tenantCopiesLeft", copies.size());
+        out.put("hint", tid == 0L
+                ? "全局模板已删除；已导入该模板的租户副本需各自删除"
+                : "本租户副本已删除（全局模板不受影响）");
         return ApiResponse.ok(out);
     }
 
@@ -387,6 +497,20 @@ public class ExpertConfigController {
 
     private static String blankTo(String v, String fallback) {
         return v == null || v.isBlank() ? fallback : v.trim();
+    }
+
+    /**
+     * 从模板入参的 {@code config} 片段读「是否启用」意图；缺省视为启用。
+     *
+     * <p>只认字符串 {@code "false"} 为关闭，避免 {@code get("enabled")} 在不同
+     * 序列化形态（Boolean / "false"）下判断分叉。</p>
+     */
+    private static boolean enabledIntent(Map<String, Object> config) {
+        if (config == null) {
+            return true;
+        }
+        Object v = config.get("enabled");
+        return v == null || !"false".equalsIgnoreCase(String.valueOf(v));
     }
 
     private AuthUser requireUser() {

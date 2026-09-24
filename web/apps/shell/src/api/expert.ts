@@ -152,3 +152,33 @@ export function deleteExpertConfig(key: string, scopeType: string, scopeId = 0):
     .delete(`/expert-config/experts/${key}/config`, { params: { scopeType, scopeId } })
     .then((r) => unwrap<boolean>(r))
 }
+
+export interface ExpertDeleteResult {
+  expertKey: string
+  name?: string
+  tenantId?: number
+  /** 被级联清理的配置片段条数 */
+  purgedConfigs?: number
+  /** 被级联清理的挂靠技能条数 */
+  purgedSkills?: number
+  /** 删除全局模板后仍存在的租户副本数 */
+  tenantCopiesLeft?: number
+  hint?: string
+}
+
+/**
+ * 删除专家。
+ *
+ * 删除的是「调用者自己名下的那一行」：平台管理员 → 全局模板；租户 / 企业管理员 → 本租户副本
+ * （与列表口径同源，见后端 `ExpertConfigController#deleteExpert`）。
+ *
+ * 后端会**级联**清理该专家的配置片段与挂靠技能（物理删除，避免同一 key 重建时旧配置静默复活）。
+ * 两类守卫会返回业务错误（HTTP 200 + code≠0，由 `unwrap` 抛出）：
+ * - 该专家是「默认 AI」⇒ 需先把默认 AI 换成别的；
+ * - 全局模板已被租户导入 ⇒ 需 `force = true` 才会继续。
+ */
+export function deleteExpert(key: string, force = false): Promise<ExpertDeleteResult> {
+  return http
+    .delete(`/expert-config/experts/${key}`, { params: { force } })
+    .then((r) => unwrap<ExpertDeleteResult>(r))
+}
