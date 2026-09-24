@@ -2,7 +2,7 @@
 # ==============================================================================
 # AIOA · 离线镜像搬运（deploy/ops/offline-images.sh）
 # ------------------------------------------------------------------------------
-# 场景：目标机（10.0.0.12）**拉不到 Docker Hub**（`dial tcp …:443: i/o timeout`），
+# 场景：目标机（10.0.0.3）**拉不到 Docker Hub**（`dial tcp …:443: i/o timeout`），
 #       而 compose 需要应用镜像 → 在**能上外网的机器**上导出成一个包，搬到目标机导入。
 #
 # ★ 单端口部署（docs/33）后，需要搬的镜像**只有 2 张**，而且全是本地构建：
@@ -21,7 +21,7 @@
 #   bash deploy/ops/offline-images.sh export            # 产出 aioa-images.tar.gz
 #   scp aioa-images.tar.gz root@<目标机>:/opt/aioa/
 #
-# ─── 在目标机 10.0.0.12 上 ────────────────────────────────────────────────────
+# ─── 在目标机 10.0.0.3 上 ────────────────────────────────────────────────────
 #   cd /opt/aioa
 #   bash deploy/ops/offline-images.sh import aioa-images.tar.gz
 #   bash deploy/ops/offline-images.sh list              # 核对齐备
@@ -86,7 +86,7 @@ do_export() {
   ls -lh "$out_abs" | sed 's/^/  /'
 
   hr "完成：把包拷到目标机（用隧道机 → 真实服务器那条既有通道）"
-  echo "  scp $out_abs root@10.0.0.12:/opt/aioa/"
+  echo "  scp $out_abs root@10.0.0.3:/opt/aioa/"
   echo "  目标机执行："
   echo "    cd /opt/aioa && bash deploy/ops/offline-images.sh import $out"
   echo "    cd /opt/aioa/deploy && docker compose up -d server agent   # 不要加 --build"

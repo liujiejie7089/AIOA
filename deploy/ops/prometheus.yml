@@ -22,7 +22,7 @@ global:
 
 scrape_configs:
   # ⚠️ 仅在用本 compose 自带的 Milvus 栈（`--profile milvus`）时，milvus/etcd 这两个
-  #    target 才存在。本部署（10.0.0.12）**复用外部 milvus-standalone、不开该 profile**，
+  #    target 才存在。本部署（10.0.0.3）**复用外部 milvus-standalone、不开该 profile**，
   #    所以这两个 job 会一直 down —— 属预期，可整段删掉；要用请改指外部地址。
   - job_name: milvus
     metrics_path: /metrics

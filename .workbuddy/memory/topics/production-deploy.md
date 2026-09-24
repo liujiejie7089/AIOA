@@ -1,8 +1,11 @@
-# 生产部署（目标机 10.0.0.12）
+# 生产部署（目标机 10.0.0.3）
 
-> 2026-09-19 建立；**2026-09-20 目标机由 192.168.2.130 改为 10.0.0.12**（Milvus `19530`、**无鉴权**）。
+> 2026-09-19 建立；**2026-09-20 目标机由 192.168.2.130 改为 10.0.0.12**；
+> **2026-09-24 应用机由 `10.0.0.12` 改为 `10.0.0.3`**（用户确认口径：**只换应用机**，
+> Milvus 随应用机变为 `10.0.0.3:19530`；MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` **不动**）。
+> Milvus `19530`、**无鉴权**。
 > **2026-09-20 第二批：三件套全部落到已有外部实例** —— MySQL `10.0.0.5:13049`（**非默认端口**）/ 库 `aioa` / 用户 `aioa`；
-> Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus 仍是 `10.0.0.12:19530` 无鉴权。真实口令只在 `deploy/.env`。
+> Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus 仍是 `10.0.0.3:19530` 无鉴权。真实口令只在 `deploy/.env`。
 > **2026-09-21 第三批（定案）：五件基础设施全在外部 / 用户不用边缘 nginx / MinIO 被证实未被使用。**
 > 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ §5.2 静态前端放哪 + 验收 + 故障对照表）。
 
@@ -18,7 +21,7 @@
   · H5 = 仓库里的 `user-client/index.html`（**单文件、零构建**）；
   · 管理端 = `aioa-web` 镜像里的 `/usr/share/nginx/html`，**不必跑容器**：
     `docker create _tmpweb aioa-web` + `docker cp _tmpweb:/usr/share/nginx/html/. <root>` + `docker rm _tmpweb`。
-  · 宿主 nginx 把 `/api/` 反代到 `http://10.0.0.12:8080/`（抄 `deploy/nginx/api-proxy.conf`）。
+  · 宿主 nginx 把 `/api/` 反代到 `http://10.0.0.3:8080/`（抄 `deploy/nginx/api-proxy.conf`）。
 
 ## ★★ MinIO 被证实「应用代码不使用」（2026-09-21 全仓核对）
 
@@ -41,7 +44,7 @@
 
 ## 拓扑与「复用而非托管」原则
 - 单机 Docker Compose。**本次入口由用户已有的 nginx 提供**（在别的机器上）：
-  `/api/` 反代 `http://10.0.0.12:8080/`，H5 与管理端静态按 §5.2 放。
+  `/api/` 反代 `http://10.0.0.3:8080/`，H5 与管理端静态按 §5.2 放。
 - **MySQL / Redis / Milvus / MinIO / nginx 全在外部**，本 compose **不托管**它们。
 - 完整档（自带 nginx，80=H5 / 81=管理端）仍然保留可用：不叠加 backend.yml 即可，
   `deploy/nginx/nginx.conf` = 两个 `server` 块（80 静态托管 H5、81 代理 `aioa_web`），
@@ -67,7 +70,7 @@
 |---|---|---|
 | `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.5` / `13049` / `aioa` / `aioa` / （见 `.env`） | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*`。**13049 不是 3306** —— 写错端口现象是连不上/超时，不是鉴权失败 |
 | `REDIS_HOST` / `_PORT` + `SPRING_REDIS_PASSWORD` / `SPRING_REDIS_DATABASE` | `10.0.0.7` / `6379` / （有口令，见 `.env`） / `0` | **★真正生效的 Redis 键**。该实例**有 requirepass** ⇒ 口令漏填现象是 `NOAUTH Authentication required` |
-| `AIOA_MILVUS_URI` | `http://10.0.0.12:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
+| `AIOA_MILVUS_URI` | `http://10.0.0.3:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
 | `AIOA_MILVUS_TOKEN` | 空 | 该 Milvus **无鉴权** ⇒ 必须留空（填了会认证失败） |
 | `AIOA_KB_STORE` | `milvus` | Milvus 不可达 ⇒ 后端**启动失败**（刻意 fail-fast） |
 | `AIOA_KB_EMBEDDING_PROVIDER` | `http` | `local`=256 维哈希无语义，生产必须 `http` |
@@ -197,7 +200,7 @@
 - 已加 `.gitattributes`：`*.sh` / `deploy/ops/*.py` / `deploy/.env*` / `.env*` 强制 `eol=lf`。
 
 ### E. 访问与仓库来源（未决）
-- 公网直连 `10.0.0.12:22` **不通**；隧道 `219.151.186.24:22` —— 用户给的写法（`root/Ego2025` 等 5 种变体 ×
+- 公网直连 `10.0.0.3:22` **不通**；隧道 `219.151.186.24:22` —— 用户给的写法（`root/Ego2025` 等 5 种变体 ×
   3 个用户名 × password/keyboard-interactive）**全部认证被拒**，其余 7 个常见转发端口也不通
   （仅 22 是 SSH，`OpenSSH_8.9p1 Ubuntu`）⇒ **agent 无法直连该机，只能把脚本交给用户在服务器上跑**。
 - `origin` = **Gitea `http://172.16.8.249:3000/liujiejie/AIOA_System.git`**（不是 GitHub），
@@ -207,7 +210,7 @@
 ## ★ 2026-09-21 三机角色与「分两包」的依据
 
 **角色固定**：本地（改码/推码）→ **隧道机 `219.151.186.24`（唯一能碰到真实服务器的跳板）** →
-**真实服务器 `10.0.0.12`（无外网）**。任何文件都只能经隧道机中转。
+**真实服务器 `10.0.0.3`（无外网）**。任何文件都只能经隧道机中转。
 
 **两个容错事实（决定了 Ollama 可以后补，不必一次搬 2.3G）**：
 1. `EmbeddingConfig.embeddingProvider()` 启动时**只装配 Bean、不校验连通性**；
@@ -230,7 +233,7 @@
 
 | 容器 | 镜像 | 对 AIOA |
 |---|---|---|
-| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（`AIOA_MILVUS_URI=http://10.0.0.12:19530`）；`≥2.5` ⇒ BM25 可开 |
+| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（`AIOA_MILVUS_URI=http://10.0.0.3:19530`）；`≥2.5` ⇒ BM25 可开 |
 | `milvus-etcd` | `etcd:v3.5.25` | ➖ Milvus 配套，不用单独连 |
 | `mongodb` | `mongo:latest` | ❌ 别的系统 |
 | `rmqbroker` / `rmqnamesrv` | `apache/rocketmq:4.9.6` | ❌ 别的系统 |

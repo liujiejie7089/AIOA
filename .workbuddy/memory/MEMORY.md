@@ -12,7 +12,7 @@
 | 知识库 / 检索 / 向量库 | `topics/vector-store-milvus.md` |
 | 仓库联动 Gitee/Gitea | `topics/repo-provider-gitea.md` |
 | 模型管理 / 手动添加模型 / 默认模型 | `topics/model-config.md`（V61，默认=MiniMax） |
-| **生产部署（10.0.0.12）** | `topics/production-deploy.md` + `deploy/生产部署手册.md` |
+| **生产部署（10.0.0.3）** | `topics/production-deploy.md` + `deploy/生产部署手册.md` |
 | 已知缺口 /「判定不改」的数据 | `topics/known-gaps.md` |
 | git 推送 | `topics/git-remote.md` |
 | 进度口径 | `docs/28 §6`（未开工项唯一权威）· `docs/19`（七项优先事项） |

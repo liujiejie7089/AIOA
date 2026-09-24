@@ -24,12 +24,12 @@
 
 ## 8. 「知识库用 Milvus」的口径收敛（2026-09-21 补）
 
-- **用户口径确认**：知识库存储 = **Milvus**（不是 mysql），嵌入 = **local**（256 维），**不部署 Ollama**。这与 §7 的「本次部署档位」一致，无需改代码；生产档 `deploy/.env.production` 已是 `AIOA_KB_STORE=milvus` + `AIOA_MILVUS_URI=http://10.0.0.12:19530` + `AIOA_MILVUS_DIMS=256` + 集合 `kb_chunk_v1_256`。
+- **用户口径确认**：知识库存储 = **Milvus**（不是 mysql），嵌入 = **local**（256 维），**不部署 Ollama**。这与 §7 的「本次部署档位」一致，无需改代码；生产档 `deploy/.env.production` 已是 `AIOA_KB_STORE=milvus` + `AIOA_MILVUS_URI=http://10.0.0.3:19530` + `AIOA_MILVUS_DIMS=256` + 集合 `kb_chunk_v1_256`。
 - **本次把两份 env 里「看着像依赖 Ollama」的残留值改成中性/留空**（只改值不改键，两份键序已对齐）：
   · `OLLAMA_BASE_URL` 由 `http://ollama:11434/v1` → **留空**（本环境不部署 Ollama；选中该 provider 会降级 echo，属预期）；
   · 生产 `AIOA_KB_EMBEDDING_URL`（原 `http://ollama:11434/api/embeddings`）与 `AIOA_KB_EMBEDDING_MODEL` → **留空**并注明「provider=local 时不读，切 http 档才填」；
   · `AIOA_KB_EMBEDDING_FORMAT=ollama` **保留**（它是「接口形态」枚举 ollama|openai，不是「要部署 Ollama」），行内加注说明。
 - **修掉开发档一个真陷阱**：`.env.development` 原本 `AIOA_KB_EMBEDDING_DIMS=512` + `AIOA_MILVUS_DIMS=512` + 集合 `kb_chunk_v1`，而同文件 `AIOA_KB_EMBEDDING_PROVIDER=local`（**代码写死 256**）⇒ 一旦开发机把 `AIOA_KB_STORE` 改成 milvus，`MilvusConfig.assertDimsAgree` 会**启动即失败**（256 vs 512）。已统一为 **256 + 集合 `kb_chunk_v1_256`**，与生产档口径一致。开发档仍是 `store=mysql`，本次改动只影响「将来切 milvus」这一步。
-- **本机无法验证生产 Milvus**：`10.0.0.12:19530` 从开发机 `timeout 6 bash -c 'cat < /dev/tcp/10.0.0.12/19530'` **不可达**（超时）⇒ `store=milvus` 的活体自建集合/混合检索/回填仍未实测，判据与补验步骤见 §7 与 `docs/32 §11.3`。本机 :8080 跑的是 `store=mysql`。
+- **本机无法验证生产 Milvus**：`10.0.0.3:19530` 从开发机 `timeout 6 bash -c 'cat < /dev/tcp/10.0.0.3/19530'` **不可达**（超时）⇒ `store=milvus` 的活体自建集合/混合检索/回填仍未实测，判据与补验步骤见 §7 与 `docs/32 §11.3`。本机 :8080 跑的是 `store=mysql`。
 - **首次切 milvus 必做一次**：`AIOA_MILVUS_BACKFILL=true`（新集合是空的；不回填不报错，只是 Milvus 里没有历史数据，极易误判成「没落库」）+ 如需重算向量再开 `AIOA_KB_REEMBED_ON_START=true`，两项跑完都改回 false。
 

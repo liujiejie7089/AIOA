@@ -2,7 +2,7 @@
 # AIOA 一键部署（生产可用）
 # - 数据库 / Redis / Milvus / MinIO：**都在外部主机、不由本 compose 托管**，地址由 .env 注入
 #     MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa）　Redis = 10.0.0.7:6379
-#     Milvus = 10.0.0.12:19530（无鉴权）
+#     Milvus = 10.0.0.3:19530（无鉴权）
 #     MinIO = 别处有（172.16.8.249:9000）但**应用代码根本不读它**，见文件内注释 ⇒ 不需要接、不需要搬镜像
 #     （下面 `${MYSQL_HOST:-…}` 的默认值只是「没传 .env 时的兜底」，**部署时必须用 .env 覆盖**；
 #      默认值已与本次环境对齐，但真实口令不在默认值里）
@@ -166,8 +166,8 @@ services:
       AIOA_WEB_WEB_DIR: /app/web
 
       # ---- 知识库存储与嵌入（docs/32 向量库 Milvus）----
-      # 默认 mysql（零新增依赖）。目标机 10.0.0.12 上**已有** milvus-standalone ⇒
-      # 本部署用 .env 的 AIOA_KB_STORE=milvus + AIOA_MILVUS_URI=http://10.0.0.12:19530
+      # 默认 mysql（零新增依赖）。目标机 10.0.0.3 上**已有** milvus-standalone ⇒
+      # 本部署用 .env 的 AIOA_KB_STORE=milvus + AIOA_MILVUS_URI=http://10.0.0.3:19530
       # 指向那台**现成实例**，此时**不要**加 `--profile milvus`
       # （本 compose 自带的那套会与现成的 19530/9091 端口冲突而启动失败）。
       # 只有目标机没有 Milvus 时，才用 `--profile milvus` 起文末那套自带栈。
@@ -244,7 +244,7 @@ services:
     # ★ 单端口对外入口（docs/33）：H5 / 管理端 / 接口全由本进程提供 ⇒ 必须发布到宿主。
     #   原 `docker-compose.backend.yml` 唯一的作用就是补这一行端口，现已并入主文件
     #   （不存在「带 nginx 的另一种档」了 ⇒ 也就不用 `-f -f` 叠加）。
-    #   要多机部署时改绑内网地址，如 "10.0.0.12:8080:8080"。
+    #   要多机部署时改绑内网地址，如 "10.0.0.3:8080:8080"。
     ports:
       - "8080:8080"
     volumes:
@@ -352,8 +352,8 @@ services:
   # ===========================================================================
   # 可选：向量库 Milvus 栈（profile=milvus，docs/32）
   #
-  # ⚠️ 本部署（10.0.0.12）**不用这一段** —— 该机已有 milvus-standalone，
-  #    走 .env 的 AIOA_MILVUS_URI=http://10.0.0.12:19530 复用现成实例；
+  # ⚠️ 本部署（10.0.0.3）**不用这一段** —— 该机已有 milvus-standalone，
+  #    走 .env 的 AIOA_MILVUS_URI=http://10.0.0.3:19530 复用现成实例；
   #    加了 `--profile milvus` 会因 19530/9091 端口被占而启动失败。
   #
   # 启用（server 的 AIOA_KB_STORE 必须同时为 milvus，否则 server **启动失败**——决策 D6 fail-fast）：
