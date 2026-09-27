@@ -1,5 +1,5 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source'
-import { http, unwrap } from './index'
+import { http, unwrap, API_BASE } from './index'
 import type { PageContextSnapshot } from '@/types'
 
 export interface CreateRunPayload {
@@ -40,7 +40,8 @@ export async function streamRun(options: {
   const headers: Record<string, string> = { Accept: 'text/event-stream' }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  await fetchEventSource(`/api/v1/runs/${runId}/events`, {
+  // SSE 不走 axios，必须自己拼基址 —— 与 axios 的 baseURL 同源于 API_BASE（见 index.ts）
+  await fetchEventSource(`${API_BASE}/runs/${runId}/events`, {
     method: 'GET',
     headers,
     signal,

@@ -5,8 +5,23 @@ export const TOKEN_KEY = 'aioa.token'
 export const REFRESH_TOKEN_KEY = 'aioa.refreshToken'
 export const USER_KEY = 'aioa.user'
 
+/**
+ * 接口基址。
+ *
+ * <p>生产：产物挂在 `https://<域名>/aioa/web/` 下，而**外网入口只反代 `/aioa/`**
+ * （原样转发、不剥前缀）⇒ 写死根路径 `/api/v1` 会打到域名根下未被代理的路径，全部 404。
+ * dev：Vite base 为 `/`（见 vite.config.ts，本地 10+ 套 UI 套件都按 `localhost:5173/xxx` 跑），
+ * 走 vite 的 `/api` 代理即可。</p>
+ *
+ * <p>两者同源于 `import.meta.env.BASE_URL`（router 的 createWebHistory 也用它），
+ * 不再各写一份 —— 生产 `/aioa/web/` ⇒ `/aioa/api/v1`，dev `/` ⇒ `/api/v1`。
+ * 用户端 H5 的 `apiBaseFromPath()` 是同一口径（`/aioa/h5/` ⇒ `/aioa/api`）。</p>
+ */
+const API_PREFIX = import.meta.env.BASE_URL.replace(/web\/$/, '').replace(/\/$/, '')
+export const API_BASE = `${API_PREFIX}/api/v1`
+
 export const http = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' }
 })

@@ -48,7 +48,9 @@ RUN grep -q 'aioa_session' /out/h5/index.html || \
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 # 逐个 COPY pom.xml 只为让 dependency:go-offline 能真正成功（拿到完整依赖图，构建更快）。
-# 少一个模块的 pom 这一步就会失败 —— 虽然下面 `|| true` 不会中断构建，但缓存层就废了。
+# ★ 不变量：**server/pom.xml 的每个 <module> 都必须在这里有一行**。少一个 ⇒ Maven 加载聚合 pom 时
+#   报「Child module … does not exist」，虽然下面 `|| true` 不会中断构建，但 go-offline 整层失效
+#   （每次构建都全量下依赖）。该清单由 scripts/_check_single_port.py 的 c13 按 pom 的 <modules> 核对。
 COPY server/pom.xml ./
 COPY server/aioa-common/pom.xml aioa-common/
 COPY server/aioa-security/pom.xml aioa-security/
@@ -59,7 +61,11 @@ COPY server/aioa-admin/pom.xml aioa-admin/
 COPY server/aioa-resource/pom.xml aioa-resource/
 COPY server/aioa-org/pom.xml aioa-org/
 COPY server/aioa-gitee/pom.xml aioa-gitee/
+COPY server/aioa-integration-scfy/pom.xml aioa-integration-scfy/
 COPY server/aioa-boot/pom.xml aioa-boot/
+# Maven 设置：只把默认的 **central** 重定向到阿里云公共仓库，供「到 repo.maven.apache.org
+# 慢/不通」的应用机使用（见文件内注释；也可换成内网 nexus）。COPY 会自动创建 /root/.m2。
+COPY deploy/maven-settings.xml /root/.m2/settings.xml
 RUN mvn -q -B dependency:go-offline -pl aioa-boot -am || true
 COPY server/ ./
 RUN mvn -q -B -DskipTests package -pl aioa-boot -am

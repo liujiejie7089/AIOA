@@ -59,8 +59,13 @@ REMOVED_SERVICES = ("ollama", "web")
 # 入口 nginx（2026-09-24 新增）：compose 服务定义与配置文件必须同源
 NGINX_CONF = "deploy/nginx/aioa-entry.conf"
 
+# 管理端 SPA 的接口基址落点（2026-09-27）：axios 实例与不走 axios 的 SSE 各一处。
+# 外网入口只反代 `/aioa/`，写成根路径 `/api/v1` ⇒ 管理端每个接口 404（页面能开、数据全空）。
+SHELL_API = "web/apps/shell/src/api/index.ts"
+SHELL_RUNS = "web/apps/shell/src/api/runs.ts"
+
 FILES = [COMPOSE, DOCKERFILE, APP_YML, PROPS, PREFIX_CFG, SUPPORT, STATIC_CFG, SECURITY,
-         SHELL_ROUTER, H5, NGINX_CONF, *VITE.values()]
+         SHELL_ROUTER, SHELL_API, SHELL_RUNS, H5, NGINX_CONF, *VITE.values()]
 
 _OVERRIDES: dict[str, str | None] = {}   # selftest 用：rel -> 替换文本（None = 视为不存在）
 
@@ -351,6 +356,71 @@ def c11_nginx_entry() -> tuple[list, list]:
     return f, w
 
 
+def _strip_js_comments(src: str) -> str:
+    """去掉 `//` 行注释与 `/* */` 块注释。
+
+    断言绝不能被**注释**满足 —— 那样的断言恒真，比没有断言更危险（负向自检就是靠这个发现的：
+    最初 c12 的「必须同源 BASE_URL」被上面那段 JSDoc 里的同名文字满足，把代码改回硬编码也不会报红）。
+    """
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return re.sub(r"^\s*//.*$", "", src, flags=re.M)
+
+
+def c12_shell_api_base() -> tuple[list, list]:
+    """管理端 SPA 的接口基址必须**带前缀**（与 H5 的 apiBaseFromPath 同口径）。
+
+    背景（2026-09-27 实测）：外网入口是共用域名 + `location /aioa/`（原样转发、**不剥前缀**）。
+    SPA 若把 axios baseURL 写死根路径 `/api/v1`，浏览器会打到域名根下**未被代理**的路径
+    ⇒ 管理端每个接口 404，症状是「页面能开、列表/登录全空」。用户端 H5 早已按 pathname 推导
+    （`/aioa/h5/` ⇒ `/aioa/api`），只有 SPA 漏了 —— 因为本机 44 个套件都直打 `:8080/api/**`，
+    根路径在本地**一直是对的**，缺陷只在生产入口暴露。
+
+    两处落点：axios 实例（index.ts）与不走 axios 的 SSE（runs.ts，fetchEventSource 自己拼 URL）。
+    判据取「同源于 import.meta.env.BASE_URL」：生产 `/aioa/web/` ⇒ `/aioa/api/v1`，
+    dev `/` ⇒ `/api/v1`（走 vite 代理），dev 与生产不必各写一份。
+    """
+    f, w = [], []
+    idx = _strip_js_comments(read(SHELL_API))
+    if "import.meta.env.BASE_URL" not in idx:
+        f.append("%s 的接口基址没接 import.meta.env.BASE_URL（写死路径 ⇒ 外网只反代 /aioa/ 时接口全 404）"
+                 % SHELL_API)
+    if not re.search(r"baseURL\s*:\s*API_BASE\b", idx):
+        f.append("%s 的 axios baseURL 不是 API_BASE（不得写死 '/api/v1'）" % SHELL_API)
+    if re.search(r"['\"]/api/v1['\"]", idx):
+        f.append("%s 出现了字面量 '/api/v1'（根路径；生产前缀形态下必 404）" % SHELL_API)
+
+    runs = _strip_js_comments(read(SHELL_RUNS))
+    if "API_BASE" not in runs:
+        f.append("%s 的 SSE 端点未接 API_BASE（fetchEventSource 不走 axios，必须自己拼基址）" % SHELL_RUNS)
+    if re.search(r"fetchEventSource\(\s*[`'\"]/api/v1", runs):
+        f.append("%s 的 SSE 端点仍是根路径 /api/v1/…（同上必 404）" % SHELL_RUNS)
+    return f, w
+
+
+def c13_dockerfile_module_poms() -> tuple[list, list]:
+    """Dockerfile.server 的模块 pom COPY 清单必须与 server/pom.xml 的 `<modules>` 完全一致。
+
+    少一个 ⇒ Maven 加载聚合 pom 时报「Child module … does not exist」。该行带 `|| true`
+    所以**不会中断构建**（这正是它能长期潜伏的原因），代价是 `dependency:go-offline`
+    整层失效：每次都全量下依赖，在受限网络下从「几分钟」变成「反复超时」。
+    同类缺陷见 docs/33 排查记（Dockerfile.web 漏 COPY tsconfig.base.json）。
+    """
+    f, w = [], []
+    modules = re.findall(r"<module>\s*([^<\s]+)\s*</module>", read("server/pom.xml"))
+    if not modules:
+        f.append("server/pom.xml 里找不到 <modules>（聚合 pom 结构变了？）")
+        return f, w
+    copied = set(re.findall(r"^COPY\s+server/([^/\s]+)/pom\.xml\s", read(DOCKERFILE), re.M))
+    missing = [m for m in modules if m not in copied]
+    extra = sorted(x for x in copied if x not in modules)
+    if missing:
+        f.append("%s 漏 COPY 模块 pom：%s（聚合 pom 声明了它 ⇒ Maven 报 Child module … does not exist，"
+                 "go-offline 缓存层失效）" % (DOCKERFILE, "、".join(missing)))
+    if extra:
+        w.append("%s COPY 了不在 <modules> 里的模块：%s" % (DOCKERFILE, "、".join(extra)))
+    return f, w
+
+
 CHECKS = [
     ("compose 服务集合", c1_compose_services),
     ("compose 无残留行", c2_compose_no_stale_artifacts),
@@ -363,6 +433,8 @@ CHECKS = [
     ("H5 基址推导", c9_h5_base_derivation),
     ("静态根本地提示", c10_static_root_local_note),
     ("入口 nginx（/web · /user）", c11_nginx_entry),
+    ("管理端接口基址带前缀", c12_shell_api_base),
+    ("Dockerfile 模块 pom 清单", c13_dockerfile_module_poms),
 ]
 
 
@@ -429,6 +501,16 @@ MUTATIONS = [
      lambda t: t.replace("return 302 /aioa/web/;", "return 302 /web/;")),
     ("c11", "/user 路由被删", NGINX_CONF,
      lambda t: t.replace("location /user/ {", "location /nope/ {", 1)),
+    # ---- c12 管理端接口基址（2026-09-27）----
+    ("c12", "SPA axios 基址写回根路径", SHELL_API,
+     lambda t: t.replace("baseURL: API_BASE", "baseURL: '/api/v1'")),
+    ("c12", "SPA 基址不再同源 BASE_URL", SHELL_API,
+     lambda t: t.replace("import.meta.env.BASE_URL.replace(", "('/aioa/web/').replace(", 1)),
+    ("c12", "SSE 端点写回根路径", SHELL_RUNS,
+     lambda t: t.replace("`${API_BASE}/runs/${runId}/events`", "`/api/v1/runs/${runId}/events`", 1)),
+    # ---- c13 Dockerfile 模块 pom 清单（2026-09-27）----
+    ("c13", "Dockerfile 漏 COPY 某模块 pom", DOCKERFILE,
+     lambda t: t.replace("COPY server/aioa-integration-scfy/pom.xml aioa-integration-scfy/\n", "", 1)),
 ]
 
 
