@@ -219,7 +219,7 @@
     所以 `/user/` 可以用**内部 rewrite** 到 `/aioa/h5/` 而不跳转。
     **通则**：**先判断目标的 base 语义**（有没有 base path / 是不是单文件 / 是否按 pathname 推 API），
     再决定 redirect 还是 rewrite —— 两者不可互换。改这类入口后要跑
-    `scripts/_check_single_port.py`（现 **11 项 + 22 项负向 mutation**）确认 `/web` 的 302 跳转语义与
+    `scripts/_check_single_port.py`（现 **13 项 + 26 项负向 mutation**）确认 `/web` 的 302 跳转语义与
     `/user/` 的 rewrite 语义都还在。
 71. **「固定宿主端口」在目标机上被占用 ⇒ 部署就起不来；覆盖口必须走 `.env`，不能靠改 compose。**
     现象：`docker compose up -d server agent` 报 `port is already allocated`。本案是 `0.0.0.0:8000`
@@ -245,3 +245,26 @@
     （不能再算「已摘除的边缘组件…compose 已不声明该服务」）。
     **通则**：加可选服务时，先问「它会不会进默认 `up` 集合」；会，就门控。
     并顺手检查三类文档里对它的**历史描述**是否已失真。
+73. **前端写死「根路径」接口基址 ⇒ 本地全绿、只在「共用域名 + 只反代子路径」的生产入口暴露。**
+    现场：公网 `https://mall.egooaicloud.com/aioa/web/` 页面能开，但**所有接口 404**；
+    在应用机上直连 `:8080/aioa/web/` 却一切正常。根因：管理端 SPA 的 `axios.create({baseURL:'/api/v1'})`
+    与 SSE `` `/api/v1/runs/…` ``（`fetchEventSource` **不走 axios**，必须自己拼）都是**根绝对路径**；
+    浏览器把它解析成 `https://域名/api/v1/**`，而外网入口只有 `location /aioa/` ⇒ 无人代理。
+    ★ **为什么能长期潜伏**：后端是**双前缀并存**（`/aioa/api/**` 剥成 `/api/**`，`/api/**` 也保留），
+    本地 44 个套件直打 `:8080/api/**`、vite dev 又代理 `/api` ⇒ **本地全是对的**。
+    只有「共用域名只反代 `/aioa/`」这一种拓扑才会 404。
+    **通则**：只要产物被挂在子路径下（`base=/aioa/web/`），**根绝对路径就是错的**；
+    基址必须与 `import.meta.env.BASE_URL`（或等价的 base 变量）**同源**，且要**逐一找出不走 axios 的调用**
+    （SSE / `EventSource` / `window.open` / 文件下载直链 / 后端回填的 url 字段）。
+    守卫：`scripts/_check_single_port.py` 的 c12（对应 H5 侧是 c9）。
+
+74. **Dockerfile 的 `COPY …/pom.xml` 清单与聚合 pom 的 `<modules>` 漂移，且被 `|| true` 静默掉。**
+    现场：`server/pom.xml` 有 11 个 `<module>`，`deploy/Dockerfile.server` 只 COPY 了 10 个 ⇒
+    Maven 报 `Child module aioa-integration-scfy of /build/pom.xml does not exist`。
+    ★ 该行写成 `mvn … dependency:go-offline -pl aioa-boot -am || true` ⇒ **构建不会失败**，
+    只是 `go-offline` 整层失效：**每次都全量下依赖**，受限网络下从「几分钟」变成「反复超时」。
+    「不中断构建」正是它能潜伏很久的原因 —— 报错在日志里，但没人当回事。
+    同族缺陷见 #43（`Dockerfile.web` 漏 `COPY web/tsconfig.base.json`）。
+    **通则**：凡「Dockerfile 里逐个列出的清单」都要与**权威来源**（pom 的 `<modules>`、tsconfig 的 `extends`、
+    vite 的 base 与组装目录）做**确定性比对**，别靠人眼；且**别用 `|| true` 掩盖会长期恶化的步骤**。
+    守卫：`_check_single_port.py` 的 c13（解析 `server/pom.xml` 的 `<modules>` ⇄ Dockerfile 的 COPY 行）。

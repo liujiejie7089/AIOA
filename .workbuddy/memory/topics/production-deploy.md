@@ -43,7 +43,31 @@
 - **可选**：不加该服务、`80` 不通时，`:8080/aioa/web/` 与 `:8080/aioa/h5/` **照旧直接可用**
   ⇒ 既有套件（44 个走 `:8080/api`）与单端口入口**零影响**。
 - 守护口径同步：`scripts/_check_single_port.py` 的 nginx 从「禁止出现」名单**移出**，
-  新增 `c11_nginx_entry`；现在是 **11 项检查 + 22 项负向 mutation**（全红才算有效；见下条 ④）。
+  新增 `c11_nginx_entry`；现在是 **13 项检查 + 26 项负向 mutation**（全红才算有效；见下条 ④，
+  以及 09-27 追加的 c12「管理端接口基址带前缀」、c13「Dockerfile 模块 pom 清单」）。
+
+## ★ 2026-09-27 生产入口实测暴露的两处（提交 `14b3449`）
+
+现场拓扑（用户截图确认）：公网 `mall.egooaicloud.com/aioa/...` → openresty(219.151.186.24)
+→ `proxy_pass http://10.0.0.3:8080`（**原样转发、不剥前缀**）；应用机 `server:8080` 单端口供
+`/aioa/h5|web|api`，`agent:8000` 仅内网。
+
+1. **管理端 SPA 接口全 404（根路径 vs 前缀）** —— 详见 pitfalls #73。
+   `web/apps/shell/src/api/index.ts` 与 `runs.ts`（SSE）改为由 `import.meta.env.BASE_URL` 推导：
+   生产 `/aioa/web/` ⇒ `/aioa/api/v1`；dev `/` ⇒ `/api/v1`（vite 代理不变 ⇒ 本地 UI 套件零影响）。
+   ★ 关键认知：后端是**双前缀并存**（`/aioa/api/**` 剥前缀 + `/api/**` 保留），所以
+   **本地直连 `:8080` 永远测不出这个缺陷**；只有「共用域名只反代 `/aioa/`」才暴露。
+   用户端 H5 一直是对的（`apiBaseFromPath`），**只有管理端漏了**。
+2. **`Dockerfile.server` 漏 COPY `aioa-integration-scfy/pom.xml`** —— 详见 pitfalls #74。
+   被 `|| true` 静默 ⇒ 只坏 `dependency:go-offline` 缓存层（每次全量下依赖）。
+3. 新增 `deploy/maven-settings.xml`（**原仓库没有此文件**，加 COPY 必须先建它）：
+   Dockerfile COPY 成 `/root/.m2/settings.xml`，只把 **central** 指向阿里云公共仓库。
+   ⚠️ 刻意不用 `mirrorOf *`（会把插件仓库一并改写，镜像缺件时整体失败且报错指向「找不到某 jar」）；
+   要换内网 nexus 只改 `<url>` 一行。`RUN mkdir -p /root/.m2` **不需要**（COPY 自动建父目录）。
+
+- 顺带核出的**潜在**项（故意未改）：`FileController` 上传后回填 `url="/api/v1/files/{id}"` 也是根路径形态，
+  但管理端 `uploadFile` 无调用方、H5 自己拼 `this.base+'/v1/files/'+id` ⇒ 当前无活的 404；
+  改它需连带回填已落库旧行（Flyway），单开需求再动。
 
 ### ★ 同日两处收紧（提交 `f44ba8c`，**覆盖**上面「无门控」与固定 8000 的口径）
 
