@@ -53,6 +53,9 @@ GIT_SSH_COMMAND='ssh -i "C:/Users/刘尖尖/.ssh/id_rsa" -o IdentitiesOnly=yes \
 - ✅ **2026-09-28 第三次实测：bash 通道、沙箱内、无 escalation，6 秒完成**（`0b86175..a259445`）。
   私钥可读、`ssh -T -p 443 git@ssh.github.com` 回 `Hi liujiejie7089!`。
   ⇒ 现状：**SSH over 443 是最省事的一条路，直接推即可**，不必再走 §5.0 的「交接命令给用户」。
+- ✅ **2026-09-28 当日第四次实测：同样 6 秒内完成**（`a5f0b77..e8e2e2d`，22 文件大提交）。
+  流程固化：`ls-remote` 取远端 SHA → `merge-base --is-ancestor <远端SHA> HEAD` 判快进 → push → `ls-remote` 比对。
+  大提交（跨模块 22 文件）与单文件提交耗时无差异 ⇒ **不必为「文件多」而改走后台**。
 
 ## 收口前必查两类脏文件
 1. 已跟踪：`git status --porcelain | grep -v '^??'` 应为空（`h5_v33_render.py` / `SMOKE_v48.py` / `gitee_stub.py` 等**老脚本是跟踪文件**）。
