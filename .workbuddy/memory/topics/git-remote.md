@@ -50,8 +50,16 @@ GIT_SSH_COMMAND='ssh -i "C:/Users/刘尖尖/.ssh/id_rsa" -o IdentitiesOnly=yes \
 - **推之前先 `git ls-remote <同上地址> refs/heads/main` 取远端 SHA**，再看 `git merge-base --is-ancestor <远端SHA> HEAD`
   是否为真 —— 判明是快进还是分叉，避免盲目 force。
 - 收口校验**不靠 push 返回码**：比对本地 `git rev-parse HEAD` 与远端 `git ls-remote ssh://… refs/heads/main` 两个 SHA。
+- ✅ **2026-09-28 第三次实测：bash 通道、沙箱内、无 escalation，6 秒完成**（`0b86175..a259445`）。
+  私钥可读、`ssh -T -p 443 git@ssh.github.com` 回 `Hi liujiejie7089!`。
+  ⇒ 现状：**SSH over 443 是最省事的一条路，直接推即可**，不必再走 §5.0 的「交接命令给用户」。
 
 ## 收口前必查两类脏文件
 1. 已跟踪：`git status --porcelain | grep -v '^??'` 应为空（`h5_v33_render.py` / `SMOKE_v48.py` / `gitee_stub.py` 等**老脚本是跟踪文件**）。
 2. **未跟踪但属源码**：`grep '^??'` **逐条判过** —— `git diff` **只显示已跟踪文件**，只看它会**整块漏掉新增文件**；`??` 列表**常被 `head` 截断**，必须看全量。
-- 按既有约定不入库的 scratch：`scripts/_*` · 根目录 `probe*.txt` · `.workbuddy/artifacts/`。
+- 按既有约定不入库的 scratch（**2026-09-28 更正，别再照旧清单整批跳过**）：以 `.gitignore` 为准 ——
+  只有 `scripts/_diag_*` · `scripts/_tmp_*` · `scripts/_q.py` · `scripts/_*.png` 被忽略；
+  **`scripts/_check_*.py` / `_probe_*.py` / `_verify_*.py` / `_run_all_regression.sh` 是要入库的长期回归哨兵**
+  （`git ls-files scripts/` 里已有一大批在跟踪）。判据：`git check-ignore -v <path>` 逐个问，别凭前缀猜。
+  其余不入库：根目录 `probe*.txt` · `.workbuddy/artifacts/` · 孤立构建产物目录（如 `web/apps/shell/dist2/`，
+  应加进 `.gitignore` 而非提交）。
