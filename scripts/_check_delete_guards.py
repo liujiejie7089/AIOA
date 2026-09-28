@@ -26,6 +26,11 @@
     D10 前端 api 走 unwrap 校验 code（失败信封不能被当业务数据）
     D11 部门「能不能删」只有一处判定（申请与执行共用 deptBlockedReason）
     D12 **员工**删除保持直删（不提交审核单），且前端有真实调用（不是死代码）
+    D13 租户删除：**已注销(CLOSED)机构不构成阻塞**，且审批通过时**级联终止全部下级行**
+        （对应 2026-09-24 用户反馈：「删完机构租户仍无法注销」+「平台管理员删除后相关数据仍继续展示」）
+    D14 数据变更后同步**全局作用域态**（顶部租户/机构选择器 + 「机构 N」计数），无需手动 F5
+    D15 「已注销(CLOSED)机构」是**不可达档案**：作用域解析对它一律 404，且 FR-B2 无任何例外
+        （清理只能走「删租户」一条路 —— 防后人为了「删干净」而放开它，造出第二条口径与越权面）
 
 用法：
     python scripts/_check_delete_guards.py            # 跑检查
@@ -43,6 +48,8 @@ MIGRATION = os.path.join(SERVER, "aioa-boot", "src", "main", "resources", "db", 
 ORG = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org")
 ADMIN = os.path.join(SERVER, "aioa-admin", "src", "main", "java", "cn", "aioa", "admin")
 
+ORG_GUARD = os.path.join(ORG, "support", "OrgGuard.java")
+
 INST_DEL = os.path.join(ORG, "service", "InstitutionDeleteService.java")
 TEN_DEL = os.path.join(ORG, "service", "TenantDeleteService.java")
 DEPT_DEL = os.path.join(ORG, "service", "DeptDeleteService.java")
@@ -55,6 +62,8 @@ ORG_API = os.path.join(SHELL, "api", "org.ts")
 INST_VIEW = os.path.join(SHELL, "views", "InstitutionView.vue")
 SYS_VIEW = os.path.join(SHELL, "views", "SystemConfigView.vue")
 ORG_VIEW = os.path.join(SHELL, "views", "OrgStructureView.vue")
+TEN_ADMIN_VIEW = os.path.join(SHELL, "views", "TenantAdminView.vue")
+APPR_VIEW = os.path.join(SHELL, "views", "ApprovalsView.vue")
 
 MISSING = "\x00"
 
@@ -360,6 +369,130 @@ def checks(t):
         ) if not v],
     ))
 
+    # ============================================================ D13 已注销机构不阻塞 + 级联清理
+    #
+    # 2026-09-24 用户反馈：「在租户管理中删除该租户的机构后，租户仍无法注销；通过平台管理员删除后，
+    # 相关数据仍继续展示。」两个症状在结构上各对应一处必须钉死的东西：
+    #   ① **阻塞面**：机构「注销」是不可逆终态（管理端原文「注销后机构不可恢复」），它只保留法人档案，
+    #      其下的部门/员工也随之一并失效。若阻塞校验仍按 `deleted_at IS NULL` 一概计数，
+    #      「已注销但未软删」的机构会**永久**卡死租户删除 —— 用户把机构全注销后仍被告知「仍有 1 个机构」。
+    #   ② **清理面**：删 `sys_tenant` 不会带走 `org_*` 行，而**平台管理员的机构列表是跨租户全集**
+    #      （`OrgGuard.selectableInstitutions`）⇒ 租户在列表里没了、它名下的机构/员工照旧展示。
+    # 两条都不会编译报错，也不会让既有套件变红（既有套件只验「空机构可删」），只能静态钉住。
+    ten_ok2 = _method_body(ten, "public void onApproved(Map<String, Object> order) {")
+    CASCADE = [
+        ("员工账号绑定", '"UPDATE org_member_account SET deleted_at'),
+        ("员工", '"UPDATE org_member SET deleted_at'),
+        ("部门", '"UPDATE org_department SET deleted_at'),
+        ("机构", '"UPDATE org_institution SET deleted_at'),
+    ]
+    missing_cascade = [n for n, pat in CASCADE if pat not in ten_ok2]
+    i_inst_cascade = ten_ok2.find('"UPDATE org_institution SET deleted_at')
+    i_tenant_soft = ten_ok2.find('"UPDATE sys_tenant SET deleted_at')
+    out.append((
+        "D13 租户删除：已注销(CLOSED)机构不构成阻塞，且审批通过时级联终止全部下级行"
+        "（否则「删完机构仍无法注销」+「租户已删、机构仍展示」）",
+        "status <> 'CLOSED'" in ten
+        and "NOT EXISTS (SELECT 1 FROM org_institution i WHERE i.id = t.institution_id" in ten
+        and "countLiveInstitutions(tenantId)" in _method_body(ten, "public String blockedReason(")
+        # 旧的「不带状态过滤」计数助手不得复活（★ 比对**整条**旧 SQL 串，不比对 `" + table` 前缀 ——
+        #   新的 countOutsideClosedInstitutions 同样用 `" + table +` 拼表名，拿前缀断言会把正确代码判红）
+        and '"SELECT COUNT(*) FROM " + table + " WHERE tenant_id = ? AND deleted_at IS NULL"' not in ten
+        and not missing_cascade
+        and i_inst_cascade >= 0 and i_tenant_soft >= 0 and i_inst_cascade < i_tenant_soft,
+        "缺件：%s" % [n for n, v in (
+            ("D13a blockedReason 的机构计数排除 CLOSED", "status <> 'CLOSED'" in ten),
+            ("D13b 部门/员工计数排除「属于已注销机构」的行",
+             "NOT EXISTS (SELECT 1 FROM org_institution i WHERE i.id = t.institution_id" in ten),
+            ("D13c blockedReason 走唯一的 countLiveInstitutions（否则出现第二份判定，铁律 #1）",
+             "countLiveInstitutions(tenantId)" in _method_body(ten, "public String blockedReason(")),
+            ("D13d 不带状态过滤的计数助手已移除（防复活）",
+             '"SELECT COUNT(*) FROM " + table + " WHERE tenant_id = ? AND deleted_at IS NULL"' not in ten),
+            ("D13e onApproved 级联软删下级行（缺：%s）" % missing_cascade, not missing_cascade),
+            ("D13f 级联必须在软删租户行**之前**（反序会留下「租户已删、下级仍在」的不可逆脏状态）",
+             i_inst_cascade >= 0 and i_tenant_soft >= 0 and i_inst_cascade < i_tenant_soft),
+        ) if not v],
+    ))
+
+    # ============================================================ D14 变更后同步全局作用域态
+    #
+    # 2026-09-24 用户反馈：「我在管理端执行了注销、新增等修改数据的操作后，页面数据必须立即刷新…
+    # 无需手动干预。」根因**不在本页表格**（那些地方早就 `await reload()` 了），而在**顶部选择器读的
+    # 模块级全局态**：`tenantState` / `institutionState` 只在登录时 load 一次，而
+    # `OrgGuard.selectableInstitutions` 只回 `status=ACTIVE` 的机构 ⇒
+    # 新增机构选不到、注销机构还挂在列表里、租户选项的「机构 N」不动，全都要 F5。
+    # 这类缺陷不会让任何既有套件变红（套件直接打接口，根本不读前端全局态），只能静态钉住。
+    inst_code = _ts_code_body(inst_view)
+    ten_admin_code = _ts_code_body(t["ten_admin_view"])
+    appr_code = _ts_code_body(t["appr_view"])
+    out.append((
+        "D14 数据变更后同步全局作用域态（顶部租户/机构选择器 + 「机构 N」计数），无需手动 F5",
+        "refreshScopeStores" in inst_code
+        and "loadInstitutionScope()" in inst_code and "loadTenantScope()" in inst_code
+        # 三个变更出口：保存（新增/编辑）、申请删除、状态流转（停用/恢复/注销/冻结）
+        and inst_code.count("await refreshScopeStores()") >= 3
+        # 机构清单不再吞错：`.catch(() => [])` 会把失败信封渲染成一张空表（铁律 #2/#3）
+        and "listInstitutions().catch(" not in inst_code
+        and "refreshTenantScope" in ten_admin_code and "loadTenantScope()" in ten_admin_code
+        # 两个变更出口：保存（开通/编辑租户）、停用/启用
+        and ten_admin_code.count("await refreshTenantScope()") >= 2
+        # 审批决定也会改真实状态（机构/部门/租户删除被通过的那一刻）
+        and "loadInstitutionScope()" in appr_code and "loadTenantScope()" in appr_code,
+        "缺件：%s" % [n for n, v in (
+            ("D14a 机构页变更后刷新机构作用域", "loadInstitutionScope()" in inst_code),
+            ("D14b 机构页同时刷新租户作用域（租户选项文案含「机构 N」）",
+             "loadTenantScope()" in inst_code),
+            ("D14c 机构页三个变更出口都调 refreshScopeStores（当前 %d 处）"
+             % inst_code.count("await refreshScopeStores()"),
+             inst_code.count("await refreshScopeStores()") >= 3),
+            ("D14d 机构清单不再静默吞错（失败必须可见）", "listInstitutions().catch(" not in inst_code),
+            ("D14e 租户页开通/编辑后刷新租户作用域", "loadTenantScope()" in ten_admin_code),
+            ("D14f 租户页两个变更出口都调 refreshTenantScope（当前 %d 处）"
+             % ten_admin_code.count("await refreshTenantScope()"),
+             ten_admin_code.count("await refreshTenantScope()") >= 2),
+            ("D14g 审批通过后同步两个作用域（删除类单据会改真实状态）",
+             "loadInstitutionScope()" in appr_code and "loadTenantScope()" in appr_code),
+        ) if not v],
+    ))
+
+    # ============================================================ D15 注销机构是不可达档案
+    #
+    # 修 D13 时**先写了一版「已注销机构的企业管理员可被移除」的改动，实测发现它是不可达代码**：
+    # 作用域解析 {@code OrgGuard.resolveScopeInstitution → requireActiveInstitution} 对非 ACTIVE
+    # 机构一律 404，所以 `DELETE /org/members/{id}?institutionId=<CLOSED>` 在进到 deleteMember 之前
+    # 就挂了（实测 `code=404 机构不存在或已停用`）。这说明「注销」在设计上就是**不可达档案**：
+    # 保留法人档案、不再对外服务、不参与任何组织操作。
+    #
+    # 于是清理路径**只能有一条**：删租户（D13 的级联）。这条断言防的是两个方向的走样：
+    #   ① 后人为了「把已注销机构删干净」而放开 requireActiveInstitution / 给 deleteMember 加 CLOSED 例外
+    #      ⇒ 立刻多出第二条清理口径 + 对已注销机构的可操作面（越权风险）；
+    #   ② 把 FR-B2（企业管理员不可直删）的例外悄悄写进去 —— 那样任何机构的管理员都能被直删。
+    # ★ 必须取 t["org_guard"]（load() 已去注释的副本），**不能**在这里 `_read(ORG_GUARD)`：
+    #   从磁盘重读会让本断言对 selftest 注入的突变完全不敏感 ⇒ 断言恒真（首版就是这样，
+    #   靠 D15a 的突变自检才暴露 —— 恒真断言比没断言更危险，铁律 #7）。
+    guard_code = t["org_guard"]
+    del_member_body3 = _method_body(tree, "public Map<String, Object> deleteMember(")
+    out.append((
+        "D15 「已注销(CLOSED)机构」是不可达档案：作用域解析对它一律 404，FR-B2 无例外"
+        "（清理只能走「删租户」一条路）",
+        '!OrgInstitution.STATUS_ACTIVE.equals(ins.getStatus())' in guard_code
+        and "机构不存在或已停用" in guard_code
+        and del_member_body3 != MISSING
+        and "企业管理员不可直接删除" in del_member_body3
+        and "isInstitutionClosed" not in del_member_body3
+        and "STATUS_CLOSED" not in del_member_body3
+        and "pproval" not in del_member_body3,
+        "缺件：%s" % [n for n, v in (
+            ("D15a 作用域解析仍要求机构为 ACTIVE（已注销机构不可达）",
+             '!OrgInstitution.STATUS_ACTIVE.equals(ins.getStatus())' in guard_code),
+            ("D15b deleteMember 不得为 CLOSED 开例外（否则多出第二条「清干净」口径）",
+             "isInstitutionClosed" not in del_member_body3
+             and "STATUS_CLOSED" not in del_member_body3),
+            ("D15c FR-B2（企业管理员不可直删）保持无条件，且不走审批",
+             "企业管理员不可直接删除" in del_member_body3 and "pproval" not in del_member_body3),
+        ) if not v],
+    ))
+
     return out
 
 
@@ -377,12 +510,17 @@ def load():
         "ten_ctrl": _strip_java_comments(_read(TEN_CTRL)),
         "tenant_ctrl": _strip_java_comments(_read(TENANT_CTRL)),
         "prov": _strip_java_comments(_read(PROV)),
+        # D15：作用域解析（已注销机构 404 的唯一判定点）
+        "org_guard": _strip_java_comments(_read(ORG_GUARD)),
         # 删除类流程定义的迁移：V69（机构/租户）、V70（部门）—— 缺任一个都要报红
         "migs": {"v69": _mig("V69"), "v70": _mig("V70")},
         "org_api": _read(ORG_API),
         "inst_view": _read(INST_VIEW),
         "sys_view": _read(SYS_VIEW),
         "org_view": _read(ORG_VIEW),
+        # D14 要读的三个「变更后必须同步作用域态」的页面
+        "ten_admin_view": _read(TEN_ADMIN_VIEW),
+        "appr_view": _read(APPR_VIEW),
         "mappings": _all_java_mappings(),
     }
 
@@ -401,6 +539,22 @@ def run():
 def selftest():
     """注入突变，要求对应断言**必须真报红** —— 否则这些断言恒真（比没断言更危险，铁律 #7）。"""
     base = load()
+
+    def _d13f_order_swap(t):
+        """把「软删租户行」挪到级联**之前** —— 正是 D13f 要拦的反序。
+
+        ★ 锚点漂移时**返回原值**（而不是抛异常）：上层会据此报「突变未生效」，
+          这比静默不报红更容易发现（同 D12b 的教训）。
+        """
+        src = t["ten_del"]
+        m = re.search(r'int rows = jdbc\.update\("UPDATE sys_tenant SET deleted_at.*?tenantId\);', src, re.S)
+        if not m:
+            return t
+        stmt = m.group(0)
+        moved = src.replace(stmt, "int rows = 0;", 1).replace(
+            "int bindings = jdbc.update(", stmt + "\n        int bindings = jdbc.update(", 1)
+        return dict(t, ten_del=moved)
+
     mutations = [
         ("D1 有人补了个「直接删除机构」端点（审核闸门形同虚设）",
          lambda t: dict(t, org_ctrl=t["org_ctrl"].replace(
@@ -588,6 +742,76 @@ def selftest():
          lambda t: dict(t, org_view=t["org_view"].replace(
              "    await deleteMember(row.id!, instId.value)\n", "")),
          ["D12"]),
+        # ---------------------------------------------------------------- D13 已注销机构不阻塞 + 级联清理
+        ("D13a 阻塞校验退回「不带状态过滤」的计数（已注销机构又永久卡死租户删除）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             "long insts = countLiveInstitutions(tenantId);",
+             'long insts = jdbc.queryForObject("SELECT COUNT(*) FROM org_institution '
+             'WHERE tenant_id = ? AND deleted_at IS NULL", Long.class, tenantId);')),
+         ["D13"]),
+        ("D13b 部门/员工不再排除「属于已注销机构」的行（已注销机构里的残留员工又永久卡住）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             '"AND NOT EXISTS (SELECT 1 FROM org_institution i WHERE i.id = t.institution_id "',
+             '"AND "')),
+         ["D13"]),
+        ("D13c 复活了旧的「无状态过滤」计数助手（阻塞面出现第二份判定）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             "long insts = countLiveInstitutions(tenantId);",
+             'long insts = count("org_institution", tenantId);')
+             + '\n    private long count(String table, Long tenantId) {\n'
+               '        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table '
+               '+ " WHERE tenant_id = ? AND deleted_at IS NULL", Long.class, tenantId);\n    }\n'),
+         ["D13"]),
+        ("D13d 员工未随租户删除一起终止（平台管理员的列表里仍能看到已删租户的员工）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             '"UPDATE org_member SET deleted_at', '"UPDATE org_member SET gone_at')),
+         ["D13"]),
+        ("D13e 机构未随租户删除一起终止（★用户原症状：租户已删、机构仍继续展示）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             '"UPDATE org_institution SET deleted_at', '"UPDATE org_institution SET gone_at')),
+         ["D13"]),
+        ("D13f 部门未随租户删除一起终止",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             '"UPDATE org_department SET deleted_at', '"UPDATE org_department SET gone_at')),
+         ["D13"]),
+        ("D13g 级联与软删租户的顺序被调反（留下「租户已删、下级仍在」的不可逆脏状态）",
+         _d13f_order_swap,
+         ["D13"]),
+        # ---------------------------------------------------------------- D14 变更后同步作用域态
+        ("D14a 机构页变更后不再同步作用域（★用户原症状：新增机构选不到、已注销的还挂在下拉里）",
+         lambda t: dict(t, inst_view="\n".join(
+             ln for ln in t["inst_view"].splitlines() if "await refreshScopeStores()" not in ln)),
+         ["D14"]),
+        ("D14b 机构清单又退回静默吞错（403/500 被渲染成一张空表 = 看起来「数据没了」）",
+         lambda t: dict(t, inst_view=t["inst_view"].replace(
+             "      listInstitutions(),",
+             "      listInstitutions().catch(() => [] as Institution[]),", 1)),
+         ["D14"]),
+        ("D14c 租户页开通后不再刷新租户作用域（新租户在顶部下拉里选不到）",
+         lambda t: dict(t, ten_admin_view="\n".join(
+             ln for ln in t["ten_admin_view"].splitlines() if "await refreshTenantScope()" not in ln)),
+         ["D14"]),
+        ("D14d 审批通过后不再同步作用域（单据已通过、下拉里那个机构/租户还在）",
+         lambda t: dict(t, appr_view="\n".join(
+             ln for ln in t["appr_view"].splitlines()
+             if "loadInstitutionScope().catch(" not in ln and "loadTenantScope().catch(" not in ln)),
+         ["D14"]),
+        # ---------------------------------------------------------------- D15 注销机构是不可达档案
+        ("D15a 放开作用域解析，让已注销机构变得可操作（多出第二条清理口径 + 越权面）",
+         lambda t: dict(t, org_guard=t["org_guard"].replace(
+             "if (ins == null || !OrgInstitution.STATUS_ACTIVE.equals(ins.getStatus())) {",
+             "if (ins == null) {")),
+         ["D15"]),
+        ("D15b 给 deleteMember 加了「机构已注销则可直删管理员」的例外",
+         lambda t: dict(t, tree_svc=t["tree_svc"].replace(
+             "        if (Boolean.TRUE.equals(m.getIsOrgAdmin())) {",
+             "        if (Boolean.TRUE.equals(m.getIsOrgAdmin()) && !isInstitutionClosed(institutionId)) {")),
+         ["D15"]),
+        ("D15c FR-B2 被删掉（任何机构的企业管理员都能被直删）",
+         lambda t: dict(t, tree_svc=t["tree_svc"].replace(
+             'throw BizException.badRequest("企业管理员不可直接删除，请先在机构管理页完成管理员交接（FR-B2）");',
+             "// gone")),
+         ["D15"]),
     ]
     bad = 0
     for name, mutate, expect in mutations:

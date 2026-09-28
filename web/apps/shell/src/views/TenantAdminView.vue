@@ -153,7 +153,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http, unwrap } from '@/api'
 import { updateTenantQuota } from '@/api/tenantQuota'
-import { tenantState } from '@/api/tenantScope'
+import { tenantState, loadTenantScope } from '@/api/tenantScope'
 
 interface TenantRow {
   id: number
@@ -192,6 +192,20 @@ async function reload() {
   }
 }
 onMounted(reload)
+
+/**
+ * 同步**全局租户作用域态**（顶部「租户」选择器 + 机构/入驻/授权/分摊各页的 `tenantId` 注入）。
+ *
+ * <p>本页表格由 {@link reload} 负责，但顶部选择器读的是 `tenantState` —— 模块级全局态，
+ * 只在登录时 load 一次。于是「开通租户 / 编辑租户」之后，本页列表有新租户、顶部下拉里却没有：
+ * 想切过去看它的机构还得按 F5（用户反馈：「执行了注销、新增等修改数据的操作后，
+ * 页面数据必须立即刷新，无需手动干预」）。</p>
+ *
+ * <p>失败不阻断：本页数据已刷新成功，作用域态下次进布局会再拉一次。</p>
+ */
+async function refreshTenantScope() {
+  await loadTenantScope().catch(() => undefined)
+}
 
 function apiMsg(e: unknown, fallback: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
@@ -234,6 +248,7 @@ async function submit() {
     }
     dlg.value = false
     await reload()
+    await refreshTenantScope()
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, '保存失败'))
   } finally {
@@ -255,6 +270,7 @@ async function toggleStatus(row: TenantRow) {
     await http.post('/admin/tenants/' + row.id + '/status', { status: to })
     ElMessage.success(to === 'DISABLED' ? '已停用' : '已启用')
     await reload()
+    await refreshTenantScope()
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, '操作失败'))
   }

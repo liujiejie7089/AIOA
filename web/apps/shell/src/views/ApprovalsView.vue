@@ -196,6 +196,8 @@ import {
   type WorkflowTask
 } from '@/api/resource'
 import { APPROVER_TYPE_LABEL } from '@/constants/permissions'
+import { loadTenantScope } from '@/api/tenantScope'
+import { loadInstitutionScope } from '@/api/institutionScope'
 
 /** 统一行模型：多级引擎与历史单级审批在同一个表格里呈现，用 source 区分决策入口。 */
 /**
@@ -427,6 +429,13 @@ async function decide(row: Row, decision: 'APPROVE' | 'REJECT') {
     }
     detailVisible.value = false
     await reload()
+    // 审批「机构删除 / 部门删除 / 租户删除」等单据被通过的那一刻，组织与租户的真实状态就变了
+    // —— 顶部「租户 / 机构」选择器读的是模块级全局态（只在登录时 load 一次），不在这里同步
+    // 就会出现「单据已通过、下拉里那个机构/租户还在」。失败不阻断：本页列表已刷新。
+    await Promise.all([
+      loadInstitutionScope().catch(() => undefined),
+      loadTenantScope().catch(() => undefined)
+    ])
   } catch (e: unknown) {
     if (e === 'cancel' || (e as { message?: string })?.message === 'cancel') return
     ElMessage.error('操作失败：' + ((e as Error)?.message || '后端异常'))

@@ -281,7 +281,8 @@ import {
   type Institution, type OrgQuota, type ResourcePool, type InstitutionType
 } from '@/api/org'
 
-import { tenantState } from '@/api/tenantScope'
+import { tenantState, loadTenantScope } from '@/api/tenantScope'
+import { loadInstitutionScope } from '@/api/institutionScope'
 
 /**
  * 统计期：唯一权威来自服务端（`/tenant/scope` 的 `currentPeriod`）。
@@ -332,7 +333,9 @@ async function reloadAll() {
   loading.value = true
   try {
     const [inst, qs, pl, types] = await Promise.all([
-      listInstitutions().catch(() => [] as Institution[]),
+      // 机构清单**不再吞错**：`.catch(() => [])` 会把「403 / 500 等失败信封」渲染成一张空表，
+      // 用户看到的是「数据没了」而不是「加载失败」——失败必须可见（铁律 #2/#3）。
+      listInstitutions(),
       listOrgQuotas(period.value).catch(() => [] as OrgQuota[]),
       getResourcePool(period.value).catch(() => null),
       listInstitutionTypes().catch(() => [] as InstitutionType[])
@@ -349,6 +352,29 @@ async function reloadAll() {
     loading.value = false
   }
 }
+
+/**
+ * 同步**全局作用域态**（顶部「租户 / 机构」选择器 + 「机构 N」计数）。
+ *
+ * <p>本页的本页表格由 {@link reloadAll} 负责，但顶部两个选择器读的是 `tenantState` /
+ * `institutionState` —— 它们是模块级全局态，<b>只在登录时 load 一次</b>。于是本页做了
+ * 「新增机构 / 注销机构」之后，表格是新的、顶部下拉还是旧的：新机构选不到、已注销的还挂在
+ * 列表里、租户后面的「机构 N」也不动，用户必须按 F5 才看到真实状态（用户反馈：
+ * 「修改数据的操作后页面数据必须立即刷新，无需手动干预」）。</p>
+ *
+ * <p>两个都要刷：`institutionState` 是机构下拉本身；`tenantState` 因为租户选项的文案是
+ * `${name}（机构 N）`（`MainLayout.vue`），机构增删会改变 N。</p>
+ *
+ * <p>失败<b>不阻断</b>主流程：本页数据已经刷新成功，作用域态下次进入布局时会再拉一次；
+ * 这里吞掉异常避免「明明操作成功却弹一个红色错误」。</p>
+ */
+async function refreshScopeStores() {
+  await Promise.all([
+    loadInstitutionScope().catch(() => undefined),
+    loadTenantScope().catch(() => undefined)
+  ])
+}
+
 onMounted(reloadAll)
 
 // ---------------------------------------------------------------- 机构表单
@@ -376,6 +402,7 @@ async function submit() {
     }
     dlg.value = false
     await reloadAll()
+    await refreshScopeStores()
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, '保存失败'))
   } finally {
@@ -541,6 +568,7 @@ async function onAction(row: Institution, cmd: string) {
       const res = await requestInstitutionDelete(row.id!, reason)
       ElMessage.success(res.hint || '已提交删除申请，等待上一级审核')
       await reloadAll()
+      await refreshScopeStores()
     } catch (e: unknown) {
       ElMessage.error(apiMsg(e, '提交删除申请失败'))
     }
@@ -559,6 +587,7 @@ async function onAction(row: Institution, cmd: string) {
     else await institutionAction(row.id!, cmd, '管理端操作')
     ElMessage.success(ACTION_TEXT[cmd] + '成功')
     await reloadAll()
+    await refreshScopeStores()
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, ACTION_TEXT[cmd] + '失败'))
   }
