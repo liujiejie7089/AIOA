@@ -13,7 +13,9 @@ dist-ssr/
 dist2/
 dist-verify/
 # 构建前把旧 dist 改名挪走的落脚点（vite 的 emptyOutDir 会触发沙箱 bulk-delete 拦截）
+# 实际落脚目录带时间戳（.dist-old-173756 等），故用通配覆盖全部变体，避免遗留目录被误提交
 .dist-old/
+.dist-old-*/
 *.local
 .npm/
 .pnpm-store/
