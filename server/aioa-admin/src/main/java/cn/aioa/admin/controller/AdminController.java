@@ -180,16 +180,54 @@ public class AdminController {
         return ApiResponse.ok(Map.of("userId", id, "status", status));
     }
 
+    /**
+     * 角色字典（平台级基线数据）。
+     *
+     * <p>出参必须带 {@code roleName} / {@code dataScope}：实体字段叫 {@code name}，
+     * 而管理端（角色页、人员管理的角色勾选框）读的是 {@code roleName} ——
+     * 直接把实体吐出去，两处的「角色名称」就永远是「—」。
+     * 这里统一收敛成前端契约，{@code name} 一并保留以兼容旧调用方。</p>
+     */
     @GetMapping("/roles")
-    public ApiResponse<List<SysRole>> roles() {
+    public ApiResponse<List<Map<String, Object>>> roles() {
         requireAdmin();
-        return ApiResponse.ok(roleMapper.selectList(null));
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (SysRole r : roleMapper.selectList(null)) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("id", r.getId());
+            m.put("tenantId", r.getTenantId());
+            m.put("roleCode", r.getRoleCode());
+            m.put("roleName", r.getName());
+            m.put("name", r.getName());
+            m.put("type", r.getType());
+            m.put("dataScope", r.getDataScope());
+            out.add(m);
+        }
+        return ApiResponse.ok(out);
     }
 
+    /**
+     * 权限点字典（平台级基线数据）。
+     *
+     * <p>同理：实体字段是 {@code name}，管理端权限页读 {@code permName}。
+     * 少这一层映射，页面上的「权限名称」列就是恒空的一列。</p>
+     */
     @GetMapping("/permissions")
-    public ApiResponse<List<SysPermission>> permissions() {
+    public ApiResponse<List<Map<String, Object>>> permissions() {
         requireAdmin();
-        return ApiResponse.ok(permissionMapper.selectList(null));
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (SysPermission p : permissionMapper.selectList(null)) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("id", p.getId());
+            m.put("permCode", p.getPermCode());
+            m.put("permName", p.getName());
+            m.put("name", p.getName());
+            m.put("type", p.getType());
+            m.put("parentId", p.getParentId());
+            m.put("sort", p.getSort());
+            out.add(m);
+        }
+        return ApiResponse.ok(out);
     }
 
     // ---------- 功能管理（应用/模块开关与可见范围） ----------

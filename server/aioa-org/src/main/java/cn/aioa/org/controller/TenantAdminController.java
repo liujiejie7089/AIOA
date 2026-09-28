@@ -76,6 +76,19 @@ public class TenantAdminController {
 
     // ================================================================== FR-B 机构管理
 
+    /**
+     * 机构类型字典（**唯一权威来源**）：管理端下拉的选项与列表的标签都由它下发。
+     *
+     * <p>为什么不写成前端常量：前端曾自建过第二套枚举 —— 含后端不认识的 {@code STATE_OWNED}/{@code PRIVATE}，
+     * 又漏掉库里最多的 {@code ENTERPRISE} ⇒ 「企业类型选不到、选出来的类型后端不认、列表标签标不出来」。
+     * 收敛后选项与标签同源，前端不得再自建一份（铁律 #1）。</p>
+     */
+    @GetMapping("/institution-types")
+    public ApiResponse<List<Map<String, Object>>> institutionTypes() {
+        guard.requireTenantAdmin();
+        return ApiResponse.ok(institutionService.typeOptions());
+    }
+
     @GetMapping("/institutions")
     public ApiResponse<List<Map<String, Object>>> institutions(
             @RequestParam(name = "keyword", required = false) String keyword,

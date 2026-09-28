@@ -67,8 +67,10 @@ STEPS = [
      "DELETE FROM cost_alloc_rule WHERE tenant_id = 2 AND version > 1", None),
     ("规则状态复位（v1 恢复 ACTIVE）",
      "UPDATE cost_alloc_rule SET status = 'ACTIVE' WHERE tenant_id = 2 AND version = 1", None),
-    ("资源池复位（tokenTotal 回到 5000000 / 席位回到种子值）",
-     "UPDATE tenant_resource_pool SET token_total = 5000000, token_used = 0, expert_seats = 12, "
+    # 资源池总量与 V65__demo_pool_headroom.sql 同口径（20000000）：复位动作不能把
+    # 「可分配余量」又压回 300000，否则配额分配会再次必然失败。
+    ("资源池复位（tokenTotal 回到 20000000 / 席位回到种子值）",
+     "UPDATE tenant_resource_pool SET token_total = 20000000, token_used = 0, expert_seats = 12, "
      "expert_used = 0, skill_seats = 18, skill_used = 0 WHERE tenant_id = 2 AND period = '2026-09'", None),
     ("机构配额使用量归零",
      "UPDATE org_quota SET used_tokens = 0, frozen = 0 WHERE tenant_id = 2", None),

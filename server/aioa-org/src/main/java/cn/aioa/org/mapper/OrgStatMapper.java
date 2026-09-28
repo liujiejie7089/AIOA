@@ -26,6 +26,17 @@ public interface OrgStatMapper {
             + "WHERE deleted_at IS NULL ORDER BY id")
     List<Map<String, Object>> selectTenants();
 
+    /**
+     * 平台「调整某租户资源上限」用：取租户主体做存在性 + 回执名称。
+     *
+     * <p>2026-09-28：本方法原为 V66 批次 A 的 {@code selectTenantWithHierarchy}（多带
+     * {@code parent_id} / {@code level} 两列，供子租户层级使用）。子租户能力已按用户决定移除，
+     * 层级列随之在 V68 中删除，方法体只保留仍然在用的「登录域名」列。</p>
+     */
+    @Select("SELECT id, tenant_id AS tenantId, code, name, status, domain FROM sys_tenant "
+            + "WHERE deleted_at IS NULL AND id = #{id} LIMIT 1")
+    Map<String, Object> selectTenantWithHierarchy(@Param("id") Long id);
+
     @Select("SELECT id, tenant_id AS tenantId, username, nickname, mobile, email, status "
             + "FROM sys_user WHERE deleted_at IS NULL AND id = #{id} LIMIT 1")
     Map<String, Object> selectUser(@Param("id") Long id);
@@ -56,6 +67,40 @@ public interface OrgStatMapper {
             + "ORDER BY id")
     List<Map<String, Object>> selectUsersOfTenant(@Param("tenantId") Long tenantId);
 
+    /**
+     * 按 id 集合批量取账号 —— 员工名册列表补「账号」列用。
+     *
+     * <p>员工列表此前直接回吐 {@code org_member} 实体，而账号只存在于 {@code sys_user}，
+     * 于是列表页「账号」列恒空。逐行查会 N+1，故一次 IN 取回。</p>
+     */
+    @Select("<script>SELECT id, tenant_id AS tenantId, username, nickname, mobile, email, status "
+            + "FROM sys_user WHERE deleted_at IS NULL AND id IN "
+            + "<foreach collection='ids' item='i' open='(' separator=',' close=')'>#{i}</foreach>"
+            + "</script>")
+    List<Map<String, Object>> selectUsersByIds(@Param("ids") List<Long> ids);
+
+    /**
+     * 本租户的账号清单（V67 / docs/38 批次 C 的「绑定账号」候选）。
+     *
+     * <p>为什么不用平台的 {@code /admin/users}：那是平台管理员专用，
+     * 租户管理员取不到；而「给员工绑定账号」恰恰是租户/机构管理员的日常动作。</p>
+     *
+     * <p>{@code boundMemberName} 为 NULL ⇒ 该账号**没有绑定任何员工**，即规格里说的
+     * 「虚拟管理员账号」——服务层据此回吐 {@code virtual:true}，不另加 is_virtual 列。</p>
+     */
+    @Select("<script>SELECT u.id, u.username, u.nickname, u.status, "
+            + "(SELECT m.name FROM org_member_account a "
+            + "  JOIN org_member m ON m.id = a.member_id AND m.deleted_at IS NULL "
+            + "  WHERE a.user_id = u.id AND a.deleted_at IS NULL ORDER BY a.is_primary DESC, a.id LIMIT 1) "
+            + "  AS boundMemberName "
+            + "FROM sys_user u WHERE u.deleted_at IS NULL AND u.tenant_id = #{tenantId} "
+            + "<if test='keyword != null and keyword != \"\"'>"
+            + "AND (u.username LIKE CONCAT('%', #{keyword}, '%') "
+            + "  OR u.nickname LIKE CONCAT('%', #{keyword}, '%'))</if> "
+            + "ORDER BY u.id LIMIT 200</script>")
+    List<Map<String, Object>> selectTenantAccounts(@Param("tenantId") Long tenantId,
+                                                   @Param("keyword") String keyword);
+
     @Select("SELECT r.id, r.role_code AS roleCode, r.name, r.data_scope AS dataScope "
             + "FROM sys_role r WHERE r.deleted_at IS NULL ORDER BY r.id")
     List<Map<String, Object>> selectRoles();
@@ -80,12 +125,31 @@ public interface OrgStatMapper {
             + "WHERE deleted_at IS NULL AND user_id = #{userId} AND role_id = #{roleId}")
     int deleteUserRole(@Param("userId") Long userId, @Param("roleId") Long roleId);
 
+    /**
+     * 复活被软删的角色绑定，返回影响行数（0 = 没有可复活的软删行）。
+     *
+     * <p>与 {@code sys_user.username} 同型缺陷：{@code uk_sys_user_role(user_id, role_id)} 是**普通唯一键**，
+     * 软删行仍然占位；而 {@link #selectUserRole} 带 {@code deleted_at IS NULL} ⇒ 查不到，于是直接
+     * INSERT 会撞唯一键抛 500。现场复现：移除员工（{@code deleteMember} 会 revokeRole 软删该行）后，
+     * 再用**同一账号**新增员工 ⇒ 500 Duplicate entry。</p>
+     */
+    @Update("UPDATE sys_user_role SET deleted_at = NULL, created_by = #{createdBy}, "
+            + "updated_at = NOW(6) WHERE deleted_at IS NOT NULL "
+            + "AND user_id = #{userId} AND role_id = #{roleId}")
+    int reviveUserRole(@Param("userId") Long userId, @Param("roleId") Long roleId,
+                       @Param("createdBy") Long createdBy);
+
     /** 新建账号（企业管理员交接 / 批量导出入驻时自动开户）。 */
     @Insert("INSERT INTO sys_user (tenant_id, username, password_hash, nickname, mobile, email, "
             + "status, auth_type, created_by) VALUES (#{tenantId}, #{username}, #{passwordHash}, "
             + "#{nickname}, #{mobile}, #{email}, 'ENABLED', 'local', #{createdBy})")
     @org.apache.ibatis.annotations.Options(useGeneratedKeys = true, keyProperty = "id")
     int insertUser(Map<String, Object> row);
+
+    /** 重置登录口令（按 userId）。返回 0 = 账号不存在。 */
+    @Update("UPDATE sys_user SET password_hash = #{passwordHash}, updated_at = NOW(6) "
+            + "WHERE id = #{userId} AND deleted_at IS NULL")
+    int updateUserPassword(@Param("userId") Long userId, @Param("passwordHash") String passwordHash);
 
     // ------------------------------------------------------------------ 账本 / 分摊核对
 
@@ -137,9 +201,18 @@ public interface OrgStatMapper {
             + "FROM model_config WHERE provider_key = #{key} LIMIT 1")
     Map<String, Object> selectModelConfig(@Param("key") String key);
 
-    @Select("SELECT id, name, status FROM agent_worker "
-            + "WHERE deleted_at IS NULL ORDER BY id LIMIT 200")
-    List<Map<String, Object>> selectWorkers();
+    /**
+     * 机构授权目录可选的数字员工。
+     *
+     * <p><b>必须带 tenantId</b>：此前无参且不过滤租户，返回全表 200 条里的全部租户行，
+     * 租户 2 的授权下拉里因此出现租户 3 的数字员工（实测 11 条 = t0 3 + t2 4 + t3 4）。
+     * 这与 docs/15 §八「tenant_id 只从 JWT 取」相悖，且选中即构成跨租户授权。
+     * 口径与 {@link #selectExperts} 保持一致，只是数字员工没有「平台公共资产」一说
+     * （平台样板走 {@code is_template=1} 且由模板端点复制，不进授权目录）。</p>
+     */
+    @Select("SELECT id, tenant_id AS tenantId, name, status FROM agent_worker "
+            + "WHERE deleted_at IS NULL AND tenant_id = #{tenantId} ORDER BY id LIMIT 200")
+    List<Map<String, Object>> selectWorkers(@Param("tenantId") Long tenantId);
 
     @Select("SELECT id, tenant_id AS tenantId, expert_key AS resKey, name, enabled FROM ai_expert "
             + "WHERE deleted_at IS NULL AND tenant_id IN (0, #{tenantId}) ORDER BY sort, id LIMIT 200")
@@ -418,6 +491,45 @@ public interface OrgStatMapper {
             + "AND tenant_id IN (0, #{tenantId}) AND institution_id = 0 "
             + "AND scope IN ('TENANT', 'PERSONAL') ORDER BY id DESC LIMIT 200")
     List<Map<String, Object>> selectUnboundKb(@Param("tenantId") Long tenantId);
+
+    /**
+     * 资源授权页「知识库」类型的可选目录。
+     *
+     * <p>与 {@link #selectUnboundKb} 的两点差异，都是刻意的：</p>
+     * <ul>
+     *   <li>只要 {@code scope = 'TENANT'}（租户共享）。本方法服务于「把资料授权给某个机构」，
+     *       而 {@code PERSONAL} 是**他人个人**上传的资料 —— 让租户管理员在授权下拉里看到它，
+     *       等于开了一条「把别人的个人资料挂进机构」的路。</li>
+     *   <li>列名用 {@code name}（前端授权目录行读的是 {@code r.name}），不是 {@code docName}。</li>
+     * </ul>
+     */
+    @Select("SELECT id, doc_name AS name, scope, state, chunk_count AS chunkCount, size_bytes AS sizeBytes, "
+            + "created_at AS createdAt FROM kb_document WHERE deleted_at IS NULL "
+            + "AND tenant_id IN (0, #{tenantId}) AND institution_id = 0 AND scope = 'TENANT' "
+            + "ORDER BY id DESC LIMIT 200")
+    List<Map<String, Object>> selectGrantableKb(@Param("tenantId") Long tenantId);
+
+    /**
+     * 资料在本租户（含平台级 tenant_id=0）内的显示名；不存在 / 已删除 / 属其它租户 → {@code null}。
+     *
+     * <p>授权与机构挂载的前置校验用。为什么要单独问一次、而不是拿 {@code bindKbDocument} 的影响行数
+     * 当判据：MySQL 对「SET 值与现值相同」的 UPDATE 报 <b>0 行</b>，于是「重复保存同一条授权」会被
+     * 误判成「资料不存在」而 404。返回名称顺带解决了挂载时账本行需要 res_name 的问题。</p>
+     */
+    @Select("SELECT doc_name FROM kb_document WHERE deleted_at IS NULL AND id = #{id} "
+            + "AND tenant_id IN (0, #{tenantId}) LIMIT 1")
+    String selectKbNameInTenant(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    /**
+     * 资料当前归属的机构 id（0 = 未挂载，在租户共享库）。
+     *
+     * <p>为什么必须问这一句：{@code kb_document.institution_id} 是**单值**列 ——
+     * 一条资料同时只能属于一个机构。于是「把资料授权给机构 B」在资料已属于机构 A 时，
+     * 实际动作是**把它从 A 搬走**。若不拦，跨租户就会出现「B 租户静默搬走 A 租户机构的资料」，
+     * 且 A 侧那条授权记录会变成幽灵行（清单说已启用、资料却不在自己机构里）。</p>
+     */
+    @Select("SELECT institution_id FROM kb_document WHERE deleted_at IS NULL AND id = #{id} LIMIT 1")
+    Long selectKbInstitutionId(@Param("id") Long id);
 
     @Select("SELECT COUNT(*) FROM leave_request WHERE deleted_at IS NULL "
             + "AND institution_id = #{institutionId} AND status = #{status}")

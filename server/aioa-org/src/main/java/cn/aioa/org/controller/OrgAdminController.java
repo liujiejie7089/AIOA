@@ -6,6 +6,7 @@ import cn.aioa.org.service.ApprovalFlowService;
 import cn.aioa.org.service.AuditQueryService;
 import cn.aioa.org.service.DashboardService;
 import cn.aioa.org.service.LeaveService;
+import cn.aioa.org.service.MemberAccountService;
 import cn.aioa.org.service.OnboardingService;
 import cn.aioa.org.service.OrgKbService;
 import cn.aioa.org.service.OrgTreeService;
@@ -51,6 +52,19 @@ public class OrgAdminController {
     private final LeaveService leaveService;
     private final ApprovalFlowService flowService;
     private final OnboardingService onboardingService;
+    /** V67 / docs/38 批次 C：员工 ↔ 账号（多对多）的读写入口。 */
+    private final MemberAccountService memberAccountService;
+
+    /**
+     * V67：本租户的账号清单 —— 「给员工绑定账号」的候选，并显式标注**虚拟账号**
+     * （没有绑定任何员工的账号，即规格里的「虚拟管理员账号」）。
+     */
+    @GetMapping("/accounts")
+    public ApiResponse<List<Map<String, Object>>> accounts(
+            @RequestParam(name = "keyword", required = false) String keyword) {
+        AuthUser u = guard.requireOrgUser();
+        return ApiResponse.ok(memberAccountService.candidates(guard.resolveRequestTenant(u), keyword));
+    }
 
     /** 本机构画像（企业端首页头部）。 */
     @GetMapping("/profile")
@@ -160,6 +174,49 @@ public class OrgAdminController {
             @RequestParam(name = "institutionId", required = false) Long institutionId) {
         AuthUser u = guard.requireOrgWriter();
         return ApiResponse.ok(treeService.deleteMember(guard.requireInstitutionId(institutionId), id, u));
+    }
+
+    /**
+     * V67 / docs/38 批次 C：给员工**追加绑定**一个用户账号（「一个员工可以有多个用户帐号」）。
+     *
+     * <p>不动主账号（{@code org_member.user_id}）—— 通知/审批/鉴权/机构归属都读它，
+     * 追加账号只是让这个人多了登录入口。</p>
+     */
+    @PostMapping("/members/{id}/accounts")
+    public ApiResponse<List<Map<String, Object>>> attachMemberAccount(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.attachAccount(guard.requireInstitutionId(institutionId), id, u,
+                Vals.lngObj(body, "userId")));
+    }
+
+    /** V67：解绑员工的**附加**账号（主账号不可解绑 —— 员工必须保留一个主账号）。 */
+    @DeleteMapping("/members/{id}/accounts/{userId}")
+    public ApiResponse<List<Map<String, Object>>> detachMemberAccount(
+            @PathVariable Long id,
+            @PathVariable Long userId,
+            @RequestParam(name = "institutionId", required = false) Long institutionId) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.detachAccount(guard.requireInstitutionId(institutionId), id, u,
+                userId));
+    }
+
+    /**
+     * V67 批次 C·补（口令可知性）：重置某员工**主账号**的登录口令。
+     *
+     * <p>开户口令只在创建那一刻回显一次（服务端只存哈希、事后不可回读）。没有这个动作，
+     * 操作员漏记口令后该账号就永久登不进去，只能"删员工重建" —— 那会连带丢掉审批 / 通知归属。</p>
+     */
+    @PostMapping("/members/{id}/password")
+    public ApiResponse<Map<String, Object>> resetMemberPassword(
+            @PathVariable Long id,
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        return ApiResponse.ok(treeService.resetMemberPassword(guard.requireInstitutionId(institutionId),
+                id, u, body));
     }
 
     /** FR-G3：批量导入员工（逐行返回失败清单，成功率可观测）。 */

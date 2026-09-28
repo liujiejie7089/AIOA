@@ -39,6 +39,12 @@
         <el-table-column label="机构" width="80" prop="institutionCount" />
         <el-table-column label="成员" width="80" prop="memberCount" />
         <el-table-column label="账号" width="80" prop="userCount" />
+        <el-table-column label="登录域名" width="160">
+          <template #default="{ row }">
+            <span v-if="row.domain">{{ row.domain }}</span>
+            <span v-else class="muted">未分配</span>
+          </template>
+        </el-table-column>
         <el-table-column label="资源池（词元）" width="150" align="right">
           <template #default="{ row }">{{ (row.quotaTokens ?? 0).toLocaleString('zh-CN') }}</template>
         </el-table-column>
@@ -58,6 +64,7 @@
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button text type="primary" size="small" @click="openDlg(row)">编辑</el-button>
+            <el-button text type="primary" size="small" @click="openQuota(row)">调整资源</el-button>
             <el-button text type="primary" size="small" @click="resetPwd(row)">重置密码</el-button>
             <el-button
               text
@@ -81,6 +88,9 @@
         </el-form-item>
         <el-form-item label="租户编码" required>
           <el-input v-model="form.code" :disabled="!!form.id" placeholder="如：CTJT-DEMO（全局唯一）" />
+        </el-form-item>
+        <el-form-item label="登录域名">
+          <el-input v-model="form.domain" placeholder="如：xxx.aioa.cn（留空则未分配）" />
         </el-form-item>
         <template v-if="!form.id">
           <el-divider content-position="left">开通管理员账号</el-divider>
@@ -113,19 +123,45 @@
         <el-button type="primary" size="small" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 调整资源 -->
+    <el-dialog v-model="quotaDlg" title="调整资源" width="520">
+      <el-form :model="quotaForm" label-width="120px" size="small">
+        <el-form-item label="统计期">
+          <el-input v-model="quotaForm.period" placeholder="2026-09（留空为当前周期）" />
+        </el-form-item>
+        <el-form-item label="词元上限">
+          <el-input-number v-model="quotaForm.tokenTotal" :min="0" :step="100000" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="专家席位">
+          <el-input-number v-model="quotaForm.expertSeats" :min="0" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="技能席位">
+          <el-input-number v-model="quotaForm.skillSeats" :min="0" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="small" @click="quotaDlg = false">取消</el-button>
+        <el-button type="primary" size="small" :loading="quotaSaving" @click="submitQuota">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http, unwrap } from '@/api'
+import { updateTenantQuota } from '@/api/tenantQuota'
+import { tenantState } from '@/api/tenantScope'
 
 interface TenantRow {
   id: number
   code?: string
   name?: string
   status?: string
+  /** 登录域名（后端新增回吐字段，可能为 null） */
+  domain?: string | null
   adminUsername?: string
   adminName?: string
   institutionCount?: number
@@ -134,6 +170,11 @@ interface TenantRow {
   quotaTokens?: number
   allocatedTokens?: number
   usedTokens?: number
+  /** 席位（后端 list 回吐；「调整资源」弹窗必须预填，否则一保存就把席位清零） */
+  expertSeats?: number
+  expertUsed?: number
+  skillSeats?: number
+  skillUsed?: number
 }
 
 const rows = ref<TenantRow[]>([])
@@ -161,12 +202,12 @@ const form = ref<Record<string, unknown>>({})
 
 function openDlg(row?: TenantRow) {
   if (row) {
-    form.value = { id: row.id, code: row.code, name: row.name }
+    form.value = { id: row.id, code: row.code, name: row.name, domain: row.domain ?? '' }
   } else {
-    const d = new Date()
+    // 统计期取服务端权威值（见 tenantScope：前端 new Date() 与服务器时钟/时区不一致会建错周期）
     form.value = {
       name: '', code: '', adminUsername: '', adminName: '', adminPassword: '',
-      period: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'),
+      period: tenantState.currentPeriod.value || undefined,
       tokenTotal: 1000000, expertSeats: 8, skillSeats: 12
     }
   }
@@ -181,7 +222,11 @@ async function submit() {
   saving.value = true
   try {
     if (form.value.id) {
-      await http.put('/admin/tenants/' + form.value.id, { name: form.value.name, code: form.value.code })
+      await http.put('/admin/tenants/' + form.value.id, {
+        name: form.value.name,
+        code: form.value.code,
+        domain: form.value.domain
+      })
       ElMessage.success('已保存')
     } else {
       await http.post('/admin/tenants', form.value)
@@ -212,6 +257,53 @@ async function toggleStatus(row: TenantRow) {
     await reload()
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, '操作失败'))
+  }
+}
+
+const quotaDlg = ref(false)
+const quotaSaving = ref(false)
+const quotaForm = reactive({ id: 0, name: '', period: '', tokenTotal: 0, expertSeats: 0, skillSeats: 0 })
+
+function openQuota(row: TenantRow) {
+  Object.assign(quotaForm, {
+    id: row.id,
+    name: row.name || '',
+    period: tenantState.currentPeriod.value || '',
+    tokenTotal: row.quotaTokens ?? 0,
+    // 席位必须预填**当前值**：后端 list 早就回吐了 expertSeats/skillSeats（它加这四个字段的
+    // 注释写的就是「弹窗要能预填当前值，否则用户看不到自己正在改什么」），而这里原先硬写 0 ——
+    // 于是打开弹窗看到的是 0，点保存就把租户真实席位（如 8/12）静默清零，
+    // 且 upsertPool 对席位**没有**「不得低于已用」的兜底 ⇒ 直接丢数据、无任何提示。
+    // 2026-09-28 由本轮的「保留能力仍在」核查发现。
+    expertSeats: row.expertSeats ?? 0,
+    skillSeats: row.skillSeats ?? 0
+  })
+  quotaDlg.value = true
+}
+
+async function submitQuota() {
+  quotaSaving.value = true
+  try {
+    const res = await updateTenantQuota(quotaForm.id, {
+      period: quotaForm.period || undefined,
+      tokenTotal: quotaForm.tokenTotal,
+      expertSeats: quotaForm.expertSeats,
+      skillSeats: quotaForm.skillSeats
+    })
+    const show = (v: unknown) => (v == null ? '—' : String(v))
+    const b = res.before || {}
+    const a = res.after || {}
+    ElMessage.success(
+      `资源已调整（${quotaForm.name}）：词元 ${show(b.tokenTotal)}→${show(a.tokenTotal)}，` +
+        `专家席位 ${show(b.expertSeats)}→${show(a.expertSeats)}，` +
+        `技能席位 ${show(b.skillSeats)}→${show(a.skillSeats)}`
+    )
+    quotaDlg.value = false
+    await reload()
+  } catch (e: unknown) {
+    ElMessage.error(apiMsg(e, '调整失败'))
+  } finally {
+    quotaSaving.value = false
   }
 }
 

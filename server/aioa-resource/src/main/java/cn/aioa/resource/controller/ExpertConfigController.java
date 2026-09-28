@@ -7,6 +7,7 @@ import cn.aioa.resource.entity.AiSkill;
 import cn.aioa.resource.entity.ExpertConfig;
 import cn.aioa.resource.mapper.AiExpertMapper;
 import cn.aioa.resource.mapper.AiSkillMapper;
+import cn.aioa.resource.model.ExpertSettings;
 import cn.aioa.resource.service.CatalogService;
 import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.ExpertConfigService;
@@ -97,10 +98,13 @@ public class ExpertConfigController {
         for (AiExpert e : byKey.values()) {
             ExpertConfigService.ResolvedConfig rc = configService.resolve(
                     tid, user.getInstitutionId(), user.getDepartmentId(), user.getUserId(), e.getExpertKey());
-            if (!Boolean.TRUE.equals(rc.settings().getEnabled()) && !canManageExperts(user)) {
+            boolean manager = canManageExperts(user);
+            if (!Boolean.TRUE.equals(rc.settings().getEnabled()) && !manager) {
                 continue; // 关闭的专家对普通用户不可见（管理员仍可见以便配置）
             }
-            if (!visible(rc.settings().getVisibleScope(), user)) {
+            // 可见范围只约束普通用户：管理员必须始终看得到，否则把范围配成「指定机构 A」后，
+            // 不在 A 的管理员就再也进不了配置页 —— 能力被自己锁死（管理端是能力的唯一入口）。
+            if (!manager && !visible(rc.settings(), user)) {
                 continue;
             }
             // V34：待审的租户副本不对普通成员可见（创建者本人与管理员仍可见，便于跟踪审核进度）
@@ -535,20 +539,15 @@ public class ExpertConfigController {
         return PermissionCatalog.holds(user, PermissionCatalog.EXPERT_MANAGE);
     }
 
-    /** 可见范围判定：ALL 全员；其余按层级比对当前用户所属作用域。 */
-    private static boolean visible(String scope, AuthUser user) {
-        if (scope == null || scope.isBlank() || "ALL".equalsIgnoreCase(scope)) {
-            return true;
-        }
-        String s = scope.toUpperCase();
-        Long v = switch (s) {
-            case "TENANT" -> user.getTenantId();
-            case "INSTITUTION" -> user.getInstitutionId();
-            case "DEPT" -> user.getDepartmentId();
-            case "USER" -> user.getUserId();
-            default -> null;
-        };
-        return v != null && v > 0;
+    /**
+     * 可见范围判定：<b>不在这里实现</b>，委托给 {@link ExpertSettings#visibleTo} 这一唯一判定点。
+     *
+     * <p>之所以只留一个转发：用户端目录（{@code CatalogService#availableExperts}）必须
+     * 用<b>同一份</b>判据 —— 否则「管理端配上指定机构可见」会在 H5 里完全失效
+     * （历史上正是如此）。这个薄壳只为「管理员是否豁免」的策略留在调用点。</p>
+     */
+    private static boolean visible(ExpertSettings settings, AuthUser user) {
+        return settings.visibleTo(user);
     }
 
     private static int asInt(Object v) {

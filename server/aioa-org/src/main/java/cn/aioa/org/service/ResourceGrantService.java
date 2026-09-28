@@ -56,12 +56,18 @@ public class ResourceGrantService implements ApprovalCallback {
         out.put("experts", statMapper.selectExperts(tenantId));
         out.put("skills", statMapper.selectSkills(tenantId));
         out.put("models", statMapper.selectModelConfigs());
-        out.put("workers", statMapper.selectWorkers());
-        out.put("resTypes", List.of(
-                Map.of("code", ResourceGrant.TYPE_EXPERT, "name", "专家"),
-                Map.of("code", ResourceGrant.TYPE_SKILL, "name", "技能"),
-                Map.of("code", ResourceGrant.TYPE_MODEL, "name", "模型"),
-                Map.of("code", ResourceGrant.TYPE_KB, "name", "知识库")));
+        // 数字员工必须按租户过滤：此前取全表，租户 2 的授权下拉里混进了租户 3 的 4 个员工
+        // （实测 11 条 = t0 3 + t2 4 + t3 4），选中即会把别家的资产授权给本租户机构，
+        // 违反 docs/15 §八「tenant_id 只从 JWT 取、跨租户一律 404」。
+        out.put("workers", statMapper.selectWorkers(tenantId));
+        // 「知识库」的可授权目录（2026-09-28 补）。
+        // 此前 catalog 没有 kb 这个键，而前端 `CAT_KEY.KB → 'kb'`、下拉读 `catalog.kb` ⇒ 恒为空数组：
+        // 「资源类型选知识库 → 资源下拉空白 → 授不出去」。用户反馈的「知识库授权的问题」即此。
+        out.put("kb", statMapper.selectGrantableKb(tenantId));
+        // resTypes 与 grant() 的白名单同源（allTypes()），前端下拉也从这里取 —— 三处不再各写一份。
+        out.put("resTypes", ResourceGrant.ALL_TYPES.stream()
+                .map(code -> Map.of("code", code, "name", ResourceGrant.TYPE_NAMES.get(code)))
+                .toList());
         return out;
     }
 
@@ -99,9 +105,11 @@ public class ResourceGrantService implements ApprovalCallback {
             throw BizException.notFound("机构不存在于本租户：" + institutionId);
         }
         String resType = Vals.require(body, "resType", "资源类型");
-        if (!List.of(ResourceGrant.TYPE_EXPERT, ResourceGrant.TYPE_SKILL,
-                ResourceGrant.TYPE_MODEL, ResourceGrant.TYPE_KB).contains(resType)) {
-            throw BizException.badRequest("不支持的资源类型：" + resType);
+        // 白名单与授权目录同源（ResourceGrant.ALL_TYPES）。此前这里是硬编码的 4 类、漏了 WORKER，
+        // 而管理端下拉「数字员工」能选 —— 表现为「数字员工无法授权：不支持的资源类型：WORKER」。
+        if (!ResourceGrant.ALL_TYPES.contains(resType)) {
+            throw BizException.badRequest("不支持的资源类型：" + resType
+                    + "；可选：" + String.join("、", ResourceGrant.ALL_TYPES));
         }
         Long resId = Vals.lngObj(body, "resId");
         if (resId == null) {
@@ -133,6 +141,12 @@ public class ResourceGrantService implements ApprovalCallback {
             grantMapper.insert(g);
         } else {
             grantMapper.updateById(g);
+        }
+        // 知识库：授权动作的**生效态**落在 kb_document.institution_id（机构知识库），不另立一套判定。
+        // resource_grant 的 KB 行是同一动作的账本镜像，两条路径（/tenant/grants 与 /org/kb）
+        // 都经 {@link #syncKbLedger} 维护，避免「清单说启用了、机构知识库里却没有」。
+        if (ResourceGrant.TYPE_KB.equals(resType)) {
+            applyKbBinding(tenantId, institutionId, resId, Boolean.TRUE.equals(g.getEnabled()));
         }
         audit.record(tenantId, institutionId, actor,
                 isNew ? "RESOURCE_GRANT" : "RESOURCE_GRANT_UPDATE", "RESOURCE_GRANT", g.getId(),
@@ -167,6 +181,10 @@ public class ResourceGrantService implements ApprovalCallback {
             throw BizException.notFound("授权记录不存在：" + id);
         }
         grantMapper.deleteById(id);
+        // 知识库：撤销授权 = 解挂（资料回到租户共享库），否则「清单已删、机构知识库里还在」。
+        if (ResourceGrant.TYPE_KB.equals(g.getResType())) {
+            statMapper.bindKbDocument(g.getResId(), tenantId, 0L, 0L, "TENANT");
+        }
         audit.record(tenantId, g.getInstitutionId(), actor, "RESOURCE_REVOKE", "RESOURCE_GRANT", id,
                 "撤销机构 #" + g.getInstitutionId() + " 的 " + g.getResType() + " 授权（"
                         + (g.getResName() == null ? g.getResKey() : g.getResName()) + "）", view(g), null);
@@ -191,6 +209,10 @@ public class ResourceGrantService implements ApprovalCallback {
         g.setEnabled(enabled);
         g.setUpdatedAt(LocalDateTime.now());
         grantMapper.updateById(g);
+        // 知识库：停用 = 从机构知识库移出，启用 = 挂回该机构（生效态只有 kb_document 一处）。
+        if (ResourceGrant.TYPE_KB.equals(g.getResType())) {
+            applyKbBinding(tenantId, g.getInstitutionId(), g.getResId(), enabled);
+        }
         audit.record(tenantId, g.getInstitutionId(), actor, "RESOURCE_GRANT_TOGGLE", "RESOURCE_GRANT", id,
                 (enabled ? "启用" : "停用") + "机构 #" + g.getInstitutionId() + " 的资源授权", before, view(g));
         return view(g);
@@ -207,8 +229,9 @@ public class ResourceGrantService implements ApprovalCallback {
                 .orderByAsc(ResourceGrant::getResType)
                 .orderByAsc(ResourceGrant::getResId));
         Map<String, List<Map<String, Object>>> byType = new LinkedHashMap<>();
-        for (String t : List.of(ResourceGrant.TYPE_EXPERT, ResourceGrant.TYPE_SKILL,
-                ResourceGrant.TYPE_MODEL, ResourceGrant.TYPE_KB)) {
+        // 预置空分组用同一个权威清单：此前只预置 4 类，数字员工即使授权成功也不会出现在
+        // byType 里（前端按固定 key 取数时会显示为空，等于「授权了但看不见」）。
+        for (String t : ResourceGrant.ALL_TYPES) {
             byType.put(t, new ArrayList<>());
         }
         for (ResourceGrant g : rows) {
@@ -311,6 +334,70 @@ public class ResourceGrantService implements ApprovalCallback {
             }
         }
         throw BizException.badRequest("无法确定资源开通申请的机构归属");
+    }
+
+    // ================================================================== 知识库（KB）授权的生效态同步
+
+    /**
+     * 知识库授权的**生效动作**：把资料挂到机构 / 移回租户共享库。
+     *
+     * <p>生效态的唯一来源是 {@code kb_document.institution_id}（用户端机构知识库、机构/部门统计
+     * 都读它）。资源授权页因此**不新造第二套可见性判定** —— 接通时选择的是「授权 = 挂载」这条同源路线。</p>
+     */
+    void applyKbBinding(Long tenantId, Long institutionId, Long docId, boolean bound) {
+        if (bound && statMapper.selectKbNameInTenant(docId, tenantId) == null) {
+            throw BizException.notFound("知识库资料不存在或不属于本租户：" + docId);
+        }
+        Long current = statMapper.selectKbInstitutionId(docId);
+        if (bound && current != null && current != 0L && !current.equals(institutionId)) {
+            // 资料已属于别的机构。`institution_id` 单值 ⇒ 继续执行等于**把它从原机构搬走**，
+            // 而原机构那条授权记录会变成幽灵行。宁可明确拒绝，也不静默搬走（铁律 #2）。
+            // 文案不点出对方机构 id：跨租户时那属于「泄露存在性」。
+            throw BizException.badRequest("该知识库资料当前已被另一机构挂载，请先在那里解除授权后再授权到本机构");
+        }
+        // 幂等：MySQL 对「SET 值与现值相同」的 UPDATE 返回 0 行，故存在性判据必须单独问（见上），
+        // 不能拿影响行数当「不存在」的证据。
+        statMapper.bindKbDocument(docId, tenantId, bound ? institutionId : 0L, 0L, "TENANT");
+    }
+
+    /**
+     * 机构知识库挂载 / 解挂的**账本同步**（由 {@link OrgKbService} 在 attach/detach 后调用）。
+     *
+     * <p>{@code resource_grant} 的 KB 行是「机构知识库挂载」这一动作的账本镜像。写入规则只在本类
+     * 实现一处：若两条路径（{@code /tenant/grants} 与 {@code /org/kb}）各自写一份，清单与实际生效态
+     * 必然分叉 —— 正是本项目反复出现的那类缺陷（docs/37 §6）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void syncKbLedger(Long tenantId, Long institutionId, Long docId, String docName, boolean bound) {
+        LambdaQueryWrapper<ResourceGrant> w = new LambdaQueryWrapper<ResourceGrant>()
+                .eq(ResourceGrant::getTenantId, tenantId)
+                .eq(ResourceGrant::getInstitutionId, institutionId)
+                .eq(ResourceGrant::getResType, ResourceGrant.TYPE_KB)
+                .eq(ResourceGrant::getResId, docId);
+        if (!bound) {
+            grantMapper.delete(w);
+            return;
+        }
+        ResourceGrant g = grantMapper.selectOne(w.last("limit 1"));
+        boolean isNew = g == null;
+        if (isNew) {
+            g = new ResourceGrant();
+            g.setTenantId(tenantId);
+            g.setInstitutionId(institutionId);
+            g.setResType(ResourceGrant.TYPE_KB);
+            g.setResId(docId);
+            g.setGrantedBy(0L);
+            g.setGrantedAt(LocalDateTime.now());
+            g.setCreatedAt(LocalDateTime.now());
+        }
+        g.setResName(docName);
+        g.setEnabled(true);
+        g.setUpdatedAt(LocalDateTime.now());
+        if (isNew) {
+            grantMapper.insert(g);
+        } else {
+            grantMapper.updateById(g);
+        }
     }
 
     // ------------------------------------------------------------------ 工具

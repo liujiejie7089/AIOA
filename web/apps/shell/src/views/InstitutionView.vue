@@ -20,17 +20,29 @@
           </div>
         </div>
       </template>
+      <el-alert
+        v-if="pool && !pool.delivered"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="本周期资源池尚未交付"
+        description="机构配额只能从资源池里分配。请先点右上「池扩容 / 调参」交付本周期资源池（总量 > 0）；在此之前任何机构配额分配都会被服务端拒绝（FR-C2）。"
+        style="margin-bottom: 8px"
+      />
       <el-descriptions :column="5" border size="small" v-if="pool">
         <el-descriptions-item label="总量（词元）">{{ fmt(pool.tokenTotal) }}</el-descriptions-item>
-        <el-descriptions-item label="已分配">{{ fmt(pool.tokenAllocated) }}</el-descriptions-item>
-        <el-descriptions-item label="可分配">{{ fmt(pool.allocatableTokens) }}</el-descriptions-item>
+        <el-descriptions-item label="已分配">{{ fmt(pool.allocatedTokens ?? pool.tokenAllocated) }}</el-descriptions-item>
+        <el-descriptions-item label="可分配">
+          {{ fmt(pool.allocatableTokens) }}
+          <span v-if="pool.allocRatio != null" class="muted small">（已占 {{ pool.allocRatio }}%）</span>
+        </el-descriptions-item>
         <el-descriptions-item label="已用">{{ fmt(pool.tokenUsed) }}</el-descriptions-item>
         <el-descriptions-item label="预警阈值">{{ pool.warnThreshold ?? '—' }}%</el-descriptions-item>
         <el-descriptions-item label="专家席位">{{ pool.expertUsed ?? 0 }} / {{ pool.expertSeats ?? 0 }}</el-descriptions-item>
         <el-descriptions-item label="技能席位">{{ pool.skillUsed ?? 0 }} / {{ pool.skillSeats ?? 0 }}</el-descriptions-item>
         <el-descriptions-item label="单价（¥/词元）">{{ pool.unitPrice ?? '—' }}</el-descriptions-item>
         <el-descriptions-item label="到期日">{{ pool.expireAt || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="统计期">{{ period }}</el-descriptions-item>
+        <el-descriptions-item label="统计期">{{ pool.period || period }}</el-descriptions-item>
       </el-descriptions>
       <el-empty v-else description="暂无资源池数据" :image-size="48" />
     </el-card>
@@ -124,16 +136,12 @@
           <el-input v-model="form.code" :disabled="!!form.id" placeholder="如：ORG-SCJG（租户内唯一）" />
         </el-form-item>
         <el-form-item label="机构类型">
-          <el-select v-model="form.orgType" style="width: 100%">
-            <el-option label="政府机关" value="GOVERNMENT" />
-            <el-option label="事业单位" value="INSTITUTION" />
-            <el-option label="国有企业" value="STATE_OWNED" />
-            <el-option label="民营企业" value="PRIVATE" />
-            <el-option label="社会团体" value="ASSOCIATION" />
+          <el-select v-model="form.orgType" style="width: 100%" placeholder="请选择机构类型">
+            <el-option v-for="t in orgTypes" :key="t.code" :label="t.label" :value="t.code" />
           </el-select>
         </el-form-item>
         <el-form-item label="统一社会信用代码">
-          <el-input v-model="form.creditCode" placeholder="如：11330102MB5566778E" />
+          <el-input v-model="form.creditCode" placeholder="18 位统一社会信用代码（GB 32100-2015），如 91330102MA2G10001C" />
         </el-form-item>
         <el-form-item label="法定代表人">
           <el-input v-model="form.legalPerson" />
@@ -170,7 +178,17 @@
       <el-form :model="quotaForm" label-width="120px" size="small">
         <el-form-item label="机构">{{ quotaForm.institutionName }}</el-form-item>
         <el-form-item label="统计期">
-          <el-input v-model="quotaForm.period" placeholder="2026-09" />
+          <el-input v-model="quotaForm.period" placeholder="留空 = 服务端当前统计期" />
+        </el-form-item>
+        <el-form-item label="可分配余量">
+          <span v-if="!quotaCeiling" class="warn-text">
+            本周期资源池尚未交付，无法分配配额。
+            <el-button text type="primary" size="small" @click="gotoPool">去交付资源池</el-button>
+          </span>
+          <span v-else>
+            其它机构已占 <b>{{ fmt(quotaCeiling.others) }}</b>，本次最多可分配
+            <b>{{ fmt(quotaCeiling.max) }}</b> 词元
+          </span>
         </el-form-item>
         <el-form-item label="配额（词元）">
           <el-input-number v-model="quotaForm.quotaTokens" :min="0" :step="10000" style="width: 100%" />
@@ -194,7 +212,7 @@
       </el-form>
       <template #footer>
         <el-button size="small" @click="quotaDlg = false">取消</el-button>
-        <el-button type="primary" size="small" :loading="saving" @click="submitQuota">保存</el-button>
+        <el-button type="primary" size="small" :loading="saving" :disabled="!quotaCeiling" @click="submitQuota">保存</el-button>
       </template>
     </el-dialog>
 
@@ -256,21 +274,26 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import {
   listInstitutions, createInstitution, updateInstitution, institutionAction, transferInstitutionAdmin,
   getResourcePool, saveResourcePool, listOrgQuotas, createOrgQuota,
-  freezeOrgQuota, unfreezeOrgQuota,
-  type Institution, type OrgQuota, type ResourcePool
+  freezeOrgQuota, unfreezeOrgQuota, listInstitutionTypes,
+  type Institution, type OrgQuota, type ResourcePool, type InstitutionType
 } from '@/api/org'
 
-const period = ref(currentPeriod())
+import { tenantState } from '@/api/tenantScope'
+
+/**
+ * 统计期：唯一权威来自服务端（`/tenant/scope` 的 `currentPeriod`）。
+ *
+ * <p>此前本页自己用 `new Date()` 推导 —— 一旦浏览器与服务器时钟 / 时区不一致，
+ * 就会去查一个并不存在的周期，页面表现为「资源池尚未交付」而其实是查错了月份。
+ * 留空时不下发该参数，由后端 `Vals.nowPeriod()` 按同一口径兜底；
+ * 拿到资源池响应后再用服务端回填的真实 `period` 校准一次。</p>
+ */
+const period = ref(tenantState.currentPeriod.value)
 const rows = ref<Institution[]>([])
 const quotas = ref<OrgQuota[]>([])
 const pool = ref<ResourcePool | null>(null)
 const loading = ref(false)
 const saving = ref(false)
-
-function currentPeriod() {
-  const d = new Date()
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
-}
 
 function fmt(n?: number) {
   return (n ?? 0).toLocaleString('zh-CN')
@@ -280,12 +303,21 @@ function quotaOf(id?: number) {
   return quotas.value.find((q) => q.institutionId === id)
 }
 
-const ORG_TYPES: Record<string, string> = {
-  GOVERNMENT: '政府机关', INSTITUTION: '事业单位', STATE_OWNED: '国有企业',
-  PRIVATE: '民营企业', ASSOCIATION: '社会团体'
-}
 const STATUS: Record<string, string> = { ACTIVE: '正常', SUSPENDED: '已停用', CLOSED: '已注销' }
-function orgTypeText(v?: string) { return ORG_TYPES[v || ''] || v || '—' }
+
+/**
+ * 机构类型字典：后端 `/tenant/institution-types` 是唯一权威（五类 GOVERNMENT/ENTERPRISE/
+ * INSTITUTION/ASSOCIATION/OTHER，顺序即展示顺序）。前端不再硬编一份，避免「同一判定点
+ * 两处实现」——此前前端硬编 STATE_OWNED/PRIVATE 而后端不认识、库里最多的 ENTERPRISE 又选不到。
+ */
+const orgTypes = ref<InstitutionType[]>([])
+
+function orgTypeText(v?: string) {
+  const t = orgTypes.value.find((x) => x.code === v)
+  if (t) return t.label
+  // 取不到时原样显示裸码（便于发现脏数据），为空才显示 —
+  return v || '—'
+}
 function statusText(v?: string) { return STATUS[v || ''] || v || '—' }
 function statusType(v?: string) {
   if (v === 'ACTIVE') return 'success'
@@ -296,14 +328,18 @@ function statusType(v?: string) {
 async function reloadAll() {
   loading.value = true
   try {
-    const [inst, qs, pl] = await Promise.all([
+    const [inst, qs, pl, types] = await Promise.all([
       listInstitutions().catch(() => [] as Institution[]),
       listOrgQuotas(period.value).catch(() => [] as OrgQuota[]),
-      getResourcePool(period.value).catch(() => null)
+      getResourcePool(period.value).catch(() => null),
+      listInstitutionTypes().catch(() => [] as InstitutionType[])
     ])
     rows.value = inst || []
     quotas.value = qs || []
     pool.value = pl
+    orgTypes.value = types || []
+    // 用服务端回填的真实周期校准本页展示（本地推导已废弃）
+    if (pl?.period) period.value = pl.period
   } catch (e: unknown) {
     ElMessage.error('加载失败：' + ((e as Error)?.message || '后端异常'))
   } finally {
@@ -363,12 +399,50 @@ function openQuotaDlg(row: Institution) {
   quotaDlg.value = true
 }
 
+/**
+ * FR-C2 门禁的前置预览（与 `QuotaService.allocateOrgQuota` 同口径）：
+ * `Σ其它机构配额 + 本次配额 ≤ 资源池总量`。
+ *
+ * <p>服务端本来就会拒绝超额，但用户看到的只是一句「分配超额」；
+ * 这里把「其它机构已占 / 本次最多可分配」提前摆在表单上，
+ * 并在提交前拦一次，避免必然失败的请求。资源池未交付时返回 null ⇒ 保存按钮禁用并给出直达入口。</p>
+ */
+const quotaCeiling = computed(() => {
+  const pl = pool.value
+  if (!pl || !pl.delivered) return null
+  // 本页展示的周期与资源池周期不一致时，余量不可用（否则会拿另一个月的池子算出错误上限）
+  if (quotaForm.value.period && pl.period && quotaForm.value.period !== pl.period) return null
+  const allocated = pl.allocatedTokens ?? pl.tokenAllocated ?? 0
+  const self = quotaForm.value.institutionId
+    ? (quotaOf(quotaForm.value.institutionId)?.quotaTokens ?? 0)
+    : 0
+  const others = Math.max(0, allocated - self)
+  return { others, max: Math.max(0, (pl.tokenTotal ?? 0) - others) }
+})
+
+/** 配额的来源是资源池：未交付时直接从配额弹窗跳到池交付弹窗，而不是只给一句报错。 */
+function gotoPool() {
+  quotaDlg.value = false
+  openPoolDlg()
+}
+
 async function submitQuota() {
+  const ceiling = quotaCeiling.value
+  if (!ceiling) {
+    ElMessage.warning('本周期资源池尚未交付，无法分配机构配额（请先交付资源池）')
+    return
+  }
+  const want = quotaForm.value.quotaTokens ?? 0
+  if (want > ceiling.max) {
+    ElMessage.warning(`超出可分配余量：本次 ${fmt(want)}，最多可分配 ${fmt(ceiling.max)} 词元`)
+    return
+  }
   saving.value = true
   try {
     await createOrgQuota({
       institutionId: quotaForm.value.institutionId,
-      period: quotaForm.value.period,
+      // 留空即不下发，由服务端按同一口径补齐周期
+      ...(quotaForm.value.period ? { period: quotaForm.value.period } : {}),
       quotaTokens: quotaForm.value.quotaTokens,
       freeTokens: quotaForm.value.freeTokens,
       effectiveFrom: quotaRange.value?.[0],
@@ -475,4 +549,5 @@ function apiMsg(e: unknown, fallback: string) {
 .inst-name { font-weight: 600; }
 .muted { color: #909399; }
 .small { font-size: 12px; line-height: 1.3; }
+.warn-text { color: #e6a23c; }
 </style>

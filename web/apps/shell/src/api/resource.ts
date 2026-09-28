@@ -277,14 +277,26 @@ export interface SysUser {
 export interface SysRole {
   id: number
   roleCode: string
+  /** 后端由实体字段 name 映射而来（少这层映射，管理端两处的角色名永远是「—」） */
   roleName: string
+  name?: string
+  /** SYSTEM / BUSINESS */
+  type?: string
+  /** ALL / TENANT / ORG / DEPT / SELF */
+  dataScope?: string
   [key: string]: unknown
 }
 
 export interface SysPermission {
   id: number
   permCode: string
+  /** 后端由实体字段 name 映射而来 */
   permName: string
+  name?: string
+  /** MENU / BUTTON / API / APP ... */
+  type?: string
+  parentId?: number | null
+  sort?: number
   [key: string]: unknown
 }
 
@@ -691,6 +703,18 @@ export interface AgentWorker {
   /** 最近一次定时执行时间 */
   lastRunAt: string | null
   enabled: number
+  /**
+   * 可见范围：TENANT（本租户全员）/ DEPT（指定部门）/ SELF（仅创建者）。
+   *
+   * <p>由后端按角色判定并回吐 —— 部门负责人账号即使提交 TENANT 也会被强制为 DEPT，
+   * 因此界面一律以回吐值为准，不做本地角色推断。</p>
+   */
+  visibleScope?: string
+  /**
+   * 可见部门 id。注意后端给的是 **Java List.toString()** 形态的字符串（`"[3, 7]"`），
+   * 不是 JSON 数组，消费方需容错解析（见 WorkersView.parseDeptIds）。
+   */
+  deptIds?: string | number[] | null
 }
 
 export function adminListWorkers(): Promise<AgentWorker[]> {
@@ -812,6 +836,8 @@ export interface QuotaOverviewUser {
 }
 
 export interface QuotaOverview {
+  /** 实际作用的租户 id —— 由后端回执，用于核对「顶部切换器」与「本页数据」是否同一租户。 */
+  tenantId: number
   totalQuota: number
   totalUsed: number
   totalFree: number
@@ -841,8 +867,8 @@ export interface LedgerRow {
   totalTokens: number
   createdAt: string
 }
-export function getQuotaUsage(days = 30): Promise<{ since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] }> {
-  return http.get('/admin/quotas/usage', { params: { days } }).then((r) => unwrap<{ since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] }>(r))
+export function getQuotaUsage(days = 30): Promise<{ tenantId: number; since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] }> {
+  return http.get('/admin/quotas/usage', { params: { days } }).then((r) => unwrap<{ tenantId: number; since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] }>(r))
 }
 
 /* ============ 操作审计（管理端 · 权限变更审计） ============ */

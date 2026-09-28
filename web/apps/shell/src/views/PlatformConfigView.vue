@@ -13,19 +13,52 @@
       style="margin-bottom: 12px"
     />
 
-    <!-- 角色：平台级角色字典（只读基线数据） -->
-    <el-card v-if="section === 'roles'" shadow="never">
-      <template #header><span>角色</span></template>
-      <el-table v-loading="loading" :data="roles" stripe>
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="roleCode" label="角色编码" min-width="160" />
-        <el-table-column prop="roleName" label="角色名称" min-width="160">
-          <template #default="{ row }">{{ row.roleName || '—' }}</template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无角色数据" :image-size="60" />
-        </template>
-      </el-table>
+    <!--
+      角色与权限点：同一件事的两面（谁能做什么 / 有哪些动作）。
+      原先占两条菜单项，用户要在两个页面之间来回跳才能对上号，现合并为一页两页签。
+    -->
+    <el-card v-if="section === 'auth'" shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span>角色与权限</span>
+          <el-button text type="primary" size="small" :loading="loading" @click="loadSection">刷新</el-button>
+        </div>
+      </template>
+      <el-tabs v-model="authTab">
+        <el-tab-pane label="角色" name="roles">
+          <el-table v-loading="loading" :data="roles" stripe>
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="roleCode" label="角色编码" min-width="170" />
+            <el-table-column label="角色名称" min-width="130">
+              <template #default="{ row }">{{ row.roleName || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="数据范围" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" type="info">{{ row.dataScope || '—' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="权限简介" min-width="300">
+              <template #default="{ row }">{{ dataScopeText(row.dataScope) }}</template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无角色数据" :image-size="60" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="权限点" name="permissions">
+          <el-table v-loading="loading" :data="permissions" stripe>
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="permCode" label="权限编码" min-width="220" />
+            <el-table-column label="权限名称" min-width="200">
+              <template #default="{ row }">{{ row.permName || '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="type" label="类型" width="100" />
+            <template #empty>
+              <el-empty description="暂无权限点数据" :image-size="60" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
 
     <!-- 功能管理：模块开关与可见范围 -->
@@ -159,21 +192,6 @@
       </el-table>
     </el-card>
 
-    <!-- 权限点：平台级权限字典（只读基线数据） -->
-    <el-card v-if="section === 'permissions'" shadow="never">
-      <template #header><span>权限点</span></template>
-      <el-table v-loading="loading" :data="permissions" stripe>
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="permCode" label="权限编码" min-width="200" />
-        <el-table-column prop="permName" label="权限名称" min-width="200">
-          <template #default="{ row }">{{ row.permName || '—' }}</template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无权限点数据" :image-size="60" />
-        </template>
-      </el-table>
-    </el-card>
-
     <!-- 模型弹窗 -->
     <el-dialog v-model="modelDialog.visible" :title="modelDialog.form.id ? '编辑模型' : '新增模型'" width="580px">
       <el-form label-position="top">
@@ -245,7 +263,9 @@
  * 混在人员页里既让人员页臃肿，也让「模型管理」这类高频配置被埋在页面底部找不着。
  * 现将它们按功能域拆到两个组，各自有独立路由与面包屑。</p>
  *
- * <p>四个路由共用本组件，按 `route.meta.section` 决定渲染哪一块：
+ * <p>三个路由共用本组件，按 `route.meta.section` 决定渲染哪一块：
+ * 「权限与安全 → 角色与权限」（section=auth，页签内含角色 / 权限点两块字典）与
+ * 「系统配置 → 功能管理 / 模型管理」（section=apps / models）。
  * 表格 / 接口 / 权限判断全部沿用原实现，只换了承载位置，行为零变化。</p>
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -270,11 +290,15 @@ import {
   type SysPermission,
   type SysRole,
 } from '@/api/resource'
+// 「数据范围 → 一句话简介」的唯一常量入口（铁律 #4：常量只有一个入口）
+import { dataScopeText } from '@/constants/permissions'
 
-type Section = 'roles' | 'apps' | 'models' | 'permissions'
+type Section = 'auth' | 'apps' | 'models'
 
 const route = useRoute()
-const section = computed<Section>(() => (route.meta.section as Section) || 'roles')
+const section = computed<Section>(() => (route.meta.section as Section) || 'auth')
+/** 角色 / 权限点合并成一页后，用页签切换两块表格（默认落在「角色」）。 */
+const authTab = ref<'roles' | 'permissions'>('roles')
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -502,14 +526,13 @@ async function removeModel(row: ModelItem) {
 /** 只拉当前菜单项要用的那一块，别为看不见的页签发请求。 */
 function loadSection() {
   switch (section.value) {
-    case 'roles':
-      return loadRoles()
+    // 角色与权限点合并成一页：两块字典都要拉，页签切换是纯前端行为
+    case 'auth':
+      return Promise.all([loadRoles(), loadPermissions()])
     case 'apps':
       return loadApps()
     case 'models':
       return loadModels()
-    case 'permissions':
-      return loadPermissions()
   }
 }
 

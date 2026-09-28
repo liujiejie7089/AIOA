@@ -109,16 +109,19 @@ const routes: RouteRecordRaw[] = [
       /*
         平台级基线配置：原「人员管理」页内的卡片，管的是平台级基线数据与系统配置，
         与「员工 / 账号」没有从属关系，故从人员页拆出。按功能域分两处落菜单：
-          · /sys-roles（角色）、/sys-permissions（权限点） → 「权限与安全」
+          · /sys-roles（角色 + 权限点，页签切换） → 「权限与安全」
           · /sys-apps（功能管理）、/sys-models（模型管理） → 「系统配置」
-        四条路由共用 PlatformConfigView，靠 meta.section 决定渲染哪一块；
+        三条路由共用 PlatformConfigView，靠 meta.section 决定渲染哪一块；
         path 与菜单 index 一一对应，可见范围沿用后端 requireAdmin() = PLATFORM_ONLY_ROLES。
+
+        /sys-permissions 不再是独立菜单项（角色与权限点是同一件事的两面，合并为一页两页签），
+        但保留为重定向：历史深链与文档里引用过它，删掉会变成 404。
       */
       {
         path: 'sys-roles',
         name: 'sys-roles',
         component: () => import('@/views/PlatformConfigView.vue'),
-        meta: { title: '角色', section: 'roles', allowRoles: PLATFORM_ONLY_ROLES }
+        meta: { title: '角色与权限', section: 'auth', allowRoles: PLATFORM_ONLY_ROLES }
       },
       {
         path: 'sys-apps',
@@ -134,9 +137,8 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'sys-permissions',
-        name: 'sys-permissions',
-        component: () => import('@/views/PlatformConfigView.vue'),
-        meta: { title: '权限点', section: 'permissions', allowRoles: PLATFORM_ONLY_ROLES }
+        redirect: '/sys-roles',
+        meta: { title: '权限点', allowRoles: PLATFORM_ONLY_ROLES }
       },
       {
         path: 'resource-grants',

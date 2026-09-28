@@ -6,7 +6,7 @@ import cn.aioa.resource.mapper.NotificationDeliveryMapper;
 import cn.aioa.resource.service.notify.NotificationChannelConfigService;
 import cn.aioa.resource.service.notify.NotificationDispatcher;
 import cn.aioa.resource.service.notify.NotificationPreferenceService;
-import cn.aioa.resource.support.NotificationTenantGuard;
+import cn.aioa.resource.support.ResourceTenantGuard;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -28,7 +28,7 @@ import java.util.Map;
  * 统一消息中心管理接口（租户管理员端 + 本人偏好端）。
  *
  * <p>作用域纪律（与 GiteeController V50 端点一致，但用本模块可用的
- * {@link NotificationTenantGuard} 替代 OrgGuard，因为 aioa-resource 不依赖 aioa-org）：
+ * {@link ResourceTenantGuard} 替代 OrgGuard，因为 aioa-resource 不依赖 aioa-org）：
  * 租户级端点先 {@code requireTenantAdmin()} 再 {@code resolveTenant(...)}；
  * 偏好端点只认当前登录用户本人。</p>
  */
@@ -37,7 +37,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NotificationChannelController {
 
-    private final NotificationTenantGuard guard;
+    private final ResourceTenantGuard guard;
     private final NotificationChannelConfigService channelConfigService;
     private final NotificationPreferenceService preferenceService;
     private final NotificationDeliveryMapper deliveryMapper;

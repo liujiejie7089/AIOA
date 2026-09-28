@@ -13,6 +13,7 @@ import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,15 +82,24 @@ public class TenantController {
             m.put("code", t.getCode());
             m.put("name", t.getName());
             m.put("status", t.getStatus());
+            // V66：登录域名（平台需要一眼看清「哪些租户已分配域名」）
+            m.put("domain", t.getDomain());
             m.put("institutionCount", count("org_institution", t.getId()));
             m.put("memberCount", count("org_member", t.getId()));
             m.put("userCount", count("sys_user", t.getId()));
             Map<String, Object> pool = jdbc.queryForMap(
-                    "SELECT IFNULL(SUM(token_total),0) AS total, IFNULL(SUM(token_used),0) AS used "
+                    "SELECT IFNULL(SUM(token_total),0) AS total, IFNULL(SUM(token_used),0) AS used, "
+                            + "IFNULL(SUM(expert_seats),0) AS expertSeats, IFNULL(SUM(expert_used),0) AS expertUsed, "
+                            + "IFNULL(SUM(skill_seats),0) AS skillSeats, IFNULL(SUM(skill_used),0) AS skillUsed "
                             + "FROM tenant_resource_pool WHERE tenant_id = ? AND deleted_at IS NULL",
                     t.getId());
             m.put("quotaTokens", pool.get("total"));
             m.put("usedTokens", pool.get("used"));
+            // 席位回吐：管理端「调整资源」弹窗要能预填当前值，否则用户看不到自己正在改什么
+            m.put("expertSeats", pool.get("expertSeats"));
+            m.put("expertUsed", pool.get("expertUsed"));
+            m.put("skillSeats", pool.get("skillSeats"));
+            m.put("skillUsed", pool.get("skillUsed"));
             // 已分配 = 各机构配额之和（资源池表不冗余该字段，避免两处口径不一致）
             Long allocated = jdbc.queryForObject(
                     "SELECT IFNULL(SUM(quota_tokens),0) FROM org_quota WHERE tenant_id = ? AND deleted_at IS NULL",
@@ -115,7 +125,11 @@ public class TenantController {
 
     /**
      * 开通租户：建租户 + 开管理员账号（授 ROLE_TENANT_ADMIN）+ 初始化资源池，同一事务。
-     * body: { code, name, adminUsername, adminName, adminPassword?, tokenTotal?, expertSeats?, skillSeats?, period? }
+     * body: { code, name, domain?, adminUsername, adminName, adminPassword?, tokenTotal?, expertSeats?, skillSeats?, period? }
+     *
+     * <p>V66：新增 {@code domain}（平台分配的登录域名，可选但必须唯一）。
+     * 平台开通的是<b>唯一一层</b>租户；「子租户」能力已于 2026-09-28 按决定移除（含 V68 删列），
+     * 租户侧不再有「在本租户下再开一层」的入口。</p>
      */
     @PostMapping
     @Transactional(rollbackFor = Exception.class)
@@ -125,6 +139,7 @@ public class TenantController {
         String name = str(body.get("name"), "租户名称");
         String adminUsername = str(body.get("adminUsername"), "租户管理员账号");
         String adminName = body.get("adminName") == null ? adminUsername : String.valueOf(body.get("adminName"));
+        String domain = domainOf(body.get("domain"), null);
 
         if (tenantMapper.selectCount(new LambdaQueryWrapper<SysTenant>().eq(SysTenant::getCode, code)) > 0) {
             throw BizException.badRequest("租户编码已存在：" + code);
@@ -138,7 +153,8 @@ public class TenantController {
         t.setCode(code);
         t.setName(name);
         t.setStatus("ENABLED");
-        t.setTenantId(null); // 自身即顶层，插入后再回填
+        t.setDomain(domain);
+        t.setTenantId(null); // 自身即租户，插入后再回填
         t.setCreatedAt(LocalDateTime.now());
         t.setCreatedBy(actor.getUserId());
         tenantMapper.insert(t);
@@ -178,10 +194,22 @@ public class TenantController {
         out.put("adminUserId", u.getId());
         out.put("period", period);
         out.put("tokenTotal", tokenTotal);
+        out.put("domain", domain);
         return ApiResponse.ok(out);
     }
 
-    /** 编辑租户名称 / 编码。 */
+    /**
+     * 编辑租户名称 / 编码 / 登录域名。
+     *
+     * <p><b>为什么用 {@link LambdaUpdateWrapper#set} 而不是 {@code updateById(entity)}</b>：
+     * MyBatis-Plus 的 {@code updateById} 默认策略是 {@code NOT_NULL}，即实体里为 {@code null}
+     * 的字段**不会进 SET 子句**。而「清空登录域名」恰恰就是要把 domain 写成 NULL ——
+     * 于是接口回 {@code 200 + domain:null}、库里却纹丝不动：**清空变成假成功**
+     * （用户把域名输入框清空点保存，界面提示「已保存」，域名其实还在）。
+     * 2026-09-28 由 `scripts/e2e_tenant_domain_quota.py` 的 A7 断言实测抓到（A6 回 200 但库里没变）。
+     * 这里显式 set，才能真的写 NULL；这也让「清空」与「未提交该字段」在语义上区分开：
+     * 只有 body **含** domain 键（哪怕是 null）才动这一列。</p>
+     */
     @PutMapping("/{id}")
     public ApiResponse<SysTenant> update(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         requirePlatformAdmin();
@@ -189,8 +217,12 @@ public class TenantController {
         if (t == null) {
             throw BizException.notFound("租户不存在：" + id);
         }
+        LambdaUpdateWrapper<SysTenant> w = new LambdaUpdateWrapper<SysTenant>()
+                .eq(SysTenant::getId, id);
+        boolean touched = false;
         if (body.get("name") != null) {
-            t.setName(String.valueOf(body.get("name")));
+            w.set(SysTenant::getName, String.valueOf(body.get("name")));
+            touched = true;
         }
         if (body.get("code") != null) {
             String code = String.valueOf(body.get("code"));
@@ -199,11 +231,43 @@ public class TenantController {
             if (dup != null) {
                 throw BizException.badRequest("租户编码已存在：" + code);
             }
-            t.setCode(code);
+            w.set(SysTenant::getCode, code);
+            touched = true;
         }
-        t.setUpdatedAt(LocalDateTime.now());
-        tenantMapper.updateById(t);
-        return ApiResponse.ok(t);
+        if (body.containsKey("domain")) {
+            // 含键即动该列：null / 空串 ⇒ 真的写成 NULL（清空），不是静默跳过
+            w.set(SysTenant::getDomain, domainOf(body.get("domain"), id));
+            touched = true;
+        }
+        if (touched) {
+            w.set(SysTenant::getUpdatedAt, LocalDateTime.now());
+            tenantMapper.update(null, w);
+        }
+        // 回吐改后实况（重新读库），而不是内存里那份可能没落库的实体 —— 展示必须与事实同源
+        return ApiResponse.ok(tenantMapper.selectById(id));
+    }
+
+    /**
+     * 域名的归一化 + 唯一性校验（唯一性必然在这里做，因为「同一个域名只能属于一个租户」是全局约束）。
+     *
+     * @param excludeTenantId 修改时排除自身；新建传 null
+     */
+    private String domainOf(Object raw, Long excludeTenantId) {
+        String d = cn.aioa.common.util.TenantDomain.normalize(raw == null ? null : String.valueOf(raw));
+        if (d == null) {
+            return null;    // 允许清空 / 不分配
+        }
+        if (!cn.aioa.common.util.TenantDomain.isValid(d)) {
+            throw BizException.badRequest("登录域名格式不合法（应为小写字母/数字/连字符组成的多级域名，如 dsj.aioa.local）：" + raw);
+        }
+        LambdaQueryWrapper<SysTenant> w = new LambdaQueryWrapper<SysTenant>().eq(SysTenant::getDomain, d);
+        if (excludeTenantId != null) {
+            w.ne(SysTenant::getId, excludeTenantId);
+        }
+        if (tenantMapper.selectCount(w) > 0) {
+            throw BizException.badRequest("登录域名已被占用：" + d);
+        }
+        return d;
     }
 
     /** 启用 / 停用租户（停用后该租户成员将无法登录，由登录态校验拦截）。 */

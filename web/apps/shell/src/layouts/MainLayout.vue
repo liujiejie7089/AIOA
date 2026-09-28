@@ -6,7 +6,13 @@
         <span class="brand-text">AIOA 智能办公基座</span>
       </div>
       <div class="header-right">
-        <!-- 平台管理员：切换「当前操作租户」，租户端全部页面共用（机构/入驻/授权/分摊） -->
+        <!--
+          作用域选择器（两级联动）：
+            · 平台管理员：先选租户（跨租户运维），再选该租户下的机构；
+            · 租户管理员：租户是硬边界，只出机构下拉（本租户全部机构）；
+            · 机构成员：机构硬绑定，只显示一个只读标签。
+          两者都由 scope 全局态 + 声明式注入表统一驱动（见 api/tenantScope.ts）。
+        -->
         <el-select
           v-if="showTenantMenu && canSwitchTenant"
           :model-value="currentTenantId"
@@ -22,6 +28,29 @@
             :value="t.id"
           />
         </el-select>
+        <el-select
+          v-if="showInstitutionPick"
+          :model-value="currentInstitutionId"
+          size="small"
+          class="tenant-pick"
+          placeholder="选择机构"
+          @change="onInstitutionChange"
+        >
+          <el-option
+            v-for="i in institutionOptions"
+            :key="i.id"
+            :label="i.name ? `${i.name}（${i.code || i.id}）` : `机构 ${i.id}`"
+            :value="i.id"
+          />
+        </el-select>
+        <el-tag
+          v-else-if="institutionScopeLoaded && institutionScopeKind === 'ORG'"
+          size="small"
+          type="success"
+          effect="plain"
+        >
+          {{ currentInstitutionName }}
+        </el-tag>
         <el-tag v-else-if="showTenantMenu && tenantScopeLoaded" size="small" type="success" effect="plain">
           {{ currentTenantName || auth.tenantName }}
         </el-tag>
@@ -178,6 +207,17 @@
               <el-icon><OfficeBuilding /></el-icon>
               <span>租户与机构</span>
             </template>
+            <!--
+              「租户管理」归入本组（它管的就是租户这一层的实体，与机构/入驻/授权/分摊同域），
+              原先挂在「平台管理」下属于归类错位。
+
+              ⚠️ 组可见 ≠ 子项可见：本组对租户管理员也渲染（TENANT_SCOPE_ROLES 含 ROLE_TENANT_ADMIN），
+              而 /tenants 路由 meta.minTier='platform'。若不给子项守卫，租户管理员会看到
+              「租户管理」却点不动或被路由重定向 —— 典型的「能见点不开」。故子项必须带 v-if。
+            -->
+            <el-menu-item v-if="isPlatformAdmin" index="/tenants">
+              <template #title>租户管理</template>
+            </el-menu-item>
             <el-menu-item index="/institutions">
               <template #title>机构管理</template>
             </el-menu-item>
@@ -229,8 +269,11 @@
               <el-icon><SetUp /></el-icon>
               <span>权限与安全</span>
             </template>
-            <el-menu-item v-if="isPlatformAdmin" index="/sys-roles">角色</el-menu-item>
-            <el-menu-item v-if="isPlatformAdmin" index="/sys-permissions">权限点</el-menu-item>
+            <!--
+              角色与权限点合并为一条入口（同一件事的两面：谁能做什么 / 有哪些动作），
+              页内用页签切换。原独立菜单项「权限点」已撤，旧深链 /sys-permissions 保留为重定向。
+            -->
+            <el-menu-item v-if="isPlatformAdmin" index="/sys-roles">角色与权限</el-menu-item>
             <!--
               审批流配置（三期 C-02/A3-9）：租户端可视化配置各业务审批流的「知会对象」。
               可见范围与后端 /tenant/approval-flow-defs（requireTenantAdmin）一致 = TENANT_SCOPE_ROLES。
@@ -259,14 +302,17 @@
             <el-menu-item v-if="isPlatformAdmin" index="/sys-models">模型管理</el-menu-item>
           </el-sub-menu>
 
-          <!-- 平台管理：仅平台管理员（内容审核台 / 租户管理） -->
+          <!--
+            平台管理：仅平台管理员。
+            「租户管理」已移入「租户与机构」组（同域聚合），本组只剩内容审核台；
+            保留本组是因为内容审核台是唯一的平台级运营入口，不宜再塞进其它域。
+          -->
           <el-sub-menu v-if="isPlatformAdmin" index="plat">
             <template #title>
               <el-icon><Stamp /></el-icon>
               <span>平台管理</span>
             </template>
             <el-menu-item index="/content-reviews">内容审核</el-menu-item>
-            <el-menu-item index="/tenants">租户管理</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>
@@ -283,10 +329,15 @@
           （用户实测「管理端退出登录时报 401」的根因）。
         -->
         <router-view
-          v-if="sessionActive && (!showTenantMenu || tenantScopeLoaded)"
+          v-if="sessionActive && (!showTenantMenu || tenantScopeLoaded) && (!needsInstitutionScope || institutionScopeLoaded)"
           v-slot="{ Component }"
         >
-          <component :is="Component" :key="`${route.path}@${currentTenantId ?? 0}`" />
+          <!--
+            重挂载键必须同时含租户与机构：只带租户时，平台管理员在同一租户内切换机构，
+            机构管理 / 组织与部门等页面不会重新取数，会留着上一个机构的数据
+            （「选择机构后页面和数据没有随之改变」）。
+          -->
+          <component :is="Component" :key="`${route.path}@${currentTenantId ?? 0}@${currentInstitutionId ?? 0}`" />
         </router-view>
       </el-main>
     </el-container>
@@ -311,6 +362,11 @@ import {
   setCurrentTenant,
   tenantState
 } from '@/api/tenantScope'
+import {
+  institutionState,
+  loadInstitutionScope,
+  setCurrentInstitution
+} from '@/api/institutionScope'
 import {
   EXPERT_MANAGER_ROLES,
   GITEE_VIEW_ROLES,
@@ -338,10 +394,36 @@ const tenantScopeLoaded = tenantState.loaded
 const currentTenantId = tenantState.currentId
 const currentTenantName = tenantState.currentName
 
+// 机构作用域：顶部选择器的第二级（详见 api/institutionScope.ts）
+const institutionScopeLoaded = institutionState.loaded
+const institutionScopeKind = institutionState.scopeKind
+const currentInstitutionId = institutionState.currentId
+const currentInstitutionName = institutionState.currentName
+/**
+ * 机构下拉仅在「可切换 + 该作用域下确有多个/若干机构」时出现。
+ *
+ * <p>过滤依据当前租户：平台管理员的机构清单是跨租户全集（后端注释明写「全局全部启用机构」），
+ * 不过滤的话换租户后下拉里仍混着其它租户的机构 —— 那正是用户反馈的「切换租户机构未变」。</p>
+ */
+const institutionOptions = computed(() => institutionState.optionsOfTenant(tenantState.currentId.value))
+const showInstitutionPick = computed(
+  () => institutionScopeLoaded.value && institutionState.canSwitch.value && institutionOptions.value.length > 0
+)
+
+function onInstitutionChange(id: number) {
+  setCurrentInstitution(id)
+  const name = institutionState.institutions.value.find((i) => i.id === id)?.name || ''
+  ElMessage.success(`已切换到「${name}」`)
+}
+
 function onTenantChange(id: number) {
   setCurrentTenant(id)
   const name = tenantState.tenants.value.find((t) => t.id === id)?.name || ''
-  ElMessage.success(`已切换到「${name}」`)
+  // 租户变了，机构必须跟着走：否则「机构」还停在上一个租户的实体上，
+  // 后续 /org/* 请求会带着一个不属于本租户的 institutionId（服务端 404），页面直接空掉。
+  const opts = institutionState.optionsOfTenant(id)
+  setCurrentInstitution(opts[0]?.id ?? null)
+  ElMessage.success(`已切换到「${name}」${opts[0]?.name ? ` · ${opts[0].name}` : ''}`)
 }
 
 const initial = computed(() => auth.displayName.slice(0, 1).toUpperCase())
@@ -366,6 +448,8 @@ const showTenantMenu = computed(() => hasAnyRole(roles.value, TENANT_SCOPE_ROLES
  */
 const showOrgMenu = computed(() => hasAnyRole(roles.value, ORG_VIEW_ROLES))
 const showPersonnelMenu = computed(() => hasAnyRole(roles.value, PERSONNEL_VIEW_ROLES))
+/** 是否需要在进入页面前解析机构作用域（企业端与租户端页面都要）。 */
+const needsInstitutionScope = computed(() => showTenantMenu.value || showOrgMenu.value)
 
 /**
  * 数字员工 / 专家配置的创建与管理权限归属（V33），与后端 PermissionCatalog
@@ -416,11 +500,13 @@ const PATH_GROUP: Record<string, string> = {
   '/onboarding': 'tenant',
   '/resource-grants': 'tenant',
   '/cost-alloc': 'tenant',
+  '/tenants': 'tenant',
   // 组织与员工
   '/org-structure': 'org',
   '/admin': 'org',
   // 权限与安全
   '/sys-roles': 'gov',
+  // 旧深链（现在会重定向到 /sys-roles），保留归组以免直达时菜单不展开
   '/sys-permissions': 'gov',
   '/approval-flows': 'gov',
   '/audit': 'gov',
@@ -430,8 +516,7 @@ const PATH_GROUP: Record<string, string> = {
   '/sys-apps': 'syscfg',
   '/sys-models': 'syscfg',
   // 平台管理
-  '/content-reviews': 'plat',
-  '/tenants': 'plat'
+  '/content-reviews': 'plat'
 }
 
 const initialOpenedGroups = computed<string[]>(() => {
@@ -499,6 +584,22 @@ onMounted(async () => {
       await loadTenantScope()
     } catch {
       tenantState.loaded.value = true // 失败也要放行，避免页面永久空白
+    }
+  }
+  // 机构作用域：租户端（机构管理）与企业端（组织与部门 / 人员管理）页面都要用
+  if (needsInstitutionScope.value) {
+    try {
+      await loadInstitutionScope()
+    } catch {
+      institutionState.loaded.value = true
+    }
+    // 平台管理员默认租户可能带出「本租户暂无启用机构」，此处把机构落到该租户的第一个，
+    // 避免首帧拿着上一租户的机构 id 打一发必然 404 的请求。
+    if (institutionState.canSwitch.value) {
+      const opts = institutionState.optionsOfTenant(tenantState.currentId.value)
+      if (currentInstitutionId.value == null || !opts.some((i) => i.id === currentInstitutionId.value)) {
+        setCurrentInstitution(opts[0]?.id ?? null)
+      }
     }
   }
 })

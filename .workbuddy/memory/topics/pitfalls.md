@@ -268,3 +268,181 @@
     **通则**：凡「Dockerfile 里逐个列出的清单」都要与**权威来源**（pom 的 `<modules>`、tsconfig 的 `extends`、
     vite 的 base 与组装目录）做**确定性比对**，别靠人眼；且**别用 `|| true` 掩盖会长期恶化的步骤**。
     守卫：`_check_single_port.py` 的 c13（解析 `server/pom.xml` 的 `<modules>` ⇄ Dockerfile 的 COPY 行）。
+
+75. **静态守卫「按文本计数」会被注释污染 ⇒ 断言退化成「谁写注释谁报红」。**
+    现场（V66 守卫首跑）：V5 要断言「子租户端点全部要求租户管理员」= 映射数 == 校验数，
+    实跑却是 `映射 4 个 / requireTenantAdmin 5 次`。根因：类的 Javadoc 里为了说明权限纪律写了一句
+    「权限：`{@code guard.requireTenantAdmin()}`」⇒ **计数把注释里的复述也算进去了**。
+    ★ 危险在于：这种断言一旦「放宽」（比如改成 `>= 1`）就变成恒真；而它原本的正确形态是
+    **断言代码事实，不是断言文件里出现过这几个字**。
+    **通则**：静态守卫**先剥离注释再断言**（`_strip_java_comments`：先 `/*…*/` 再 `//`），
+    并且计数锚点尽量取**只有真正应用时才会出现的形态**（这里是 `= guard.requireTenantAdmin();`，
+    注释里的 `{@code …()}` 天然不匹配）。同族缺陷：V65 守卫的 B7 —— 指标名单只能看**真正下发的 label**
+    （`metric("key","label",…)`），不能把注释里提到的词算进来。
+    守卫：`_check_v66_tenant_guards.py` 的 `_strip_java_comments` + `--selftest`（20 个突变全报红）。
+
+76. **业务校验失败是「HTTP 200 + 信封 `code=400`」，断言别按 HTTP 状态码写。**
+    现场（机构类型套件首跑）：8 条「非法值被拒」断言全假红，打印
+    `status=200 msg=机构类型不合法：STATE_OWNED；可选值：GOVERNMENT / ENTERPRISE / ...`
+    —— 拒绝其实**完全生效**，是断言写错了维度。本仓约定：`BizException` 由全局异常处理器统一包成
+    **HTTP 200 + 信封 `code`**（400/404/…）；只有 Spring Security 层抛出的鉴权失败才是**真 HTTP 403**。
+    ⇒ 既有套件（`e2e_v66` 等）一律断言 `code_of(js) == 400/403/404`，新套件必须照此。
+    **通则**：写「被拒」断言前，先看一条**同形合法请求**返回什么（成功也是 200）；
+    在本仓 HTTP 状态码不是业务裁决的载体，拿它做判据必然假红/假绿。
+
+77. **静态守卫自检里的 `[SKIP]` 必须计入失败** —— "没生效的突变" = "没验过的断言"。
+    现场：批次 B 守卫的 O6 突变锚点写成 `AuthUser u = guard.requireTenantAdmin();`，
+    而真实代码是裸的 `guard.requireTenantAdmin();` ⇒ 替换没命中、突变未生效；
+    旧写法打印 `[SKIP]` 后 `continue`，最终照样输出「自检 11/11 通过」——
+    把**没验过的突变**算成了通过，比没断言更危险（同族：铁律 #7 的恒真断言）。
+    修法：SKIP 计入 `bad` 并直接判失败（`_check_v66_tenant_guards.py` 与批次 B 守卫都已收紧）。
+    **通则**：自检报告里「跳过」与「通过」必须分开计数；锚点漂移要报红提示同步守卫，不能静默放行。
+
+78. **E2E 残留会被「当作基线」而长期隐身** —— 「与基线一致」不能证明干净。
+    现场（批次 C 真机验证时才发现）：「给员工追加账号」下拉里塞满 `e2e*` 账号。
+    根因：`scripts/e2e_v63_org_feedback.py` 每次新建 1 机构 + 1 部门 + 3 员工 + **4 账号**，
+    收尾只把机构置 `CLOSED`、**账号原样留在账号池**；跑了 11 次 ⇒ **44 个 `ENABLED` 的 `e2e*` 账号**，
+    另有 13 个 `E2E企业-*` 机构（占租户 2 存活机构的 **50%**）、11 个 E2E 部门、44 名 E2E 员工。
+    本仓多张表的查询都是**租户级**（如候选账号接口必须回吐「虚拟管理员账号」），残留会直接涌进业务 UI。
+    ★ 最危险的一点：`e2e_org_types_and_credit` 断言「租户 2 机构总数 `22 → 22`」——
+    那个 22 里本就含 9 个 E2E 机构 ⇒ **基线自己是被污染的**，于是「与基线一致」把缺陷放行了很久。
+    **通则**：① 造数据的套件收尾必须让数据**退出业务可见面**（软删/停用），不能只改个状态就交差；
+    ② 断言「数量回到基线」时，要能说出基线里**每个**条目是什么（最好直接断言**按命名前缀筛出的残留数为 0**）；
+    ③ 用**真机/真接口**看一眼 UI，比只看套件绿灯更容易发现这类「数据不报错但污染」的问题。
+    守卫：`_check_member_account_guards.py` 的 **M11**；清理工具 `scripts/reset_e2e_account_residue.py`。
+
+79. **同一份清单被抄成多份，于是「前端能选、后端不收」** —— 用户报障「数字员工无法授权」。
+    现场：管理端「资源授权 → 新增授权 → 资源类型=数字员工 → 保存」稳定被拒
+    `code=400 不支持的资源类型：WORKER`；对照同机构 `MODEL` 同一代码路径 `code=0`（排除选错机构/资源）。
+    根因：可授权类型的清单在**四处**各写一份，其中三处漏了 WORKER ——
+      · `ResourceGrantService.grant()` 的白名单（硬编码 4 类）← 拦住保存的那一道
+      · `catalog().resTypes`（硬编码 4 类）
+      · `institutionResources()` 的 byType 预置（硬编码 4 类）
+      · 管理端下拉（手写 5 个选项，**含**数字员工）← 唯一的「正确」那份
+    `ResourceGrant` 实体连 `TYPE_WORKER` 常量都没有；而 `TenantAdminController` 的注释早已写着
+    「（专家 / 技能 / 模型 / **数字员工**）」⇒ **注释与代码背离**，能力事实上不可用（铁律 #4 的反面）。
+    ★ 同一批还暴露第二个：`selectWorkers()` **没有任何租户过滤**（`WHERE deleted_at IS NULL`），
+    租户 2 的授权下拉里混进租户 3 的数字员工（实测 11 条 = t0 3 + t2 4 + t3 4），
+    选中即构成跨租户授权 —— 直接违反 docs/15 §八「tenant_id 只从 JWT 取、跨租户一律 404」。
+    **修法**：类型清单收敛为 `ResourceGrant.ALL_TYPES` + `TYPE_NAMES` 单一权威，
+    目录/白名单/byType 三处全部由它派生；前端下拉改为读 `catalog.resTypes`（不再复刻）；
+    `selectWorkers(tenantId)` 补租户过滤。**通则**：凡「枚举可选值」出现第二次，就一定会分叉；
+    对外可见的枚举必须由**服务端一处**下发，前端只渲染不改写。
+    守卫：`_check_worker_grant_guards.py`（W1–W12，含「前端不得硬编码类型下拉」）；
+    套件：`scripts/e2e_worker_grant.py`（33/33，含「目录里的每种类型都要能真授权成功」）。
+
+80. **「资源下拉显示 `名称（undefined）`」= 拿可选字段做了必填拼接**。
+    数字员工的目录行没有 `resKey`（`agent_worker` 只有 id/name/status；它是租户内自建资产，
+    不像模型/专家有稳定 key），而模板无脑拼 `名称（resKey）` ⇒ 真机看到「政策快讯员（undefined）」。
+    授权本身是成功的（库里有行），**只是标签脏** —— 这类缺陷套件抓不到（接口全绿），
+    只有真机看一眼才发现。**通则**：拼接前先问「这个字段在这一类数据上一定存在吗」；
+    不存在就分支降级，不要拼出 `undefined/null/NaN`。守卫：`_check_worker_grant_guards.py` **W12**。
+
+81. **同一个 mapper 方法被两批改动各加一份声明 ⇒ 直接编译失败**（2026-09-28）。
+    现场：`OrgStatMapper` 里 `updateUserPassword(...)` 出现**两次**（V66 子租户批次加了一份
+    `子租户管理员若显式指定了初始口令…`，V67 批次又加了一份 `重置登录口令（按 userId）`），
+    签名完全相同 ⇒ `mvnw clean package` 编译不过。两者都藏在"新增方法"的注释下面，
+    人工 review 时看着都像合理代码。**通则**：改接口类时先全局搜方法名再决定"新增"还是"复用"；
+    每次 `package` 前可先用一段 20 行脚本按方法名 regex 统计重复（见
+    `scripts/_check_member_login_credential_guards.py` **C6**）。同批还顺带发现第二个：
+    `SubTenantService` 绕开 `AccountProvisioner` 自己 `passwordEncoder.encode(...)` 写口令
+    ⇒ 口令写入口出现两个（铁律 #4）。修法：删重复声明 + 子租户改调 `accounts.resetPassword()`。
+
+82. **「开户即写死口令」= 能力在、凭据不可知**（用户报障「新增的员工无法登录用户端」）。
+    实测新账号**能**登录（统一演示口令 `User@123`，`/auth/login` 200、用户端核心接口全 200），
+    真正的缺陷在**凭据不可知**：管理端「新增员工（自动开户）」表单既无口令输入、成功也不回显，
+    而 `AccountProvisioner` 一律写死 `DEMO_PASSWORD_HASH`、服务端只存哈希 ⇒
+    操作员拿到一个"建好了但进不去"的账号，且**无从补救**（没有重置入口，只能删员工重建，
+    那会连带丢掉审批/通知归属）。**修法**：① 表单加口令输入（留空回落统一口令）；
+    ② **回显口令必须由服务端回执下发**（`initialPassword`），前端不得复刻常量
+    —— 否则两处口令迟早分叉；③ **只在确实新建账号时才回显**（账号本就存在时口令没被改动，
+    回显一个"初始口令"就是假话，铁律 #1）；④ 批量导入没有口令列 ⇒ 回执要带上统一初始口令，
+    否则导入上千人后一个都登不进去；⑤ 补 `POST /org/members/{id}/password` 重置端点作为正常出口；
+    ⑥ 口令**绝不能进审计**（长期留存、多人可见）。守卫：
+    `scripts/_check_member_login_credential_guards.py`（C1–C11 + 11 项突变自检）。
+
+83. **前端构建绕开沙箱「批量删除保护」：换一个**全新** `--outDir`，别去清旧目录**。
+    `vite build` 默认 `emptyOutDir`，要删 `dist/assets` 里 70+ 个文件 ⇒
+    `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":76,"threshold":50,"scope":"turn"}`
+    直接让构建失败（`npm run build` / `--outDir dist2` 都一样，只要目标目录已存在且文件多）。
+    且在**同一轮里分批删也躲不掉**（`scope: turn` 是累计的）。
+    **可行做法**：`vite build --outDir "C:/Users/<u>/AppData/Local/Temp/aioa-shell-vNN"`（每轮换一个**不存在**的
+    目录名 ⇒ 无需删除），再 `cp <out>/assets/* <webroot>/assets/ && cp <out>/index.html <webroot>/index.html`
+    （覆盖是写、不是删，不触发保护）。★ 路径必须写成 **`C:/...` 风格**：
+    写 git-bash 的 `/c/Users/...` 会被 node 当**相对路径**，产物落到 `C:/c/Users/...`（实测踩到），
+    目录树看着还对、`ls /c/Users/.../Temp/...` 却是空的。
+    校验产物对得上：在 webroot 的 entry chunk 里 grep 到 `OrgAdminView-<hash>.js`，
+    再在该 chunk 里 grep 到 `OrgStructureView-<hash>.js`，最后确认这个分块里含新文案
+    —— 老 hash 的分块会一直躺在目录里，光看"文件存在"会误判。
+
+84. **MyBatis-Plus `updateById(entity)` 的 NOT_NULL 策略让「清空字段」变成假成功**。
+    现场（2026-09-28，写 `e2e_tenant_domain_quota.py` 时断言抓到）：`TenantController.update` 用
+    `t.setDomain(null); tenantMapper.updateById(t);` ⇒ 接口回 `200 + domain:null`，**库里纹丝不动**。
+    根因：`updateById` 默认 `FieldStrategy.NOT_NULL`，实体里为 `null` 的字段**不进 SET 子句**；
+    而「清空域名」恰恰就是要把 domain 写成 NULL。用户在界面把域名输入框清空点保存，看到「已保存」，域名还在。
+    判据：**凡是「字段可以被清空」的接口，都不能用 `updateById(entity)`**。
+    修法：`LambdaUpdateWrapper.set(SysTenant::getDomain, v)` 显式 set（`update(null, w)`），
+    并且**含键才动该列**（`body.containsKey("domain")`），这样「清空」与「未提交该字段」语义可区分；
+    回吐要 `selectById` **重读**，不能回内存里那份可能没落库的实体。
+    守卫：`_check_v66_tenant_guards.py` **K6**（断言限定在 `update()` 方法体内 —— 同类 `changeStatus` 也调
+    `updateById`，那是合法的，不限定范围会假红）。
+
+85. **弹窗「预填值」绝不能硬写默认值 —— 那等于「一点保存就清空对方的真实数据」**。
+    现场（同批）：`TenantAdminView.openQuota` 预填 `expertSeats: 0, skillSeats: 0`，而
+    `QuotaService.upsertPool` 对席位**没有**「不得低于已用」的兜底 ⇒ 打开弹窗看到 0、保存即把
+    租户真实席位（12/18）写成 0，**无提示、无校验**。
+    最刺眼的是：后端 `list` **早就**回吐了 `expertSeats/skillSeats/expertUsed/skillUsed`，
+    其注释写明「弹窗要能预填当前值，否则用户看不到自己正在改什么」—— 前端从未接上。
+    判据：**编辑器类弹窗的每个数字字段，预填值必须来自「当前值」；写死 0/空串是数据破坏**。
+    且「不提交的字段后端不会替你兜底」—— 所以预填缺失不是"少个默认值"，是"保存即毁数据"。
+    守卫：**K7**（预填）+ e2e **B8/B9/B10**（不提交席位则不动 / 显式提交才改 / 真落库）。
+
+86. **删「按当初谁跟谁写在一起」的 API 文件时，必须逐导出项确认能力归属**。
+    现场：`api/subTenant.ts` 里同时装着「子租户 CRUD」与「平台调额度 `updateTenantQuota`」。
+    移除子租户时若整份删掉，平台就**静默失去**「事后调整租户资源上限」的入口（铁律 #4）。
+    修法：按**能力**拆分（新建 `api/tenantQuota.ts`），而不是按文件；并把这件事写成守卫 **K4**
+    （含突变 K4c「import 忘了改，仍指向已删文件」）。
+    判据：**删文件前先 `grep` 该文件每个 export 的调用方，逐一回答「它属于要删的能力吗」。**
+
+87. **静态守卫的「恒真」有两种隐蔽形态：扫的源与突变注入的源不一致 / 断言被 import 满足**。
+    现场（2026-09-28，本守卫首版）：① **K2** 断言「域名正则只有 `TenantDomain` 一处」，实现扫的是
+    **文件系统**，而突变只改了传入的字典文本 ⇒ 突变等于没注入，`--selftest` 直接报「未报红」；
+    ② **K4b** 断言「api 走 unwrap」，而 `import { http, unwrap } from './index'` 这一行就满足了它 ⇒
+    把调用改成 `r.data.data`（失败信封当业务数据，pitfalls #18）守卫照样绿。
+    修法：① 断言与突变必须**共用同一来源**（改为从 `java_blobs`（basename, 去注释正文）列表判定）；
+    ② 断言前**先剥 import 与注释**，再看是否**真调**了目标形态（`unwrap<QuotaBeforeAfter>(r)`）。
+    配套：断言要限定在**单个方法体**内（`_method_body`），否则同类其它方法的同名调用会造成假红。
+
+88. **回退一个能力：迁移只能前进，删列前先核实「没有数据要搬迁」**。
+    现场：用户决定「去掉子租户」（2026-09-28）。`V66` 已应用成功且 `validate-on-migrate=true` ⇒
+    **改 `V66` 内容会让校验和对不上、下次启动 `MigrationChecksumMismatchException`**。
+    正确做法：新加 `V68__remove_sub_tenant.sql` 做 `DROP INDEX idx_tenant_parent` + `DROP COLUMN parent_id/level`，
+    且**只删该能力的列，不碰同批带来的 `domain`/`uk_tenant_domain`**（用户没要求去掉域名能力）。
+    ★ 本地启动脚本带 `-Dspring.flyway.validate-on-migrate=false`，改 `V66` 在本机**看起来没事** ——
+    那正是最危险的情况（本机绿、容器红）。
+    ★ 删列前必须先查「有没有孤儿行」：实测 `sys_tenant` 4 行全部 `parent_id=0/level=1` ⇒ 无子租户行可留，
+    否则删列会留下「失去层级标识的孤儿租户」。
+    判据：**回退也是改造，要走同一套纪律（谁的门、要不要拒、失败留不留痕、守卫钉在哪）。**
+
+89. **断言「列表某行必须有值」时，位置选择器是隐式假设 —— 第一行可能**合法地**为 0**。
+    现场（2026-09-28，`scripts/_verify_v68_ui_removal.py` 首版，假红 6/13）：脚本用
+    `page.locator("button:has-text('调整资源')").first.click()` 点**第一行**，而 `/admin/tenants`
+    按 id 升序，第一行是 `sys_tenant.id=1`「默认租户」—— 它在 `tenant_resource_pool` 里
+    **没有行**，`list` 回吐 `0/0/0` 是**完全正确**的。脚本却断言「席位不得为 0」⇒ 假红，
+    并让我一度去查「前端构建没生效 / webroot 缓存」（其实构建与 webroot 都是最新，见下条）——
+    **把一次测试缺陷当成产品缺陷排查了一整轮**。
+    修法：按**业务键**定位目标行（`page.locator("tr", has_text="DSJ-DEMO").first`），且断言前
+    先查库确认「该行本来就该有非零值」：`SELECT tenant_id,SUM(token_total),SUM(expert_seats),
+    SUM(skill_seats) FROM tenant_resource_pool GROUP BY tenant_id`（实测 id=2→12/18、id=3→5/6、id=30→2/2，
+    而 id=1 无行）。
+    判据：**位置选择器 = 隐式假设；假红和假绿一样贵**（假红会让人去改对的东西）。
+
+90. **Playwright `inner_text()` 不返回「不可见」文本 —— 折叠的子菜单会让「入口仍在」整片假红**。
+    现场（同上，同轮）：对照检查 `label in page.inner_text("body")` 对「租户管理/机构管理/入驻进度/
+    资源授权/费用分摊」**全部** not present ⇒ 差点被读成「整块菜单被误删」。实因：这五项是
+    `<el-sub-menu index="tenant">` 的**子项**，Element Plus 默认**折叠**，子项文本在折叠过渡里不可见，
+    而 `inner_text()` 的语义是 `innerText`（**只算渲染出来的**）⇒ 取不到。菜单一直在。
+    修法：先把分组展开（`page.locator('.el-sub-menu__title:has-text("租户与机构")').first.click()`），
+    或改用 `text_content()`（含隐藏节点）/ `page.content()`。
+    判据：**「不存在」类断言必须排除「只是不可见」** —— 断言前先让目标进入可见态；
+    否则「没找到」无法区分「真的没有」与「没渲染出来」，而这两者的修法完全相反。

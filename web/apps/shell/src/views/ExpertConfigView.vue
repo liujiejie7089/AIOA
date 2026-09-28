@@ -81,6 +81,32 @@
             <el-option label="指定用户" value="USER" />
           </el-select>
         </el-form-item>
+        <!--
+          可见对象：选了「指定机构 / 部门 / 用户」就必须能指定到具体对象。
+          此前只有上面一个下拉而没有目标选择器，服务端又没有目标清单的概念 ——
+          选「指定机构」与选「仅本租户」的行为完全一样，等于配了没效果（能力缺口）。
+        -->
+        <el-form-item v-if="targetScope" :label="targetLabel">
+          <div style="width: 100%">
+            <el-select
+              v-model="form.visibleTargets"
+              multiple
+              filterable
+              :loading="targetLoading"
+              :placeholder="targetPlaceholder"
+              style="width: 100%"
+            >
+              <el-option v-for="o in targetOptions" :key="o.id" :label="o.label" :value="o.id" />
+            </el-select>
+            <div v-if="!form.visibleTargets || !form.visibleTargets.length" class="target-warn">
+              未选择任何对象 ⇒ 该专家<b>不会对任何普通用户可见</b>。请至少选一项，
+              或把可见范围改回「全员可见 / 仅本租户」。
+            </div>
+            <div v-else class="target-hint">
+              已选 {{ form.visibleTargets.length }} 项；管理员始终可见（便于继续配置）。
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="默认启用">
           <el-switch v-model="form.defaultEnabled" />
         </el-form-item>
@@ -231,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createTemplate,
@@ -244,6 +270,8 @@ import {
   type ExpertView
 } from '@/api/expert'
 import { listConfigs, updateConfig } from '@/api/resource'
+import { getDepartments, getOrgScope, listMembers } from '@/api/org'
+import { institutionState } from '@/api/institutionScope'
 import { useAuthStore } from '@/stores/auth'
 
 /** 默认 AI 的参数键（与后端 SysConfig.KEY_DEFAULT_EXPERT、迁移 V62 同源） */
@@ -260,6 +288,72 @@ const current = ref<ExpertView | null>(null)
 const defaultKey = ref('')
 
 const form = reactive<Record<string, any>>({})
+
+// ---------------------------------------------------------------- 可见范围目标清单
+/** 需要挑选具体对象的三种范围；ALL / TENANT 不需要目标清单。 */
+const TARGET_SCOPES: Record<string, { label: string; placeholder: string }> = {
+  INSTITUTION: { label: '可见机构', placeholder: '选择一个或多个机构' },
+  DEPT: { label: '可见部门', placeholder: '选择一个或多个部门' },
+  USER: { label: '可见用户', placeholder: '选择一个或多个用户' }
+}
+const targetScope = computed(() => TARGET_SCOPES[String(form.visibleScope || '')] || null)
+const targetLabel = computed(() => targetScope.value?.label || '可见对象')
+const targetPlaceholder = computed(() => targetScope.value?.placeholder || '')
+const targetOptions = ref<{ id: number; label: string }[]>([])
+const targetLoading = ref(false)
+
+/** 按当前范围拉取候选对象。三个来源都是既有的机构作用域接口，不新增后端读口。 */
+async function loadTargets() {
+  const s = String(form.visibleScope || '')
+  targetOptions.value = []
+  if (!TARGET_SCOPES[s]) {
+    return
+  }
+  targetLoading.value = true
+  try {
+    if (s === 'INSTITUTION') {
+      const scope = await getOrgScope()
+      targetOptions.value = (scope?.items || []).map((i) => ({
+        id: i.id,
+        label: i.name ? `${i.name}（${i.code || i.id}）` : `机构 ${i.id}`
+      }))
+    } else if (s === 'DEPT') {
+      const d = await getDepartments(institutionState.currentId.value)
+      const out: { id: number; label: string }[] = []
+      const walk = (ns: Record<string, any>[]) =>
+        (ns || []).forEach((n) => {
+          out.push({ id: n.id as number, label: `${'　'.repeat(Math.max(0, ((n.level as number) || 1) - 1))}${n.name}` })
+          walk((n.children as Record<string, any>[]) || [])
+        })
+      walk((d?.tree as Record<string, any>[]) || [])
+      targetOptions.value = out
+    } else {
+      const r = await listMembers({ page: 1, size: 200 }, institutionState.currentId.value)
+      targetOptions.value = (r?.items || [])
+        .filter((m) => !!m.userId)
+        .map((m) => ({ id: m.userId as number, label: `${m.name}${m.username ? `（${m.username}）` : ''}` }))
+    }
+  } catch (e: any) {
+    ElMessage.error('可见对象加载失败：' + (e?.message || e))
+  } finally {
+    targetLoading.value = false
+  }
+}
+
+/**
+ * 切换可见范围时清空已选目标。
+ *
+ * <p>机构 id 与部门 id 是两套互不相干的命名空间，不清空就会把「机构 3」当成「部门 3」提交 ——
+ * 结果是范围改对了、对象却指向别的东西，而且界面上看着「已选一项」。</p>
+ */
+watch(
+  () => form.visibleScope,
+  async (s, prev) => {
+    if (s === prev) return
+    form.visibleTargets = []
+    await loadTargets()
+  }
+)
 
 // ---------------------------------------------------------------- 全局模板产入口
 const auth = useAuthStore()
@@ -359,6 +453,8 @@ function edit(row: ExpertView) {
   Object.assign(form, {
     enabled: row.enabled,
     visibleScope: row.visibleScope || 'ALL',
+    // 目标清单随表单回填，否则「只改温度」也会把已配的可见对象清空
+    visibleTargets: Array.isArray(row.visibleTargets) ? [...row.visibleTargets] : [],
     defaultEnabled: row.defaultEnabled,
     kbScope: row.kbScope || 'ALL',
     model: row.model || 'mock-default',
@@ -371,6 +467,7 @@ function edit(row: ExpertView) {
     knowledgeScope: row.knowledgeScope || ''
   })
   drawer.value = true
+  void loadTargets()
 }
 
 async function save() {
@@ -379,6 +476,9 @@ async function save() {
     const cfg: Record<string, unknown> = {
       enabled: form.enabled,
       visibleScope: form.visibleScope,
+      // 只有「指定…」三档才带目标清单；ALL / TENANT 一律提交空数组，
+      // 避免切换范围后把上一次的机构 id 留在配置里（后端按 scope 解释清单，留着就是脏数据）。
+      visibleTargets: targetScope.value ? form.visibleTargets || [] : [],
       defaultEnabled: form.defaultEnabled,
       kbScope: form.kbScope,
       model: form.model,
@@ -538,6 +638,18 @@ onMounted(() => {
 <style scoped>
 .page {
   padding: 20px 24px 96px;
+}
+/* 可见范围目标清单的提示：空选是「对谁都不见」，必须显式警示而不是静默保存 */
+.target-warn {
+  margin-top: 4px;
+  color: #e6a23c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.target-hint {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .page-header h2 {
   margin: 0 0 4px;

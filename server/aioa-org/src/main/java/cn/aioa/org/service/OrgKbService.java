@@ -29,6 +29,8 @@ public class OrgKbService {
 
     private final OrgStatMapper statMapper;
     private final AuditRecorder audit;
+    /** resource_grant 的 KB 账本行由 {@link ResourceGrantService} 一处维护（两条路径不可各写一份）。 */
+    private final ResourceGrantService grantService;
 
     /** FR-I1：机构知识库清单（仅本机构）。 */
     public Map<String, Object> list(Long institutionId) {
@@ -58,10 +60,21 @@ public class OrgKbService {
         Long departmentId = Vals.lngObj(body, "departmentId");
         long deptId = departmentId == null ? 0L : departmentId;
         String scope = deptId == 0L ? "TENANT" : "DEPT";
-        int n = statMapper.bindKbDocument(docId, tenantId, institutionId, deptId, scope);
-        if (n == 0) {
+        // 存在性单独问一次：bindKbDocument 是 UPDATE，而 MySQL 对「值未变化」的 UPDATE 返回 0 行，
+        // 原先拿影响行数判「资料不存在」⇒ 把同一条资料重复挂进同一机构会被误报 404（幂等性缺陷）。
+        String docName = statMapper.selectKbNameInTenant(docId, tenantId);
+        if (docName == null) {
             throw BizException.notFound("知识库资料不存在或不属于本租户：" + docId);
         }
+        // institution_id 是单值列：资料已属于别的机构时，继续挂载等于把它从原机构静默搬走，
+        // 原机构那条授权记录随即变成幽灵行（清单说已启用、机构知识库里没有）。明确拒绝。
+        Long cur = statMapper.selectKbInstitutionId(docId);
+        if (cur != null && cur != 0L && !cur.equals(institutionId)) {
+            throw BizException.badRequest("该知识库资料当前已被另一机构挂载，请先在那里解除挂载");
+        }
+        statMapper.bindKbDocument(docId, tenantId, institutionId, deptId, scope);
+        // 账本同步：与资源授权页「知识库」类型走的是同一动作，两条路径必须同源（否则清单与生效态分叉）。
+        grantService.syncKbLedger(tenantId, institutionId, docId, docName, true);
         audit.record(tenantId, institutionId, actor, "KB_ATTACH", "KB_DOCUMENT", docId,
                 "将知识库资料 #" + docId + " 纳入机构知识库"
                         + (deptId == 0L ? "（机构内全员可见）" : "（限部门 #" + deptId + " 可见）"),
@@ -90,10 +103,12 @@ public class OrgKbService {
     /** 解除机构挂载（资料回到租户/个人库）。 */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> detach(Long tenantId, Long institutionId, Long docId, AuthUser actor) {
-        int n = statMapper.bindKbDocument(docId, tenantId, 0L, 0L, "TENANT");
-        if (n == 0) {
+        if (statMapper.selectKbNameInTenant(docId, tenantId) == null) {
             throw BizException.notFound("知识库资料不存在或不属于本租户：" + docId);
         }
+        statMapper.bindKbDocument(docId, tenantId, 0L, 0L, "TENANT");
+        // 账本同步：撤掉 resource_grant 的 KB 行，否则「机构知识库已移出、授权清单仍显示已启用」。
+        grantService.syncKbLedger(tenantId, institutionId, docId, null, false);
         audit.record(tenantId, institutionId, actor, "KB_DETACH", "KB_DOCUMENT", docId,
                 "将知识库资料 #" + docId + " 移出机构知识库", null, Map.of("docId", docId));
         return list(institutionId);

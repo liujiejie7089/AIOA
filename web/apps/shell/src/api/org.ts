@@ -30,6 +30,12 @@ export interface Institution {
   adminPassword?: string
 }
 
+/** 机构类型字典项（来自 `GET /tenant/institution-types`，后端唯一权威，顺序即展示顺序）。 */
+export interface InstitutionType {
+  code: string
+  label: string
+}
+
 export interface OrgQuota {
   id?: number
   institutionId?: number
@@ -49,10 +55,18 @@ export interface ResourcePool {
   id?: number
   tenantId?: number
   period?: string
+  /** 服务端是否已交付本周期资源池（未交付时其余字段全为 0） */
+  delivered?: boolean
+  status?: string
   tokenTotal?: number
   tokenUsed?: number
+  tokenRemain?: number
+  /** 服务端字段名就是 allocatedTokens；tokenAllocated 是历史误名，保留兼容读取 */
+  allocatedTokens?: number
   tokenAllocated?: number
   allocatableTokens?: number
+  allocRatio?: number
+  usageRatio?: number
   expertSeats?: number
   expertUsed?: number
   skillSeats?: number
@@ -98,8 +112,18 @@ export interface GrantCatalog {
   experts?: { id: number; resKey: string; name: string }[]
   skills?: { id: number; resKey: string; name: string }[]
   models?: { id: number; resKey: string; name: string; providerKey?: string }[]
-  kb?: { id: number; resKey: string; name: string }[]
-  workers?: { id: number; resKey: string; name: string }[]
+  /**
+   * 知识库：可授权目录 = 本租户（含平台级）**租户共享**且尚未挂载到任何机构的资料。
+   * 没有 resKey（kb_document 只有自增主键），后端下发的是 `name` 而非 docName。
+   */
+  kb?: { id: number; name: string; resKey?: string; scope?: string; state?: string; chunkCount?: number }[]
+  workers?: { id: number; tenantId?: number; name: string; status?: string }[]
+  /**
+   * 可授权资源类型的**唯一权威清单**（后端 ResourceGrant.ALL_TYPES 下发）。
+   * 前端下拉必须从这里取，不得再硬编码 —— 此前页面自己写死了 5 个选项，
+   * 而后端 grant() 的白名单只有 4 个，导致「选了数字员工点保存必被拒」。
+   */
+  resTypes?: { code: string; name: string }[]
 }
 
 export interface CostRule {
@@ -141,6 +165,25 @@ export interface OrgDepartment {
   children?: OrgDepartment[]
 }
 
+/**
+ * 员工账号（V67 批次 C）。一个员工可以有**多个**账号；`isPrimary=true` 那条是主账号
+ * （服务端 `org_member.user_id`，通知/审批/鉴权/机构归属都读它）。
+ */
+export interface MemberAccount {
+  userId?: number
+  username?: string
+  nickname?: string
+  status?: string
+  isPrimary?: boolean
+}
+
+/** 「给员工绑定账号」的候选（本租户账号清单）。 */
+export interface AccountCandidate extends MemberAccount {
+  /** 已绑定该员工姓名；为空表示**虚拟账号**（无任何员工绑定，即规格里的虚拟管理员账号）。 */
+  boundMemberName?: string
+  virtual?: boolean
+}
+
 export interface OrgMember {
   id?: number
   userId?: number
@@ -154,6 +197,13 @@ export interface OrgMember {
   mobile?: string
   email?: string
   status?: string
+  /**
+   * V67 批次 C·补（口令可知性）：新增员工时的**初始登录口令**（只写不读）。
+   * 留空 ⇒ 服务端使用统一演示口令 `User@123`。回执里不会带回该字段，操作员需自行留档。
+   */
+  password?: string
+  /** V67 批次 C：该员工的全部账号（主账号排在最前）。列表与详情都会回吐，形状恒定存在。 */
+  accounts?: MemberAccount[]
 }
 
 export interface OnboardingStep {
@@ -162,10 +212,20 @@ export interface OnboardingStep {
   name: string
   owner: string
   gate: string
+  /** 门禁**实时判定**是否通过（事实，不是"用户点过推进"）。 */
   passed: boolean
   reason?: string
+  /** 由持久化游标 `onboardStep` 推出（"已确认推进到"），与 `passed` 口径不同，仅供回看。 */
   recorded?: boolean
+  /** 第一个未通过的步骤（即"你现在该做的那一步"）。8 步中至多一个为 true。 */
   current?: boolean
+  /** **前序步骤全部通过**才为 true；未解锁的步骤点了也没意义（体现步骤先后顺序）。 */
+  unlocked?: boolean
+  /** 未解锁时指向卡住它的那一步；已解锁为 null。 */
+  blockedByStep?: number | null
+  /** 该步骤对应的设置页面路由（后端权威下发，前端不得复刻）。 */
+  route?: string
+  routeLabel?: string
 }
 
 export interface OnboardingProgress {
@@ -175,7 +235,29 @@ export interface OnboardingProgress {
   passedCount?: number
   percent?: number
   completed?: boolean
+  /** 当前所处的步骤位置（第一个未通过步）；全部通过为 null。 */
+  currentStep?: number | null
+  currentStepName?: string
+  nextAction?: string | null
+  nextStepRoute?: string | null
   steps: OnboardingStep[]
+}
+
+export interface OnboardingStepDef {
+  step: number
+  key: string
+  name: string
+  owner: string
+  gate: string
+  route: string
+  routeLabel: string
+}
+
+export interface OnboardingStepCatalog {
+  totalSteps: number
+  maxDeptDepth?: number
+  note?: string
+  steps: OnboardingStepDef[]
 }
 
 export interface ApprovalFlowDef {
@@ -201,6 +283,10 @@ export interface WorkflowTask {
 }
 
 // ================================================================== 租户端：机构
+/** 机构类型字典（后端权威五类：GOVERNMENT/ENTERPRISE/INSTITUTION/ASSOCIATION/OTHER）。 */
+export function listInstitutionTypes(): Promise<InstitutionType[]> {
+  return http.get('/tenant/institution-types').then((r) => unwrap<InstitutionType[]>(r))
+}
 export function listInstitutions(): Promise<Institution[]> {
   return http.get('/tenant/institutions').then((r) => unwrap<Institution[]>(r))
 }
@@ -306,6 +392,10 @@ export function getTenantOverview(period: string): Promise<Record<string, unknow
 export function getOnboardingOverview(): Promise<Record<string, unknown>> {
   return http.get('/tenant/onboarding').then((r) => unwrap<Record<string, unknown>>(r))
 }
+/** 8 步的**静态定义**（序号/名称/责任方/门禁/目标页面），后端唯一权威。 */
+export function getOnboardingSteps(): Promise<OnboardingStepCatalog> {
+  return http.get('/tenant/onboarding/steps').then((r) => unwrap<OnboardingStepCatalog>(r))
+}
 export function getOnboardingProgress(institutionId: number): Promise<OnboardingProgress> {
   return http.get('/tenant/onboarding/' + institutionId + '/progress').then((r) => unwrap<OnboardingProgress>(r))
 }
@@ -377,8 +467,14 @@ export function listMembers(params?: Record<string, unknown>, institutionId?: nu
   return http.get('/org/members', { params: { ...inst(institutionId), ...(params || {}) } })
     .then((r) => unwrap<{ items: OrgMember[]; total?: number }>(r))
 }
-export function createMember(body: Partial<OrgMember>, institutionId?: number | null): Promise<OrgMember> {
-  return http.post('/org/members', body, { params: inst(institutionId) }).then((r) => unwrap<OrgMember>(r))
+/**
+ * 新增员工（不存在则自动开户）。
+ *
+ * 回执多一个**只在此次新建账号时出现**的 `initialPassword`（明文，供操作员留档）。
+ * 账号此前已存在时该键缺席 —— 因为那时口令并没有被改动，回显一个"初始口令"就是假话。
+ */
+export function createMember(body: Partial<OrgMember>, institutionId?: number | null): Promise<OrgMember & { initialPassword?: string }> {
+  return http.post('/org/members', body, { params: inst(institutionId) }).then((r) => unwrap<OrgMember & { initialPassword?: string }>(r))
 }
 export function updateMember(id: number, body: Partial<OrgMember>, institutionId?: number | null): Promise<OrgMember> {
   return http.put('/org/members/' + id, body, { params: inst(institutionId) }).then((r) => unwrap<OrgMember>(r))
@@ -386,8 +482,54 @@ export function updateMember(id: number, body: Partial<OrgMember>, institutionId
 export function deleteMember(id: number, institutionId?: number | null): Promise<unknown> {
   return http.delete('/org/members/' + id, { params: inst(institutionId) }).then((r) => unwrap<unknown>(r))
 }
-export function importMembers(rows: Record<string, unknown>[], institutionId?: number | null): Promise<Record<string, unknown>> {
-  return http.post('/org/members/import', { rows }, { params: inst(institutionId) }).then((r) => unwrap<Record<string, unknown>>(r))
+/** 批量导入回执。`newAccounts > 0` 时才会带 `initialPassword`（后端权威下发，前端不得自行硬编码）。 */
+export interface MemberImportResult {
+  total: number
+  success: number
+  failedCount: number
+  successRate: number
+  failed: { row: number; name?: string; reason: string }[]
+  /** 本次真正**新建**（或复活）的账号数 —— 已存在的账号不计入。 */
+  newAccounts?: number
+  /** 本次新建账号的统一初始口令。 */
+  initialPassword?: string
+}
+export function importMembers(rows: Record<string, unknown>[], institutionId?: number | null): Promise<MemberImportResult> {
+  return http.post('/org/members/import', { rows }, { params: inst(institutionId) }).then((r) => unwrap<MemberImportResult>(r))
+}
+
+/** 重置员工**主账号**的登录口令回执；`initialPassword` 为本次生效的明文口令，仅供当场留档。 */
+export interface MemberPasswordReset {
+  memberId: number
+  userId: number
+  initialPassword: string
+}
+/**
+ * 重置员工主账号的登录口令。
+ *
+ * 开户口令只在创建那一刻回显一次（服务端只存哈希）；漏记后必须走这里就地重置，
+ * 而不是"删掉员工重建"（那会连带丢掉审批 / 通知归属）。
+ */
+export function resetMemberPassword(id: number, password: string, institutionId?: number | null): Promise<MemberPasswordReset> {
+  return http.post('/org/members/' + id + '/password', { password }, { params: inst(institutionId) })
+    .then((r) => unwrap<MemberPasswordReset>(r))
+}
+
+// ---- V67 批次 C：员工 ↔ 账号（多对多）----
+/** 本租户账号清单（绑定候选）；`virtual=true` 的是无员工绑定的「虚拟账号」。 */
+export function listAccountCandidates(keyword?: string): Promise<AccountCandidate[]> {
+  return http.get('/org/accounts', { params: keyword ? { keyword } : {} })
+    .then((r) => unwrap<AccountCandidate[]>(r))
+}
+/** 给员工追加绑定一个账号（不改变主账号）；返回该员工绑定后的全部账号。 */
+export function attachMemberAccount(memberId: number, userId: number, institutionId?: number | null): Promise<MemberAccount[]> {
+  return http.post('/org/members/' + memberId + '/accounts', { userId }, { params: inst(institutionId) })
+    .then((r) => unwrap<MemberAccount[]>(r))
+}
+/** 解绑员工的**附加**账号（主账号不可解绑，由服务端给出明确文案）。 */
+export function detachMemberAccount(memberId: number, userId: number, institutionId?: number | null): Promise<MemberAccount[]> {
+  return http.delete('/org/members/' + memberId + '/accounts/' + userId, { params: inst(institutionId) })
+    .then((r) => unwrap<MemberAccount[]>(r))
 }
 export function listDeptQuotas(period: string, institutionId?: number | null): Promise<Record<string, unknown>[]> {
   return http.get('/org/dept-quotas', { params: { period, ...inst(institutionId) } }).then((r) => unwrap<Record<string, unknown>[]>(r))

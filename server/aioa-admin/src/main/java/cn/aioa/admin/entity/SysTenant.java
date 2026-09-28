@@ -30,6 +30,14 @@ public class SysTenant {
 
     private String status;
 
+    /**
+     * 平台分配的登录域名，如 {@code dsj.aioa.local}；未分配为 null（V66）。
+     *
+     * <p>2026-09-28：同批带来的 {@code parent_id} / {@code level}（租户层级）已随「子租户」能力一并移除
+     * （V68 删列）；域名是独立能力，保留。</p>
+     */
+    private String domain;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -77,6 +85,14 @@ public class SysTenant {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getDomain() {
+        return domain;
+    }
+
+    public void setDomain(String domain) {
+        this.domain = domain;
     }
 
     public LocalDateTime getCreatedAt() {

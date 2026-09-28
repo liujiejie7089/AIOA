@@ -31,6 +31,13 @@ export const EXPERT_CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
 export interface ExpertSetting {
   enabled?: boolean
   visibleScope?: string
+  /**
+   * 可见范围的**目标清单**（V65）：机构 id / 部门 id / 用户 id，含义随 `visibleScope` 而定。
+   *
+   * <p>`INSTITUTION / DEPT / USER` 三档以清单为准；<b>清单为空 = 不对任何普通用户可见</b>
+   * （而不是退回「全员可见」）。`ALL` 忽略清单；`TENANT` 留空即本租户全员。</p>
+   */
+  visibleTargets?: number[]
   defaultEnabled?: boolean
   kbScope?: string
   model?: string

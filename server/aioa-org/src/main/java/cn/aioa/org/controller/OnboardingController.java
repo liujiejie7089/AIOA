@@ -70,6 +70,8 @@ public class OnboardingController {
         m.put("totalSteps", OnboardingService.TOTAL_STEPS);
         m.put("maxDeptDepth", OrgTreeService.MAX_DEPTH);
         m.put("note", "前 4 步租户端、5~7 步企业端、第 8 步回租户层（规格书第三章主链路）");
+        // 8 步的权威定义（含每步的目标页面路由）：前端据此渲染向导与导航，不得复刻字面量。
+        m.put("steps", onboardingService.stepDefinitions());
         m.put("owners", java.util.List.of(
                 Map.of("scope", "租户管理员端", "steps", java.util.List.of(1, 2, 3, 4, 8)),
                 Map.of("scope", "企业管理员端", "steps", java.util.List.of(5, 6)),

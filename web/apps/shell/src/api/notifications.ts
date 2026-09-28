@@ -213,7 +213,7 @@ export function markAllNotificationsRead() {
 
 /**
  * 通道配置 / 投递记录是**租户级**管理动作：平台管理员必须显式带 `tenantId`
- * （后端 NotificationTenantGuard 对平台管理员强制校验），租户管理员可不带（硬绑定本租户）。
+ * （后端 ResourceTenantGuard 对平台管理员强制校验），租户管理员可不带（硬绑定本租户）。
  */
 export function listChannels(tenantId?: number | null) {
   return http

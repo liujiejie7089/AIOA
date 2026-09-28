@@ -19,7 +19,7 @@
             </el-select>
             <el-button text type="primary" size="small" :loading="loading" @click="reloadAll">刷新</el-button>
             <el-button type="primary" size="small" @click="openDlg()">新增授权</el-button>
-            <el-button type="primary" size="small" @click="batchDlg = true">批量授权</el-button>
+            <el-button type="primary" size="small" @click="openBatch()">批量授权</el-button>
           </div>
         </div>
       </template>
@@ -36,7 +36,7 @@
         <el-table-column label="资源" min-width="150">
           <template #default="{ row }">
             {{ row.resName || row.resKey }}
-            <div class="muted small">{{ row.resKey }}</div>
+            <div v-if="row.resKey" class="muted small">{{ row.resKey }}</div>
           </template>
         </el-table-column>
         <el-table-column label="计费倍率" width="100">
@@ -65,9 +65,16 @@
       <el-tabs v-model="catTab">
         <el-tab-pane v-for="g in groups" :key="g.key" :label="g.label + '（' + (g.items.length) + '）'" :name="g.key">
           <el-table :data="g.items" size="small" stripe>
-            <el-table-column label="标识" prop="resKey" width="160" />
+            <!-- 知识库资料没有业务键（kb_document 只有自增 id），这里给破折号而不是留白 —— 
+                 空单元格最容易被当成「数据没取到」。 -->
+            <el-table-column label="标识" width="160">
+              <template #default="{ row }">{{ row.resKey || '—' }}</template>
+            </el-table-column>
             <el-table-column label="名称" min-width="200">
               <template #default="{ row }">{{ row.name || row.resKey }}</template>
+            </el-table-column>
+            <el-table-column v-if="g.key === 'kb'" label="状态" width="100">
+              <template #default="{ row }">{{ row.state === 'OK' ? '已入库' : (row.state || '—') }}</template>
             </el-table-column>
             <el-table-column v-if="g.key === 'models'" label="供应商" prop="providerKey" width="120" />
             <el-table-column label="资源 ID" prop="id" width="90" />
@@ -87,16 +94,12 @@
         </el-form-item>
         <el-form-item label="资源类型" required>
           <el-select v-model="form.resType" style="width: 100%" @change="form.resId = undefined; form.resKey = ''; form.resName = ''">
-            <el-option label="专家" value="EXPERT" />
-            <el-option label="技能" value="SKILL" />
-            <el-option label="模型" value="MODEL" />
-            <el-option label="知识库" value="KB" />
-            <el-option label="数字员工" value="WORKER" />
+            <el-option v-for="t in typeOptions" :key="t.code" :label="t.name" :value="t.code" />
           </el-select>
         </el-form-item>
         <el-form-item label="资源" required>
           <el-select v-model="form.resId" style="width: 100%" @change="onPick">
-            <el-option v-for="r in currentGroup" :key="r.id" :label="(r.name || r.resKey) + '（' + r.resKey + '）'" :value="r.id" />
+            <el-option v-for="r in currentGroup" :key="r.id" :label="optLabel(r)" :value="r.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="计费倍率">
@@ -122,11 +125,7 @@
         </el-form-item>
         <el-form-item label="资源类型" required>
           <el-select v-model="batchType" style="width: 100%">
-            <el-option label="专家" value="EXPERT" />
-            <el-option label="技能" value="SKILL" />
-            <el-option label="模型" value="MODEL" />
-            <el-option label="知识库" value="KB" />
-            <el-option label="数字员工" value="WORKER" />
+            <el-option v-for="t in typeOptions" :key="t.code" :label="t.name" :value="t.code" />
           </el-select>
         </el-form-item>
         <el-form-item label="选择资源">
@@ -164,10 +163,15 @@ function errText(e: unknown, fallback: string) {
 
 interface CatItem { id: number; resKey?: string; name?: string; providerKey?: string }
 
-const TYPE_TEXT: Record<string, string> = {
-  EXPERT: '专家', SKILL: '技能', MODEL: '模型', KB: '知识库', WORKER: '数字员工'
+/**
+ * 类型码 → 目录分组的 key。
+ *
+ * <p>「资源」下拉与「批量授权」此前各抄了一份这个映射（两处字面量），现收敛到一处。
+ * 分组只有这一份映射；类型本身（有哪些类型、叫什么名字）以后端下发的 resTypes 为准。</p>
+ */
+const CAT_KEY: Record<string, string> = {
+  EXPERT: 'experts', SKILL: 'skills', MODEL: 'models', KB: 'kb', WORKER: 'workers'
 }
-function typeText(v?: string) { return TYPE_TEXT[v || ''] || v || '—' }
 
 const loading = ref(false)
 const saving = ref(false)
@@ -176,6 +180,19 @@ const institutions = ref<Institution[]>([])
 const catalog = ref<GrantCatalog>({})
 const instId = ref<number | null>(null)
 const catTab = ref('experts')
+
+/**
+ * 可授权类型下拉选项 —— **直接来自后端目录**，前端不再硬编码。
+ *
+ * 此前页面自己写死了 5 个选项（含数字员工），而后端 grant() 的白名单只有 4 个，
+ * 于是「数字员工」永远授不出去（实测：不支持的资源类型：WORKER）。同一份清单两处定义
+ * 必然分叉，现在只有后端一处（ResourceGrant.ALL_TYPES）。
+ */
+const typeOptions = computed<{ code: string; name: string }[]>(() => catalog.value.resTypes || [])
+
+function typeText(v?: string) {
+  return typeOptions.value.find((t) => t.code === v)?.name || v || '—'
+}
 
 const groups = computed(() => [
   { key: 'experts', label: '专家', items: (catalog.value.experts || []) as CatItem[] },
@@ -224,7 +241,7 @@ const ratio = ref(1.0)
 const form = ref<Partial<ResourceGrant> & { enabled?: boolean }>({})
 
 const currentGroup = computed(() => {
-  const key = ({ EXPERT: 'experts', SKILL: 'skills', MODEL: 'models', KB: 'kb', WORKER: 'workers' } as Record<string, string>)[form.value.resType || '']
+  const key = CAT_KEY[form.value.resType || '']
   return (groups.value.find((g) => g.key === key)?.items) || []
 })
 
@@ -233,8 +250,26 @@ function onPick(id: number) {
   if (r) { form.value.resKey = r.resKey; form.value.resName = r.name || r.resKey }
 }
 
+/**
+ * 资源下拉的显示名。
+ *
+ * <p>数字员工的目录行**没有 resKey**（agent_worker 只有 id/name/status，它是租户内自建资产，
+ * 不像模型/专家有稳定 key）。此前无脑拼 `名称（resKey）`，于是下拉里显示
+ * 「政策快讯员（undefined）」—— 一眼就是脏数据。有 key 才拼，没有就退回 `#id`。</p>
+ */
+function optLabel(r: CatItem) {
+  const name = r.name || r.resKey || ('#' + r.id)
+  return r.resKey ? `${name}（${r.resKey}）` : name
+}
+
+/** 默认类型：优先「模型」（最常授权），不在目录里时退回第一项 —— 默认值必须是目录里存在的值。 */
+function defaultType() {
+  const codes = typeOptions.value.map((t) => t.code)
+  return codes.includes('MODEL') ? 'MODEL' : (codes[0] || '')
+}
+
 function openDlg() {
-  form.value = { resType: 'MODEL', enabled: true }
+  form.value = { resType: defaultType(), enabled: true }
   ratio.value = 1.0
   dlg.value = true
 }
@@ -292,13 +327,20 @@ async function remove(row: ResourceGrant) {
 // ---------------------------------------------------------------- 批量授权
 const batchDlg = ref(false)
 const batchInst = ref<number | null>(null)
-const batchType = ref('MODEL')
+const batchType = ref('')
 const batchIds = ref<number[]>([])
 
 const batchOptions = computed(() => {
-  const key = ({ EXPERT: 'experts', SKILL: 'skills', MODEL: 'models', KB: 'kb', WORKER: 'workers' } as Record<string, string>)[batchType.value]
+  const key = CAT_KEY[batchType.value]
   return (groups.value.find((g) => g.key === key)?.items) || []
 })
+
+/** 打开批量授权时把类型重置为目录里的有效值，避免带着上次的选择或空值进来。 */
+function openBatch() {
+  batchType.value = defaultType()
+  batchIds.value = []
+  batchDlg.value = true
+}
 
 async function submitBatch() {
   if (!batchInst.value || !batchIds.value.length) {

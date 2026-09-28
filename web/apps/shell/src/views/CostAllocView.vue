@@ -161,6 +161,7 @@ import {
   listCostBills, generateCostBills, reconcileCostBills, listInstitutions,
   type CostRule, type CostBill, type Institution
 } from '@/api/org'
+import { tenantState } from '@/api/tenantScope'
 
 const RULE_TYPES: Record<string, string> = { FIXED_RATIO: '固定比例' }
 function ruleTypeText(v?: string) { return RULE_TYPES[v || ''] || v || '—' }
@@ -172,12 +173,12 @@ const rules = ref<CostRule[]>([])
 const bills = ref<CostBill[]>([])
 const institutions = ref<Institution[]>([])
 const recon = ref<Record<string, unknown> | null>(null)
-const period = ref(currentPeriod())
-
-function currentPeriod() {
-  const d = new Date()
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
-}
+/**
+ * 统计期：唯一权威来自服务端（`/tenant/scope` 的 `currentPeriod`）。
+ * 本地 `new Date()` 推导与服务器时钟/时区不一致时会查到不存在的周期，页面表现为全空。
+ * 留空则不下发该参数，由后端按同一口径兜底。
+ */
+const period = ref(tenantState.currentPeriod.value)
 
 function instName(id?: number) {
   return institutions.value.find((i) => i.id === id)?.name || ('#' + id)
@@ -258,10 +259,14 @@ async function submitRule() {
 // ---------------------------------------------------------------- 试算
 const simDlg = ref(false)
 const simRows = ref<Record<string, unknown>[]>([])
-const simForm = ref<{ ruleId?: number; period: string; totalTokens: number }>({ period: currentPeriod(), totalTokens: 2000000 })
+// 试算周期同样取服务端权威值（本地 new Date() 推导已废弃，见上方 period 注释）
+const simForm = ref<{ ruleId?: number; period: string; totalTokens: number }>({
+  period: tenantState.currentPeriod.value,
+  totalTokens: 2000000
+})
 
 function openSimDlg(row: CostRule) {
-  simForm.value = { ruleId: row.id, period: currentPeriod(), totalTokens: 2000000 }
+  simForm.value = { ruleId: row.id, period: tenantState.currentPeriod.value, totalTokens: 2000000 }
   simRows.value = []
   simDlg.value = true
 }

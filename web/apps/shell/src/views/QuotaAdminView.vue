@@ -5,9 +5,22 @@
       :closable="false"
       show-icon
       title="配额管理"
-      description="查看租户词元配额总量与用量，向部门/成员二次分配配额，并查看按业务类型的用量报表与最近流水。"
       style="margin-bottom: 12px"
-    />
+    >
+      <template #default>
+        <div style="line-height: 1.7">
+          查看租户词元配额总量与用量，向部门/成员二次分配配额，并查看按业务类型的用量报表与最近流水。
+        </div>
+        <!--
+          数据范围必须由**与顶部切换器同源**的全局态渲染（api/tenantScope.ts）。
+          写死文案或读接口回执以外的来源，都会造出「切换器显示 A、数据其实是 B」的错位（铁律 #1）。
+        -->
+        <div class="scope-note">
+          数据范围：{{ scopeText }}
+          <span v-if="canSwitchTenant" class="hint-inline">（顶部可切换租户，切后本页即时重新取数）</span>
+        </div>
+      </template>
+    </el-alert>
 
     <el-row :gutter="12" style="margin-bottom: 12px">
       <el-col :span="6">
@@ -132,8 +145,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { tenantState } from '@/api/tenantScope'
 import {
   assignQuota,
   getQuotaOverview,
@@ -146,16 +160,35 @@ import {
 
 const loading = ref(false)
 const overview = ref<QuotaOverview | null>(null)
-const usage = ref<{ since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] } | null>(null)
+const usage = ref<{ tenantId: number; since: string; byBizType: UsageRow[]; recentLedger: LedgerRow[] } | null>(null)
 const days = ref(30)
 const dlg = ref(false)
 const assignRow = ref<QuotaOverviewUser | null>(null)
 const assignValue = ref(0)
 
+// 顶部租户切换器的全局态（与 MainLayout 的选择器同一份来源）。
+const canSwitchTenant = tenantState.canSwitch
+const currentTenantId = tenantState.currentId
+const currentTenantName = tenantState.currentName
+
+/** 「本页数据属于哪个租户」的唯一展示口径。 */
+const scopeText = computed(() => {
+  const id = currentTenantId.value
+  const name = currentTenantName.value
+  if (id == null) return '—'
+  return name ? `${name}（#${id}）` : `#${id}`
+})
+
 async function reload() {
   loading.value = true
   try {
-    overview.value = await getQuotaOverview()
+    const data = await getQuotaOverview()
+    overview.value = data
+    // 不变式：接口回执的作用租户必须等于顶部切换器当前租户。
+    // 若不等，说明「展示的是 A、数据来自 B」—— 这类错位肉眼很难发现，故在数据落地处直接点出来。
+    if (data.tenantId != null && currentTenantId.value != null && data.tenantId !== currentTenantId.value) {
+      ElMessage.warning(`数据租户（#${data.tenantId}）与当前选择（#${currentTenantId.value}）不一致，请刷新`)
+    }
   } catch (e: unknown) {
     const status = (e as { response?: { status?: number } })?.response?.status
     if (status === 403) {
@@ -211,6 +244,16 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.scope-note {
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+.hint-inline {
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+
 .card-header {
   display: flex;
   align-items: center;

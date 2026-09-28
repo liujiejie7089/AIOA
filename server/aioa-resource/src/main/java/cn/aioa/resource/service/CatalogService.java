@@ -7,12 +7,14 @@ import cn.aioa.resource.mapper.AiExpertMapper;
 import cn.aioa.resource.mapper.AiSkillMapper;
 import cn.aioa.resource.mapper.SysConfigMapper;
 import cn.aioa.security.AuthUser;
+import cn.aioa.security.PermissionCatalog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 专家与技能目录。两者都是租户级配置（不区分用户），按 sort 升序返回。
@@ -113,21 +115,36 @@ public class CatalogService {
     /**
      * 某租户下**对该用户可用**的专家。
      *
-     * <p>两道闸：</p>
+     * <p><b>三道闸</b>（判据必须与用户端一致，铁律 #1）：</p>
      * <ol>
      *   <li>SQL 层 {@code ai_expert.enabled = true} —— 行级总闸（专家行是否上架）；</li>
      *   <li>{@link ExpertConfigService#isEnabled} —— 配置层开关（某租户 / 机构 / 部门 / 个人
      *       是否停用了它）。管理端表格里的那个开关写的就是这一层。</li>
+     *   <li><b>可见范围</b> —— {@code ExpertSettings#visibleTo}（全系统唯一判定点）。
+     *       此前这里<b>只判了前两道</b>，于是管理端配的「指定机构 / 部门 / 用户可见」
+     *       在用户端完全不起作用（配了等于没配）。现在与
+     *       {@code ExpertConfigController} 走同一个判据。</li>
      * </ol>
+     *
+     * <p>管理员豁免：有 {@code expert:manage} 的人不受可见范围约束 —— 否则把范围配窄后
+     * 管理员自己就再也进不了配置页，能力被自己锁死（管理端是能力的唯一入口）。</p>
      */
     private List<AiExpert> availableExperts(AuthUser user, long tenantId) {
+        boolean manager = PermissionCatalog.holds(user, PermissionCatalog.EXPERT_MANAGE);
+        long tid = tenantOf(user);
+        Long iid = institutionOf(user);
+        Long did = departmentOf(user);
+        Long uid = userIdOf(user);
         return expertMapper.selectList(new LambdaQueryWrapper<AiExpert>()
                         .eq(AiExpert::getTenantId, tenantId)
                         .eq(AiExpert::getEnabled, true)
                         .orderByAsc(AiExpert::getSort))
                 .stream()
-                .filter(e -> configService.isEnabled(tenantOf(user), institutionOf(user),
-                        departmentOf(user), userIdOf(user), e.getExpertKey()))
+                // 解析一次拿全量设置：开关与可见范围同源判定，避免两次 resolve 各判一次。
+                .map(e -> Map.entry(e, configService.resolve(tid, iid, did, uid, e.getExpertKey())))
+                .filter(p -> Boolean.TRUE.equals(p.getValue().settings().getEnabled()))
+                .filter(p -> manager || p.getValue().settings().visibleTo(user))
+                .map(Map.Entry::getKey)
                 .toList();
     }
 

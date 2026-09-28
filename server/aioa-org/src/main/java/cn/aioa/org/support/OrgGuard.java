@@ -413,6 +413,10 @@ public class OrgGuard {
         out.put("boundTenantId", platform ? null : (u.getTenantId() == null ? 0L : u.getTenantId()));
         out.put("defaultTenantId", platform ? defaultTenantId() : (u.getTenantId() == null ? 0L : u.getTenantId()));
         out.put("scope", platform ? "PLATFORM" : "TENANT");
+        // 服务端周期：资源池 / 机构配额 / 分摊 / 账本一律按 (tenant_id, period) 定位，
+        // 而 period 只能由服务端裁决 —— 前端各页各用 new Date() 推导，一旦与服务器时钟/时区
+        // 不同步，页面就会去查一个并不存在的周期（看到空数据、或「资源池尚未交付」的假象）。
+        out.put("currentPeriod", Vals.nowPeriod());
         return out;
     }
 

@@ -43,6 +43,17 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="可见范围" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.visibleScope === 'DEPT'" type="warning" effect="plain" size="small">
+              指定部门（{{ parseDeptIds(row.deptIds).length }}）
+            </el-tag>
+            <el-tag v-else-if="row.visibleScope === 'SELF'" type="info" effect="plain" size="small">
+              仅创建者
+            </el-tag>
+            <el-tag v-else type="success" effect="plain" size="small">本租户全员</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="最近产出" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.lastOutput || '尚未运行' }}</template>
         </el-table-column>
@@ -127,6 +138,35 @@
           />
           <div class="hint">到点后交给模型真实执行，产出会推送提醒给租户全员</div>
         </el-form-item>
+        <!--
+          可见范围（按部门分发）：接口 /workers/{id}/visible-scope 与后端 deptIds 判定一直都在，
+          但管理端此前没有任何控件（本页 import 了 setWorkerVisibleScope 却零调用）——
+          于是「按部门分发数字员工」这个能力事实上不可用（铁律 #4：配不出来 = 不可用）。
+        -->
+        <el-form-item label="可见范围">
+          <el-select v-model="scopeForm.scope">
+            <el-option label="本租户全员可见" value="TENANT" />
+            <el-option label="仅指定部门可见" value="DEPT" />
+          </el-select>
+          <div class="hint">
+            部门负责人账号只能把数字员工锁定在本部门（服务端强制，保存后以下方列表实际值为准）。
+          </div>
+        </el-form-item>
+        <el-form-item v-if="scopeForm.scope === 'DEPT'" label="可见部门">
+          <el-select
+            v-model="scopeForm.deptIds"
+            multiple
+            filterable
+            :loading="deptLoading"
+            placeholder="选择一个或多个部门"
+            style="width: 100%"
+          >
+            <el-option v-for="d in deptOptions" :key="d.id" :label="d.label" :value="d.id" />
+          </el-select>
+          <div v-if="!scopeForm.deptIds.length" class="hint warn">
+            未选择部门 ⇒ 除管理员外无人可见，请至少选一个部门。
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button size="small" @click="dlg = false">取消</el-button>
@@ -180,6 +220,8 @@ import {
   type WorkerRun,
   type WorkerTemplate
 } from '@/api/resource'
+import { getDepartments } from '@/api/org'
+import { institutionState } from '@/api/institutionScope'
 
 const loading = ref(false)
 const rows = ref<AgentWorker[]>([])
@@ -281,8 +323,58 @@ function openDlg(row?: AgentWorker) {
     scheduleTime: row?.scheduleTime || null,
     taskPrompt: row?.taskPrompt || ''
   })
+  // 可见范围按列表回吐的**实际值**回填（服务端才是权威；部门负责人账号会被强制为 DEPT）
+  scopeForm.scope = row?.visibleScope === 'DEPT' ? 'DEPT' : 'TENANT'
+  scopeForm.deptIds = parseDeptIds(row?.deptIds)
+  if (scopeForm.scope === 'DEPT') void loadDepts()
   formTime.value = timeToDate(row?.scheduleTime)
   dlg.value = true
+}
+
+// ---------------------------------------------------------------- 可见范围（按部门分发）
+const scopeForm = reactive<{ scope: 'TENANT' | 'DEPT'; deptIds: number[] }>({ scope: 'TENANT', deptIds: [] })
+const deptOptions = ref<{ id: number; label: string }[]>([])
+const deptLoading = ref(false)
+
+/**
+ * 后端 `deptIds` 是 **Java List.toString()** 形态的字符串（如 `"[3, 7]"`），
+ * 不是 JSON 数组 —— 直接 `JSON.parse` 会抛错。两种形态都容错解析。
+ */
+function parseDeptIds(v?: string | number[] | null): number[] {
+  if (v == null) return []
+  if (Array.isArray(v)) return v.map(Number).filter((n) => Number.isFinite(n))
+  const s = String(v).trim()
+  if (!s || s === 'null') return []
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s)
+      if (Array.isArray(arr)) return arr.map(Number).filter((n) => Number.isFinite(n))
+    } catch {
+      /* 落到下面的分隔符解析 */
+    }
+  }
+  return s.replace(/[[\]]/g, '').split(/[,\s]+/)
+    .map((x) => Number(x.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
+async function loadDepts() {
+  deptLoading.value = true
+  try {
+    const d = await getDepartments(institutionState.currentId.value)
+    const out: { id: number; label: string }[] = []
+    const walk = (ns: Record<string, any>[]) =>
+      (ns || []).forEach((n) => {
+        out.push({ id: n.id as number, label: `${'　'.repeat(Math.max(0, ((n.level as number) || 1) - 1))}${n.name}` })
+        walk((n.children as Record<string, any>[]) || [])
+      })
+    walk((d?.tree as Record<string, any>[]) || [])
+    deptOptions.value = out
+  } catch (e: unknown) {
+    ElMessage.error('部门加载失败：' + ((e as Error)?.message || '后端异常'))
+  } finally {
+    deptLoading.value = false
+  }
 }
 
 async function save() {
@@ -298,8 +390,30 @@ async function save() {
     body.scheduleTime = null
   }
   try {
-    if (form.id) await adminUpdateWorker(form.id, body)
-    else await adminCreateWorker(body)
+    const saved = form.id
+      ? await adminUpdateWorker(form.id, body)
+      : await adminCreateWorker(body)
+    // 可见范围：主体保存成功后再单独下发（它在另一个端点，且主体端点不接收这两个字段）。
+    // 创建路径必须两步走 —— 新建时还没有 id，无从设置范围。
+    if (saved?.id) {
+      if (scopeForm.scope === 'DEPT' && !scopeForm.deptIds.length) {
+        ElMessage.warning('未选择可见部门，已按「本租户全员」保存；如需按部门分发请重新编辑')
+      }
+      try {
+        const after = await setWorkerVisibleScope(
+          saved.id,
+          scopeForm.scope,
+          scopeForm.scope === 'DEPT' ? scopeForm.deptIds : undefined
+        )
+        // 服务端可能与请求不同（部门负责人账号会被强制为 DEPT）—— 是事实就直说，
+        // 不能让表单上显示的 TENANT 与库里存的 DEPT 长期不一致（展示必须与事实同源）。
+        if (scopeForm.scope === 'TENANT' && after?.visibleScope === 'DEPT') {
+          ElMessage.warning('可见范围已由服务端判定为本部门：部门负责人账号只能把数字员工锁定在本部门')
+        }
+      } catch (e: unknown) {
+        ElMessage.warning('主体已保存，但可见范围设置失败：' + ((e as Error)?.message || '后端异常'))
+      }
+    }
     ElMessage.success('已保存')
     dlg.value = false
     await reload()
@@ -388,6 +502,10 @@ onMounted(reload)
   color: var(--el-text-color-secondary);
   line-height: 1.5;
   margin-top: 2px;
+}
+/* 空选=对谁都不见，需要与普通提示区分开 */
+.hint.warn {
+  color: #e6a23c;
 }
 
 .run-title {

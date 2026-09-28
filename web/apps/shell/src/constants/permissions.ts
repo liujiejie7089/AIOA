@@ -66,6 +66,28 @@ export function hasAnyRole(roles: string[] | undefined | null, allowed: readonly
 }
 
 /**
+ * 角色的「数据范围」释义（`sys_role.data_scope`）。
+ *
+ * <p>为什么不做成 `sys_role.description` 列：那张表没有 description 字段，
+ * 加列就要迁移 + 表单 + 唯一的编辑口径；而这里的五个值本身就是稳定的枚举
+ * （实测库中仅 ALL / TENANT / ORG / DEPT / SELF 五种），
+ * 由常量映射出一句话即可，改口径只改这一处（铁律 #4：常量只有一个入口）。</p>
+ */
+export const DATA_SCOPE_LABEL: Record<string, string> = {
+  ALL: '全平台数据：跨租户可见并可维护',
+  TENANT: '本租户数据：可管理本租户全部机构与配额',
+  ORG: '本机构数据：仅本机构部门、员工与业务数据',
+  DEPT: '本部门数据：仅本人所在部门及其下属',
+  SELF: '仅本人数据：只能看到自己发起或归属的记录'
+}
+
+/** 未登记的数据范围值原样回显，避免「悄悄显示成 —」把新增枚举藏起来。 */
+export function dataScopeText(v?: string | null): string {
+  if (!v) return '—'
+  return DATA_SCOPE_LABEL[v] || `未登记的数据范围：${v}`
+}
+
+/**
  * 审批流「知会对象」可选项（三期 C-02 + C-11）。
  *
  * <p>与后端 {@code ApprovalFlowService.expandCcNodes} 支持的 {@code cc} 类型严格一致：

@@ -57,7 +57,23 @@ public class OrgScopeStatsService {
     private final OrgDepartmentMapper deptMapper;
     private final OrgInstitutionMapper institutionMapper;
 
-    /** 首页「本组织数据」卡的数据源。 */
+    /**
+     * 首页「本组织数据」卡的数据源。
+     *
+     * <h3>为什么这张卡只有组织口径四个指标（V65 分工定稿）</h3>
+     * <p>用户反馈「机构管理员登录后首页与『我的』数据重复」。根因是这张卡曾把
+     * <b>「待我处理」和「本月会话」</b>也放进来：</p>
+     * <ul>
+     *   <li><b>待我处理</b>是"待办"，已由待办页 + 侧栏/菜单红点唯一承接，
+     *       放在首页属于<b>错位</b>（同一件事两处入口，且首页那份不参与红点口径）；</li>
+     *   <li><b>本月会话</b>（实现上是<b>累计</b>会话，查询并无月份过滤）与「我的 → 我的数据」
+     *       的「AI 会话」是同源近义的两组数字；机构管理员往往是机构内唯一的管理账号，
+     *       "我" 与 "本机构" 高度重合，两组数字看起来就是重复。</li>
+     * </ul>
+     * <p>定稿：<b>首页只放组织视角（成员 / 机构 / 部门 / 词元 / 知识库）</b>；
+     * 待办归待办页；会话数只保留在「我的数据」一处。可见面按需求取最小，
+     * 也顺带解决了"两张卡互相对不上"的解释成本。</p>
+     */
     public Map<String, Object> orgScope() {
         AuthUser u = AuthUserContext.require();
         long tenantId = u.getTenantId() == null ? 0L : u.getTenantId();
@@ -77,8 +93,6 @@ public class OrgScopeStatsService {
                     metric("employees", "在职员工", feedbackMapper.countMembersOfTenant(tenantId), "人"),
                     metric("institutions", "启用机构", feedbackMapper.countInstitutionsOfTenant(tenantId), "家"),
                     metric("departments", "启用部门", feedbackMapper.countDeptsOfTenant(tenantId), "个"),
-                    metric("myTodos", "待我处理", statMapper.countMyTodoTasks(u.getUserId()), "件"),
-                    metric("conversations", "本月会话", statMapper.countConversationsOfTenant(tenantId), "次"),
                     metric("tokens", "本月词元", statMapper.sumLedgerTokens(tenantId, period()), "")));
             return out;
         }
@@ -96,9 +110,6 @@ public class OrgScopeStatsService {
             out.put("metrics", List.of(
                     metric("employees", "机构成员", statMapper.countActiveMembers(iid), "人"),
                     metric("departments", "下属部门", statMapper.countActiveDepts(iid), "个"),
-                    metric("myTodos", "待我处理", statMapper.countMyTodoTasks(u.getUserId()), "件"),
-                    metric("conversations", "本月会话",
-                            feedbackMapper.countConversationsOfInstitution(tenantId, iid), "次"),
                     metric("tokens", "本月词元",
                             statMapper.sumLedgerTokensOfInstitution(tenantId, iid, period()), ""),
                     metric("kbDocs", "机构知识库", statMapper.countKbOfInstitution(iid), "份")));
@@ -121,9 +132,6 @@ public class OrgScopeStatsService {
             out.put("metrics", List.of(
                     metric("employees", "部门成员", feedbackMapper.countMembersOfDept(did), "人"),
                     metric("departments", "下级部门", feedbackMapper.countChildDepts(did), "个"),
-                    metric("myTodos", "待我处理", statMapper.countMyTodoTasks(u.getUserId()), "件"),
-                    metric("conversations", "本月会话",
-                            feedbackMapper.countConversationsOfDept(tenantId, did), "次"),
                     metric("tokens", "本月词元",
                             feedbackMapper.sumLedgerTokensOfDept(tenantId, did, period()), ""),
                     metric("kbDocs", "部门知识库", feedbackMapper.countKbOfDept(did), "份")));
@@ -137,7 +145,8 @@ public class OrgScopeStatsService {
         out.put("scopeName", null);
         out.put("canSeeOrg", false);
         out.put("metrics", List.of());
-        out.put("note", "「本组织数据」仅对机构管理员与部门负责人展示（可见面按需求取最小）。"
+        out.put("note", "「本组织数据」仅对管理员与部门负责人展示"
+                + "（平台/租户管理员看本租户、机构管理员看本机构、部门负责人看本部门；可见面按需求取最小）。"
                 + "你可以在「我的 → 我的数据」查看个人的实时统计。");
         return out;
     }

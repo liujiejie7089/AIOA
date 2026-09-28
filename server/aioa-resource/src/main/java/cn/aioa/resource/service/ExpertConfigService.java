@@ -55,6 +55,9 @@ public class ExpertConfigService {
         ExpertSettings s = new ExpertSettings();
         s.setEnabled(true);
         s.setVisibleScope("ALL");
+        // 空清单是显式初值（不是 null）：可见范围判定里「空清单」有明确含义，
+        // 用 null 会让判定多一个分支，也容易与「没配过」混淆。
+        s.setVisibleTargets(new ArrayList<>());
         s.setDefaultEnabled(false);
         s.setKbScope("ALL");
         s.setModel("mock-default");
@@ -343,6 +346,9 @@ public class ExpertConfigService {
             m.put("expertKey", expertKey);
             m.put("enabled", settings.getEnabled());
             m.put("visibleScope", settings.getVisibleScope());
+            // 目标清单必须回吐：管理端要据此回填选择器，否则「改了范围再打开」会显示成空选
+            m.put("visibleTargets", settings.getVisibleTargets() == null
+                    ? List.of() : settings.getVisibleTargets());
             m.put("defaultEnabled", settings.getDefaultEnabled());
             m.put("kbScope", settings.getKbScope());
             m.put("model", settings.getModel());

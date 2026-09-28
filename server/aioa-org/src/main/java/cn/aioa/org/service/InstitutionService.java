@@ -11,6 +11,7 @@ import cn.aioa.org.mapper.OrgMemberMapper;
 import cn.aioa.org.mapper.OrgStatMapper;
 import cn.aioa.org.support.AccountProvisioner;
 import cn.aioa.org.support.AuditRecorder;
+import cn.aioa.org.support.CreditCode;
 import cn.aioa.org.support.OrgGuard;
 import cn.aioa.org.support.Vals;
 import cn.aioa.security.AuthUser;
@@ -111,6 +112,48 @@ public class InstitutionService {
         return it;
     }
 
+    /**
+     * 机构类型字典（**唯一权威来源**）：管理端下拉的选项与列表的标签都从这里取。
+     *
+     * <p>端点：{@code GET /api/v1/tenant/institution-types}。前端不得再自建第二份枚举 ——
+     * 之前那样做的后果见 {@link OrgInstitution#TYPE_GOVERNMENT} 的类注释。</p>
+     */
+    public List<Map<String, Object>> typeOptions() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map.Entry<String, String> e : OrgInstitution.types().entrySet()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("code", e.getKey());
+            m.put("label", e.getValue());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * 信用代码归一化 + 格式校验 + **唯一性**；未填写返回 {@code null}。
+     *
+     * <p>唯一性按**全局**判定：统一社会信用代码是法人唯一标识，不因租户而重复。
+     * 查询走 MyBatis-Plus 的 {@code @TableLogic}（自动附加 {@code deleted_at IS NULL}）⇒
+     * 软删机构不会永久占号，不需要（也不应该）加库级唯一索引 ——
+     * 那会让软删后重建同一机构直接撞唯一键。</p>
+     */
+    private String creditCodeOf(String raw, Long excludeInstitutionId) {
+        String cc = CreditCode.normalize(raw);
+        if (cc == null) {
+            return null;
+        }
+        cc = CreditCode.require(cc);
+        LambdaQueryWrapper<OrgInstitution> w = new LambdaQueryWrapper<OrgInstitution>()
+                .eq(OrgInstitution::getCreditCode, cc);
+        if (excludeInstitutionId != null) {
+            w.ne(OrgInstitution::getId, excludeInstitutionId);
+        }
+        if (institutionMapper.selectCount(w) > 0) {
+            throw BizException.badRequest("统一社会信用代码已被其它机构使用：" + cc);
+        }
+        return cc;
+    }
+
     // ------------------------------------------------------------------ B1 建档
 
     @Transactional(rollbackFor = Exception.class)
@@ -121,7 +164,9 @@ public class InstitutionService {
         Long tenantId = guard.resolveRequestTenant(actor);
         String name = Vals.require(body, "name", "机构名称");
         String code = Vals.require(body, "code", "机构编码");
-        String orgType = Vals.str(body, "orgType", OrgInstitution.TYPE_ENTERPRISE);
+        // 机构类型：未知取值直接 400（带可选清单），不做静默降级 —— 猜错类型会把统计口径悄悄改掉。
+        String orgType = OrgInstitution.requireOrgType(
+                Vals.str(body, "orgType", OrgInstitution.TYPE_ENTERPRISE));
 
         if (institutionMapper.selectCount(new LambdaQueryWrapper<OrgInstitution>()
                 .eq(OrgInstitution::getTenantId, tenantId)
@@ -134,7 +179,7 @@ public class InstitutionService {
         it.setName(name);
         it.setCode(code);
         it.setOrgType(orgType);
-        it.setCreditCode(Vals.str(body, "creditCode"));
+        it.setCreditCode(creditCodeOf(Vals.str(body, "creditCode"), null));
         it.setLegalPerson(Vals.str(body, "legalPerson"));
         it.setContactMobile(Vals.str(body, "contactMobile"));
         it.setContactEmail(Vals.str(body, "contactEmail"));
@@ -185,10 +230,10 @@ public class InstitutionService {
             it.setName(Vals.str(body, "name"));
         }
         if (Vals.str(body, "orgType") != null) {
-            it.setOrgType(Vals.str(body, "orgType"));
+            it.setOrgType(OrgInstitution.requireOrgType(Vals.str(body, "orgType")));
         }
         if (body != null && body.containsKey("creditCode")) {
-            it.setCreditCode(Vals.str(body, "creditCode"));
+            it.setCreditCode(creditCodeOf(Vals.str(body, "creditCode"), id));
         }
         if (body != null && body.containsKey("legalPerson")) {
             it.setLegalPerson(Vals.str(body, "legalPerson"));

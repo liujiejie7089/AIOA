@@ -9,16 +9,16 @@
       style="margin-bottom: 12px"
     />
 
-    <!-- 机构作用域：机构成员固定本单位；租户管理员 / 平台管理员可切换 -->
+    <!-- 机构作用域：与顶部选择器同一个值（见 api/institutionScope.ts），这里只是本页的快捷入口 -->
     <div class="scope-bar">
       <span class="scope-label">当前机构</span>
       <el-select
-        v-if="instOptions.length > 1"
-        v-model="instId"
+        v-if="canSwitch && instOptions.length > 1"
+        :model-value="instId"
         size="small"
         style="width: 280px"
         placeholder="选择机构"
-        @change="reloadAll"
+        @change="onInstChange"
       >
         <el-option
           v-for="i in instOptions"
@@ -27,10 +27,11 @@
           :value="i.id"
         />
       </el-select>
-      <el-tag v-else-if="instOptions.length === 1" size="small" effect="plain" type="info">
+      <el-tag v-else-if="instOptions.length" size="small" effect="plain" type="info">
         {{ instOptions[0].name }}（{{ instOptions[0].code || instOptions[0].id }}）
       </el-tag>
       <span v-else class="muted small">暂无可用机构</span>
+      <span v-if="canSwitch && instOptions.length > 1" class="muted small">与顶部选择器联动</span>
 
       <el-tag v-if="scopeKind === 'TENANT'" size="small" effect="plain" type="warning">
         租户管理员视角：可查看并维护本租户全部机构
@@ -113,17 +114,26 @@
             <el-table-column label="姓名" width="100">
               <template #default="{ row }">{{ row.name }}</template>
             </el-table-column>
-            <el-table-column label="账号" prop="username" width="120" />
+            <el-table-column label="账号" width="150">
+              <template #default="{ row }">
+                <span>{{ row.username || '—' }}</span>
+                <el-tag v-if="extraAccounts(row).length" size="small" effect="plain" type="info" style="margin-left: 4px">
+                  +{{ extraAccounts(row).length }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="部门" min-width="110">
               <template #default="{ row }">{{ row.departmentName || '—' }}</template>
             </el-table-column>
             <el-table-column label="工号" prop="employeeNo" width="100" />
             <el-table-column label="岗位" prop="jobTitle" min-width="110" show-overflow-tooltip />
             <el-table-column label="手机" prop="mobile" width="120" />
-            <el-table-column label="操作" width="110" fixed="right">
+            <el-table-column label="操作" width="215" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="canWrite" text type="primary" size="small" @click="openMemberDlg(row)">编辑</el-button>
+                <el-button v-if="canWrite" text type="primary" size="small" @click="openAccountDlg(row)">账号</el-button>
                 <el-button v-if="canWrite" text type="primary" size="small" @click="openBalanceDlg(row)">假期</el-button>
+                <el-button v-if="canWrite" text type="primary" size="small" @click="resetPwd(row)">口令</el-button>
                 <span v-if="!canWrite" class="muted small">—</span>
               </template>
             </el-table-column>
@@ -174,8 +184,19 @@
     <el-dialog v-model="memberDlg" :title="memberForm.id ? '编辑员工' : '新增员工（自动开户）'" width="500">
       <el-form :model="memberForm" label-width="100px" size="small">
         <el-form-item label="姓名" required><el-input v-model="memberForm.name" /></el-form-item>
-        <el-form-item label="登录账号" required>
+        <el-form-item label="登录账号" :required="!memberForm.id">
           <el-input v-model="memberForm.username" :disabled="!!memberForm.id" placeholder="不存在时自动开通" />
+          <div v-if="memberForm.id" class="muted small">主账号在开户后不可更换；如需为该员工增加其它登录入口，请用名册行内「账号」追加。</div>
+        </el-form-item>
+        <el-form-item v-if="!memberForm.id" label="初始口令">
+          <el-input
+            v-model="memberForm.password"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="留空则使用平台统一演示口令"
+          />
+          <div class="muted small">该口令即为该员工登录用户端（H5）的密码。保存后系统会回显一次，请立即留档——服务端只保存哈希，事后无法回读。</div>
         </el-form-item>
         <el-form-item label="所属部门">
           <el-tree-select
@@ -196,6 +217,56 @@
       <template #footer>
         <el-button size="small" @click="memberDlg = false">取消</el-button>
         <el-button type="primary" size="small" :loading="saving" @click="submitMember">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 账号绑定（V67 批次 C：一个员工可以有多个账号；主账号由服务端维护，不可解绑） -->
+    <el-dialog v-model="accountDlg" :title="`账号：${accountForm.name || ''}`" width="600">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="主账号在开户后不可更换；如需为该员工增加其它登录入口，请在下方追加绑定。"
+        description="「虚拟」账号表示当前没有任何员工绑定它（规格里的虚拟管理员账号）；绑到本员工后即为普通附加账号。"
+        style="margin-bottom: 8px"
+      />
+      <el-table v-loading="accountLoading" :data="accountForm.items" size="small" stripe max-height="240">
+        <el-table-column label="账号" prop="username" min-width="130" />
+        <el-table-column label="昵称" prop="nickname" min-width="110" />
+        <el-table-column label="主账号" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.isPrimary" size="small" type="success" effect="plain">主</el-tag>
+            <span v-else class="muted small">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button v-if="canWrite && !row.isPrimary" text type="danger" size="small" @click="unbindAccount(row)">解绑</el-button>
+            <span v-else class="muted small">—</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="canWrite" class="acct-add">
+        <el-select
+          v-model="accountForm.pickUserId"
+          filterable
+          clearable
+          size="small"
+          placeholder="选择要追加的账号"
+          style="width: 360px"
+        >
+          <el-option
+            v-for="c in candidates"
+            :key="c.userId"
+            :value="c.userId!"
+            :label="candidateLabel(c)"
+          />
+        </el-select>
+        <el-button type="primary" size="small" :loading="saving" @click="bindAccount">追加绑定</el-button>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="accountDlg = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -248,10 +319,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getOrgScope, getDepartments, createDepartment, updateDepartment, deleteDepartment,
+  getDepartments, createDepartment, updateDepartment, deleteDepartment,
   listMembers, createMember, updateMember, importMembers, upsertLeaveBalance,
-  type OrgDepartment, type OrgMember, type SelectableInstitution
+  listAccountCandidates, attachMemberAccount, detachMemberAccount, resetMemberPassword,
+  type OrgDepartment, type OrgMember, type MemberAccount, type AccountCandidate
 } from '@/api/org'
+import {
+  institutionState,
+  loadInstitutionScope,
+  setCurrentInstitution
+} from '@/api/institutionScope'
 
 const loading = ref(false)
 const mLoading = ref(false)
@@ -267,14 +344,26 @@ const filterDept = ref<number | null>(null)
 const page = ref(1)
 const size = 50
 
-// ---------------------------------------------------------------- 机构作用域
-// 机构成员只有一家机构（选择器隐藏）；租户管理员可在本租户内切换；平台管理员跨租户只读。
-const instOptions = ref<SelectableInstitution[]>([])
-const instId = ref<number | null>(null)
-const canWrite = ref(false)
-const scopeKind = ref<string>('ORG')
+/**
+ * 机构作用域：<b>不再由本页自持</b>，而是读顶部那套全局态（`api/institutionScope.ts`）。
+ *
+ * <p>此前本页有自己的 `instId`，与顶部选择器互不相干 —— 页内切换机构只影响本页，
+ * 顶部切换机构本页纹丝不动（用户反馈的「选择机构后页面没有随之改变」）。
+ * 现在两者是同一个值：页内下拉只是顶部选择器在本页的另一种呈现。</p>
+ */
+const instOptions = institutionState.institutions
+const instId = institutionState.currentId
+const canWrite = institutionState.canWrite
+const scopeKind = institutionState.scopeKind
+const canSwitch = institutionState.canSwitch
+const institutionScopeLoaded = institutionState.loaded
 /** 无机构时给出空态提示，而不是抛 403 报错横幅。 */
-const noInstitution = ref(false)
+const noInstitution = computed(() => institutionScopeLoaded.value && instOptions.value.length === 0)
+
+function onInstChange(id: number) {
+  setCurrentInstitution(id)
+  void reloadAll()
+}
 
 const flatDepts = computed(() => {
   const out: OrgDepartment[] = []
@@ -318,25 +407,19 @@ async function loadMembers() {
 async function reloadAll() { await loadDepts(); await loadMembers() }
 
 /**
- * 先解析机构作用域，再拉数据。
+ * 机构作用域由全局态解析（MainLayout 已先于子路由完成），本页只负责取数。
  *
- * <p>此前直接拉数据，导致「菜单能进、接口全 403」时页面只剩两条错误横幅。
- * 现在把作用域解析前置：无机构时走空态提示；能写才渲染维护按钮。</p>
+ * <p>此前本页直接拉数据，导致「菜单能进、接口全 403」时页面只剩两条错误横幅。
+ * 现在无机构时走空态提示；能写才渲染维护按钮。</p>
  */
 async function init() {
-  try {
-    const s = await getOrgScope()
-    instOptions.value = s?.items || []
-    canWrite.value = !!s?.canWrite
-    scopeKind.value = s?.scope || 'ORG'
-    noInstitution.value = instOptions.value.length === 0
-    if (instId.value == null) {
-      instId.value = s?.boundInstitutionId ?? instOptions.value[0]?.id ?? null
+  // 直链进入 / 浏览器刷新时全局态可能尚未就绪（由 MainLayout 负责），这里兜一次
+  if (!institutionScopeLoaded.value) {
+    try {
+      await loadInstitutionScope()
+    } catch (e: unknown) {
+      ElMessage.error('机构信息加载失败：' + ((e as Error)?.message || '后端异常'))
     }
-  } catch (e: unknown) {
-    noInstitution.value = true
-    ElMessage.error('机构信息加载失败：' + ((e as Error)?.message || '后端异常'))
-    return
   }
   if (noInstitution.value) return
   await reloadAll()
@@ -407,19 +490,148 @@ function openMemberDlg(row?: OrgMember) {
 }
 
 async function submitMember() {
-  if (!memberForm.value.name || !memberForm.value.username) {
-    ElMessage.warning('姓名与登录账号必填')
+  const isEdit = !!memberForm.value.id
+  if (!memberForm.value.name) {
+    ElMessage.warning('姓名必填')
+    return
+  }
+  // 账号只在「新增开户」时必填：编辑态账号只读，服务端 updateMember 也不接收 username。
+  // 此前对编辑态一并要求 username，而编辑用的行里没有该字段 ⇒ 校验恒真 ⇒ 员工永远存不下去。
+  if (!isEdit && !memberForm.value.username) {
+    ElMessage.warning('新增员工需填写登录账号（填写后自动开通）')
     return
   }
   saving.value = true
   try {
-    if (memberForm.value.id) await updateMember(memberForm.value.id, memberForm.value)
-    else await createMember(memberForm.value)
-    ElMessage.success(memberForm.value.id ? '已保存' : '员工已新增并开通账号')
+    if (isEdit) {
+      await updateMember(memberForm.value.id!, memberForm.value)
+      ElMessage.success('已保存')
+    } else {
+      const created = await createMember(memberForm.value)
+      // 口令必须当场回显：服务端只存哈希、不会回读明文，错过这一步操作员就再也拿不到
+      // 该账号的登录凭据（这正是此前「新增的员工无法登录用户端」的成因）。
+      // 口令值来自服务端回执，不在前端硬编码 —— 账号本就存在时后端不会回传该字段。
+      if (created?.initialPassword) {
+        ElMessageBox.alert(
+          `登录账号：${memberForm.value.username}\n初始口令：${created.initialPassword}\n\n请立即留档：服务端只保存口令哈希，关闭后无法再回读明文。`,
+          '员工已新增并开通账号',
+          { confirmButtonText: '已记下', type: 'success', customClass: 'aioa-pwd-alert' }
+        ).catch(() => {})
+      } else {
+        ElMessage.success(`员工已新增；登录账号 ${memberForm.value.username} 此前已存在，口令未变更`)
+      }
+    }
     memberDlg.value = false
     await loadMembers()
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, '保存失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+/** 重置员工主账号口令。留空则复位为后端统一演示口令（值由后端回执下发，前端不复刻常量）。 */
+async function resetPwd(row: OrgMember) {
+  let input = ''
+  try {
+    const r = await ElMessageBox.prompt(
+      `为「${row.name}」的主账号 ${row.username || ''} 设置新的登录口令。留空则复位为统一演示口令。`,
+      '重置登录口令',
+      {
+        confirmButtonText: '重置',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '留空 → 复位为统一演示口令',
+      }
+    )
+    input = String(r.value ?? '')
+  } catch {
+    return // 取消
+  }
+  try {
+    const res = await resetMemberPassword(row.id!, input, instId.value)
+    ElMessageBox.alert(
+      `登录账号：${row.username}\n新口令：${res.initialPassword}\n\n请立即留档：服务端只保存口令哈希，关闭后无法再回读明文。`,
+      '口令已重置',
+      { confirmButtonText: '已记下', type: 'success', customClass: 'aioa-pwd-alert' }
+    ).catch(() => {})
+  } catch (e: unknown) {
+    ElMessage.error(apiMsg(e, '重置失败'))
+  }
+}
+
+// ---------------------------------------------------------------- 账号（V67 批次 C）
+const accountDlg = ref(false)
+const accountLoading = ref(false)
+const accountForm = ref<{ memberId?: number; name?: string; items: MemberAccount[]; pickUserId?: number }>(
+  { items: [] }
+)
+const candidates = ref<AccountCandidate[]>([])
+
+/** 除主账号之外的附加账号（名册「+N」用）。 */
+function extraAccounts(row: OrgMember): MemberAccount[] {
+  return (row.accounts || []).filter((a) => !a.isPrimary)
+}
+
+/** 候选账号的展示名：显式区分「虚拟账号」与「已绑给谁」，避免把别人的账号误绑过来。 */
+function candidateLabel(c: AccountCandidate): string {
+  const who = c.nickname && c.nickname !== c.username ? `${c.username}（${c.nickname}）` : c.username
+  if (c.virtual) return `${who} · 虚拟账号`
+  return `${who} · 已绑：${c.boundMemberName}`
+}
+
+async function loadCandidates() {
+  try {
+    candidates.value = await listAccountCandidates()
+  } catch (e: unknown) {
+    ElMessage.error(apiMsg(e, '账号清单加载失败'))
+  }
+}
+
+async function openAccountDlg(row: OrgMember) {
+  accountForm.value = { memberId: row.id, name: row.name, items: row.accounts || [], pickUserId: undefined }
+  accountDlg.value = true
+  // 账号清单是「本租户账号」的全局视图，和员工行无关，开一次即可复用；每次打开刷新以免用旧快照。
+  void loadCandidates()
+}
+
+async function bindAccount() {
+  if (!accountForm.value.memberId) return
+  if (!accountForm.value.pickUserId) {
+    ElMessage.warning('请选择要追加的账号')
+    return
+  }
+  saving.value = true
+  try {
+    accountForm.value.items = await attachMemberAccount(
+      accountForm.value.memberId, accountForm.value.pickUserId, instId.value
+    )
+    ElMessage.success('已追加绑定')
+    accountForm.value.pickUserId = undefined
+    await Promise.all([loadMembers(), loadCandidates()])
+  } catch (e: unknown) {
+    ElMessage.error(apiMsg(e, '绑定失败'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function unbindAccount(row: MemberAccount) {
+  if (!accountForm.value.memberId || !row.userId) return
+  try {
+    await ElMessageBox.confirm(`确认解绑账号「${row.username}」？`, '解绑账号', {
+      type: 'warning', confirmButtonText: '解绑', cancelButtonText: '取消'
+    })
+  } catch { return }
+  saving.value = true
+  try {
+    accountForm.value.items = await detachMemberAccount(
+      accountForm.value.memberId, row.userId, instId.value
+    )
+    ElMessage.success('已解绑')
+    await Promise.all([loadMembers(), loadCandidates()])
+  } catch (e: unknown) {
+    ElMessage.error(apiMsg(e, '解绑失败'))
   } finally {
     saving.value = false
   }
@@ -443,11 +655,19 @@ async function submitImport() {
     const r = await importMembers(rows, instId.value)
     const failed = (r?.failed as unknown[]) || []
     ElMessage.success(`导入完成：成功 ${r?.success ?? 0} 条，失败 ${r?.failedCount ?? failed.length} 条`)
+    // 导入表格里没有口令列 ⇒ 新建账号用的是后端统一口令。不回显它，这些账号就等于"建好了但进不去"。
+    if (r?.initialPassword) {
+      ElMessageBox.alert(
+        `本次新建账号：${r.newAccounts ?? 0} 个\n统一初始口令：${r.initialPassword}\n\n请立即留档：服务端只保存口令哈希，关闭后无法再回读明文。\n（已存在的账号口令未变更，不在此列。）`,
+        '导入完成 · 初始口令',
+        { confirmButtonText: '已记下', type: 'success', customClass: 'aioa-pwd-alert' }
+      ).catch(() => {})
+    }
     if (failed.length) {
       ElMessageBox.alert(
         failed.slice(0, 20).map((f) => JSON.stringify(f)).join('\n'),
         '失败明细（最多 20 条）',
-        { confirmButtonText: '关闭' }
+        { confirmButtonText: '关闭', customClass: 'aioa-pwd-alert' }
       )
     }
     importDlg.value = false
@@ -495,4 +715,10 @@ async function submitBalance() {
 .tree-node:hover .ops { opacity: 1; }
 .muted { color: #909399; }
 .small { font-size: 12px; }
+</style>
+
+<!-- 非 scoped：MessageBox 被 teleport 到 body，scoped 选择器够不着。 -->
+<style>
+.aioa-pwd-alert .el-message-box__message { white-space: pre-line; }
+.aioa-pwd-alert .el-message-box__message p { line-height: 1.7; }
 </style>

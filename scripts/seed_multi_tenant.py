@@ -107,7 +107,7 @@ TENANTS = [
         'scale': '集团型（下属 3 家子公司，约 120 人）',
         'institutions': [
             {
-                'name': '某某城投工程建设有限公司', 'code': 'ORG-CTGCJS', 'orgType': 'STATE_OWNED',
+                'name': '某某城投工程建设有限公司', 'code': 'ORG-CTGCJS', 'orgType': 'ENTERPRISE',
                 'creditCode': '91330102MA2G10001C', 'legalPerson': '马建军',
                 'contactMobile': '0571-8820****', 'contactEmail': 'gcjs@ctjt.com',
                 'establishedAt': '2005-04-12',
@@ -121,7 +121,7 @@ TENANTS = [
                 ],
             },
             {
-                'name': '某某城投资产运营有限公司', 'code': 'ORG-CTZCYY', 'orgType': 'STATE_OWNED',
+                'name': '某某城投资产运营有限公司', 'code': 'ORG-CTZCYY', 'orgType': 'ENTERPRISE',
                 'creditCode': '91330102MA2G10002D', 'legalPerson': '宋佳',
                 'contactMobile': '0571-8821****', 'adminUsername': 'ctzcyy_admin', 'adminName': '宋佳',
                 'quotaTokens': 1_200_000,
@@ -132,7 +132,7 @@ TENANTS = [
                 ],
             },
             {
-                'name': '某某城投数字科技有限公司', 'code': 'ORG-CTSZKJ', 'orgType': 'STATE_OWNED',
+                'name': '某某城投数字科技有限公司', 'code': 'ORG-CTSZKJ', 'orgType': 'ENTERPRISE',
                 'creditCode': '91330102MA2G10003E', 'legalPerson': '方子谦',
                 'contactMobile': '0571-8822****', 'adminUsername': 'ctszkj_admin', 'adminName': '方子谦',
                 'quotaTokens': 900_000,
@@ -211,7 +211,7 @@ TENANTS = [
         'scale': '中小型（1 家主体，约 30 人）',
         'institutions': [
             {
-                'name': '某某智能科技有限公司研发中心', 'code': 'ORG-ZNKJYF', 'orgType': 'PRIVATE',
+                'name': '某某智能科技有限公司研发中心', 'code': 'ORG-ZNKJYF', 'orgType': 'ENTERPRISE',
                 'creditCode': '91330102MA2H10001F', 'legalPerson': '傅宸',
                 'contactMobile': '0571-8850****', 'contactEmail': 'rd@znkj-tech.com',
                 'establishedAt': '2018-07-23',
@@ -224,7 +224,7 @@ TENANTS = [
                 ],
             },
             {
-                'name': '某某智能科技有限公司市场部', 'code': 'ORG-ZNKJSC', 'orgType': 'PRIVATE',
+                'name': '某某智能科技有限公司市场部', 'code': 'ORG-ZNKJSC', 'orgType': 'ENTERPRISE',
                 'creditCode': '91330102MA2H10002G', 'legalPerson': '简宁',
                 'contactMobile': '0571-8851****', 'adminUsername': 'znkjsc_admin', 'adminName': '简宁',
                 'quotaTokens': 300_000,

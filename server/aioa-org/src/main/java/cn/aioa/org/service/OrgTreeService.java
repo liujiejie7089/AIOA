@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -45,6 +46,8 @@ public class OrgTreeService {
     private final OrgMemberMapper memberMapper;
     private final AccountProvisioner accounts;
     private final AuditRecorder audit;
+    /** 员工 ↔ 账号（多对多，V67 / docs/38 批次 C）：主账号同步与附加账号增删的唯一入口。 */
+    private final MemberAccountService memberAccounts;
 
     // ------------------------------------------------------------------ G1 部门树
 
@@ -307,7 +310,45 @@ public class OrgTreeService {
         out.put("total", total);
         out.put("page", p);
         out.put("size", s);
-        out.put("items", rows);
+        out.put("items", memberViews(rows));
+        return out;
+    }
+
+    /**
+     * 员工行 → 视图列表（一次性补「账号」与「部门」两列）。
+     *
+     * <p>此前直接回吐 {@link OrgMember} 实体，而账号在 {@code sys_user}、部门名在
+     * {@code org_department}，于是列表页「账号」列恒空、「部门」列恒为「—」；
+     * 编辑弹窗又拿这个空账号去做必填校验（{@code !username} 恒真），
+     * 直接导致「员工完全无法编辑」。</p>
+     *
+     * <p>批量取，避免 N+1：账号一次 IN，部门一次 {@code selectBatchIds}。</p>
+     */
+    private List<Map<String, Object>> memberViews(List<OrgMember> rows) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return out;
+        }
+        List<Long> uids = rows.stream().map(OrgMember::getUserId)
+                .filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        List<Long> dids = rows.stream().map(OrgMember::getDepartmentId)
+                .filter(id -> id != null && id > 0).distinct().collect(Collectors.toList());
+        Map<Long, Map<String, Object>> users = accounts.usersByIds(uids);
+        Map<Long, List<Map<String, Object>>> accountMap = memberAccounts.byMembers(
+                rows.stream().map(OrgMember::getId).filter(Objects::nonNull).distinct()
+                        .collect(Collectors.toList()));
+        Map<Long, String> deptNames = new LinkedHashMap<>();
+        if (!dids.isEmpty()) {
+            for (OrgDepartment d : deptMapper.selectBatchIds(dids)) {
+                deptNames.put(d.getId(), d.getName());
+            }
+        }
+        for (OrgMember m : rows) {
+            Map<String, Object> v = view(m, users.get(m.getUserId()), deptNames.get(m.getDepartmentId()));
+            // V67：账号列表用**批量**结果覆盖（view 里的单条查询只服务单员工场景，列表里会 N+1）
+            v.put("accounts", accountMap.getOrDefault(m.getId(), List.of()));
+            out.add(v);
+        }
         return out;
     }
 
@@ -319,9 +360,14 @@ public class OrgTreeService {
             requireDept(institutionId, deptId);
         }
         String username = Vals.str(body, "username");
+        String plainPassword = Vals.str(body, "password");
+        // 先判「这一次是不是新开的账号」：账号本来就在时口令不被改动，
+        // 此时回显一个"初始口令"就是假话（铁律 #1：展示必须与事实同源）。
+        boolean newAccount = !accounts.usernameExists(username);
         Map<String, Object> target = accounts.resolveOrCreate(
                 actor.getTenantId(), Vals.lngObj(body, "userId"), username, name,
-                Vals.str(body, "mobile"), Vals.str(body, "email"), actor.getUserId());
+                Vals.str(body, "mobile"), Vals.str(body, "email"), actor.getUserId(),
+                plainPassword);
         Long uid = AccountProvisioner.idOf(target);
         if (memberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
                 .eq(OrgMember::getInstitutionId, institutionId)
@@ -347,10 +393,48 @@ public class OrgTreeService {
         m.setCreatedAt(LocalDateTime.now());
         m.setCreatedBy(actor.getUserId());
         memberMapper.insert(m);
+        // V67：主账号同步进中间表（is_primary=1 只允许在 MemberAccountService 里产生）
+        memberAccounts.syncPrimary(m, actor.getUserId());
 
         audit.record(m.getTenantId(), institutionId, actor, "MEMBER_CREATE", "ORG_MEMBER", m.getId(),
                 "新增员工「" + name + "」", null, m);
-        return view(m);
+        Map<String, Object> out = new LinkedHashMap<>(view(m));
+        // 开户口令必须当场回传给操作员：服务端只存哈希、事后无法回读明文，
+        // 不回显就等于新账号永远登不进去（用户反馈的「新增的员工无法登录用户端」正是此因）。
+        if (newAccount) {
+            out.put("initialPassword", AccountProvisioner.effectivePassword(plainPassword));
+        }
+        return out;
+    }
+
+    /**
+     * 重置某员工**主账号**的登录口令（V67 批次 C·补（口令可知性））。
+     *
+     * <p>为什么必须有这个动作：开户口令只在创建那一刻回显一次（服务端只存哈希、不可回读）。
+     * 漏记之后，操作员唯一的出路会变成"删掉员工重建" —— 那会连带丢掉审批 / 通知归属，
+     * 不是一个可解释的运维动作。故必须给出「就地重置」这个正常出口。</p>
+     *
+     * <p>口令值不回写在审计里（审计是长期留存、会被多人看到的）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> resetMemberPassword(Long institutionId, Long id, AuthUser actor,
+                                                   Map<String, Object> body) {
+        OrgMember m = requireMember(institutionId, id);
+        Long uid = m.getUserId();
+        if (uid == null) {
+            throw BizException.badRequest("该员工没有主账号，无法重置口令");
+        }
+        String plain = Vals.str(body, "password");
+        accounts.resetPassword(uid, plain);
+        audit.record(m.getTenantId(), institutionId, actor, "MEMBER_RESET_PASSWORD", "ORG_MEMBER", m.getId(),
+                "重置员工「" + m.getName() + "」的登录口令"
+                        + (plain == null || plain.isBlank() ? "（复位为统一演示口令）" : ""),
+                null, Map.of("userId", uid));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("memberId", m.getId());
+        out.put("userId", uid);
+        out.put("initialPassword", AccountProvisioner.effectivePassword(plain));
+        return out;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -407,14 +491,34 @@ public class OrgTreeService {
             throw BizException.badRequest("企业管理员不可直接删除，请先在机构管理页完成管理员交接（FR-B2）");
         }
         memberMapper.deleteById(id);
+        // V67：员工移除时一并清掉账号绑定，避免中间表留下指向已删员工的孤儿行
+        memberAccounts.dropAll(id);
         accounts.revokeRole(m.getUserId(), OrgGuard.ROLE_MEMBER);
         audit.record(m.getTenantId(), institutionId, actor, "MEMBER_DELETE", "ORG_MEMBER", id,
                 "移除员工「" + m.getName() + "」", m, null);
         return Map.of("deleted", id);
     }
 
-    private OrgMember requireMember(Long institutionId, Long id) {
-        OrgMember m = memberMapper.selectById(id);
+    // ------------------------------------------------------------------ V67 员工 ↔ 账号（多对多）
+
+    /**
+     * 给员工**追加绑定**一个用户账号（不改变主账号）。
+     *
+     * <p>入口先过机构边界（{@link #requireMember}），越界统一 404；跨租户绑定由
+     * {@code MemberAccountService} 拒绝。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<Map<String, Object>> attachAccount(Long institutionId, Long id, AuthUser actor, Long userId) {
+        return memberAccounts.attach(requireMember(institutionId, id), actor, userId);
+    }
+
+    /** 解绑员工的**附加**账号（主账号不可解绑，由服务层给明确文案）。 */
+    @Transactional(rollbackFor = Exception.class)
+    public List<Map<String, Object>> detachAccount(Long institutionId, Long id, AuthUser actor, Long userId) {
+        return memberAccounts.detach(requireMember(institutionId, id), actor, userId);
+    }
+
+    private OrgMember requireMember(Long institutionId, Long id) {        OrgMember m = memberMapper.selectById(id);
         if (m == null || !institutionId.equals(m.getInstitutionId())) {
             throw BizException.notFound("员工不存在或不属于本机构：" + id);
         }
@@ -453,6 +557,7 @@ public class OrgTreeService {
 
         List<Map<String, Object>> failed = new ArrayList<>();
         int success = 0;
+        int newAccounts = 0;
         int line = 0;
         for (Map<String, Object> row : rows) {
             line++;
@@ -482,9 +587,14 @@ public class OrgTreeService {
 
                 String username = Vals.str(row, "username");
                 String mobile = Vals.str(row, "mobile");
+                String effUsername = username == null
+                        ? ("u" + System.nanoTime() % 100000000L + line) : username;
+                boolean existed = accounts.usernameExists(effUsername);
                 Map<String, Object> target = accounts.resolveOrCreate(actor.getTenantId(), null,
-                        username == null ? ("u" + System.nanoTime() % 100000000L + line) : username,
-                        rowName, mobile, Vals.str(row, "email"), actor.getUserId());
+                        effUsername, rowName, mobile, Vals.str(row, "email"), actor.getUserId());
+                if (!existed) {
+                    newAccounts++;
+                }
                 Long uid = AccountProvisioner.idOf(target);
                 if (memberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
                         .eq(OrgMember::getInstitutionId, institutionId)
@@ -509,6 +619,8 @@ public class OrgTreeService {
                 m.setCreatedAt(LocalDateTime.now());
                 m.setCreatedBy(actor.getUserId());
                 memberMapper.insert(m);
+                // V67：与单条新建同一口径 —— 主账号必须同步进中间表（否则导入的员工在账号列表里是"虚拟"的）
+                memberAccounts.syncPrimary(m, actor.getUserId());
                 exists.put(key(rowName, empNo), m);
                 success++;
             } catch (Exception e) {
@@ -530,6 +642,13 @@ public class OrgTreeService {
         out.put("failedCount", failed.size());
         out.put("successRate", rows.isEmpty() ? 0d : Math.round(success * 10000.0 / rows.size()) / 100.0);
         out.put("failed", failed);
+        // 批量导入的表格里没有口令列 ⇒ 本次**新建**的账号一律用统一演示口令。
+        // 不回传这个值，操作员导入上千人后一个都登不进去 —— 与单条新增是同一类缺陷（口令不可知）。
+        // 只在真新建了账号时才带上，避免"账号本就存在（口令未变）"时回显一个假口令。
+        if (newAccounts > 0) {
+            out.put("newAccounts", newAccounts);
+            out.put("initialPassword", AccountProvisioner.DEMO_PASSWORD);
+        }
         return out;
     }
 
@@ -556,11 +675,29 @@ public class OrgTreeService {
     }
 
     private Map<String, Object> view(OrgMember m) {
+        Map<Long, Map<String, Object>> users = m.getUserId() == null
+                ? Map.of() : accounts.usersByIds(List.of(m.getUserId()));
+        Map<String, Object> o = view(m, users.get(m.getUserId()), null);
+        // 单员工场景：账号列表取真值（列表场景由 memberViews 用批量结果覆盖，避免 N+1）
+        o.put("accounts", memberAccounts.of(m.getId()));
+        return o;
+    }
+
+    /**
+     * 员工视图（带账号与部门名）。三处口径必须同源：列表、新增、编辑返回的都是这一个视图 ——
+     * 否则「新增后返回的行没有账号」会让前端刚保存完的表格行又空掉一列。
+     */
+    private Map<String, Object> view(OrgMember m, Map<String, Object> user, String departmentName) {
         Map<String, Object> o = new LinkedHashMap<>();
         o.put("id", m.getId());
         o.put("institutionId", m.getInstitutionId());
         o.put("departmentId", m.getDepartmentId());
+        o.put("departmentName", departmentName);
         o.put("userId", m.getUserId());
+        // V67：账号列表字段恒定存在（形状一致），列表场景由 memberViews 用批量结果覆盖 ——
+        // 这里放占位空表而不是查一次库，否则列表页会变成 N+1。
+        o.put("accounts", List.of());
+        o.put("username", user == null ? null : user.get("username"));
         o.put("name", m.getName());
         o.put("mobile", m.getMobile());
         o.put("email", m.getEmail());
