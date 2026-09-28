@@ -24,6 +24,8 @@
     D8  新建租户必须触发播种（否则未入驻租户的删除申请会以「请先指定企业管理员」报错，用户无从满足）
     D9  前端**只有申请入口**，没有直删调用；两个概念（注销 / 删除）不混用
     D10 前端 api 走 unwrap 校验 code（失败信封不能被当业务数据）
+    D11 部门「能不能删」只有一处判定（申请与执行共用 deptBlockedReason）
+    D12 **员工**删除保持直删（不提交审核单），且前端有真实调用（不是死代码）
 
 用法：
     python scripts/_check_delete_guards.py            # 跑检查
@@ -320,6 +322,44 @@ def checks(t):
         "判定出现了第二份实现（或申请侧绕开了它）→ 申请与执行的口径会漂移",
     ))
 
+    # ============================================================ D12 员工删除保持「直删」
+    #
+    # 需求只要求「**部门及以上**层级的首次删除经上一级审核」；员工层由企业管理员自行负责。
+    # 这一条防的是**两个方向**的走样：
+    #   ① 反向过头 —— 后人「顺手统一一下」，把员工删除也塞进审核闸门（本需求没要求，
+    #      且会让「删错人只能等上一级批」变成不可接受的运维负担）；
+    #   ② 死代码 —— `api/org.ts` 里有 `deleteMember` 却没有任何视图调用它。
+    #      这正是本次用户报的「我没看到删除员工的地方」：能力事实上不可用，
+    #      而**所有既有套件仍然全绿**（`e2e_member_accounts` 直接打接口，根本不经过界面）。
+    #      同型坑见铁律 #4：管理端入口缺失 = 能力事实上不存在，静态断言必须覆盖到「有人在用」。
+    del_member_body = _method_body(tree, "public Map<String, Object> deleteMember(")
+    member_biz = re.findall(r'BIZ_TYPE\s*=\s*"([A-Z_]+)"', inst + ten + dept)
+    out.append((
+        "D12 员工删除保持「直删」（不提交审核单），且前端有**真实调用**（不是死代码）",
+        '@DeleteMapping("/members/{id}")' in org_ctrl
+        and del_member_body != MISSING
+        and "pproval" not in del_member_body
+        and "SubmitReq" not in del_member_body
+        and sorted(member_biz) == ["DEPT_DELETE", "INSTITUTION_DELETE", "TENANT_DELETE"]
+        and "MEMBER" not in prov
+        and "MEMBER" not in t["migs"]["v69"]
+        and "MEMBER" not in t["migs"]["v70"]
+        and "deleteMember(" in _ts_code_body(org_view)
+        and "unwrap<unknown>(r)" in api_code,
+        "缺件：%s" % [n for n, v in (
+            ("D12a 员工直删端点 DELETE /org/members/{id} 仍在", '@DeleteMapping("/members/{id}")' in org_ctrl),
+            ("D12b deleteMember 不提交审批单", del_member_body != MISSING
+             and "pproval" not in del_member_body and "SubmitReq" not in del_member_body),
+            ("D12c 受审核的删除层级恰为 部门/机构/租户 三层（员工层未被塞进闸门）",
+             sorted(member_biz) == ["DEPT_DELETE", "INSTITUTION_DELETE", "TENANT_DELETE"]),
+            ("D12d 播种器无员工级删除流", "MEMBER" not in prov),
+            ("D12e 迁移无员工级删除流", "MEMBER" not in t["migs"]["v69"] and "MEMBER" not in t["migs"]["v70"]),
+            ("D12f 组织架构页真的调用了 deleteMember（否则就是死代码 = 界面无入口）",
+             "deleteMember(" in _ts_code_body(org_view)),
+            ("D12g 员工直删 api 走 unwrap", "unwrap<unknown>(r)" in api_code),
+        ) if not v],
+    ))
+
     return out
 
 
@@ -516,6 +556,38 @@ def selftest():
          lambda t: dict(t, tree_svc=t["tree_svc"].replace(
              "String blocked = deptBlockedReason(institutionId, id);", "String blocked = null;")),
          ["D11"]),
+        ("D12a 员工直删端点被撤掉（改成 POST，界面上的「移除」全 405）",
+         lambda t: dict(t, org_ctrl=t["org_ctrl"].replace(
+             '@DeleteMapping("/members/{id}")', '@PostMapping("/members/{id}")')),
+         ["D12"]),
+        ("D12b 员工删除被「顺手统一」塞进审核闸门（本需求只要求部门及以上）",
+         # ★ 锚点**不能含注释**：load() 返回的 tree_svc 已经过 _strip_java_comments，
+         #   带注释的锚点永远匹配不上 ⇒ t2 == base ⇒ 会报「突变未生效」而不是「守卫失效」。
+         lambda t: dict(t, tree_svc=t["tree_svc"].replace(
+             "memberMapper.deleteById(id);",
+             "approvalFlow.getObject().submit(m.getTenantId(), actor, null);\n"
+             "        memberMapper.deleteById(id);")),
+         ["D12"]),
+        ("D12c 受审核的删除层级不再恰好是三层（有人挪走了一层）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             'public static final String BIZ_TYPE = "TENANT_DELETE";', "")),
+         ["D12"]),
+        ("D12d 播种器给员工层也播了一条删除审批流",
+         lambda t: dict(t, prov=t["prov"].replace(
+             'new Seed("TENANT_DELETE",',
+             'new Seed("MEMBER_DELETE", "[{\\"seq\\": 1, \\"approver_type\\": \\"APPLICANT_SUPERIOR\\", \\"levels\\": 1}]"),\n'
+             '            new Seed("TENANT_DELETE",')),
+         ["D12"]),
+        ("D12e 迁移里给员工层补了删除审批流",
+         lambda t: dict(t, migs=dict(t["migs"], v69=t["migs"]["v69"].replace(
+             "'TENANT_DELETE'", "'TENANT_DELETE', 'MEMBER_DELETE'", 1))),
+         ["D12"]),
+        ("D12f ★界面入口没了（api 函数还在，但没人调用 = 死代码；既有套件全绿也发现不了）",
+         # 这正是本次用户报的「我没看到删除员工的地方」：能力事实上不可用，而
+         # e2e_member_accounts 直接打接口、根本不经过界面 ⇒ 一条断言都不会红。
+         lambda t: dict(t, org_view=t["org_view"].replace(
+             "    await deleteMember(row.id!, instId.value)\n", "")),
+         ["D12"]),
     ]
     bad = 0
     for name, mutate, expect in mutations:

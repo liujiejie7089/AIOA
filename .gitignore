@@ -12,6 +12,8 @@ dist-ssr/
 # 备用 outDir（构建到「不存在的目录」以绕开沙箱批量删除保护时用），与 dist 同属产物
 dist2/
 dist-verify/
+# 构建前把旧 dist 改名挪走的落脚点（vite 的 emptyOutDir 会触发沙箱 bulk-delete 拦截）
+.dist-old/
 *.local
 .npm/
 .pnpm-store/

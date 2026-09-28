@@ -130,12 +130,25 @@
             <el-table-column label="工号" prop="employeeNo" width="100" />
             <el-table-column label="岗位" prop="jobTitle" min-width="110" show-overflow-tooltip />
             <el-table-column label="手机" prop="mobile" width="120" />
-            <el-table-column label="操作" width="215" fixed="right">
+            <el-table-column label="操作" width="265" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="canWrite" text type="primary" size="small" @click="openMemberDlg(row)">编辑</el-button>
                 <el-button v-if="canWrite" text type="primary" size="small" @click="openAccountDlg(row)">账号</el-button>
                 <el-button v-if="canWrite" text type="primary" size="small" @click="openBalanceDlg(row)">假期</el-button>
                 <el-button v-if="canWrite" text type="primary" size="small" @click="resetPwd(row)">口令</el-button>
+                <!--
+                  员工移除**是直删**（与部门/机构/租户不同，不经审核）——需求只要求
+                  「部门及以上的层级删除」走上一级审核，员工的增删由企业管理员自行负责。
+                  企业管理员行禁用：服务端会拒绝，这里提前拦住避免白跑一次请求。
+                -->
+                <el-tooltip
+                  v-if="canWrite && row.isOrgAdmin"
+                  content="企业管理员不可直接移除；请先在机构管理页完成管理员交接"
+                  placement="top"
+                >
+                  <span><el-button text type="danger" size="small" disabled>移除</el-button></span>
+                </el-tooltip>
+                <el-button v-else-if="canWrite" text type="danger" size="small" @click="removeMember(row)">移除</el-button>
                 <span v-if="!canWrite" class="muted small">—</span>
               </template>
             </el-table-column>
@@ -322,7 +335,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getDepartments, createDepartment, updateDepartment, requestDepartmentDelete,
-  listMembers, createMember, updateMember, importMembers, upsertLeaveBalance,
+  listMembers, createMember, updateMember, deleteMember, importMembers, upsertLeaveBalance,
   listAccountCandidates, attachMemberAccount, detachMemberAccount, resetMemberPassword,
   type OrgDepartment, type OrgMember, type MemberAccount, type AccountCandidate
 } from '@/api/org'
@@ -541,6 +554,41 @@ async function submitMember() {
     ElMessage.error(apiMsg(e, '保存失败'))
   } finally {
     saving.value = false
+  }
+}
+
+/**
+ * 移除员工（**直删，不经审核**）。
+ *
+ * 与服务端的部门/机构/租户三层不同：那三层要求「任何层级的首次删除都经上一级审核」，
+ * 而员工的增删由企业管理员自行负责，服务端就是 `DELETE /org/members/{id}` 一次落库。
+ *
+ * 副作用（文案必须与之一致，否则就是在骗操作员）：员工行、其**全部账号绑定**被移除、
+ * 并回收机构成员角色；但 `sys_user` 账号本身**不删除** —— 该账号若还属于别处仍可登录。
+ */
+async function removeMember(row: OrgMember) {
+  if (row.isOrgAdmin) {
+    ElMessage.warning('企业管理员不可直接移除，请先在机构管理页完成管理员交接')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认从本机构移除员工「${row.name}」？\n\n` +
+        `该操作立即生效、无需上级审核。\n` +
+        `将移除其员工档案与全部账号绑定（${(row.accounts || []).length || 1} 个），并回收机构成员角色。\n` +
+        '注意：登录账号本身不会被删除，仅失去本机构的角色。',
+      '移除员工',
+      { type: 'warning', confirmButtonText: '确认移除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 取消
+  }
+  try {
+    await deleteMember(row.id!, instId.value)
+    ElMessage.success(`已移除员工「${row.name}」`)
+    await loadMembers()
+  } catch (e: unknown) {
+    ElMessage.error(apiMsg(e, '移除员工失败'))
   }
 }
 

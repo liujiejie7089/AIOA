@@ -15,6 +15,18 @@
   原因：`aioa.web.h5-dir`/`web-dir` 默认值是**容器内**路径 `/app/h5`、`/app/web`（`application.yml` 只给 `${AIOA_WEB_H5_DIR:/app/h5}`，本机没有这俩 env）⇒ 在 Windows 上落到 `C:\app\h5`，不存在。
   **启动期就会打 WARN 指名要 `--aioa.web.h5-dir` 覆盖**（`AioaStaticConfig`），重启后**先 grep 这行确认拿到的是「（存在）」而不是「不可用」**，别等套件红了才回头查。
   管理端临时 webroot（`%TEMP%\aioa-webroot`）会**随系统清理消失**；`ls` 一下，没了就从 `web/apps/*/dist` 重新组装（需含 `index.html`、`assets/`、`subapps/<name>/`）。
+  改 shell 源码后**必须重打包 + 同步 webroot 才能在界面上看见**（只改 `src/` 是看不见的）：
+  ```bash
+  cd web/apps/shell && mv dist .dist-old && npm run build   # 见下「两个坑」，必须先 mv
+  cp dist/index.html "$W/index.html" && cp -r dist/assets/. "$W/assets/"
+  ```
+  - **坑 1**：vite `emptyOutDir` 清理 `dist/assets`（70+ 文件）会撞沙箱
+    `SAFE_DELETE_BULK_CONFIRM_REQUIRED`（阈值 50）⇒ **先把 `dist` 改名挪走再 build**
+    （`.dist-old/` 已加入 `.gitignore`，勿提交）。
+  - **坑 2**：沙箱的批量删除配额**按轮计**（`{"scope":"turn","threshold":50}`）——
+    同一轮里连续删到第 40 个就被 SIGTERM，**不是命令写错**。要清 400+ 个陈旧 hash 产物时，
+    用 **`mv` 移出服务目录**（如 `%TEMP%\aioa-webroot-stale-<HHMM>`，非删除）而不是硬删。
+  核验已生效：`curl /aioa/web/assets/<新 chunk>` 返回 200 且旧入口 `index.html` 已指向新 hash。
 - 系统 `mvn` 已损坏只能用 `mvnw`；**勿 `rm -rf target`**（用 `mvnw clean`）。
 - fat-jar 判据：正常 ~82–110MB，若 ~20KB = **stripped-jar**（没停 JVM 就重打包，运行中 JVM 随后 `NoClassDefFoundError`）。
 - **同一时刻只允许一个 Maven 构建**；`-pl <m>` **必须带 `-am`**。

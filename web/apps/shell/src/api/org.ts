@@ -204,6 +204,11 @@ export interface OrgMember {
   password?: string
   /** V67 批次 C：该员工的全部账号（主账号排在最前）。列表与详情都会回吐，形状恒定存在。 */
   accounts?: MemberAccount[]
+  /**
+   * 是否企业管理员。列表与详情都会回吐（服务端 `view()` 里有该字段）。
+   * 企业管理员**不可直接移除**（服务端会拒绝），须先在机构管理页完成管理员交接（FR-B2）。
+   */
+  isOrgAdmin?: boolean
 }
 
 export interface OnboardingStep {
