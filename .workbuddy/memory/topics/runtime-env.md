@@ -61,9 +61,13 @@
 - **前端 env 另成一档**：vite 只读各应用自己的 `.env`（`web/apps/shell/.env` 的 VITE_PORT/VITE_API_TARGET、`user-client/.env` 的 PORT/BACKEND_HOST/BACKEND_PORT），写进 `deploy/.env` **无效**；两份已加 `.gitignore` 例外。
 
 ## 6. Flyway
-- 新增前 `ls server/*/src/main/resources/db/migration | sort -V | tail -3` 取实际最大+1（**当前 V62**：V59 bridge 工具网关 / V60 工作流加签·子流程·定义版本 / V61 模型手动添加+默认模型改 MiniMax / V62 默认 AI（既有专家 `general` + 参数键 `chat.default_expert_key`））。
+- 新增前 `ls server/*/src/main/resources/db/migration | sort -V | tail -3` 取实际最大+1（**当前 V70**：
+  V66 租户层级+域名 / V67 员工↔账号 / V68 移除子租户 / **V69 机构·租户删除审批流** / **V70 部门删除审批流**）。
+  更早：V59 bridge 工具网关 / V60 工作流加签·子流程 / V61 模型手动添加+默认模型改 MiniMax / V62 默认 AI。
 - 已应用迁移**不可改**(checksum)，只能追加；文档里的版本号只是预测。
 - 「平台管理员创建专家模板」（2026-09-22）**无需新迁移** —— `ai_expert` 的 `tenant_id/source_template_id/template_version/visible_scope/kb_scope/default_enabled/category` + V34 审核列已够用。
+- ★ **重打包前必须停掉 :8080**：运行中的 JVM 锁住 `aioa-boot-*.jar`，`repackage` 会以
+  `Unable to rename ... .jar.original` 失败（2026-09-28 实测）。产物判据仍是体积 82–110MB。
 
 ## 7. Gitee 接线（opt-in）
 - `AIOA_GITEE_E2E=1 bash start-all.sh`（内部 source `scripts/gitee-e2e-env.sh`，变量一处维护）。

@@ -118,6 +118,9 @@
                   <el-dropdown-item command="freeze" :disabled="!quotaOf(row.id) || !!quotaOf(row.id)!.frozen">冻结配额</el-dropdown-item>
                   <el-dropdown-item command="unfreeze" :disabled="!quotaOf(row.id) || !quotaOf(row.id)!.frozen">解冻配额</el-dropdown-item>
                   <el-dropdown-item command="close" divided :disabled="row.status === 'CLOSED'">注销</el-dropdown-item>
+                  <!-- 「注销」= 置为 CLOSED 状态（可留痕、可查）；「申请删除」= 真删，且必须过上一级审核。
+                       两者是不同的事，故意分开放，避免被当成同一操作。 -->
+                  <el-dropdown-item command="delete-request" divided>申请删除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -274,7 +277,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import {
   listInstitutions, createInstitution, updateInstitution, institutionAction, transferInstitutionAdmin,
   getResourcePool, saveResourcePool, listOrgQuotas, createOrgQuota,
-  freezeOrgQuota, unfreezeOrgQuota, listInstitutionTypes,
+  freezeOrgQuota, unfreezeOrgQuota, listInstitutionTypes, requestInstitutionDelete,
   type Institution, type OrgQuota, type ResourcePool, type InstitutionType
 } from '@/api/org'
 
@@ -519,6 +522,30 @@ const ACTION_TEXT: Record<string, string> = {
 }
 
 async function onAction(row: Institution, cmd: string) {
+  if (cmd === 'delete-request') {
+    // 删除机构走「申请 → 上一级（租户管理员）审核 → 批准后才真删」。
+    // 前端**不提供**直接删除：那是绕过审核闸门（需求：任何一层级的首次删除都需上一级审核）。
+    let reason = ''
+    try {
+      const r = await ElMessageBox.prompt(
+        `将提交「删除机构」申请：${row.name}\n\n` +
+        '前提：该机构下已无部门、无员工（不满足会被服务端拒绝并说明停在哪一级）。\n' +
+        '提交后需经上一级（租户管理员）审核，批准后才会真正删除。',
+        '申请删除机构',
+        { type: 'warning', confirmButtonText: '提交申请', cancelButtonText: '取消',
+          inputPlaceholder: '删除理由（选填）', inputValue: '' }
+      )
+      reason = r.value || ''
+    } catch { return }
+    try {
+      const res = await requestInstitutionDelete(row.id!, reason)
+      ElMessage.success(res.hint || '已提交删除申请，等待上一级审核')
+      await reloadAll()
+    } catch (e: unknown) {
+      ElMessage.error(apiMsg(e, '提交删除申请失败'))
+    }
+    return
+  }
   if (cmd === 'close') {
     try {
       await ElMessageBox.confirm(`注销后机构不可恢复，确认注销「${row.name}」？`, '危险操作', {

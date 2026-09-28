@@ -151,6 +151,26 @@
           </div>
         </div>
       </div>
+
+      <!--
+        危险操作：删除本租户。
+        ★ 与上方的「系统参数」不同域 —— 这里只有**申请**，没有直接删除：
+          需求要求「任何一层级的首次删除操作都需要经过上一级审核后方可执行」，
+          租户的上一级是平台管理员。批准后由后端在审批回调里执行删除。
+      -->
+      <div class="cfg-danger">
+        <div class="cfg-danger-head">
+          <el-icon><WarningFilled /></el-icon>
+          <span>危险操作</span>
+        </div>
+        <p class="cfg-danger-desc">
+          申请删除本租户。前提：本租户下已无机构、无部门、无员工（不满足会被服务端拒绝并说明停在哪一级）。
+          提交后需经<strong>平台管理员</strong>审核，批准后才会真正删除，并同步冻结本租户全部账号。
+        </p>
+        <el-button type="danger" plain :loading="deleting" @click="doRequestTenantDelete">
+          申请删除本租户
+        </el-button>
+      </div>
     </template>
   </div>
 </template>
@@ -167,10 +187,13 @@ import {
   type ModelItem,
   type SysConfigItem,
 } from '@/api/resource'
+// 危险操作：申请删除本租户（审批人 = 平台管理员；批准后才真删）
+import { requestTenantDelete } from '@/api/org'
 
 const loading = ref(false)
 const saving = ref(false)
 const forbidden = ref(false)
+const deleting = ref(false)
 const keyword = ref('')
 const groupFilter = ref('')
 
@@ -280,6 +303,44 @@ async function doResetAll() {
     await load()
   } catch (e) {
     if ((e as string) !== 'cancel') ElMessage.error((e as { message?: string })?.message || '操作失败')
+  }
+}
+
+/**
+ * 申请删除本租户。
+ *
+ * ★ 这里**只有申请**，没有直接删除：需求要求「任何一层级的首次删除操作都需要经过上一级审核」，
+ *   租户的上一级是平台管理员。批准后由后端审批回调真正执行删除（并冻结本租户全部账号）。
+ *   「注销」也不在本页 —— 那是把机构置为 CLOSED 的状态流转，与「删除」是两件事。
+ */
+async function doRequestTenantDelete() {
+  let reason = ''
+  try {
+    const r = await ElMessageBox.prompt(
+      '将提交「删除本租户」申请。\n\n' +
+        '前提：本租户下已无机构、无部门、无员工（不满足会被服务端拒绝并说明停在哪一级）。\n' +
+        '提交后需经平台管理员审核，批准后才会真正删除，并同步冻结本租户全部账号。',
+      '申请删除本租户',
+      {
+        type: 'warning',
+        confirmButtonText: '提交申请',
+        cancelButtonText: '取消',
+        inputPlaceholder: '删除理由（选填）',
+        inputValue: '',
+      }
+    )
+    reason = r.value || ''
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    const res = await requestTenantDelete(reason)
+    ElMessage.success(res.hint || '已提交删除申请，等待平台管理员审核')
+  } catch (e: unknown) {
+    ElMessage.error((e as { message?: string })?.message || '提交删除申请失败')
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -490,6 +551,31 @@ onMounted(async () => {
 .cfg-card-default {
   font-size: 11px;
   color: #b0bccd;
+}
+
+/* ---------- 危险操作 ---------- */
+.cfg-danger {
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: #fff7f6;
+  border: 1px solid #f7d9d4;
+}
+.cfg-danger-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 650;
+  color: #b23c33;
+}
+.cfg-danger-head .el-icon {
+  font-size: 18px;
+}
+.cfg-danger-desc {
+  margin: 8px 0 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #8a6a66;
 }
 
 @media (max-width: 720px) {

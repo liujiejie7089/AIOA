@@ -234,20 +234,37 @@ public class OrgTreeService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> deleteDept(Long institutionId, Long id, AuthUser actor) {
         OrgDepartment d = requireDept(institutionId, id);
-        long children = deptMapper.selectCount(new LambdaQueryWrapper<OrgDepartment>()
-                .eq(OrgDepartment::getParentId, id));
-        if (children > 0) {
-            throw BizException.badRequest("该部门下仍有 " + children + " 个子部门，请先迁移或删除子部门");
-        }
-        long members = memberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
-                .eq(OrgMember::getDepartmentId, id));
-        if (members > 0) {
-            throw BizException.badRequest("该部门下仍有 " + members + " 名员工，请先调整员工归属");
+        String blocked = deptBlockedReason(institutionId, id);
+        if (blocked != null) {
+            throw BizException.badRequest(blocked);
         }
         deptMapper.deleteById(id);
         audit.record(d.getTenantId(), institutionId, actor, "DEPT_DELETE", "ORG_DEPARTMENT", id,
                 "删除部门「" + d.getName() + "」", d, null);
         return Map.of("deleted", id);
+    }
+
+    /**
+     * 部门删除的级联前置校验：可删返回 {@code null}，否则返回<b>精确到停在哪一级</b>的原因。
+     *
+     * <p><b>为什么要把判定抽出来单独一个方法</b>（铁律 #1：同一决策点只在一处判定）：
+     * 现在有两个地方要知道「这个部门能不能删」—— 删除执行处（{@link #deleteDept}）与
+     * 删除<b>申请</b>处（{@code DeptDeleteService.apply}）。若各写一份，两边迟早会漂移，
+     * 出现「申请时说能删、执行时说不能删」或反过来。故判定只此一处，两边都调它。</p>
+     */
+    public String deptBlockedReason(Long institutionId, Long id) {
+        requireDept(institutionId, id);
+        long children = deptMapper.selectCount(new LambdaQueryWrapper<OrgDepartment>()
+                .eq(OrgDepartment::getParentId, id));
+        if (children > 0) {
+            return "该部门下仍有 " + children + " 个子部门，请先迁移或删除子部门";
+        }
+        long members = memberMapper.selectCount(new LambdaQueryWrapper<OrgMember>()
+                .eq(OrgMember::getDepartmentId, id));
+        if (members > 0) {
+            return "该部门下仍有 " + members + " 名员工，请先调整员工归属";
+        }
+        return null;
     }
 
     private OrgDepartment requireDept(Long institutionId, Long id) {

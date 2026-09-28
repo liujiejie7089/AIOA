@@ -76,7 +76,26 @@ public class ApprovalFlowProvisioner {
             new Seed("RESOURCE_OPEN",
                     "租户默认资源开通审批流（企业管理员 → 租户管理员）",
                     "[{\"seq\": 1, \"approver_type\": \"ORG_ADMIN\", \"cc\": [\"TENANT_ADMIN\"]}, "
-                            + "{\"seq\": 2, \"approver_type\": \"TENANT_ADMIN\"}]")
+                            + "{\"seq\": 2, \"approver_type\": \"TENANT_ADMIN\"}]"),
+            // ---- 删除类（2026-09-28 需求：级联前置校验 + 上一级审核）----
+            // 语义：APPLICANT_SUPERIOR + levels=1 = 只取「申请人的上一级」这一个梯级。
+            //   部门删除：部门负责人 → 机构管理员；机构管理员 → 租户管理员；租户管理员 → 平台管理员
+            //   机构删除：申请人=机构管理员 → 租户管理员
+            //   租户删除：申请人=租户管理员 → 平台管理员
+            // ⚠️ 这三条**必须存在**：ApprovalFlowService.expandNodes 在「该 bizType 没有 ACTIVE
+            //    流程定义」时会退化成单节点默认审批人（DEFAULT_APPROVER_TYPE = ORG_ADMIN），
+            //    对删除类单据会把审批人**静默指错**（删租户本应指到平台管理员）。
+            //    部门那一层尤其要注意：申请人可能就是部门负责人，兜底会把它派给机构管理员
+            //    而实际想派的是机构管理员…… 但若申请人是机构管理员本人，兜底就会变成「自己审自己」。
+            new Seed("DEPT_DELETE",
+                    "租户默认部门删除审批流（上一级审批）",
+                    "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1}]"),
+            new Seed("INSTITUTION_DELETE",
+                    "租户默认机构删除审批流（上一级审批）",
+                    "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1}]"),
+            new Seed("TENANT_DELETE",
+                    "租户默认租户删除审批流（上一级审批）",
+                    "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1}]")
     );
 
     private final ApprovalFlowDefMapper defMapper;

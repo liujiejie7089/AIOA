@@ -12,6 +12,7 @@ import cn.aioa.org.service.InstitutionService;
 import cn.aioa.org.service.LeaveService;
 import cn.aioa.org.service.QuotaService;
 import cn.aioa.org.service.ResourceGrantService;
+import cn.aioa.org.service.TenantDeleteService;
 import cn.aioa.org.support.OrgGuard;
 import cn.aioa.security.AuthUser;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,7 @@ public class TenantAdminController {
     private final DashboardService dashboardService;
     private final LeaveService leaveService;
     private final ApprovalFlowService flowService;
+    private final TenantDeleteService tenantDeleteService;
 
     /**
      * 本次请求实际作用的租户。
@@ -331,6 +333,28 @@ public class TenantAdminController {
     public ApiResponse<Map<String, Object>> revokeGrant(@PathVariable Long id) {
         AuthUser u = guard.requireTenantAdmin();
         return ApiResponse.ok(grantService.revoke(tenantId(u), id, u));
+    }
+
+    // ================================================================== 删除本租户（危险操作）
+
+    /**
+     * 申请删除本租户（需求：级联前置校验 + 上一级审核）。
+     *
+     * <p><b>没有「直接删除租户」的端点</b>：租户的上一级是平台管理员，故只能申请；
+     * 批准后由 {@link TenantDeleteService#onApproved} 执行删除（并冻结本租户全部账号，
+     * 使已签发的访问令牌立刻失效）。</p>
+     *
+     * <p>注意与 {@code /tenant/status} 的「注销」区分：后者是把租户状态置为 CLOSED 的状态流转，
+     * 本端点才是真删 —— 两个概念故意不共用「注销」一词。</p>
+     *
+     * <p>前置条件：该租户下无机构、无部门、无员工。不满足时 400 并说明停在哪一级。</p>
+     */
+    @PostMapping("/delete-request")
+    public ApiResponse<Map<String, Object>> requestTenantDelete(
+            @RequestBody(required = false) Map<String, Object> body) {
+        AuthUser u = guard.requireTenantAdmin();
+        Object reason = body == null ? null : body.get("reason");
+        return ApiResponse.ok(tenantDeleteService.apply(reason == null ? null : String.valueOf(reason), u));
     }
 
     // ================================================================== FR-F 监控与审计

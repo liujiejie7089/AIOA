@@ -9,10 +9,17 @@
   1. 记录 tenant 9 基线（机构数 / 流程定义条数）；
   2. 直接删掉 tenant 9 的 `RESOURCE_OPEN` 默认流，模拟「V26 之后建的租户」；
   3. 以租户管理员身份新建一个探针机构 → 触发事件；
-  4. 断言 `RESOURCE_OPEN` 被补回、其余 3 条**不重复**、且没有新增多余流程；
+  4. 断言 `RESOURCE_OPEN` 被补回、其余各条**不重复**、且没有新增多余流程；
   5. 回滚：软删探针机构 / 其管理员 / 成员关系，并断言机构数回到基线。
 
 前置：后端 :8080 已启动、V39 迁移已执行。
+
+★ 口径变更留痕（2026-09-28）：默认流从 **4 条** 增至 **6 条** —— 新增
+  `INSTITUTION_DELETE` / `TENANT_DELETE`（级联删除能力，见 `e2e_cascade_delete.py`）。
+  故断言的期望值**不再写死数字**，一律用 `len(DEFAULTS)` 推导：写死 4 会在下次加一条
+  默认流时假红，而「把 4 改成 6」这种改动又看不出是「口径变了」还是「为了让红变绿」。
+  另注：本套件依赖 tenant 9（`znkj_admin`）—— 该租户已从现库清除，本地属**不可运行**，
+  不是「已通过」。
 """
 import sys
 
@@ -27,7 +34,11 @@ DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa"
 TENANT_ID = 9
 PROBE_CODE = "V39PROBE"
 PROBE_ADMIN = "v39probe_admin"
-DEFAULTS = ("PERMISSION_GRANT", "LEAVE", "QUOTA_EXPAND", "RESOURCE_OPEN")
+# 与 `ApprovalFlowProvisioner.DEFAULTS` 一一对应（**改播种器必须同步改这里**）。
+# 2026-09-28：追加 DEPT_DELETE / INSTITUTION_DELETE / TENANT_DELETE
+# （级联删除能力，与 V69/V70 同口径）。
+DEFAULTS = ("PERMISSION_GRANT", "LEAVE", "QUOTA_EXPAND", "RESOURCE_OPEN",
+            "DEPT_DELETE", "INSTITUTION_DELETE", "TENANT_DELETE")
 
 results = []
 
@@ -108,14 +119,16 @@ def main():
     base_inst = inst_count(tok_ten)
     base_flows = flow_count()
     print(f"[baseline] tenant {TENANT_ID}: 机构数={base_inst} 租户级默认流={base_flows}")
-    if not check("基线：tenant 9 已有 4 条租户级默认流", base_flows == 4, f"flows={base_flows}"):
+    if not check("基线：tenant 9 已有 %d 条租户级默认流" % len(DEFAULTS),
+                 base_flows == len(DEFAULTS), f"flows={base_flows}"):
         sys.exit(1)
 
     # ---- 制造「缺一条默认流」的状态 ----
     _, n = db("DELETE FROM approval_flow_def WHERE tenant_id=%s AND institution_id=0 "
               "AND biz_type='RESOURCE_OPEN'", (TENANT_ID,))
     check("前置：已移除 RESOURCE_OPEN 默认流（模拟 V26 之后建的租户）", n == 1, f"deleted={n}")
-    check("前置：现在只剩 3 条", flow_count() == 3, f"flows={flow_count()}")
+    check("前置：现在只剩 %d 条" % (len(DEFAULTS) - 1),
+          flow_count() == len(DEFAULTS) - 1, f"flows={flow_count()}")
 
     # ---- 触发事件：新建机构 ----
     st, b = req("POST", "/tenant/institutions", tok_ten, json={
@@ -132,7 +145,8 @@ def main():
     # ---- 断言播种结果 ----
     check("★ RESOURCE_OPEN 默认流被租户入驻自动补回", flow_count("RESOURCE_OPEN") == 1,
           f"count={flow_count('RESOURCE_OPEN')}")
-    check("★ 租户级默认流总数回到 4（无重复插入）", flow_count() == 4, f"flows={flow_count()}")
+    check("★ 租户级默认流总数回到 %d（无重复插入）" % len(DEFAULTS),
+          flow_count() == len(DEFAULTS), f"flows={flow_count()}")
 
     rows, _ = db("SELECT biz_type, COUNT(*) AS c FROM approval_flow_def "
                  "WHERE tenant_id=%s AND institution_id=0 AND deleted_at IS NULL "

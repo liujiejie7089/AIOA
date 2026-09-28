@@ -80,7 +80,9 @@
                 <span v-if="canWrite" class="ops">
                   <el-button text type="primary" size="small" @click.stop="openDeptDlg(data, data.id)">加下级</el-button>
                   <el-button text type="primary" size="small" @click.stop="openDeptDlg(data)">编辑</el-button>
-                  <el-button text type="danger" size="small" @click.stop="removeDept(data)">删除</el-button>
+                  <!-- 「申请删除」而不是「删除」：部门删除必须过上一级审核，按钮文案要与事实一致，
+                       否则用户以为点一下就没了的动作，实际只是提了张单。 -->
+                  <el-button text type="danger" size="small" @click.stop="removeDept(data)">申请删除</el-button>
                 </span>
               </div>
             </template>
@@ -319,7 +321,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getDepartments, createDepartment, updateDepartment, deleteDepartment,
+  getDepartments, createDepartment, updateDepartment, requestDepartmentDelete,
   listMembers, createMember, updateMember, importMembers, upsertLeaveBalance,
   listAccountCandidates, attachMemberAccount, detachMemberAccount, resetMemberPassword,
   type OrgDepartment, type OrgMember, type MemberAccount, type AccountCandidate
@@ -466,17 +468,29 @@ async function submitDept() {
 }
 
 async function removeDept(row: OrgDepartment) {
+  // 部门删除走「申请 → 上一级审核 → 批准后才真删」。
+  // 前端**不提供**直接删除：需求要求「任何一层级的首次删除操作都需要经过上一级审核」
+  // （原先的 DELETE /org/departments/{id} 已下线，留它就是留一个绕过审核的快捷通道）。
+  let reason = ''
   try {
-    await ElMessageBox.confirm(`确认删除部门「${row.name}」？存在子部门或成员时会被服务端拒绝。`, '删除部门', {
-      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消'
-    })
+    const r = await ElMessageBox.prompt(
+      `将提交「删除部门」申请：${row.name}\n\n` +
+        '前提：该部门下无子部门、无员工（不满足会被服务端拒绝并说明停在哪一级）。\n' +
+        '提交后需经上一级审核，批准后才会真正删除。',
+      '申请删除部门',
+      {
+        type: 'warning', confirmButtonText: '提交申请', cancelButtonText: '取消',
+        inputPlaceholder: '删除理由（选填）', inputValue: '',
+      }
+    )
+    reason = r.value || ''
   } catch { return }
   try {
-    await deleteDepartment(row.id!)
-    ElMessage.success('已删除')
+    const res = await requestDepartmentDelete(row.id!, reason)
+    ElMessage.success(res.hint || '已提交删除申请，等待上一级审核')
     await loadDepts()
   } catch (e: unknown) {
-    ElMessage.error(apiMsg(e, '删除失败'))
+    ElMessage.error(apiMsg(e, '提交删除申请失败'))
   }
 }
 

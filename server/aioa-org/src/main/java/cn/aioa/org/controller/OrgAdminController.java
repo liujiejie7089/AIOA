@@ -5,6 +5,8 @@ import cn.aioa.org.entity.OrgMember;
 import cn.aioa.org.service.ApprovalFlowService;
 import cn.aioa.org.service.AuditQueryService;
 import cn.aioa.org.service.DashboardService;
+import cn.aioa.org.service.DeptDeleteService;
+import cn.aioa.org.service.InstitutionDeleteService;
 import cn.aioa.org.service.LeaveService;
 import cn.aioa.org.service.MemberAccountService;
 import cn.aioa.org.service.OnboardingService;
@@ -54,6 +56,9 @@ public class OrgAdminController {
     private final OnboardingService onboardingService;
     /** V67 / docs/38 批次 C：员工 ↔ 账号（多对多）的读写入口。 */
     private final MemberAccountService memberAccountService;
+    private final InstitutionDeleteService institutionDeleteService;
+    /** 部门删除（级联前置校验 + 上一级审核）。 */
+    private final DeptDeleteService deptDeleteService;
 
     /**
      * V67：本租户的账号清单 —— 「给员工绑定账号」的候选，并显式标注**虚拟账号**
@@ -88,6 +93,26 @@ public class OrgAdminController {
     public ApiResponse<Map<String, Object>> institutions() {
         guard.requireOrgUser();
         return ApiResponse.ok(guard.selectableInstitutions());
+    }
+
+    /**
+     * 申请删除机构（需求：级联前置校验 + 上一级审核）。
+     *
+     * <p><b>为什么没有「直接删除机构」的 DELETE 端点</b>：需求要求「任何一层级的首次删除操作
+     * 都需要经过上一级审核后方可执行」。机构的上一级是租户管理员，故这里只能<b>申请</b>；
+     * 批准后由 {@link InstitutionDeleteService#onApproved} 执行真正的删除。
+     * 若为了「好用」额外开放一个直接删除端点，这个审核闸门就形同虚设。</p>
+     *
+     * <p>前置条件：该机构下无部门、无员工。不满足时 400，且文案说明<b>停在哪一级</b>。</p>
+     */
+    @PostMapping("/institutions/{id}/delete-request")
+    public ApiResponse<Map<String, Object>> requestInstitutionDelete(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        AuthUser u = guard.requireOrgWriter();
+        Object reason = body == null ? null : body.get("reason");
+        return ApiResponse.ok(institutionDeleteService.apply(id,
+                reason == null ? null : String.valueOf(reason), u));
     }
 
     // ================================================================== FR-G1 部门树
@@ -128,12 +153,26 @@ public class OrgAdminController {
                 parentId == null ? 0L : parentId, u));
     }
 
-    @DeleteMapping("/departments/{id}")
-    public ApiResponse<Map<String, Object>> deleteDepartment(
+    /**
+     * 申请删除部门（需求：级联前置校验 + 上一级审核）。
+     *
+     * <p><b>这里为什么把原来的 {@code DELETE /departments/{id}} 换掉、而不是并存</b>：
+     * 需求原文「<b>任何</b>一层级的首次删除操作都需要经过上一级审核后方可执行」。
+     * 级联前置校验（无子部门、无员工）原本就有，缺的是审核闸门。若把直删端点保留成
+     * 「快捷入口」，闸门就形同虚设 —— 前端只要调用它就能绕过审核，而这类绕过不会有任何
+     * 编译错误或测试变红。故：部门删除只保留「申请」，执行只发生在审批回调里。</p>
+     *
+     * <p>前置条件：该部门下无子部门、无员工。不满足时 400，且文案说明<b>停在哪一级</b>。</p>
+     */
+    @PostMapping("/departments/{id}/delete-request")
+    public ApiResponse<Map<String, Object>> requestDepartmentDelete(
             @PathVariable Long id,
-            @RequestParam(name = "institutionId", required = false) Long institutionId) {
+            @RequestParam(name = "institutionId", required = false) Long institutionId,
+            @RequestBody(required = false) Map<String, Object> body) {
         AuthUser u = guard.requireOrgWriter();
-        return ApiResponse.ok(treeService.deleteDept(guard.requireInstitutionId(institutionId), id, u));
+        Object reason = body == null ? null : body.get("reason");
+        return ApiResponse.ok(deptDeleteService.apply(institutionId, id,
+                reason == null ? null : String.valueOf(reason), u));
     }
 
     // ================================================================== FR-G2/G3 员工

@@ -456,8 +456,18 @@ export function createDepartment(body: Partial<OrgDepartment>, institutionId?: n
 export function updateDepartment(id: number, body: Partial<OrgDepartment>, institutionId?: number | null): Promise<OrgDepartment> {
   return http.put('/org/departments/' + id, body, { params: inst(institutionId) }).then((r) => unwrap<OrgDepartment>(r))
 }
-export function deleteDepartment(id: number, institutionId?: number | null): Promise<unknown> {
-  return http.delete('/org/departments/' + id, { params: inst(institutionId) }).then((r) => unwrap<unknown>(r))
+/**
+ * 申请删除部门（审批人 = 上一级）。前置：该部门下无子部门、无员工。
+ *
+ * ★ 这里**没有** `deleteDepartment`：需求要求「任何一层级的首次删除操作都需要经过上一级审核
+ *   后方可执行」，部门也是其中一层。原先的 `DELETE /org/departments/{id}` 已下线 ——
+ *   留着它就是留了一条绕过审核的快捷通道，前端只要调它就等于没审核。
+ */
+export function requestDepartmentDelete(
+  id: number, reason?: string, institutionId?: number | null
+): Promise<DeleteRequestResult> {
+  return http.post('/org/departments/' + id + '/delete-request', { reason }, { params: inst(institutionId) })
+    .then((r) => unwrap<DeleteRequestResult>(r))
 }
 export function moveDepartment(id: number, parentId: number, institutionId?: number | null): Promise<OrgDepartment> {
   return http.post('/org/departments/' + id + '/move', { parentId }, { params: inst(institutionId) })
@@ -566,4 +576,35 @@ export function listWorkflowTasks(scope = 'todo'): Promise<WorkflowTask[]> {
 }
 export function decideTask(taskId: number, decision: string, note?: string): Promise<Record<string, unknown>> {
   return http.post('/workflow/tasks/' + taskId + '/decide', { decision, note }).then((r) => unwrap<Record<string, unknown>>(r))
+}
+
+// ================================================================== 删除申请（级联前置校验 + 上一级审核）
+//
+// ★ 这里**只有申请，没有直接删除**：需求要求「任何一层级的首次删除操作都需要经过上一级审核
+//   后方可执行」。批准后由后端在审批回调里执行删除 —— 前端不提供任何绕过审批的入口。
+
+/** 申请删除的返回：带审批单号，需等上一级批准后才真正删除。 */
+export interface DeleteRequestResult {
+  orderId?: number
+  pendingApproval?: boolean
+  hint?: string
+  departmentId?: number
+  departmentName?: string
+  institutionId?: number
+  institutionName?: string
+  tenantId?: number
+  tenantName?: string
+}
+
+/** 申请删除机构（审批人 = 上一级，即租户管理员）。前置：该机构下无部门、无员工。 */
+export function requestInstitutionDelete(
+  id: number, reason?: string, institutionId?: number | null
+): Promise<DeleteRequestResult> {
+  return http.post('/org/institutions/' + id + '/delete-request', { reason }, { params: inst(institutionId) })
+    .then((r) => unwrap<DeleteRequestResult>(r))
+}
+
+/** 申请删除本租户（审批人 = 平台管理员）。前置：本租户下无机构、无部门、无员工。 */
+export function requestTenantDelete(reason?: string): Promise<DeleteRequestResult> {
+  return http.post('/tenant/delete-request', { reason }).then((r) => unwrap<DeleteRequestResult>(r))
 }

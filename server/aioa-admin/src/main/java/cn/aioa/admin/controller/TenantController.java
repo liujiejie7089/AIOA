@@ -8,12 +8,14 @@ import cn.aioa.admin.mapper.SysRoleMapper;
 import cn.aioa.admin.mapper.SysTenantMapper;
 import cn.aioa.admin.mapper.SysUserMapper;
 import cn.aioa.admin.mapper.SysUserRoleMapper;
+import cn.aioa.common.event.TenantProvisionedEvent;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,16 +51,20 @@ public class TenantController {
     private final SysUserRoleMapper userRoleMapper;
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbc;
+    /** 新租户「开箱可用」的播种入口（见 {@link #create} 末尾）。 */
+    private final ApplicationEventPublisher events;
 
     public TenantController(SysTenantMapper tenantMapper, SysUserMapper userMapper,
                             SysRoleMapper roleMapper, SysUserRoleMapper userRoleMapper,
-                            PasswordEncoder passwordEncoder, JdbcTemplate jdbc) {
+                            PasswordEncoder passwordEncoder, JdbcTemplate jdbc,
+                            ApplicationEventPublisher events) {
         this.tenantMapper = tenantMapper;
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
         this.userRoleMapper = userRoleMapper;
         this.passwordEncoder = passwordEncoder;
         this.jdbc = jdbc;
+        this.events = events;
     }
 
     private AuthUser requirePlatformAdmin() {
@@ -195,6 +201,21 @@ public class TenantController {
         out.put("period", period);
         out.put("tokenTotal", tokenTotal);
         out.put("domain", domain);
+
+        // 4) 播种租户级基础配置（D-8）。
+        //
+        // <p>为什么这一步不能省：`TenantProvisionedEvent` 此前只在**机构入驻**时发布，
+        // 于是「平台建了租户、但还没入驻任何机构」的租户是没有审批流 / 假种 / 职务 / 数字员工的。
+        // 这个状态在**删除租户**这条链上会直接暴露 —— 删除租户的前提恰恰是「该租户下已无机构」，
+        // 也就是说申请删除时必定处于「未入驻」状态：没有 TENANT_DELETE 流程定义，
+        // `ApprovalFlowService.expandNodes` 会退成单节点 ORG_ADMIN，而该租户又没有机构管理员，
+        // 最终以「请先在机构管理中指定企业管理员」报错 —— 用户根本无从满足（铁律 #4：配不出来 = 不可用）。
+        //
+        // <p>事件语义在这里是「租户已开通、可以播种了」，institutionId 传 null（租户级配置，
+        // 不挂在任何机构名下）。四个既有监听者（审批流 / 职务 / 假种 / 数字员工）都只按 tenantId
+        // 判重且幂等，因此与「之后再来入驻机构」触发的第二次播种不会重复写入。
+        events.publishEvent(new TenantProvisionedEvent(t.getId(), null, t.getName()));
+
         return ApiResponse.ok(out);
     }
 
