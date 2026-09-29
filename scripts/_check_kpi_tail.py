@@ -5,14 +5,15 @@
     数字人四周那四张卡（待我审批 / 我发起的 / 知会未读 / 我的会话）是首页的固定构图。
     卡片位置可以写死，但**三角的落点与朝向必须是算出来的**：数字人随视口宽度居中、
     卡片贴两端，二者的相对角度逐宽度都不同，写死的角度换个宽度就不指向数字人了。
-    早先这四张卡用的正是四组静态 CSS 三角（k1/k2 在卡顶朝上、k3/k4 在卡底朝下）——
-    **四张全部背对数字人**，尾巴尖离数字人约 81px。现改为与对话坞气泡共用同一个
-    oaLayoutTails()/tailPlacement() 算法，指向数字人。
+    三角的演进（三次教训，详见 pitfalls #105）：
+      ① 四组写死的静态 CSS 三角 —— k1/k2 朝上、k3/k4 朝下，**四张全背对数字人**；
+      ② 「转 45° 的方块压卡片边切角」—— rotate 偏角后切出**斜方块**（用户报「出错了」）；
+      ③ 现为**真·SVG 三角形**：两条 path 的 d 由 oaLayoutTails() 按几何直接算出
+         （底边沿卡片边、中点内收 1.5px；顶点 12px 指向数字人），元素不旋转。
 
-⚠ 判据独立于页面内的算法：这里自己按「宿主中心 → 数字人中心」重算方向角再比对
-   渲染出来的旋转量，避免自证。读 computed style 而不是内联 style，是为了不把
-   「变量写在哪个节点」这个实现细节焊进断言 —— 变量写在宿主上时，内联读法会恒得 0、
-   误报「三角没落位」（本次改动的真实经历）。
+⚠ 判据独立于页面内的算法：直接量 path 里的三个顶点坐标（底边两点 + 顶点），
+   自己按「宿主中心 → 数字人中心」重算方向角再比对，避免自证。
+   path 的 d 就是渲染的几何本体（无变换参与），读它 = 读「渲染出来的事实」。
 ⚠ 一并在三个视口宽度上验：写死的角度在 390 上可能恰好对，换个宽度就偏了；
    多宽度同时证明「角度是算的」与「resize 后重新落位」两条。
 """
@@ -42,15 +43,17 @@ MEASURE_JS = """() => {
   ['k1','k2','k3','k4'].forEach(k => {
     const el = document.querySelector('.oa .kpi-float.' + k);
     const r = el.getBoundingClientRect();
-    const cs = getComputedStyle(el, '::after');
-    const m = cs.transform.match(/matrix\\(([^)]+)\\)/);
-    const q = m ? m[1].split(',').map(Number) : [1,0,0,1,0,0];
+    const t = el.querySelector('.ktail');
+    const cs = getComputedStyle(t);
+    const d = t.querySelector('.ktf').getAttribute('d') || '';
+    // ktf 的 d = M b0 L b1 L apex Z → 6 个数；局部坐标系 = 原点在贴边点、与屏幕 1:1（元素不旋转）
+    const nums = (d.match(/-?\\d+\\.?\\d*/g) || []).map(Number);
     out.cards[k] = {
       box: [r.left, r.top, r.right, r.bottom],
       cx: r.left + r.width/2, cy: r.top + r.height/2,
-      // 落点：::after 的 left/top 相对 padding box（与边框盒差 1px 边框，可忽略）
+      // 落点：.ktail 的 left/top 相对 padding box，补回 1px 边框
       bx: r.left + 1 + parseFloat(cs.left), by: r.top + 1 + parseFloat(cs.top),
-      m: q
+      pts: nums
     };
   });
   return out;
@@ -64,35 +67,47 @@ def chk(name, ok, detail=''):
 
 
 def verify(width, d):
-    """按宽度逐卡核对：贴边正确 + 顶点指向数字人 + 切出来是干净三角形（不是斜方块）。"""
+    """按宽度逐卡核对：贴边正确 + 顶点指向数字人 + 是真三角形且底边贴在卡片边上。"""
     A = d['A']
+    NU_VEC = {'T': (0, -1), 'B': (0, 1), 'L': (-1, 0), 'R': (1, 0)}
     print('— 视口 %dpx：数字人盒 %s 中心 (%.1f, %.1f)'
           % (width, [round(v, 1) for v in d['robot']], A['x'], A['y']))
     for k in ['k1', 'k2', 'k3', 'k4']:
         c = d['cards'][k]
         box = c['box']
-        a, b, cc, dd = c['m'][0], c['m'][1], c['m'][2], c['m'][3]
-        # ② 顶点 = 方块右下角（相对中心 +5.5,+5.5）经 computed transform 变换后的偏移方向。
-        #    直接拿浏览器算出来的矩阵作用于形状的已知顶点 —— 不是复算页面里那套公式。
-        vx, vy = (a + cc) * 5.5, (b + dd) * 5.5
-        apex = math.degrees(math.atan2(vy, vx))
+        chk('%dpx %s 三角 path 有 3 个顶点（ktf 的 d 含 6 个数）' % (width, k),
+            len(c['pts']) == 6, c['pts'])
+        if len(c['pts']) != 6:
+            continue
+        b0x, b0y, b1x, b1y, ax, ay = c['pts']
+        # ② 顶点朝向：直接量 path 里的顶点向量 —— 不换算任何页面公式，判据与实现不同源
+        apex = math.degrees(math.atan2(ay, ax))
         want = math.degrees(math.atan2(A['y'] - c['cy'], A['x'] - c['cx']))
         err = (apex - want + 180) % 360 - 180
-        # ③ 干净三角形的不变量：方块的水平对角线（左下 -5.5,+5.5 ↔ 右上 +5.5,-5.5）
-        #    变换后必须**仍然水平**（两端 y 相等）⇒ 矩阵满足 b == d。
-        #    这正是上一版的缺陷所在：只 rotate 不 skew 时 b=sin、d=cos，除 45°/225° 外都不等，
-        #    卡片边于是斜切方块 ⇒ 渲染成「斜方块」而不是三角（用户报「出错了」）。
-        skew_dy = abs(b - dd)
         dist = {'L': c['bx'] - box[0], 'T': c['by'] - box[1],
                 'R': box[2] - c['bx'], 'B': box[3] - c['by']}
         side = min(dist.items(), key=lambda t: t[1])[0]
-        print('  %s 卡盒=%s 落点=(%.1f,%.1f) 贴边=%s 顶点=%.1f° 目标=%.1f° 误差=%.2f° |b-d|=%.5f'
-              % (k, [round(v, 1) for v in box], c['bx'], c['by'], side, apex, want, err, skew_dy))
+        nx, ny = NU_VEC[side]
+        # ③ 形状不变量（直接量三个顶点，不再依赖变换矩阵）：
+        #    · 底边与卡片边平行 ⇔ 底边垂直于外法线（两底点沿法线方向的投影相等）；
+        #    · 底边中点内收 1~2.5px（盖住卡片描边，尾巴才像从卡片上长出来的）；
+        #    · 顶点在卡外 10px 以上；面积 ≥ 60px²（非退化）。
+        base_n0 = b0x * nx + b0y * ny
+        base_n1 = b1x * nx + b1y * ny
+        base_mid_n = (base_n0 + base_n1) / 2
+        apex_n = ax * nx + ay * ny
+        area = abs((b1x - b0x) * (ay - b0y) - (b1y - b0y) * (ax - b0x)) / 2
+        print('  %s 卡盒=%s 落点=(%.1f,%.1f) 贴边=%s 顶点=%.1f° 目标=%.1f° 误差=%.2f° 面积=%.1f'
+              % (k, [round(v, 1) for v in box], c['bx'], c['by'], side, apex, want, err, area))
         chk('%dpx %s 三角贴在朝数字人那一侧（期望 %s）' % (width, k, EXPECT_SIDE[k]),
             side == EXPECT_SIDE[k], side)
         chk('%dpx %s 三角顶点指向数字人（误差 ≤ 0.5°）' % (width, k), abs(err) <= 0.5, '%.2f°' % err)
-        chk('%dpx %s 切出来是干净三角形（对角线保持水平，矩阵 b==d）' % (width, k),
-            skew_dy <= 1e-4, '|b-d|=%.5f' % skew_dy)
+        chk('%dpx %s 底边与卡片边平行（两底点法向投影差 ≤ 0.3）' % (width, k),
+            abs(base_n0 - base_n1) <= 0.3, '差 %.3f' % abs(base_n0 - base_n1))
+        chk('%dpx %s 底边中点内收 1~2.5px（盖住卡片描边）' % (width, k),
+            -2.5 <= base_mid_n <= -1.0, '内收 %.2f' % -base_mid_n)
+        chk('%dpx %s 顶点探出卡外 ≥ 10px 且面积 ≥ 60px²（真三角形）' % (width, k),
+            apex_n >= 10 and area >= 60, '探出 %.1f 面积 %.1f' % (apex_n, area))
 
 
 async def main():
@@ -125,10 +140,10 @@ async def main():
 
         chk('前置：四张浮动卡已渲染',
             await page.evaluate("() => document.querySelectorAll('.oa .kpi-float').length") == 4)
-        # 三角是否被脚本落位过（变量没写 ⇒ 停在 CSS 兜底值，等于没指向数字人）
-        placed = await page.evaluate("""() => [...document.querySelectorAll('.oa .kpi-float')]
-            .map(c => getComputedStyle(c, '::after').getPropertyValue('--tail-rot').trim())""")
-        chk('前置：四张卡的三角都已被脚本落位（--tail-rot 非空）',
+        # 三角是否被脚本落位过（ktf 的 d 为空 ⇒ 停在初始状态，等于没指向数字人）
+        placed = await page.evaluate("""() => [...document.querySelectorAll('.oa .kpi-float .ktf')]
+            .map(p => (p.getAttribute('d') || '').trim())""")
+        chk('前置：四张卡的三角都已被脚本画出（ktf 的 d 非空）',
             len(placed) == 4 and all(placed), placed)
 
         for w in WIDTHS:

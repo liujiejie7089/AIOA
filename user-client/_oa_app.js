@@ -1118,21 +1118,31 @@ function oaLayoutTails(){
     if(sr && sr.width && sr.height) A = {x:sr.left + sr.width/2, y:sr.top + sr.height/2};
   }
 
-  /* ① 首页四张浮动指标卡（不对话时显示）：三角一律指向数字人。
-     此前是四组写死的静态三角 —— k1/k2 在卡顶朝上、k3/k4 在卡底朝下，**四张全背对数字人**。
-     三角本体是「转 45° 的方块」压在卡片边上，切出来是不是干净三角形，取决于方块的对角线
-     是否垂直于卡片边：
-       · 只把顶点转到「数字人方向」⇒ 对角线偏了 ⇒ 切出**斜方块**（用户报「出错了」）；
-       · 先转到顶点落在边的**外法线 ν** 上（此时必切出干净三角形），再沿 ν 做 skewX
-         把顶点斜到数字人方向 —— 斜的只是顶点，底边始终与卡片边平行 ⇒ 形状恒为三角形。
-     NU = 各边的外法线屏幕角（0=正右、90=正下）。 */
+  /* ① 首页四张浮动指标卡（不对话时显示）：真·SVG 三角，顶点指向数字人。
+     不再用「转 45° 的方块压卡片边切角」—— 那条路要么背对（写死）、要么斜切成梯形（pitfalls #105）。
+     现在两条 path 的 d 全部由几何直接算出（元素自身不旋转，局部坐标与屏幕 1:1）：
+       底边 = 沿卡片边、半宽 HB，中点往卡内收 IN px（盖住卡片描边，使尾巴像从卡片上长出来）；
+       顶点 = LEN px 沿「卡片中心 → 数字人」方向 θ；
+       ktf 只填充、ktl 只描两条斜边 —— 底边不描边。 */
   var NU = {T: -90, B: 90, L: 180, R: 0};
   home.querySelectorAll('.kpi-float').forEach(function(c){
+    var tail = c.querySelector('.ktail'); if(!tail) return;
     var r = c.getBoundingClientRect(); if(!r.width || !r.height) return;
-    var p = tailPlacement(r, A, -45), nu = NU[p.side];
-    oaApplyTail(c, {'--tail-x': p.x, '--tail-y': p.y,
-                    '--tail-rot': (nu - 45).toFixed(2) + 'deg',
-                    '--tail-skew': (nu - p.theta).toFixed(2) + 'deg'});
+    var p = tailPlacement(r, A, 0);
+    var nR = NU[p.side] * Math.PI/180;
+    var nx = Math.cos(nR), ny = Math.sin(nR);   /* 边外法线单位向量 */
+    var tx = ny, ty = -nx;                       /* 边切线单位向量（法线逆转 90°） */
+    var HB = 8, LEN = 13, IN = 1.5;
+    var th = p.theta * Math.PI/180;
+    var ax = LEN*Math.cos(th), ay = LEN*Math.sin(th);
+    var b0x = -IN*nx + HB*tx, b0y = -IN*ny + HB*ty;
+    var b1x = -IN*nx - HB*tx, b1y = -IN*ny - HB*ty;
+    var f = function(v){ return v.toFixed(2); };
+    tail.querySelector('.ktf').setAttribute('d',
+      'M'+f(b0x)+' '+f(b0y)+'L'+f(b1x)+' '+f(b1y)+'L'+f(ax)+' '+f(ay)+'Z');
+    tail.querySelector('.ktl').setAttribute('d',
+      'M'+f(b0x)+' '+f(b0y)+'L'+f(ax)+' '+f(ay)+'L'+f(b1x)+' '+f(b1y));
+    tail.style.left = p.x; tail.style.top = p.y;
   });
 
   /* ② 对话坞气泡（仅对话态存在） */

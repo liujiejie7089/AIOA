@@ -122,20 +122,18 @@
 .oa .kpi-float.k4{bottom:10px; right:0}
 .oa .kpi-float.k3 .k-val{color:var(--blue-dark)}
 .oa .kpi-float.k4 .k-val{color:var(--brand-ink)}
-/* 三角：基准态 = 右下角为顶点（border-right + border-bottom 相交的那个角）。
-   落点与朝向由 oaLayoutTails() 写入的 --tail-* 决定 —— 与对话坞气泡共用同一份算法，
-   「指向数字人的三角」全局只有这一处判定。
-   早先这里是四组写死的静态三角（k1/k2 在卡顶朝上、k3/k4 在卡底朝下），**四张全背对数字人**。
-   变换顺序（右起先作用）：rotate 先把顶点转到所在边的外法线上 —— 只有这时方块的对角线
-   才垂直于卡片边，切出来才是**干净三角形**；再 skewX 沿法线把顶点斜向数字人。
-   先前的写法只做 rotate、直接转到数字人方向，对角线偏约 34° ⇒ 切出斜方块。
-   skewX 只移动顶点、不动底边（底边始终水平、与卡片边平行）⇒ 形状恒为三角形。 */
-.oa .kpi-float::after{
-  content:""; position:absolute; width:11px; height:11px; background:var(--surface);
-  border-right:1px solid var(--border); border-bottom:1px solid var(--border);
-  left:var(--tail-x,50%); top:var(--tail-y,50%);
-  transform:translate(-50%,-50%) skewX(var(--tail-skew,0deg)) rotate(var(--tail-rot,45deg));
+/* 三角：**真·SVG 三角形**（<svg class="ktail">，见 _oa_markup.html），两条 path 的 d 全部由
+   oaLayoutTails() 按几何直接算出：底边沿卡片边（中点往卡内收 1.5px，盖住卡片描边，
+   使尾巴像从卡片上长出来的）、顶点 12px 指向数字人；ktf 只填充、ktl 只描两条斜边
+   （底边不描边）。元素自身不做任何旋转 —— 局部坐标与屏幕 1:1。
+   历史教训：这里先后用过「写死的静态三角」（四张全背对数字人）与「转 45° 的方块压边切角」
+   （rotate 偏角后切出斜方块，pitfalls #105）—— 都源于「三角不是画出来的」；现改为直接画。 */
+.oa .kpi-float .ktail{
+  position:absolute; width:28px; height:28px; left:50%; top:50%;
+  transform:translate(-50%,-50%); overflow:visible; pointer-events:none;
 }
+.oa .kpi-float .ktf{fill:var(--surface)}
+.oa .kpi-float .ktl{fill:none; stroke:var(--border); stroke-width:1; stroke-linejoin:round}
 .oa .robot-tag{
   display:inline-flex; align-items:center; gap:6px; margin:0 auto;
   background:var(--surface); border:1px solid var(--brand-line); border-radius:var(--r-full);
