@@ -472,13 +472,20 @@ def selftest():
     group_surfaces(token)
     group_filters(token)
     fired = {n.split()[0] for n in FAIL}
-    expect = {"C2", "C3", "C4", "F3", "F7"}
-    print("\n=== 负向自检：注入「修前口径」后真的报红的断言 = %s ===" % sorted(fired))
+    # expect = 「修前口径下**必须**报红」的断言集（漏收了哪项，就等于漏掉一项未验证的非真空性）。
+    expect = {"C2", "C3", "C4", "F3", "F4", "F7"}
+    # extra = 报红但未列入 expect 的项：不是失败（多验证到一项非真空性是好事），
+    #         但必须显式打印 —— 否则「预期集漏项」会被悄悄吞掉（本轮 F4 即如此）。
     miss = sorted(expect - fired)
+    extra = sorted(fired - expect)
+    print("\n=== 负向自检：注入「修前口径」后真的报红的断言 = %s ===" % sorted(fired))
+    if extra:
+        print("   （额外报红、未列入预期集，非失败；建议补进 expect）：%s" % extra)
     if miss:
         print("!! 注入后仍未报红（说明是恒真断言，必须修）：%s" % miss)
         return 1
-    print("=== 负向自检通过：%d/%d 预期项全部真的报红（断言有效） ===" % (len(expect), len(expect)))
+    print("=== 负向自检通过：预期 %d/%d 项全部真的报红（断言有效） ==="
+          % (len(expect - set(miss)), len(expect)))
     return 0
 
 
