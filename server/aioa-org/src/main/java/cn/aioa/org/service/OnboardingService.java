@@ -478,11 +478,20 @@ public class OnboardingService {
         return out;
     }
 
-    /** 租户端入驻总览：本租户全部机构的入驻进度聚合。 */
+    /**
+     * 租户端入驻总览：本租户**在运营面**的机构入驻进度聚合。
+     *
+     * <p>已注销（CLOSED）机构不计入：注销是不可逆终态，不存在「还要推进入驻」的语义，
+     * 把它留在总览里既撑大 {@code institutionCount} 又让「未完成步骤」的告警永远清不掉
+     * （用户报障原话：「注销了机构，入驻进度还能看到」）。档案口径见
+     * {@link cn.aioa.common.org.InstitutionStatus}。</p>
+     */
     public Map<String, Object> overview(Long tenantId) {
-        List<OrgInstitution> insts = institutionMapper.selectList(new LambdaQueryWrapper<OrgInstitution>()
+        LambdaQueryWrapper<OrgInstitution> w = new LambdaQueryWrapper<OrgInstitution>()
                 .eq(OrgInstitution::getTenantId, tenantId)
-                .orderByAsc(OrgInstitution::getId));
+                .orderByAsc(OrgInstitution::getId);
+        OrgInstitution.excludeClosed(w);
+        List<OrgInstitution> insts = institutionMapper.selectList(w);
         List<Map<String, Object>> rows = new ArrayList<>(insts.size());
         for (OrgInstitution it : insts) {
             Map<String, Object> p = progress(tenantId, it.getId());

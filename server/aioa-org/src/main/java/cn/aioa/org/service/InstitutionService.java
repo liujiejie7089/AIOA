@@ -53,13 +53,38 @@ public class InstitutionService {
 
     // ------------------------------------------------------------------ 查询
 
-    public List<Map<String, Object>> list(Long tenantId, String keyword, String status, String orgType) {
-        List<OrgInstitution> rows = institutionMapper.selectList(new LambdaQueryWrapper<OrgInstitution>()
+    /**
+     * 机构清单（运营面默认口径：**已注销机构不出现**）。
+     *
+     * <p>用户报障：「注销了机构，机构管理 / 入驻进度 / 资源授权 / 人员管理都还能看到」。
+     * 根因是这里只按 {@code tenant_id} 过滤、不设状态默认值 ⇒ 已是不可逆终态的 CLOSED 行
+     * 照旧排在清单里。口径现在收敛为：</p>
+     * <ul>
+     *   <li>默认（{@code includeClosed=false} 且未显式给 {@code status}）→ 排除 CLOSED
+     *       （停用 SUSPENDED 仍展示：得能看见才谈得上「恢复」）；</li>
+     *   <li>显式 {@code status=CLOSED} → 以调用方的显式请求为准，不叠加默认排除；</li>
+     *   <li>{@code includeClosed=true} → 完全不做默认排除，用于「档案 / 归档」视角。</li>
+     * </ul>
+     *
+     * <p>为什么留 {@code includeClosed} 而不是彻底删掉这条路径：注销是<b>不可逆的法人档案终态</b>，
+     * 档案行必须保留，而级联删除（删租户）与历史回查都需要能取到它 ——
+     * 详见 {@code InstitutionStatus} 与 {@code _check_delete_guards.py} 的 D15。
+     * 换句话说：不是「删掉已注销机构」，而是「让它退出运营面、只留档案入口」。</p>
+     */
+    public List<Map<String, Object>> list(Long tenantId, String keyword, String status, String orgType,
+                                          boolean includeClosed) {
+        LambdaQueryWrapper<OrgInstitution> w = new LambdaQueryWrapper<OrgInstitution>()
                 .eq(OrgInstitution::getTenantId, tenantId)
                 .eq(status != null && !status.isBlank(), OrgInstitution::getStatus, status)
                 .eq(orgType != null && !orgType.isBlank(), OrgInstitution::getOrgType, orgType)
                 .like(keyword != null && !keyword.isBlank(), OrgInstitution::getName, keyword)
-                .orderByAsc(OrgInstitution::getId));
+                .orderByAsc(OrgInstitution::getId);
+        // 显式指定了状态就尊重它：`status=CLOSED` 本身就是「我要看档案」的声明，
+        // 此时再叠加默认排除会得到一张恒空的表（调用方无从判断是「没有」还是「被过滤了」）。
+        if (!includeClosed && (status == null || status.isBlank())) {
+            OrgInstitution.excludeClosed(w);
+        }
+        List<OrgInstitution> rows = institutionMapper.selectList(w);
         List<Map<String, Object>> out = new ArrayList<>(rows.size());
         for (OrgInstitution it : rows) {
             out.add(toView(it));

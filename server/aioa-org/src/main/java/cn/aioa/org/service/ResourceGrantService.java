@@ -19,9 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 资源按机构授权（FR-E）+ 企业端可见清单与开通申请（FR-J）。
@@ -73,6 +75,17 @@ public class ResourceGrantService implements ApprovalCallback {
 
     // ================================================================== 授权管理
 
+    /**
+     * 资源授权清单（运营面口径：**已注销机构的授权不出现**）。
+     *
+     * <p>用户报障：「注销了机构，资源授权里还能看到它的授权」。机构注销后不再对外提供服务，
+     * 其授权随机构一并失效（{@code resource_grant} 行保留，属历史留痕，不删除）。</p>
+     *
+     * <p>过滤放在 Java 侧而不是 JOIN 进 wrapper：{@code resource_grant} 没有指向机构状态的外键，
+     * MyBatis-Plus 的 {@code LambdaQueryWrapper<ResourceGrant>} 里写不出跨表条件；
+     * 先取本租户的运营面机构 id 集合再筛，语意最直白，也不会把「租户下无机构」误判成
+     * {@code IN ()} 空集报错。</p>
+     */
     public List<Map<String, Object>> listGrants(Long tenantId, Long institutionId, String resType) {
         LambdaQueryWrapper<ResourceGrant> w = new LambdaQueryWrapper<ResourceGrant>()
                 .eq(ResourceGrant::getTenantId, tenantId);
@@ -86,6 +99,15 @@ public class ResourceGrantService implements ApprovalCallback {
                 .orderByAsc(ResourceGrant::getInstitutionId)
                 .orderByAsc(ResourceGrant::getResType)
                 .orderByAsc(ResourceGrant::getResId));
+        // 已注销机构退出运营面（判定只在一处：OrgInstitution.excludeClosed / InstitutionStatus）
+        LambdaQueryWrapper<OrgInstitution> instQuery = new LambdaQueryWrapper<OrgInstitution>()
+                .eq(OrgInstitution::getTenantId, tenantId);
+        OrgInstitution.excludeClosed(instQuery);
+        Set<Long> liveInstitutions = new HashSet<>();
+        for (OrgInstitution it : institutionMapper.selectList(instQuery)) {
+            liveInstitutions.add(it.getId());
+        }
+        rows.removeIf(g -> !liveInstitutions.contains(g.getInstitutionId()));
         List<Map<String, Object>> out = new ArrayList<>(rows.size());
         for (ResourceGrant g : rows) {
             out.add(view(g));

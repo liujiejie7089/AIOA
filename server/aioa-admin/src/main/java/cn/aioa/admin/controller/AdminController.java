@@ -89,12 +89,20 @@ public class AdminController {
      * 人员管理：按调用者权限作用域取数，并按 租户 / 机构 / 档位 自动分类返回。
      *
      * <p>返回体结构见 {@link PersonnelService#personnel}：包含 {@code scope / scopeName / groupBy /
-     * groups / classCounts / capability}，前端据此渲染分组表格并决定是否显示操作按钮。</p>
+     * groups / classCounts / capability / filterOptions}，前端据此渲染分组表格、筛选栏，
+     * 并决定是否显示操作按钮。</p>
+     *
+     * <p>筛选参数（{@code scopeClass / institutionId / status}）**只在服务端作用域之内**生效：
+     * 传越界的 institutionId 不会扩大可见面，只会得到空列表（作用域是硬边界）。</p>
      */
     @GetMapping("/personnel")
-    public ApiResponse<Map<String, Object>> personnel(@RequestParam(required = false) String keyword,
-                                                     @RequestParam(required = false) Long tenantId) {
-        return ApiResponse.ok(personnelService.personnel(keyword, tenantId));
+    public ApiResponse<Map<String, Object>> personnel(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long tenantId,
+            @RequestParam(required = false) String scopeClass,
+            @RequestParam(required = false) Long institutionId,
+            @RequestParam(required = false) String status) {
+        return ApiResponse.ok(personnelService.personnel(keyword, tenantId, scopeClass, institutionId, status));
     }
 
     /**

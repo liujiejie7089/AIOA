@@ -26,8 +26,10 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 费用分摊（FR-D）：
@@ -183,9 +185,7 @@ public class CostAllocService {
         CostAllocRule rule = requireRule(tenantId, ruleId);
         String period = Vals.str(body, "period", Vals.nowPeriod());
         BigDecimal unitPrice = resolveUnitPrice(tenantId, period, body);
-        List<OrgInstitution> insts = institutionMapper.selectList(new LambdaQueryWrapper<OrgInstitution>()
-                .eq(OrgInstitution::getTenantId, tenantId)
-                .orderByAsc(OrgInstitution::getId));
+        List<OrgInstitution> insts = operationalInstitutions(tenantId);
         Map<Long, Long> usage = usageOf(tenantId, period);
         long totalUsage = usage.values().stream().mapToLong(Long::longValue).sum();
         long override = Vals.lng(body, "totalTokens", 0L);
@@ -253,9 +253,7 @@ public class CostAllocService {
             totalUsage = override;
         }
         Map<Long, Double> ratios = ratiosOf(rule);
-        List<OrgInstitution> insts = institutionMapper.selectList(new LambdaQueryWrapper<OrgInstitution>()
-                .eq(OrgInstitution::getTenantId, tenantId)
-                .orderByAsc(OrgInstitution::getId));
+        List<OrgInstitution> insts = operationalInstitutions(tenantId);
 
         List<Map<String, Object>> generated = new ArrayList<>();
         int created = 0;
@@ -322,6 +320,13 @@ public class CostAllocService {
         return out;
     }
 
+    /**
+     * 分摊账单清单（运营面口径：**已注销机构的账单不出现**）。
+     *
+     * <p>账单行不删除 —— 它属历史留痕；这里只把它从运营面的清单里摘掉，
+     * 与机构管理 / 入驻进度 / 资源授权 / 人员归属同一口径（见
+     * {@link cn.aioa.common.org.InstitutionStatus}）。</p>
+     */
     public List<Map<String, Object>> listBills(Long tenantId, String period) {
         LambdaQueryWrapper<CostAllocBill> w = new LambdaQueryWrapper<CostAllocBill>()
                 .eq(CostAllocBill::getTenantId, tenantId);
@@ -330,20 +335,32 @@ public class CostAllocService {
         }
         List<CostAllocBill> rows = billMapper.selectList(w
                 .orderByDesc(CostAllocBill::getPeriod).orderByAsc(CostAllocBill::getInstitutionId));
+        Set<Long> liveInstitutions = operationalInstitutionIds(tenantId);
         List<Map<String, Object>> out = new ArrayList<>(rows.size());
         for (CostAllocBill b : rows) {
+            if (!liveInstitutions.contains(b.getInstitutionId())) {
+                continue;
+            }
             OrgInstitution it = institutionMapper.selectById(b.getInstitutionId());
             out.add(billView(b, it == null ? null : it.getName()));
         }
         return out;
     }
 
-    /** FR-D2 验收口径：账单与平台账本一致率。 */
+    /**
+     * FR-D2 验收口径：账单与平台账本一致率。
+     *
+     * <p>口径与 {@link #listBills} 严格一致（只算运营面机构的账单）——否则「账单清单 5 张、
+     * 一致率却按 7 张算」，用户拿到两个互相矛盾的数字，属铁律 #1 的典型症状。</p>
+     */
     public Map<String, Object> reconcile(Long tenantId, String period) {
         String p = period == null ? Vals.nowPeriod() : period;
+        Set<Long> liveInstitutions = operationalInstitutionIds(tenantId);
         List<CostAllocBill> bills = billMapper.selectList(new LambdaQueryWrapper<CostAllocBill>()
                 .eq(CostAllocBill::getTenantId, tenantId)
-                .eq(CostAllocBill::getPeriod, p));
+                .eq(CostAllocBill::getPeriod, p)).stream()
+                .filter(b -> liveInstitutions.contains(b.getInstitutionId()))
+                .toList();
         long billSum = bills.stream().mapToLong(b -> nzl(b.getUsageTokens())).sum();
         long ledgerSum = statMapper.sumLedgerTokens(tenantId, p);
         int mismatched = 0;
@@ -379,11 +396,32 @@ public class CostAllocService {
 
     // ------------------------------------------------------------------ 内部工具
 
+    /**
+     * 本租户**运营面**机构（默认口径：排除已注销）。
+     *
+     * <p>试算 / 生成账单 / 账单清单 / 核对率四处共用它 —— 已注销机构不再参与分摊，
+     * 否则「注销了机构，费用分摊里还在给它算钱」。判定本身只有一处：
+     * {@link OrgInstitution#excludeClosed}（= {@link cn.aioa.common.org.InstitutionStatus}）。</p>
+     */
+    private List<OrgInstitution> operationalInstitutions(Long tenantId) {
+        LambdaQueryWrapper<OrgInstitution> w = new LambdaQueryWrapper<OrgInstitution>()
+                .eq(OrgInstitution::getTenantId, tenantId)
+                .orderByAsc(OrgInstitution::getId);
+        OrgInstitution.excludeClosed(w);
+        return institutionMapper.selectList(w);
+    }
+
+    private Set<Long> operationalInstitutionIds(Long tenantId) {
+        Set<Long> ids = new LinkedHashSet<>();
+        for (OrgInstitution it : operationalInstitutions(tenantId)) {
+            ids.add(it.getId());
+        }
+        return ids;
+    }
+
     private Map<Long, Long> usageOf(Long tenantId, String period) {
         Map<Long, Long> usage = new LinkedHashMap<>();
-        List<OrgInstitution> insts = institutionMapper.selectList(new LambdaQueryWrapper<OrgInstitution>()
-                .eq(OrgInstitution::getTenantId, tenantId));
-        for (OrgInstitution it : insts) {
+        for (OrgInstitution it : operationalInstitutions(tenantId)) {
             usage.put(it.getId(), statMapper.sumLedgerTokensOfInstitution(tenantId, it.getId(), period));
         }
         return usage;

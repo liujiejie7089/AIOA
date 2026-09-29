@@ -66,6 +66,12 @@ METRICS = """
     subTitles: [...document.querySelectorAll('.layout-menu .el-sub-menu__title')].map((t) => ({
       text: t.innerText.trim(), opened: !!t.closest('.el-sub-menu').classList.contains('is-opened')
     })),
+    // 一级项（不属于任何 .el-sub-menu 的 el-menu-item）。
+    // 不能写 `.layout-menu .el-menu > .el-menu-item` —— `.layout-menu` 自身就带 `.el-menu`，
+    // 那样查不到任何节点（首版即如此，拿到空数组）。判「一级」的稳定口径是「不在任何 sub-menu 里」。
+    topItems: [...document.querySelectorAll('.layout-menu .el-menu-item')]
+      .filter((el) => !el.closest('.el-sub-menu') && el.getBoundingClientRect().height > 0)
+      .map((el) => el.innerText.trim()),
     activeItems: [...document.querySelectorAll('.layout-menu .el-menu-item.is-active')]
       .map((el) => el.innerText.trim()),
     lastVisible: lastVisible ? { text: lastVisible.innerText.trim(),
@@ -169,12 +175,18 @@ def main():
         # =============================================== 段 2：分组深链自动展开 + 高亮
         print("\n=== 段2 深链分组展开与高亮 ===")
         # (路径, 期望展开的分组标题, 期望高亮的项)
+        #
+        # ★ 2026-09-29 修正三处**过期分组名**（本守卫此前恒红，与本次改动无关）：
+        #   「安全与治理」→「权限与安全」（该组已改名）、
+        #   /settings 的归属「安全与治理」→「系统配置」、/tenants 的归属「平台管理」→「租户与机构」。
+        #   判据是**HEAD 版源码里就已经是新名字**（`git show HEAD:...MainLayout.vue`）——
+        #   属守卫没跟上改名，不是产品回归。恒红的守卫比没有守卫更糟（它会让真回归淹没在噪音里）。
         deep = [
             ("/quotas", "运营管理", "配额管理"),
             ("/results", "成果与项目", "成果沉淀"),
             ("/experts", "智能服务", "专家配置"),
-            ("/settings", "安全与治理", "系统参数"),
-            ("/tenants", "平台管理", "租户管理"),
+            ("/settings", "系统配置", "系统参数"),
+            ("/tenants", "租户与机构", "租户管理"),
             ("/institutions", "租户与机构", "机构管理")
         ]
         for path, group, item in deep:
@@ -208,9 +220,18 @@ def main():
         print("  租户管理员可见分组:", sorted(groups))
         chk("租户管理员看不到「平台管理」组", "平台管理" not in groups, f"groups={sorted(groups)}")
         chk("租户管理员看得到「智能服务」组", "智能服务" in groups)
-        chk("租户管理员看得到「安全与治理」组", "安全与治理" in groups)
+        chk("租户管理员看得到「权限与安全」组", "权限与安全" in groups)  # 原名「安全与治理」，已改名
         chk("租户管理员看不到「我的应用」以外的越权分组标题",
             "平台管理" not in groups and "租户与机构" in groups)
+        # 用户明确要求（2026-09-29）：「组织与员工」的二级子菜单不需要，只保留「组织与员工」。
+        # 旧形态是 el-sub-menu（含「组织与部门」「人员管理」两个子项）；新形态是一级菜单项。
+        # 判据必须落到**渲染后的层级**上（topItems 是 .el-menu 的直接子项），
+        # 只查源码文本分不清「一级项」与「分组标题」。
+        chk("★ 租户管理员看的「组织与员工」是**一级菜单项**（不再有二级子菜单）",
+            any("组织与员工" in t for t in s.get("topItems", []))
+            and not any("组织与员工" in t["text"] for t in s["subTitles"]),
+            "topItems=%s subTitles=%s"
+            % (s.get("topItems"), [t["text"] for t in s["subTitles"]]))
         ctx.close()
 
         b.close()

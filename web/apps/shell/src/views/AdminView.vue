@@ -26,17 +26,60 @@
         <template #header>
           <div class="card-header">
             <span>人员管理</span>
+            <!--
+              筛选区（**只在本页出现**，不做全局过滤入口）：
+              机构 / 档位 / 账号状态 / 关键字 四个维度 + 查询 / 重置。
+              下拉选项全部来自后端 `filterOptions`（与列表同源，从作用域全量行推导），
+              前端不自建第二份枚举 —— 否则「列表里有、下拉里没有」或版本漂移必然发生（铁律 #1）。
+            -->
             <div class="header-ops">
+              <el-select
+                v-if="institutionOptions.length"
+                :model-value="filters.institutionId"
+                placeholder="全部机构"
+                clearable
+                size="small"
+                style="width: 180px"
+                @update:model-value="onFilterChange('institutionId', $event)"
+              >
+                <el-option
+                  v-for="o in institutionOptions"
+                  :key="o.value"
+                  :label="o.count != null ? `${o.label}（${o.count}）` : o.label"
+                  :value="o.value"
+                />
+              </el-select>
+              <el-select
+                :model-value="filters.scopeClass"
+                placeholder="全部档位"
+                clearable
+                size="small"
+                style="width: 140px"
+                @update:model-value="onFilterChange('scopeClass', $event)"
+              >
+                <el-option v-for="o in classOptions" :key="o.value" :label="o.label" :value="o.value" />
+              </el-select>
+              <el-select
+                :model-value="filters.status"
+                placeholder="全部状态"
+                clearable
+                size="small"
+                style="width: 120px"
+                @update:model-value="onFilterChange('status', $event)"
+              >
+                <el-option v-for="o in statusOptions" :key="o.value" :label="o.label" :value="o.value" />
+              </el-select>
               <el-input
-                v-model="keyword"
+                v-model="filters.keyword"
                 placeholder="搜索用户名 / 昵称"
                 clearable
                 size="small"
-                style="width: 200px"
+                style="width: 190px"
                 @keyup.enter="loadPersonnel"
                 @clear="loadPersonnel"
               />
               <el-button type="primary" size="small" :loading="loading" @click="loadPersonnel">查询</el-button>
+              <el-button size="small" :disabled="!hasFilter" @click="resetFilters">重置</el-button>
             </div>
           </div>
         </template>
@@ -53,6 +96,9 @@
               {{ classLabel(cls) }} {{ view.classCounts?.[cls] ?? 0 }}
             </el-tag>
             <span class="stat-total">按{{ groupByLabel }}自动分类</span>
+            <el-tag v-if="hasFilter" size="small" type="warning" effect="plain" closable @close="resetFilters">
+              已筛选：{{ filterSummary }}
+            </el-tag>
           </div>
 
           <div v-for="g in view?.groups || []" :key="g.key" class="group">
@@ -133,7 +179,7 @@
 
           <el-empty
             v-if="view && !view.total"
-            :description="keyword ? `没有匹配「${keyword}」的人员` : '当前范围内暂无人员数据'"
+            :description="hasFilter ? `没有匹配「${filterSummary}」的人员` : '当前范围内暂无人员数据'"
             :image-size="80"
           />
         </div>
@@ -167,6 +213,7 @@ import {
   listPersonnel,
   listRoles,
   type PersonnelClass,
+  type PersonnelFilterOption,
   type PersonnelMember,
   type PersonnelView,
   type SysRole,
@@ -184,7 +231,46 @@ const isPlatformAdmin = computed(() => auth.isPlatformAdmin)
 const loading = ref(false)
 const errorMsg = ref('')
 const view = ref<PersonnelView | null>(null)
-const keyword = ref('')
+
+/**
+ * 筛选条件。四个维度都为空 = 不筛（下发时逐个剔除空值，避免把 `''` 当条件打到后端）。
+ *
+ * <p>取值一律用字符串：机构用 `'0'` 表示「未归属机构」（与后端 `institutionId=0` 同义），
+ * 这样 el-select 的 clearable 语义（清空 → 空串）与「传 0」不会互相混淆。</p>
+ */
+const filters = reactive({
+  keyword: '',
+  scopeClass: '',
+  institutionId: '' as string,
+  status: '',
+})
+
+/** 下拉选项全部来自后端 filterOptions（与列表同源；取不到时退回空数组，不伪造选项）。 */
+const institutionOptions = computed<PersonnelFilterOption[]>(() => view.value?.filterOptions?.institutions || [])
+const classOptions = computed<PersonnelFilterOption[]>(() => view.value?.filterOptions?.classes || [])
+const statusOptions = computed<PersonnelFilterOption[]>(() => view.value?.filterOptions?.statuses || [])
+
+const hasFilter = computed(
+  () => !!(filters.keyword.trim() || filters.scopeClass || filters.institutionId || filters.status)
+)
+
+/** 「已筛选」标签的文案：把生效条件翻成人话，用户不用回头看下拉。 */
+const filterSummary = computed(() => {
+  const parts: string[] = []
+  if (filters.keyword.trim()) parts.push(`关键字 ${filters.keyword.trim()}`)
+  if (filters.institutionId) {
+    const hit = institutionOptions.value.find((o) => o.value === filters.institutionId)
+    parts.push(`机构 ${hit?.label || filters.institutionId}`)
+  }
+  if (filters.scopeClass) {
+    parts.push(`档位 ${classLabel(filters.scopeClass)}`)
+  }
+  if (filters.status) {
+    const hit = statusOptions.value.find((o) => o.value === filters.status)
+    parts.push(`状态 ${hit?.label || filters.status}`)
+  }
+  return parts.join(' · ')
+})
 
 const classOrder: PersonnelClass[] = ['PLATFORM', 'TENANT', 'ORG', 'DEPT', 'MEMBER']
 const CLASS_LABELS: Record<string, string> = {
@@ -238,17 +324,44 @@ function apiError(e: unknown, fallback: string): string {
   return (e as { message?: string })?.message || fallback
 }
 
+/**
+ * 取数：把生效的筛选条件下发后端（空值一律不下发）。
+ *
+ * <p>下拉切换后**立即重查**（不要求用户再点一次「查询」）：筛选器改了却还是旧列表，
+ * 是本项目反复出现的那类「界面与事实不一致」。关键字仍走回车 / 查询按钮，避免逐字打请求。</p>
+ */
 async function loadPersonnel() {
   loading.value = true
   errorMsg.value = ''
   try {
-    view.value = await listPersonnel({ keyword: keyword.value.trim() || undefined })
+    const kw = filters.keyword.trim()
+    const iid = filters.institutionId === '' ? undefined : Number(filters.institutionId)
+    view.value = await listPersonnel({
+      keyword: kw || undefined,
+      scopeClass: filters.scopeClass || undefined,
+      institutionId: Number.isFinite(iid as number) ? (iid as number) : undefined,
+      status: filters.status || undefined,
+    })
   } catch (e) {
     view.value = null
     errorMsg.value = apiError(e, '人员列表加载失败')
   } finally {
     loading.value = false
   }
+}
+
+/** 下拉变更 → 立刻重查。 */
+function onFilterChange(key: 'scopeClass' | 'institutionId' | 'status', value: unknown) {
+  filters[key] = value == null ? '' : String(value)
+  void loadPersonnel()
+}
+
+function resetFilters() {
+  filters.keyword = ''
+  filters.scopeClass = ''
+  filters.institutionId = ''
+  filters.status = ''
+  void loadPersonnel()
 }
 
 // ---------- 角色分配 / 账号启停 ----------
@@ -323,11 +436,15 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* 筛选区有 4 个控件 + 2 个按钮：窄屏必须能换行，否则会挤成不可用的宽度 */
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .header-ops {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 

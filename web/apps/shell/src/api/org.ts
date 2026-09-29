@@ -292,8 +292,17 @@ export interface WorkflowTask {
 export function listInstitutionTypes(): Promise<InstitutionType[]> {
   return http.get('/tenant/institution-types').then((r) => unwrap<InstitutionType[]>(r))
 }
-export function listInstitutions(): Promise<Institution[]> {
-  return http.get('/tenant/institutions').then((r) => unwrap<Institution[]>(r))
+/**
+ * 机构清单。
+ *
+ * <p><b>默认不含已注销机构</b>（注销 = 不可逆终态，退出运营面）。需要「档案 / 归档」视角时
+ * 显式传 {@code includeClosed: true}（或 {@code status: 'CLOSED'}）。口径唯一权威在后端
+ * {@code InstitutionStatus}，前端不得自行过滤 —— 否则「后端已排除、前端又摆出来」会来回打架。</p>
+ */
+export function listInstitutions(
+  params?: { keyword?: string; status?: string; orgType?: string; includeClosed?: boolean }
+): Promise<Institution[]> {
+  return http.get('/tenant/institutions', { params }).then((r) => unwrap<Institution[]>(r))
 }
 export function createInstitution(body: Partial<Institution>): Promise<Institution> {
   return http.post('/tenant/institutions', body).then((r) => unwrap<Institution>(r))

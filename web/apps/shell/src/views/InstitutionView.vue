@@ -5,7 +5,7 @@
       :closable="false"
       show-icon
       title="机构管理"
-      description="租户管理员在此维护下属机构（企业/单位），分配机构词元配额，并跟踪每家机构的 8 步入驻进度。配额受资源池总量约束，超额分配会被服务端拒绝。"
+      description="租户管理员在此维护下属机构（企业/单位），分配机构词元配额，并跟踪每家机构的 8 步入驻进度。配额受资源池总量约束，超额分配会被服务端拒绝。已注销机构不在此列出——注销是不可逆终态，机构将退出全部运营面，档案随「删除本租户」一并级联清理。"
       style="margin-bottom: 12px"
     />
 
@@ -52,7 +52,25 @@
       <template #header>
         <div class="card-header">
           <span>机构列表（{{ rows.length }}）</span>
-          <div>
+          <div class="header-ops">
+            <!--
+              状态筛选：**没有「已注销」这一项**。
+
+              注销是不可逆终态，本清单的默认口径就是「已注销机构不出现」（后端
+              `/tenant/institutions` 默认排除 CLOSED）。既然刻意不给用户看，就不该在
+              筛选器里再做一个能把它们捞回来的入口 —— 那会让「注销后怎么还能看到」复现。
+              需要看档案是运维/审计场景，走接口的 includeClosed=true，不占本页控件。
+            -->
+            <el-select
+              v-model="statusFilter"
+              size="small"
+              style="width: 130px"
+              @change="reloadAll"
+            >
+              <el-option label="全部在册" value="" />
+              <el-option label="正常" value="ACTIVE" />
+              <el-option label="已停用" value="SUSPENDED" />
+            </el-select>
             <el-button text type="primary" size="small" :loading="loading" @click="reloadAll">刷新</el-button>
             <el-button type="primary" size="small" @click="openDlg()">新增机构</el-button>
           </div>
@@ -118,9 +136,25 @@
                   <el-dropdown-item command="freeze" :disabled="!quotaOf(row.id) || !!quotaOf(row.id)!.frozen">冻结配额</el-dropdown-item>
                   <el-dropdown-item command="unfreeze" :disabled="!quotaOf(row.id) || !quotaOf(row.id)!.frozen">解冻配额</el-dropdown-item>
                   <el-dropdown-item command="close" divided :disabled="row.status === 'CLOSED'">注销</el-dropdown-item>
-                  <!-- 「注销」= 置为 CLOSED 状态（可留痕、可查）；「申请删除」= 真删，且必须过上一级审核。
-                       两者是不同的事，故意分开放，避免被当成同一操作。 -->
-                  <el-dropdown-item command="delete-request" divided>申请删除</el-dropdown-item>
+                  <!--
+                    「注销」= 置为 CLOSED 状态（可留痕、可查）；「申请删除」= 真删，且必须过上一级审核。
+                    两者是不同的事，故意分开放，避免被当成同一操作。
+
+                    已注销行必须**禁用「申请删除」**：CLOSED 是不可达档案 —— 作用域解析对非 ACTIVE
+                    机构一律 404，所以点下去必然报「机构不存在或已停用」（用户实测：报的就是
+                    机构 id 162 那条）。正确清理路径只有「删租户」的级联；给出这个按钮等于
+                    把一条注定失败的路摆给用户走。正常清单里也不会出现 CLOSED 行（后端默认排除），
+                    这里禁用是第二道闸门（深链 / 显式 status=CLOSED 时仍然拦得住）。
+                  -->
+                  <el-dropdown-item
+                    command="delete-request"
+                    divided
+                    :disabled="row.status === 'CLOSED'"
+                  >
+                    {{ row.status === 'CLOSED' ? '申请删除（已注销，不可直接删）' : '申请删除' }}
+                  </el-dropdown-item>
+                  <!-- 禁用原因就地说明（不额外挂 tooltip：下拉项里的 tooltip 在 Element Plus
+                       的 popper 嵌套下不可靠，用户点了才发现是空的，反而更像坏了）。 -->
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -298,6 +332,11 @@ const quotas = ref<OrgQuota[]>([])
 const pool = ref<ResourcePool | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+/**
+ * 机构状态筛选。空串 = 全部在册（后端默认口径，已注销不在其中）；只提供 正常 / 已停用两档，
+ * 刻意**不提供「已注销」** —— 注销后该机构就该从本页消失，给个筛选项能把它捞回来等于没修。
+ */
+const statusFilter = ref('')
 
 function fmt(n?: number) {
   return (n ?? 0).toLocaleString('zh-CN')
@@ -335,7 +374,8 @@ async function reloadAll() {
     const [inst, qs, pl, types] = await Promise.all([
       // 机构清单**不再吞错**：`.catch(() => [])` 会把「403 / 500 等失败信封」渲染成一张空表，
       // 用户看到的是「数据没了」而不是「加载失败」——失败必须可见（铁律 #2/#3）。
-      listInstitutions(),
+      // 状态筛选走服务端（口径唯一在后端 InstitutionStatus），前端不再自己过滤一遍。
+      listInstitutions(statusFilter.value ? { status: statusFilter.value } : undefined),
       listOrgQuotas(period.value).catch(() => [] as OrgQuota[]),
       getResourcePool(period.value).catch(() => null),
       listInstitutionTypes().catch(() => [] as InstitutionType[])
@@ -550,6 +590,17 @@ const ACTION_TEXT: Record<string, string> = {
 
 async function onAction(row: Institution, cmd: string) {
   if (cmd === 'delete-request') {
+    // 已注销机构是**不可达档案**：作用域解析对非 ACTIVE 机构一律 404，请求必然失败在
+    // 「机构不存在或已停用」（用户实测报的正是机构 id 162 那条）。这里提前拦下并说明
+    // 正确路径，而不是放一发注定失败的请求出去让用户对着报错猜。
+    // 正常清单里不会有 CLOSED 行（后端默认排除），这是第二道闸门（深链 / 显式 status=CLOSED）。
+    if (row.status === 'CLOSED') {
+      ElMessage.warning(
+        `「${row.name}」已注销（不可逆终态），不能直接删除。` +
+        '它的档案与残留数据随「删除本租户」一并级联清理（租户管理 → 申请删除本租户）。'
+      )
+      return
+    }
     // 删除机构走「申请 → 上一级（租户管理员）审核 → 批准后才真删」。
     // 前端**不提供**直接删除：那是绕过审核闸门（需求：任何一层级的首次删除都需上一级审核）。
     let reason = ''
@@ -576,9 +627,16 @@ async function onAction(row: Institution, cmd: string) {
   }
   if (cmd === 'close') {
     try {
-      await ElMessageBox.confirm(`注销后机构不可恢复，确认注销「${row.name}」？`, '危险操作', {
-        type: 'warning', confirmButtonText: '确认注销', cancelButtonText: '取消'
-      })
+      // 注销前把**后果**说清楚：机构会从机构管理 / 入驻进度 / 资源授权 / 费用分摊里消失，
+      // 其成员也不再作为该机构的人员出现。此前只说「不可恢复」，用户注销后回头看这些页面
+      // 还都能看到它，自然怀疑「注销没生效」。文案必须与事实同源（铁律 #1）。
+      await ElMessageBox.confirm(
+        `注销后机构不可恢复，确认注销「${row.name}」？\n\n` +
+        '注销后该机构将退出运营面：机构管理、入驻进度、资源授权、费用分摊中不再显示，' +
+        '其成员也不再归属到本机构。档案保留；如需彻底清理，请走「删除本租户」的级联。',
+        '危险操作',
+        { type: 'warning', confirmButtonText: '确认注销', cancelButtonText: '取消' }
+      )
     } catch { return }
   }
   try {
@@ -601,7 +659,8 @@ function apiMsg(e: unknown, fallback: string) {
 </script>
 
 <style scoped>
-.card-header { display: flex; align-items: center; justify-content: space-between; }
+.card-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.header-ops { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .inst-name { font-weight: 600; }
 .muted { color: #909399; }
 .small { font-size: 12px; line-height: 1.3; }

@@ -154,7 +154,7 @@
               · 成果与项目 —— 平台产出物（成果沉淀 + 代码仓库联动）
               · 运营管理   —— 用量与成本（经营数据 / 配额）
               · 租户与机构 —— 租户级组织与费用（机构/入驻/授权/分摊）
-              · 组织与员工 —— 组织人事域（组织与部门 / 人员管理）
+              · 组织与员工 —— 组织人事域（一级项：页内页签含组织与部门 / 人员管理）
               · 权限与安全 —— 权限体系域（角色/权限点/审批流/审计/审核记录）
               · 系统配置   —— 平台运行配置域（系统参数 / 功能管理 / 模型管理）
               · 平台管理   —— 仅平台管理员（内容审核台 / 租户管理）
@@ -233,27 +233,22 @@
           </el-sub-menu>
 
           <!--
-            组织与员工（组织人事域）：
-            只装「人」相关的两个入口 —— 部门树与员工名册、账号与角色分配。
-            原「系统管理」混装的平台级基线配置（角色 / 权限点 / 功能管理 / 模型管理）
-            已按功能域分别迁入「权限与安全」「系统配置」，本组不再承担配置职能，
-            故一并取消「标题按角色切换」的补丁（平台管理员与其他角色看到同一个名字）。
+            组织与员工（组织人事域）：**一级菜单，不再带二级子项**。
 
-            可见范围沿用 ORG_VIEW_ROLES（并集，含普通成员）；「人员管理」子项再按
-            PERSONNEL_VIEW_ROLES 收口，与路由 meta.allowRoles 同源。
+            原形态是一个 `el-sub-menu`，里面装「组织与部门」+「人员管理」两个子项 ——
+            用户明确要求「二级菜单不需要，只保留组织与员工」。两者本来就是同一页
+            （`OrgAdminView.vue` 的两个页签），拆成两条菜单项等于同一个入口出现两次。
+            现在只留一条一级项，落地点仍是 `/org-structure`（页签「组织与部门」），
+            点页内「人员管理」页签即到人员名册；旧深链 `/admin` 依旧可用，
+            并把它高亮归并到本项（见 menuActive）。
+
+            可见范围沿用 ORG_VIEW_ROLES（并集，含普通成员）；「人员管理」页签再按
+            PERSONNEL_VIEW_ROLES 收口（页内判定，与路由 meta.allowRoles 同源）。
           -->
-          <el-sub-menu v-if="showOrgMenu" index="org">
-            <template #title>
-              <el-icon><UserFilled /></el-icon>
-              <span>组织与员工</span>
-            </template>
-            <el-menu-item index="/org-structure">
-              <template #title>组织与部门</template>
-            </el-menu-item>
-            <el-menu-item v-if="showPersonnelMenu" index="/admin">
-              <template #title>人员管理</template>
-            </el-menu-item>
-          </el-sub-menu>
+          <el-menu-item v-if="showOrgMenu" index="/org-structure">
+            <el-icon><UserFilled /></el-icon>
+            <template #title>组织与员工</template>
+          </el-menu-item>
 
           <!--
             权限与安全（权限体系域，原「安全与治理」改名）：
@@ -371,7 +366,6 @@ import {
   EXPERT_MANAGER_ROLES,
   GITEE_VIEW_ROLES,
   ORG_VIEW_ROLES,
-  PERSONNEL_VIEW_ROLES,
   REVIEW_RECORD_ROLES,
   ROLE,
   TENANT_SCOPE_ROLES,
@@ -442,12 +436,11 @@ const showTenantMenu = computed(() => hasAnyRole(roles.value, TENANT_SCOPE_ROLES
  * 机构成员（企业管理员 / 部门负责人 / 成员）看本机构；租户管理员与平台管理员
  * 也开放入口——前者需按部门分发数字员工、后者需运维巡检，均为只读或本租户范围。
  *
- * 顶层分组「组织与员工」的可见性取 ORG_VIEW_ROLES（并集）；
- * 组内的「人员管理」子项再按 PERSONNEL_VIEW_ROLES 收口（它是前者的真子集），
- * 与路由 meta.allowRoles 同源 —— 普通成员有「组织与部门」，但看不到「人员管理」。
+ * 「组织与员工」现在是一级菜单（单入口，无子项），可见性取 ORG_VIEW_ROLES；
+ * 其中的「人员管理」不再是菜单项，而是该页面内的页签，由页内按 PERSONNEL_VIEW_ROLES 收口
+ * （与路由 meta.allowRoles 同源 —— 普通成员有「组织与员工」，但看不到「人员管理」页签）。
  */
 const showOrgMenu = computed(() => hasAnyRole(roles.value, ORG_VIEW_ROLES))
-const showPersonnelMenu = computed(() => hasAnyRole(roles.value, PERSONNEL_VIEW_ROLES))
 /** 是否需要在进入页面前解析机构作用域（企业端与租户端页面都要）。 */
 const needsInstitutionScope = computed(() => showTenantMenu.value || showOrgMenu.value)
 
@@ -467,10 +460,12 @@ const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
 /**
  * 侧边菜单的高亮项。
  *
- * `/admin` 与 `sys-*` 现在都是菜单里真实存在的条目，直接拿 route.path 当高亮键即可；
- * 早期把 /admin 归并到 /org-structure 上（当时它只是页内页签）的兜底已随之取消。
+ * `/admin`（人员管理深链）与 `/org-structure` 共用同一条一级菜单项「组织与员工」，
+ * 页面内也只是两个页签 —— 所以 `/admin` 必须**归并**到 `/org-structure` 上高亮，
+ * 否则从旧书签进入时菜单里一项都不亮（`_check_menu_scroll.py` 段 2 钉住这一点）。
  */
-const menuActive = computed(() => route.path)
+const MENU_ALIAS: Record<string, string> = { '/admin': '/org-structure' }
+const menuActive = computed(() => MENU_ALIAS[route.path] || route.path)
 
 /**
  * 子菜单「默认展开」的组。
@@ -501,9 +496,8 @@ const PATH_GROUP: Record<string, string> = {
   '/resource-grants': 'tenant',
   '/cost-alloc': 'tenant',
   '/tenants': 'tenant',
-  // 组织与员工
-  '/org-structure': 'org',
-  '/admin': 'org',
+  // 组织与员工已改为**一级菜单项**（无子项），故不需要归组展开；
+  // 其两个深链 /org-structure、/admin 由 MENU_ALIAS 高亮到同一条一级项上。
   // 权限与安全
   '/sys-roles': 'gov',
   // 旧深链（现在会重定向到 /sys-roles），保留归组以免直达时菜单不展开

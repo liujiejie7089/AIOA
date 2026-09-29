@@ -1,6 +1,7 @@
 package cn.aioa.admin.service;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.org.InstitutionStatus;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -10,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -81,6 +83,16 @@ public class PersonnelService {
      * {@code AuthService.institutionIdOf} 的 {@code ORDER BY id LIMIT 1} 同口径），
      * 避免一个用户挂在多个机构时主表被 JOIN 放大成重复行。</p>
      *
+     * <p><b>归属机构已注销（CLOSED）的成员行不参与归属</b>：机构注销是不可逆终态，
+     * 其花名册随机构退出运营面（用户报障：「注销了机构，人员管理还能看到它的人」）。
+     * 跳过这些行后，用户的归属会回落到他**在册机构**的那条记录；一条在册记录都没有的，
+     * 落到「未加入机构」桶 —— 账号本身不会消失（注销不删账号，这是刻意的：
+     * 把仍可登录的账号从名册里藏掉，比多显示一行危险得多）。
+     *
+     * <p>规则字面量不在这里写死：运营面过滤只用 {@link InstitutionStatus#sqlOperational(String)}
+     * （唯一权威），与 org 域的 {@code OrgInstitution.excludeClosed} 同源 —— 两处各写一份
+     * 正是本项目头号缺陷类型（铁律 #1）。</p>
+     *
      * <p>注意本库开启了 {@code ONLY_FULL_GROUP_BY}：所有聚合都在标量子查询里完成，
      * 主查询不出现裸 GROUP BY。</p>
      */
@@ -100,13 +112,19 @@ public class PersonnelService {
             LEFT JOIN (
                 SELECT m1.user_id, m1.institution_id, m1.department_id, m1.job_title, m1.employee_no, m1.is_org_admin
                 FROM org_member m1
-                JOIN (SELECT user_id, MIN(id) AS mid FROM org_member
-                       WHERE status = 'ACTIVE' AND deleted_at IS NULL GROUP BY user_id) p ON p.mid = m1.id
+                JOIN (SELECT m.user_id, MIN(m.id) AS mid FROM org_member m
+                        LEFT JOIN org_institution x ON x.id = m.institution_id
+                       WHERE m.status = 'ACTIVE' AND m.deleted_at IS NULL
+                         AND %s
+                       GROUP BY m.user_id) p ON p.mid = m1.id
             ) om ON om.user_id = u.id
             LEFT JOIN org_institution i ON i.id = om.institution_id AND i.deleted_at IS NULL
             LEFT JOIN org_department d ON d.id = om.department_id AND d.deleted_at IS NULL
             WHERE u.deleted_at IS NULL
             """;
+
+    /** 归属机构须处于运营面（已注销机构的花名册行不参与归属）。 */
+    private static final String OPERATIONAL_SQL = InstitutionStatus.sqlOperational("x");
 
     private final JdbcTemplate jdbc;
 
@@ -123,13 +141,53 @@ public class PersonnelService {
     /**
      * 分类后的人员视图：按调用者权限作用域取数，再按 租户 / 机构 / 档位 自动分组。
      *
-     * @param keyword  按用户名或昵称模糊过滤（可空）
-     * @param tenantId 仅平台管理员有意义：把结果收窄到指定租户（可空）
+     * <h4>筛选取舍</h4>
+     * <p>筛选（关键字 / 机构 / 档位 / 账号状态）**在 Java 侧对已取回的作用域行做**，不额外拼 SQL：</p>
+     * <ul>
+     *   <li>下拉可选项（{@code filterOptions}）必须与「同一作用域下真实存在的人」同源 ——
+     *       若先按条件过滤再算选项，选完「机构 A」后机构下拉就只剩 A，用户再也切不回「全部」；</li>
+     *   <li>作用域行本身已被硬边界收窄（机构/部门级只有几十行），不存在性能问题。</li>
+     * </ul>
+     * <p>{@code classCounts} / {@code groups} / {@code total} 一律基于**筛选后**的行集，
+     * 三者互相自洽（前端统计条与列表不会各说各话）。</p>
+     *
+     * @param keyword       用户名或昵称模糊过滤（可空）
+     * @param tenantId      仅平台管理员有意义：把结果收窄到指定租户（可空）
+     * @param scopeClass    档位码：PLATFORM / TENANT / ORG / DEPT / MEMBER（可空 = 全部）
+     * @param institutionId 归属机构 id；传 {@code 0} 表示「未归属任何机构」（可空 = 全部）
+     * @param status        账号状态：ENABLED / DISABLED（可空 = 全部）
      */
-    public Map<String, Object> personnel(String keyword, Long tenantId) {
+    public Map<String, Object> personnel(String keyword, Long tenantId, String scopeClass,
+                                         Long institutionId, String status) {
         AuthUser viewer = AuthUserContext.require();
         ScopeInfo scope = resolveScope(viewer);
-        List<Map<String, Object>> rows = query(scope, keyword, tenantId);
+        // 作用域全量（不带筛选）—— 既用于算下拉可选项，也是筛选的输入
+        List<Map<String, Object>> scoped = query(scope, null, tenantId);
+        Map<String, Object> filterOptions = filterOptions(scope, scoped);
+
+        String cls = trimToNull(scopeClass);
+        String st = trimToNull(status);
+        String kw = trimToNull(keyword);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Map<String, Object> row : scoped) {
+            if (cls != null && !cls.equals(String.valueOf(row.get("scopeClass")))) {
+                continue;
+            }
+            if (st != null && !st.equals(String.valueOf(row.get("status")))) {
+                continue;
+            }
+            if (institutionId != null) {
+                Long iid = row.get("institutionId") instanceof Number n ? n.longValue() : null;
+                long want = institutionId;
+                if (want == 0L ? iid != null : !Long.valueOf(want).equals(iid)) {
+                    continue;
+                }
+            }
+            if (kw != null && !matchesKeyword(row, kw)) {
+                continue;
+            }
+            rows.add(row);
+        }
 
         String groupBy = switch (scope.scope()) {
             case SCOPE_PLATFORM -> "TENANT";
@@ -179,6 +237,11 @@ public class PersonnelService {
         out.put("groups", groups);
         out.put("classCounts", classCounts);
         out.put("capability", capability);
+        out.put("filterOptions", filterOptions);
+        out.put("filters", Map.of(
+                "scopeClass", cls == null ? "" : cls,
+                "institutionId", institutionId == null ? "" : String.valueOf(institutionId),
+                "status", st == null ? "" : st));
         out.put("tenantId", scope.tenantId());
         out.put("institutionId", scope.institutionId());
         out.put("departmentId", scope.departmentId());
@@ -188,6 +251,74 @@ public class PersonnelService {
                 : "当前账号为「" + scopeName + "」范围，人员列表按权限分类只读展示；"
                         + "角色分配与账号启停仅平台管理员可操作。");
         return out;
+    }
+
+    /**
+     * 筛选下拉的可选项 —— 从**作用域全量行**推导（不是从筛选结果推导，否则选项会自噬）。
+     *
+     * <p>与列表同源：机构选项的 id / 名称直接取自已归好属的行，不做第二次机构查询
+     * （第二次查询会引入「列表里有、下拉里没有」的不一致）。</p>
+     */
+    private Map<String, Object> filterOptions(ScopeInfo scope, List<Map<String, Object>> scoped) {
+        Map<String, Map<String, Object>> institutions = new LinkedHashMap<>();
+        Map<String, Integer> statuses = new LinkedHashMap<>();
+        for (Map<String, Object> row : scoped) {
+            Object iid = row.get("institutionId");
+            String key = iid == null ? "0" : String.valueOf(iid);
+            Map<String, Object> opt = institutions.computeIfAbsent(key, k -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("value", k);
+                String name = asString(row.get("institutionName"));
+                m.put("label", name != null && !name.isBlank() ? name : "未归属机构");
+                m.put("count", 0);
+                return m;
+            });
+            opt.put("count", ((Number) opt.get("count")).intValue() + 1);
+            String st = asString(row.get("status"));
+            if (st != null && !st.isBlank()) {
+                statuses.merge(st, 1, Integer::sum);
+            }
+        }
+        List<Map<String, Object>> classes = new ArrayList<>();
+        for (String c : CLASS_ORDER) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("value", c);
+            m.put("label", CLASS_LABELS.getOrDefault(c, c));
+            classes.add(m);
+        }
+        List<Map<String, Object>> stOptions = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : statuses.entrySet()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("value", e.getKey());
+            m.put("label", "ENABLED".equals(e.getKey()) ? "已启用" : "DISABLED".equals(e.getKey()) ? "已停用" : e.getKey());
+            stOptions.add(m);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("institutions", new ArrayList<>(institutions.values()));
+        out.put("classes", classes);
+        out.put("statuses", stOptions);
+        out.put("scope", scope.scope());
+        return out;
+    }
+
+    /** 关键字匹配（用户名 / 昵称，忽略大小写），与旧 SQL 的 LIKE 口径等价。 */
+    private static boolean matchesKeyword(Map<String, Object> row, String kw) {
+        String lower = kw.toLowerCase(Locale.ROOT);
+        for (String field : new String[]{"username", "nickname"}) {
+            String v = asString(row.get(field));
+            if (v != null && v.toLowerCase(Locale.ROOT).contains(lower)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     /**
@@ -279,7 +410,8 @@ public class PersonnelService {
             args.add(like);
             args.add(like);
         }
-        String sql = BASE_SELECT + where + " ORDER BY u.tenant_id, om.institution_id, om.department_id, u.id";
+        String sql = BASE_SELECT.formatted(OPERATIONAL_SQL)
+                + where + " ORDER BY u.tenant_id, om.institution_id, om.department_id, u.id";
 
         List<Map<String, Object>> raw = args.isEmpty()
                 ? jdbc.queryForList(sql)

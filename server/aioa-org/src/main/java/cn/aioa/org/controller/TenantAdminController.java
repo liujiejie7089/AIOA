@@ -91,13 +91,23 @@ public class TenantAdminController {
         return ApiResponse.ok(institutionService.typeOptions());
     }
 
+    /**
+     * 机构清单。
+     *
+     * <p><b>默认口径：已注销（CLOSED）机构不出现在这里</b>（注销 = 不可逆终态，退出运营面）。
+     * 需要「档案 / 归档」视角（级联删除前后核对、历史回查）时显式传
+     * {@code includeClosed=true}；显式传 {@code status=CLOSED} 同样有效。
+     * 见 {@link cn.aioa.common.org.InstitutionStatus}。</p>
+     */
     @GetMapping("/institutions")
     public ApiResponse<List<Map<String, Object>>> institutions(
             @RequestParam(name = "keyword", required = false) String keyword,
             @RequestParam(name = "status", required = false) String status,
-            @RequestParam(name = "orgType", required = false) String orgType) {
+            @RequestParam(name = "orgType", required = false) String orgType,
+            @RequestParam(name = "includeClosed", required = false, defaultValue = "false")
+            boolean includeClosed) {
         AuthUser u = guard.requireTenantAdmin();
-        return ApiResponse.ok(institutionService.list(tenantId(u), keyword, status, orgType));
+        return ApiResponse.ok(institutionService.list(tenantId(u), keyword, status, orgType, includeClosed));
     }
 
     @GetMapping("/institutions/{id}")

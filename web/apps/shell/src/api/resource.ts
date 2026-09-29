@@ -349,6 +349,22 @@ export interface PersonnelGroup {
   members: PersonnelMember[]
 }
 
+/** 筛选下拉的一项（选项与列表同源，由后端从**作用域全量行**推导，不是从筛选结果推导）。 */
+export interface PersonnelFilterOption {
+  /** 机构筛选用机构 id（字符串形式，`0` = 未归属机构）；档位/状态用各自的码 */
+  value: string
+  label: string
+  /** 机构选项带人数；档位/状态选项不带 */
+  count?: number
+}
+
+export interface PersonnelFilterOptions {
+  institutions: PersonnelFilterOption[]
+  classes: PersonnelFilterOption[]
+  statuses: PersonnelFilterOption[]
+  scope: PersonnelView['scope']
+}
+
 export interface PersonnelView {
   /** 调用者作用域：平台 / 租户 / 机构 / 部门 */
   scope: 'PLATFORM' | 'TENANT' | 'ORG' | 'DEPT'
@@ -361,6 +377,10 @@ export interface PersonnelView {
   classCounts: Record<string, number>
   /** 写操作能力（角色分配 / 账号启停仅平台管理员）；readOnly=true 时前端应收起操作列 */
   capability: { canAssignRole: boolean; canChangeStatus: boolean; readOnly: boolean }
+  /** 筛选下拉可选项（与列表同源；后端下发，前端不得自建第二份枚举） */
+  filterOptions?: PersonnelFilterOptions
+  /** 本次生效的筛选值回显（空字符串 = 未筛） */
+  filters?: { scopeClass: string; institutionId: string; status: string }
   tenantId?: number | null
   institutionId?: number | null
   departmentId?: number | null
@@ -372,10 +392,21 @@ export interface PersonnelView {
 /**
  * 人员管理列表（已按调用者权限作用域过滤并按档位 / 机构 / 租户分组）。
  *
- * @param keyword  用户名或昵称模糊搜索
- * @param tenantId 仅平台管理员有效：把结果收窄到指定租户
+ * <p>筛选**只在服务端作用域之内**生效：传越界的 institutionId 不会扩大可见面，只会空表。</p>
+ *
+ * @param keyword       用户名或昵称模糊搜索
+ * @param tenantId      仅平台管理员有效：把结果收窄到指定租户
+ * @param scopeClass    档位码（PLATFORM / TENANT / ORG / DEPT / MEMBER）
+ * @param institutionId 归属机构 id；`0` = 未归属任何机构
+ * @param status        账号状态（ENABLED / DISABLED）
  */
-export function listPersonnel(params?: { keyword?: string; tenantId?: number }): Promise<PersonnelView> {
+export function listPersonnel(params?: {
+  keyword?: string
+  tenantId?: number
+  scopeClass?: string
+  institutionId?: number
+  status?: string
+}): Promise<PersonnelView> {
   return http.get('/admin/personnel', { params }).then((r) => unwrap<PersonnelView>(r))
 }
 

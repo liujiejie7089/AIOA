@@ -1,10 +1,12 @@
 package cn.aioa.org.entity;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.org.InstitutionStatus;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -22,9 +24,34 @@ import java.util.Map;
 @Data
 @TableName("org_institution")
 public class OrgInstitution {
-    public static final String STATUS_ACTIVE = "ACTIVE";
-    public static final String STATUS_SUSPENDED = "SUSPENDED";
-    public static final String STATUS_CLOSED = "CLOSED";
+    /**
+     * 状态取值。**唯一权威在** {@link InstitutionStatus}（aioa-common）——
+     * 因为 aioa-admin 的人员管理要用原生 SQL 读这张表，同一条规则必须两边同源。
+     * 这里只做别名，不要再写第二份字面量。
+     */
+    public static final String STATUS_ACTIVE = InstitutionStatus.ACTIVE;
+    public static final String STATUS_SUSPENDED = InstitutionStatus.SUSPENDED;
+    public static final String STATUS_CLOSED = InstitutionStatus.CLOSED;
+
+    /**
+     * 把「已注销机构退出运营面」这一条规则**只写一次**（MyBatis-Plus 版本）。
+     *
+     * <p>等价于 {@link InstitutionStatus#sqlOperational(String)}：{@code status IS NULL OR status <> 'CLOSED'}。
+     * 不能用裸的 {@code .ne(status, 'CLOSED')} —— SQL 三值逻辑下它会连 {@code NULL} 行一起排除，
+     * 把状态漏写的历史行静默藏掉（宁可多展示，不可静默少展示）。</p>
+     *
+     * <p>使用点：机构清单 / 入驻总览 / 资源授权 / 费用分摊 / 配额等一切「运营面」查询。
+     * 需要看档案（含已注销）的调用方必须显式声明（{@code includeClosed=true}），不要在本方法上开口子。</p>
+     */
+    public static void excludeClosed(LambdaQueryWrapper<OrgInstitution> w) {
+        w.and(x -> x.isNull(OrgInstitution::getStatus)
+                .or().ne(OrgInstitution::getStatus, STATUS_CLOSED));
+    }
+
+    /** 该机构是否参与运营面（与 {@link #excludeClosed} 同一判定的对象版）。 */
+    public boolean operational() {
+        return InstitutionStatus.operational(status);
+    }
 
     /**
      * 机构类型（{@code org_type}）—— **唯一权威清单**。
