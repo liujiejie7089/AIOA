@@ -136,6 +136,13 @@ async def main():
         await page.set_viewport_size({'width': 390, 'height': 844})
         await page.wait_for_timeout(450)
         await page.screenshot(path=os.path.join(OUT, 'check-home.png'))
+        # 逐卡放大（含卡外 14px 余量）：三角朝向是否「看得对」最终还是要人眼过一遍
+        for k in ['k1', 'k2', 'k3', 'k4']:
+            el = await page.query_selector('.oa .kpi-float.' + k)
+            bb = await el.bounding_box()
+            await page.screenshot(path=os.path.join(OUT, 'card-%s.png' % k),
+                                  clip={'x': bb['x'] - 14, 'y': bb['y'] - 14,
+                                        'width': bb['width'] + 28, 'height': bb['height'] + 28})
 
         # 数字人上浮到波峰时，卡片不得压到它的像素上（z 序上机器人后绘制，会盖住卡片）
         await page.add_style_tag(content='.oa .r-bob{animation:none !important;'
