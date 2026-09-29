@@ -327,3 +327,39 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 - **新增三层「直接删除」端点的禁令**：`DELETE /api/v1/org/departments/{id}` 已**下线**
   （原本就有级联前置校验，缺的是审核闸门）。注意断言要看 **404 或 405 都算通过**：
   部门路径上还挂着 `PUT`（编辑），Spring 会回 **405 而非 404**；只认 404 会把正确实现判红。
+
+## 2026-09-29 新增验证件（用户端 OA 双形态 · 69 项）
+
+- **`scripts/_e2e_oa.py`（入库）· 69 项全绿 / 0 失败**，Playwright + msedge headless，
+  390×844 @2x，账号 `wjj_xu`（普通成员 ROLE_MEMBER）。21 张截图落 `scripts/_shot_oa/`（**已 gitignore**）。
+  分段：**A** 经典形态回归（五 Tab + 横向溢出 0）· **B** 双形态切换与 localStorage 记忆（含刷新往返双向）·
+  **C** OA 五主视图 + 导轨四面板互斥 + **C7 部门筛选器** + **C8 审批详情** + C5/C6 联系方式默认隐藏且不入本地存储 ·
+  **D** 数字人→选择卡→数字员工清单→**原地对话坞（不跳经典 page-chat）** ·
+  **E** 气泡三角几何（逐气泡比对「计算方向角 θ+90°」与实测 `--tail-angle`，**最大误差 0.004°**）
+  + **E3 每个气泡都保留 `.tail` 节点**（流式写入曾把三角抹掉）· **F** 抽屉/定时任务/插件技能子页 + F3b 子页左键语义 ·
+  **G2 全文档图标自洽**（37 个 `<use href="#i-*">` 唯一引用，解析不到符号的 = 0）+ **G1 console error 0**。
+- **`scripts/_negtest_timers_field.py`（入库）**：负向测试，证明 F3a 断言**会红**。做法：把 `on` 改名 `enabled`
+  复现旧缺陷后走 UI 重进页面触发重绘，基线绿 / 复现红。★ 首版判据读 `state.workers` ⇒ 复现态**仍然绿**
+  （判据与渲染器同源）—— 已改为拿 `await API.workers()` 的接口真值比对。**详见 pitfalls 92。**
+- **`scripts/_check_dto_fields.py`（入库的长期口径哨兵）**：按**真实响应**核对「渲染层实际读的字段」是否存在。
+  已实测敏感（把期望字段 `on` 改成 `enabled` 立刻 `缺失=['enabled']` 报红）。
+  ★ 必须先切到 OA 形态再采样：OA 的懒加载 `loadOaExtras` 才补齐 `conversations` 等集合，
+  **留在经典形态采样会把「未加载」误判成「接口无数据」**（首版就误判过，报 0 条）。
+- **运行**：`"C:/Users/刘尖尖/.workbuddy/binaries/python/envs/default/Scripts/python.exe" scripts/_e2e_oa.py`
+  需先起：后端 8080 + 静态服务 5181（`BASE` 在脚本头部，默认 `http://127.0.0.1:5181/`）。
+- **`scripts/_e2e_oa_approve.py`（入库，唯一会写库的 OA 套件）· 0 失败**：补验 `_e2e_oa.py` 覆盖不到的正向
+  ——普通成员 `wjj_xu` 的「待我审批」恒为空，只能验负向「非该范围不出现决策按钮」；
+  换审批人 `wjj_admin`（`ROLE_TENANT_ADMIN`+`ROLE_ORG_ADMIN`，实测 `state.canApprove=true`）三段独立取证：
+  ① `wjj_xu` 调 `API.leaveSubmit` 造夹具（**事假 CASUAL：`quotaDaysPerYear=0`/`needProof=false`/`advanceDays=1`
+  ⇒ 零额度成本**，不动年假那 4 天余额）② `wjj_admin` 在 **OA 形态**内 待我审批→详情（断言通过/驳回**出现**）
+  →点通过→意见框确认 ③ 回申请人会话用 `API.workflowMine()` **独立读回** `status=APPROVED`。
+  ★ 夹具收尾纪律：为取证另建的挂起单必须用**同一决策点** `commitApprovalDecision(id,'APPROVE',…)` 结掉，
+  再用 `workflowTodo()` 复核剩余 0 —— 否则留下悬空待办。
+  ★ 写脚本的坑：`login()` 里自己 `new_page()` 会把调用方的 page 留在「从未导航的空白页」⇒ `API is not defined`；
+  **登录助手必须复用调用方传入的 page**。
+- **未验项（诚实标注，勿当成已通过）**：① 知识库**文档列表**未验（该账号 `kbDocs` 为空，
+  渲染分支靠静态核对 `DocView`/`KbService` 得来）；② OA 只覆盖普通成员 `wjj_xu` 与机构管理员 `wjj_admin` 两角色，
+  部门负责人（`znsfb_ldr` 等）本机库已无 ⇒ 未覆盖。
+- **本轮顺带发现（未修，登记 `known-gaps.md`）**：审批人「待我审批」把**同一张单显示两遍**
+  ——`loadTodoApprovals()` 无去重地合并 `workflowTodo()` + `approvalList('todo')`，
+  而请假链路会在两引擎登记同一 `orderId` ⇒ 同 id 两行 + 待办徽标双计。**共用经典加载器，两形态都有。**

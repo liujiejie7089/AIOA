@@ -1,0 +1,207 @@
+<!-- ============================================================================
+     OA 形态（新版 · 协同工作台）
+     ----------------------------------------------------------------------------
+     与「经典形态」并存于同一文件：经典形态的 page-* 一行未改，本层全部为新增。
+     显示由 .phone.oa-mode 控制（见 §OA 外壳规则）。
+     数字人位图内联为 base64 —— 生产镜像只 COPY index.html 这一个文件
+     （deploy/Dockerfile.server L28），任何外部资源都会 404。
+     ============================================================================ -->
+<div class="oa" id="oaRoot">
+  <header class="appbar">
+    <button class="ab-btn" id="oaLeft" aria-label="打开目录"></button>
+    <div class="ab-title" id="oaTitle">工作助手</div>
+    <div class="ab-right" id="oaRight"></div>
+  </header>
+
+  <main class="screen">
+
+    <!-- ① 首页 = 工作助手：数字人为锚点，对话就在本页完成，不跳转 -->
+    <section class="view on" id="v-home">
+      <div class="assist">
+        <h1>工作助手</h1>
+        <p class="sub">智能整理日程、审批、任务与文档</p>
+      </div>
+
+      <div class="stage" id="oaStage">
+        <div class="kpi-float k1"><div class="k-label">待我审批</div><div class="k-val" id="oaK1">—<span>项</span></div></div>
+        <div class="kpi-float k2"><div class="k-label">我发起的</div><div class="k-val" id="oaK2">—<span>项</span></div></div>
+        <div class="kpi-float k3"><div class="k-label">知会未读</div><div class="k-val" id="oaK3">—<span>条</span></div></div>
+        <div class="kpi-float k4"><div class="k-label">我的会话</div><div class="k-val" id="oaK4">—<span>个</span></div></div>
+
+        <button class="robot-wrap" id="oaRobot" aria-label="点击数字人，选择数字员工或专家">
+          <span class="r-bob"><img class="robot-img" alt="AI 数字人" width="560" height="789" src="__ROBOT_B64__"></span>
+        </button>
+      </div>
+
+      <div class="dock" id="oaDock">
+        <div class="dock-list" id="oaDockList"></div>
+      </div>
+
+      <button class="robot-tag" id="oaTag" style="display:none"></button>
+      <div class="assist-hint" id="oaHint">
+        <svg class="ic" style="width:13px;height:13px"><use href="#i-info"/></svg>点击数字人，选择「数字员工」或「专家」
+      </div>
+
+      <div class="composer">
+        <div class="box">
+          <input id="oaInput" placeholder="描述你的办公需求" aria-label="描述你的办公需求">
+          <button class="cbtn" id="oaStop" aria-label="停止生成" style="display:none"><svg class="ic" style="width:17px;height:17px"><use href="#i-lock"/></svg></button>
+        </div>
+        <button class="cbtn send" id="oaSendBtn" aria-label="发送"><svg class="ic" style="width:19px;height:19px"><use href="#i-send"/></svg></button>
+      </div>
+    </section>
+
+    <!-- ② 任务 = 办公协同：左导轨 任务 / 项目 / 审批 / 日程 -->
+    <section class="view flush" id="v-collab">
+      <div class="collab-head">
+        <div class="ct">AIOA 办公协同</div>
+        <button class="newtask" id="oaNewTask">新建任务</button>
+      </div>
+      <div class="collab-body">
+        <div class="rail" id="oaRail">
+          <button class="rail-item on" data-panel="tasks">任务<em id="oaRailTask">0</em></button>
+          <button class="rail-item" data-panel="projects">项目<em id="oaRailProj">0</em></button>
+          <button class="rail-item" data-panel="approvals">审批<em id="oaRailAppr">0</em></button>
+          <button class="rail-item" data-panel="schedule">日程<em id="oaRailSch">0</em></button>
+        </div>
+        <div class="rail-main">
+          <div class="panel on" id="p-tasks"></div>
+          <div class="panel" id="p-projects"></div>
+          <div class="panel" id="p-approvals"></div>
+          <div class="panel" id="p-schedule"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ 知识库 -->
+    <section class="view" id="v-kb">
+      <div class="searchbar">
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input id="oaKbQ" placeholder="搜索我的知识库文档" aria-label="搜索我的知识库文档">
+      </div>
+      <div class="sec-title" style="margin-left:2px">知识库概览</div>
+      <div class="kb-grid" id="oaKbGrid"></div>
+      <div class="sec-title" style="margin-left:2px">我的文档
+        <span class="more" id="oaKbUpload">上传文档</span>
+      </div>
+      <div class="card" id="oaKbList"></div>
+      <input type="file" id="oaKbFile" style="display:none" aria-hidden="true">
+    </section>
+
+    <!-- ④ 部门 / 通讯录 -->
+    <section class="view" id="v-org">
+      <div class="searchbar">
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input id="oaOrgQ" placeholder="搜索同事姓名" aria-label="搜索同事姓名">
+      </div>
+      <div class="sec-title" style="margin-left:2px">组织</div>
+      <div class="org-chips" id="oaOrgChips"></div>
+      <div class="sec-title" style="margin-left:2px">联系人 <span class="muted" id="oaOrgCnt"></span></div>
+      <div id="oaOrgList"></div>
+    </section>
+
+    <!-- ⑤ 我的（含「界面版本」切换） -->
+    <section class="view" id="v-me">
+      <div class="profile">
+        <div class="row1">
+          <div class="pava" id="oaMeAva">·</div>
+          <div>
+            <div class="pn" id="oaMeName">—</div>
+            <div class="pr" id="oaMeRole">—</div>
+          </div>
+        </div>
+        <div class="mydata" id="oaMeData"></div>
+      </div>
+
+      <div class="switch-card">
+        <div class="switch-head"><svg class="ic"><use href="#i-swap"/></svg><b>界面版本</b></div>
+        <div class="switch-desc">在「协同工作台」与「经典工作台」之间切换，底部菜单与首页会同步变化。</div>
+        <div class="seg" id="oaSeg">
+          <div class="thumb"></div>
+          <button class="on" data-mode="oa">新版 · 协同</button>
+          <button data-mode="classic">原版 · 经典</button>
+        </div>
+        <div class="switch-note"><svg class="ic"><use href="#i-info"/></svg>经典工作台保留既有工作台/待办/会话形态，功能完全一致。</div>
+      </div>
+
+      <div class="sec-title" style="margin-left:2px">账户</div>
+      <div class="card" id="oaMeActions"></div>
+    </section>
+
+    <!-- ⑥ 数字员工清单（首页数字人 → 选择「数字员工」后进入） -->
+    <section class="view" id="v-workers">
+      <div class="sec-title" style="margin-left:2px">数字员工 <span class="muted">可对话的 AI 同事</span></div>
+      <div class="card" id="oaWorkersList"></div>
+    </section>
+
+    <!-- ⑦ 专家清单（首页数字人 → 选择「专家」后进入） -->
+    <section class="view" id="v-experts">
+      <div class="sec-title" style="margin-left:2px">专家 <span class="muted">领域专家视角</span></div>
+      <div class="card" id="oaExpertsList"></div>
+    </section>
+
+    <!-- ⑧ 定时任务（抽屉进入）：数字员工排班 + 执行记录 -->
+    <section class="view" id="v-timers">
+      <div class="sec-title" style="margin-left:2px">定时任务 <span class="muted">数字员工到点自动执行</span></div>
+      <div id="oaTimersList"></div>
+    </section>
+
+    <!-- ⑨ 插件 · 技能（抽屉进入） -->
+    <section class="view" id="v-skills">
+      <div class="sec-title" style="margin-left:2px">插件 · 技能 <span class="muted">可被数字员工调用</span></div>
+      <div class="card" id="oaSkillsList"></div>
+    </section>
+
+    <!-- ⑩ 最近（抽屉正文）：最近会话 -->
+    <section class="view" id="v-recent">
+      <div class="sec-title" style="margin-left:2px">最近会话 <span class="muted">点击继续对话</span></div>
+      <div class="card" id="oaRecentList"></div>
+    </section>
+
+    <!-- ⑪ 审批详情：OA 内查看与决策（不跳经典形态的 page-todo-detail） -->
+    <section class="view" id="v-appr"></section>
+
+  </main>
+
+  <nav class="tabbar on" id="oaTabs">
+    <div class="tab on" data-view="home"><svg class="ic"><use href="#i-home"/></svg>首页</div>
+    <div class="tab" data-view="collab"><svg class="ic"><use href="#i-task"/></svg><span class="cnt" id="oaTabCnt" style="display:none">0</span>任务</div>
+    <div class="tab" data-view="kb"><svg class="ic"><use href="#i-book"/></svg>知识库</div>
+    <div class="tab" data-view="org"><svg class="ic"><use href="#i-people"/></svg>部门</div>
+    <div class="tab" data-view="me"><svg class="ic"><use href="#i-user"/></svg>我的</div>
+  </nav>
+
+  <div class="overlay" id="oaOverlay"></div>
+  <aside class="drawer" id="oaDrawer">
+    <div class="dnav">
+      <div class="dnav-item" id="odNewTask"><svg class="ic"><use href="#i-square-plus"/></svg>新工作任务</div>
+      <div class="dnav-item" id="odNewChat"><svg class="ic"><use href="#i-chat"/></svg>新对话</div>
+      <div class="dnav-item" id="odTimers"><svg class="ic"><use href="#i-clock"/></svg>定时任务<span class="n" id="odTimersN"></span></div>
+      <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能<span class="n" id="odSkillsN"></span></div>
+      <div class="dnav-sep"></div>
+      <div class="dnav-label">最近</div>
+    </div>
+    <div class="recent" id="oaDrawerRecent"></div>
+    <div class="drawer-foot">
+      <button class="sheet-cancel" id="odLogout">退出登录</button>
+    </div>
+  </aside>
+
+  <div class="sheet-mask" id="oaSheetMask"></div>
+  <section class="sheet" id="oaSheet">
+    <div class="sheet-grip"></div>
+    <h3>选择对话对象</h3>
+    <p class="sheet-sub">数字员工受职责边界约束；专家提供领域视角</p>
+    <div class="sheet-opts">
+      <button class="sheet-opt" data-target="workers">
+        <span class="oi"><svg class="ic"><use href="#i-bot"/></svg></span>
+        <b>数字员工</b><span id="oaSheetWN">—</span>
+      </button>
+      <button class="sheet-opt" data-target="experts">
+        <span class="oi"><svg class="ic"><use href="#i-target"/></svg></span>
+        <b>专家</b><span id="oaSheetEN">—</span>
+      </button>
+    </div>
+    <button class="sheet-cancel" id="oaSheetCancel">取消</button>
+  </section>
+</div>

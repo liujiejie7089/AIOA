@@ -82,3 +82,35 @@
 - **新增**（预判之外、实施中发现必须补）：审批期间前置条件被破坏时**不得静默跳过删除**
   （`A10/C10` 的 TOCTOU 断言）——申请与批准之间可能隔很久，只信申请那一刻的结论
   会出现「批准的是空对象、删的是有下级的对象」。
+
+## 2026-09-29 新发现（未修，待用户拍板）：审批人「待我审批」把**同一张单显示两遍**
+
+**现象**：以 `wjj_admin`（`ROLE_TENANT_ADMIN`+`ROLE_ORG_ADMIN`，`canApprove=true`）登录，
+用户端「待我审批」里同一张请假单出现 **2 行**（标题完全相同，id 相同）；待办**徽标数也被双计**。
+
+**根因**（已定位到行号）：`user-client/index.html` 的 `loadTodoApprovals()` **无条件合并两条引擎**：
+```js
+if(state.canApprove){ merged.push.apply(merged, tagSource(await API.workflowTodo(), 'workflow')); }
+if(state.isAdmin){    merged.push.apply(merged, tagSource(await API.approvalList('todo'), 'legacy')); }
+return merged;   // ← 无去重
+```
+而请假链路会**同时**在两条引擎登记同一 `orderId`。取证（`scripts/_probe_engine_dupes.py` 一次性探针，
+2026-09-29 实测）：
+- 新单 `orderId=912`（`leaveRequestId=176`，事假，`nodeCount=2`）
+- `API.workflowTodo()` → `[{id:912, st:PENDING}]`
+- `API.approvalList('todo')` → `[{id:912, st:PENDING}]`
+- ⇒ `state.todoApprovals` = `[{id:912,src:'workflow'},{id:912,src:'legacy'}]`（**同 id 两行**）
+
+**影响面**：这是**共用的经典加载器**，**经典形态与 OA 形态都一样**出现双行；
+且 `index.html` L2271 `pendingTasks = asArray(state.todoApprovals).filter(a=>a.status==='PENDING')`
+会把徽标数**双计**（1 张单 → 徽标 2）。决策本身不受影响（点第一行能正常通过，决策后两行一起消失，
+因为两引擎都转终态）。
+
+**为什么不擅自修**：改 `loadTodoApprovals` 会同时改到经典形态，而按本机现状**大部分经典套件不可运行**
+（见 `e2e-suites.md §5.3`），无法证明非回归；且 `admin_v39_todo_badge.py` 等断言依赖待办计数。
+⇒ 记入台账，**等用户决定**（推荐修法：按 `id` 去重，`workflow` 优先、保留 `legacy` 仅当 `id` 不在集合内；
+或改在后端让两条引擎的待办集互斥）。
+
+**复现（两分钟，零额度成本）**：以 `wjj_xu` 调
+`API.leaveSubmit({leaveTypeCode:'CASUAL',startDate:'2026-10-07',endDate:'2026-10-08',reason:'x'})`
+（事假 `quotaDaysPerYear=0` ⇒ **不消耗额度**），再以 `wjj_admin` 看「待我审批」。
