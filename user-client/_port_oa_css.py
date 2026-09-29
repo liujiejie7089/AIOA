@@ -17,6 +17,15 @@ OUT = '_oa_css.txt'
 DROP_EXACT = {':root', '*', 'html', 'body', 'html,body', '.toast'}
 DROP_PREFIX = ('.phone',)
 
+# 已退役的组件：demo 里的「界面版本」分段控件（.seg*）与它的卡片（.switch-*）。
+# 该控件已换成「我的」名字行上的单个「切换布局」按钮（见 _oa_markup.html / 基线 .me-head），
+# 保留这些规则只会产出永不命中的死样式 —— 故在此显式退役，而不是靠人工记得别删。
+# 为何用「精确 + 前缀」两张表：`.seg` 单独出现（精确），以及它带状态/后代时
+# （`.seg button` / `.seg.alt .thumb`，前缀）；`.switch-*` 是整族，直接按前缀丢。
+# 判据：`.oa` 层若重新需要分段控件，把对应项从这里移出并重跑本脚本即可。
+RETIRED_EXACT = {'.seg'}
+RETIRED_PREFIX = ('.seg ', '.seg.', '.seg:', '.seg[', '.switch-')
+
 
 def split_blocks(css):
     """把 CSS 拆成 [(prelude, body, kind)]，kind ∈ {rule, at}。仅处理一层嵌套。"""
@@ -55,6 +64,9 @@ def scope_selector(sel):
         rest = m.group(2).strip()
         return '.oa.%s%s' % (m.group(1), (' ' + rest) if rest else '')
     if sel.startswith(DROP_PREFIX):
+        return None
+    # 退役组件：精确命中 `.seg`，或它带状态/后代时的前缀命中；`.switch-*` 整族前缀命中
+    if sel in RETIRED_EXACT or sel.startswith(RETIRED_PREFIX):
         return None
     return '.oa ' + sel
 
