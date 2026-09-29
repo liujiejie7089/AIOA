@@ -163,3 +163,6 @@ ux-review/admin-audit/*.png
 # ---- 走查基线图与改造后对照图（原图已 base64 内嵌进 用户体验走查报告.html）----
 ux-review/before-fix/
 ux-review/after-fix/
+
+# 图像生成产物（WorkBuddy generated-images 默认目录，素材不入库）
+generated-images/

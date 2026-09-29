@@ -31,7 +31,7 @@ BASE = 'http://127.0.0.1:5181/'
 USER = 'wjj_xu'
 PWD = 'User@123'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_shot_kpi')
-WIDTHS = [(360, 844), (390, 844), (430, 844), (1280, 800)]
+WIDTHS = [(360, 844), (390, 844), (430, 844), (360, 740), (1280, 800)]
 TAIL_D = 'M6.5 0.5 12.5 12.5 0.5 12.5z'   # 对话坞气泡尾巴组件的 path 签名
 INSET = 14                                 # 与 _oa_app.js 的 TAIL_INSET 同值
 
@@ -57,7 +57,8 @@ MEASURE_JS = """() => {
     out.cards[k] = {
       box: [r.left, r.top, r.right, r.bottom],
       w: r.width, h: r.height,
-      d: t ? (t.querySelector('path').getAttribute('d') || '') : null,
+      d: t ? (t.querySelector('path.tf').getAttribute('d') || '') : null,
+      np: t ? t.querySelectorAll('path').length : 0,
       tx: num(cs.getPropertyValue('--tail-x')),
       ty: num(cs.getPropertyValue('--tail-y')),
       ang: num(cs.getPropertyValue('--tail-angle'))
@@ -80,9 +81,11 @@ def verify(width, d):
           % (width, [round(v, 1) for v in d['robot']], A['x'], A['y']))
     for k in ['k1', 'k2', 'k3', 'k4']:
         c = d['cards'][k]
-        # ① 组件同源：path 签名必须与对话坞气泡尾巴完全一致（是复用，不是又画一个）
-        chk('%dpx %s 尾巴是气泡组件本体（path d 与 .bub .tail 一致）' % (width, k),
+        # ① 组件同源：填充 path 的签名必须与对话坞气泡尾巴完全一致（是复用，不是又画一个）；
+        #    另有一条开放 path 只描两条斜边（整周描边会把底边线画进卡片内部）
+        chk('%dpx %s 尾巴是气泡组件本体（填充 path d 与 .bub .tail 一致）' % (width, k),
             c['d'] == TAIL_D, c['d'])
+        chk('%dpx %s 尾巴为双 path（闭合填充 + 开放描边）' % (width, k), c['np'] == 2, c['np'])
         if c['d'] != TAIL_D:
             continue
         # ② 落点：computed --tail-x/y 相对 padding box，补回 1px 边框
@@ -162,37 +165,27 @@ async def main():
         await page.wait_for_timeout(450)
         await page.screenshot(path=os.path.join(OUT, 'check-home-desktop.png'))
 
-        # 数字人上浮到波峰时，卡片不得压到它的像素上（z 序上机器人后绘制，会盖住卡片）
+        # 数字人上浮到波峰时：卡片（含尾巴）必须仍渲染在机器人**之上** ——
+        # 卡片是交互 UI、机器人是装饰插画，重叠时 UI 在上（z-index:2）。
+        # 旧断言「位图与卡片零像素重叠」只在 844 高成立；360×740 等矮视口下
+        # 机器人 bitmap 本就与卡片矩形相交，靠 z 序保证可读性才是正确不变量。
         await page.set_viewport_size({'width': 390, 'height': 844})
         await page.wait_for_timeout(450)
         await page.add_style_tag(content='.oa .r-bob{animation:none !important;'
                                          'transform:translateY(-8px) !important}')
         await page.wait_for_timeout(350)
-        overlap = await page.evaluate("""() => {
-          const img = document.querySelector('.oa .robot-img');
-          const c = document.createElement('canvas');
-          c.width = img.naturalWidth; c.height = img.naturalHeight;
-          const g = c.getContext('2d'); g.drawImage(img, 0, 0);
-          const d = g.getImageData(0, 0, c.width, c.height).data;
-          const ir = img.getBoundingClientRect();      // 含 transform，即波峰位置
-          const sx = c.width / ir.width, sy = c.height / ir.height;
+        above = await page.evaluate("""() => {
           const out = {};
           document.querySelectorAll('.oa .kpi-float').forEach((el, i) => {
             const r = el.getBoundingClientRect();
-            const x0 = Math.max(0, Math.floor((r.left - ir.left) * sx));
-            const x1 = Math.min(c.width - 1, Math.ceil((r.right - ir.left) * sx));
-            const y0 = Math.max(0, Math.floor((r.top - ir.top) * sy));
-            const y1 = Math.min(c.height - 1, Math.ceil((r.bottom - ir.top) * sy));
-            let hit = 0;
-            for (let y = y0; y <= y1; y++) {
-              for (let x = x0; x <= x1; x++) if (d[(y * c.width + x) * 4 + 3] > 12) hit++;
-            }
-            out['k' + (i + 1)] = hit;
+            const hit = document.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
+            out['k' + (i + 1)] = !!(hit && el.contains(hit));
           });
           return out;
         }""")
-        chk('波峰：数字人上浮 8px 时与四张卡零像素重叠',
-            all(v == 0 for v in overlap.values()), overlap)
+        await page.screenshot(path=os.path.join(OUT, 'check-home-peak.png'))
+        chk('波峰：四张卡渲染在机器人之上（elementFromPoint 命中卡片自身）',
+            all(above.values()), above)
 
         chk('console 无 error / 无未捕获异常', not errs, errs[:2])
         await browser.close()
