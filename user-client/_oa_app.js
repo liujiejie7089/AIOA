@@ -31,6 +31,10 @@ var S = {
   leave:null             // 我的请假（日程数据源之一）
 };
 var LS_MODE = 'aioa_mode';
+/* 默认形态：全新访客（以及登出之后）进入新版。
+   只有用户显式点过「切换布局」并留下记忆时，才尊重那份记忆 ——
+   否则「默认展示新版」会被一条陈旧的 localStorage 值悄悄推翻。 */
+var MODE_DEFAULT = 'oa';
 var ROBOT = null;        // 数字人锚点元素
 
 function $o(id){ return document.getElementById(id); }
@@ -77,6 +81,13 @@ function setMode(m){
 
 /* 切换布局：离开新版形态的唯一出口。两个形态的「我的」里各有一个按钮，都指向这里。 */
 function toggleMode(){ setMode(S.mode === 'oa' ? 'classic' : 'oa'); }
+
+/* 登出：回到默认形态并清掉本机记忆 —— 下一个使用者应看到默认（新版），
+   而不是上一个人留在这台机器上的选择。 */
+function resetMode(){
+  S.mode = MODE_DEFAULT;
+  try{ localStorage.removeItem(LS_MODE); }catch(e){}
+}
 
 /* 两个按钮都只是 S.mode 的镜像：不各自持有状态，也不写死「当前是哪个版本」之外的判断。
    title 说明点下去会去哪里 —— 否则在经典形态里看到「切换布局」会误以为会切到经典。 */
@@ -184,6 +195,14 @@ function oaRender(){
   if(S.view === 'log')     renderOaLog();
   if(S.view === 'perm')    renderOaPerm();
   if(S.view === 'feedback') renderOaFeedback();
+
+  /* 回到首页时补一次三角落位。气泡可能是在别的视图里追加的（首页当时 display:none，
+     量到零矩形、oaLayoutTails 直接返回）—— 那批三角就会停在初始态、不再指向数字人。
+     这里先量一次；入场动画重放造成的中间帧偏差由 dockList 的 animationend 兜底。 */
+  if(S.view === 'home'){
+    oaLayoutTails();
+    requestAnimationFrame(oaLayoutTails);
+  }
 }
 
 /* 说明：本文件曾有一个 oaGoClassic(pageId)——切回经典形态并打开某个经典页。
@@ -575,7 +594,7 @@ function renderMe(){
       r.onclick = function(){ oaGo(r.dataset.view); };
     });
     var lo = $o('oaMeLogout');
-    if(lo){ lo.style.cursor = 'pointer'; lo.onclick = function(){ doLogout(); S.mode = 'classic'; }; }
+    if(lo){ lo.style.cursor = 'pointer'; lo.onclick = function(){ doLogout(); resetMode(); }; }
   }
 }
 
@@ -952,6 +971,18 @@ function oaSetChatting(on){
   if(on && $o('oaTag')) $o('oaTag').style.display = 'none';
 }
 
+/* 数字人回应新气泡：一次性点头，把「这条是冲着它说的」表达出来。
+   必须先摘 class 并强制回流 —— 连续两条气泡沿用同一个 class 时动画不会重放。 */
+var nodTimer = null;
+function oaNodRobot(){
+  if(!ROBOT) return;
+  ROBOT.classList.remove('nod');
+  void ROBOT.offsetWidth;
+  ROBOT.classList.add('nod');
+  if(nodTimer) clearTimeout(nodTimer);
+  nodTimer = setTimeout(function(){ if(ROBOT) ROBOT.classList.remove('nod'); }, 520);
+}
+
 function oaPushBub(role, html, opts){
   var list = dockEl(); if(!list) return null;
   opts = opts || {};
@@ -960,6 +991,7 @@ function oaPushBub(role, html, opts){
   el.innerHTML = html + '<svg class="tail" viewBox="0 0 13 13" aria-hidden="true"><path d="M6.5 0.5 12.5 12.5 0.5 12.5z"/></svg>';
   list.appendChild(el);
   oaSetChatting(true);
+  oaNodRobot();
   oaScrollDock();
   requestAnimationFrame(oaLayoutTails);
   return el;
@@ -968,25 +1000,23 @@ function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
 
 /* 气泡三角朝向：全部指向数字人锚点（用户口径「气泡三角都对着数字人」）。
    三角基准为「顶点朝上」，故旋转量 = 方向角 θ + 90°。
-   降级：视口 < 360px 或量不到锚点时，三角恒朝正上方并居中。 */
+   落点 = 从气泡中心朝锚点发射的射线与气泡矩形边的交点（保证三角永远贴在边上）。
+   视口窄也不例外 —— 之前 <360px 时退化成「恒朝正上方」，那就不再指向数字人了。
+   量不到锚点（视图隐藏中、位图未解码）时写成「正上方居中」而不是不写：
+   不写 = 停在 --tail-angle 的初始态 0deg，现象与「退化」相同但更隐蔽。 */
 function oaLayoutTails(){
   var home = $o('v-home');
   if(!home || !home.classList.contains('chatting')) return;
   var anchor = ROBOT || home.querySelector('.robot-wrap');
-  if(!anchor) return;
-  var r = anchor.getBoundingClientRect();
-  if(!r.width || !r.height) return;
-  var A = {x:r.left + r.width/2, y:r.top + r.height/2};
-  var narrow = window.innerWidth < 360;
+  var ar = anchor ? anchor.getBoundingClientRect() : null;
+  var A = (ar && ar.width && ar.height) ? {x:ar.left + ar.width/2, y:ar.top + ar.height/2} : null;
   home.querySelectorAll('.bub').forEach(function(b){
     var tail = b.querySelector('.tail'); if(!tail) return;
     var br = b.getBoundingClientRect();
     if(!br.width || !br.height) return;
     var hw = br.width/2, hh = br.height/2;
-    var px, py, ang;
-    if(narrow){
-      px = hw; py = 0; ang = 0;
-    }else{
+    var px = hw, py = 0, ang = 0;
+    if(A){
       var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
       if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
       var th = Math.atan2(dy, dx);
@@ -994,8 +1024,7 @@ function oaLayoutTails(){
       var tx = Math.abs(ux) < 1e-6 ? Infinity : hw/Math.abs(ux);
       var ty = Math.abs(uy) < 1e-6 ? Infinity : hh/Math.abs(uy);
       var t = Math.min(tx, ty);
-      px = hw + ux*t; py = hh + uy*t;
-      ang = th + Math.PI/2;
+      if(isFinite(t)){ px = hw + ux*t; py = hh + uy*t; ang = th + Math.PI/2; }
     }
     tail.style.setProperty('--tail-x', px.toFixed(2) + 'px');
     tail.style.setProperty('--tail-y', py.toFixed(2) + 'px');
@@ -1271,6 +1300,12 @@ function bind(){
   });
   var dockList = dockEl();
   if(dockList) dockList.addEventListener('scroll', function(){ oaLayoutTails(); });
+  /* 气泡的入场动画 bub-in 会在「首页从 display:none 恢复显示」时整体重放（浏览器行为）。
+     重放期间 getBoundingClientRect 量到的是 translateY(8px) 的中间帧，据此定格的三角
+     会偏约 1.2°（实测）。动画一结束就补量一次 —— 延时不来自这里，就不该在这里猜一个数。 */
+  if(dockList) dockList.addEventListener('animationend', function(e){
+    if(e.target && e.target.classList && e.target.classList.contains('bub')) oaLayoutTails();
+  });
 
   var ov = $o('oaOverlay'); if(ov) ov.onclick = oaCloseDrawer;
   var mask = $o('oaSheetMask'); if(mask) mask.onclick = oaCloseSheet;
@@ -1290,7 +1325,7 @@ function bind(){
   var odS = $o('odSkills');
   if(odS) odS.onclick = function(){ oaCloseDrawer(); oaGo('skills'); };
   var odL = $o('odLogout');
-  if(odL) odL.onclick = function(){ oaCloseDrawer(); doLogout(); S.mode = 'classic'; };
+  if(odL) odL.onclick = function(){ oaCloseDrawer(); doLogout(); resetMode(); };
 
   /* 布局切换按钮：两个形态各一个，类名统一，新增第三个也不会漏绑 */
   document.querySelectorAll('.js-layout-switch').forEach(function(b){
@@ -1410,8 +1445,8 @@ new MutationObserver(function(){
 
 try{
   var saved = localStorage.getItem(LS_MODE);
-  S.mode = (saved === 'oa') ? 'oa' : 'classic';
-}catch(e){ S.mode = 'classic'; }
+  S.mode = (saved === 'classic') ? 'classic' : MODE_DEFAULT;
+}catch(e){ S.mode = MODE_DEFAULT; }
 
 bind();
 applyMode();

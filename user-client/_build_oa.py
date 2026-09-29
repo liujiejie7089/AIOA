@@ -2,8 +2,9 @@
 """把 OA 形态一次性拼入 user-client/index.html（零构建单文件 H5）。
 
 拼入内容
-  ① 22 个缺失的图标 symbol（demo 有、index.html 没有）
-  ② OA 样式层：demo CSS 的作用域化副本 + OA 外壳/对话坞样式
+  ① 23 个缺失的图标 symbol（demo 有、index.html 没有）
+  ② OA 样式层，三段拼接：demo CSS 的作用域化副本（段1）+ OA 外壳/对话坞样式（段2）
+     + 视觉精修层（段3，_oa_polish.css）
   ③ .oa 容器标记（5 个主视图 + 数字员工/专家/定时/技能/最近/审批详情
      + 额度与账单/操作记录/权限申请/投诉与建议 4 个账户内页）
   ④ OA 应用层脚本
@@ -32,11 +33,12 @@ import sys
 HTML = 'index.html'
 CSS_SCOPED = '_oa_css.txt'
 CSS_EXTRA = '_oa_extra.css'
+CSS_POLISH = '_oa_polish.css'
 MARKUP = '_oa_markup.html'
 APPJS = '_oa_app.js'
 ROBOT = 'assets/robot.webp'
 
-# demo 图标精灵中 index.html 缺失的 22 个（同名的不重复添加 —— index.html 的先出现即生效）
+# demo 图标精灵中 index.html 缺失的 23 个（同名的不重复添加 —— index.html 的先出现即生效）
 ADD_SYMBOLS = [
     'i-task', 'i-folder', 'i-cal', 'i-stamp', 'i-book', 'i-people', 'i-note', 'i-qr',
     'i-swap', 'i-info', 'i-grid', 'i-help', 'i-logout', 'i-menu', 'i-back', 'i-search',
@@ -106,8 +108,9 @@ def main():
     # ---- 2. OA 样式层 ----
     scoped = open(CSS_SCOPED, encoding='utf-8').read()
     extra = open(CSS_EXTRA, encoding='utf-8').read()
+    polish = open(CSS_POLISH, encoding='utf-8').read()
     for bad in ('data-page-node-id',):
-        if bad in scoped or bad in extra:
+        if bad in scoped or bad in extra or bad in polish:
             die('样式层含 %r' % bad)
     css_block = (
         '\n<!-- ============================================================================\n'
@@ -116,14 +119,19 @@ def main():
         '     有 29 个同名类（card / tab / tabbar / seg / on / ic …），故每条规则统一前缀\n'
         '     `.oa `，外壳级规则（:root / * / body / .phone / .toast）整体剔除，\n'
         '     避免两套样式互相污染。第 2 段为 OA 外壳与首页对话坞（demo 里没有原地对话）。\n'
+        '     第 3 段为视觉精修层：阴影五级梯子 / 对比度 / 命中区 / 动效；只写覆盖，\n'
+        '     不改前两段，故「本次精修动了什么」可只看 _oa_polish.css 一个文件的 diff。\n'
         '     ============================================================================ -->\n'
         '<style>\n/* ===== 段 1：demo 样式的作用域化移植 ===== */\n'
         + scoped +
         '\n/* ===== 段 2：外壳显隐 + 对话坞 + 锚点气泡 + 部门联系方式 ===== */\n'
-        + extra + '\n</style>\n')
+        + extra +
+        '\n/* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */\n'
+        + polish + '\n</style>\n')
     once(src, '</style>', '样式 </style>')
     src = src.replace('</style>', '</style>' + css_block, 1)
-    print('注入 OA 样式层：%d 字节' % len(css_block))
+    print('注入 OA 样式层：%d 字节（段1 %d + 段2 %d + 段3 %d）'
+          % (len(css_block), len(scoped), len(extra), len(polish)))
 
     # ---- 4. OA 标记 ----
     markup = open(MARKUP, encoding='utf-8').read()

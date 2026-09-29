@@ -1,0 +1,177 @@
+/* ============================================================================
+   段 3：新版（协同工作台）视觉精修层
+   ----------------------------------------------------------------------------
+   本层只写「覆盖」，不改段 1 / 段 2 —— 段 3 在样式表末尾，同权重下后者胜。
+   段 1 是 demo 样式的作用域化移植，段 2 是外壳与对话坞；两者保持原样，
+   因此「本次精修改了什么」可以靠 git diff 单个文件看全。
+
+   四个目标（与用户口径一一对应）：
+     ① 层次分明的阴影 —— 五级梯子，按「层角色」分配，不按手感逐处挑
+     ② 良好的交互体验 —— 对比度全部达 AA；命中区补到 44px；按下/悬停有反馈
+     ③ 流畅的交互动效 —— 视图与列表分级入场、按下回弹；尊重 reduced-motion
+     ④ 三角指向数字人 —— 几何口径修正见 _oa_app.js（本层只负责观感）
+
+   色彩纪律：不引入新色相。--brand-deep / --brand-strong 都是既有青绿
+   #12b39a 的加深变体，只用于「白字填充」与「图标线条」两种既有角色。
+   ============================================================================ */
+
+/* ---- 3.1 令牌：色彩三档 + 阴影五级 + 更快一档动效 ---- */
+.oa{
+  /* 品牌三档：装饰 / 白字填充 / 图标线条。原只有一个 --brand，
+     结果是「白字压浅青绿」（2.64:1）与「图标无深色可选」两个问题同源。 */
+  --brand-deep:#0b7d6c;      /* 填充控件底：白字 5.04:1 */
+  --brand-strong:#0b8574;    /* 图标与线条：白底 4.54:1（图形阈值 3.0:1） */
+
+  /* 文字第三档：原 #98a1b3 在白底 2.60:1、在页底 2.40:1，正文级不可读。
+     全部次要信息（时间、计数、提示、占位符）都吃这一档，故提升为 5.01:1。 */
+  --text-3:#667080;
+
+  /* 阴影五级：每级两层 —— 紧贴接触影（小半径、低透明）+ 大范围环境影。
+     单层模糊只会读成「一圈灰」，两层叠加才读得出「离底面多远」。 */
+  --sh-1:0 1px 2px rgba(20,26,38,.04), 0 1px 1px rgba(20,26,38,.03);
+  --sh-2:0 2px 4px -1px rgba(20,26,38,.05), 0 8px 20px -8px rgba(20,26,38,.12);
+  --sh-3:0 6px 14px -6px rgba(20,26,38,.10), 0 18px 40px -16px rgba(20,26,38,.18);
+  --sh-4:0 28px 64px -20px rgba(20,26,38,.26), 0 8px 20px -12px rgba(20,26,38,.16);
+  /* 覆盖层里的「底部选择卡」：影朝上投，故偏移为负 —— 同一梯级的镜像写法。
+     原来它把两个手写值直接塞在 .oa .sheet 里，梯子之外又多了一个入口。 */
+  --sh-4t:0 -12px 40px -12px rgba(20,26,38,.28), 0 -2px 8px -2px rgba(20,26,38,.08);
+
+  /* 品牌光：同一把梯子换成品牌色光。品牌面浮在品牌光里，
+     而不是原样漂浮在中性灰光或「经典蓝」光里。 */
+  --sh-b2:0 3px 8px -2px rgba(11,125,108,.16), 0 10px 24px -10px rgba(11,125,108,.22);
+  --sh-b3:0 8px 18px -6px rgba(11,125,108,.20), 0 22px 44px -18px rgba(11,125,108,.28);
+
+  /* 动效：比原档更快一点（160/320/640 → 140/260/460），手感更跟手；
+     回弹曲线只用于「按下松手」这一种情形。 */
+  --dur-fast:140ms; --dur:260ms; --dur-slow:460ms;
+  --ease-spring:cubic-bezier(.34,1.56,.64,1);
+  --r-xl:22px;
+}
+
+/* ---- 3.2 层角色 → 阴影梯级（唯一判定处：要改层级只改这一段） ----
+   ① 平铺：不给阴影 —— 行、时间轴节点本就在卡片面上，再加影就是噪声
+   ② 卡片：--sh-1
+   ③ 抬起：--sh-2 —— 仅在悬停（指针设备）与选中态
+   ④ 浮动：--sh-3 —— 脱离文档流的浮层：指标卡、搜索条、输入坞、标签钮
+   ⑤ 覆盖：--sh-4（影朝下/朝侧，如左侧抽屉）；--sh-4t 是它的镜像，供底部选择卡使用
+   品牌面另走品牌光梯子：--sh-b2 / --sh-b3
+   唯一的例外：品牌面上的小控件（.profile 内的切换钮）只给一层接触影 ——
+   它站在渐变面上，套大范围环境影会糊成一团；该影不参与五级梯子。 */
+.oa .lrow, .oa .rank-row, .oa .tl-item, .oa .contact-row{box-shadow:none}
+.oa .card, .oa .task-card, .oa .contact-card, .oa .metric, .oa .hintbar, .oa .kb-tile,
+.oa .rail-item.on{box-shadow:var(--sh-1)}
+.oa .kpi-float, .oa .robot-tag, .oa .searchbar, .oa .composer .box{box-shadow:var(--sh-3)}
+.oa .drawer{box-shadow:var(--sh-4)}
+.oa .sheet{border-radius:var(--r-xl) var(--r-xl) 0 0; box-shadow:var(--sh-4t)}
+.oa .tabbar{box-shadow:0 -1px 2px rgba(20,26,38,.03)}
+/* 品牌面：原来是三处各写各的手写值，其中主按钮压的还是「经典蓝」的影 */
+.oa .profile{box-shadow:var(--sh-b3)}
+.oa .cbtn.send, .oa .tab.fab .icw{box-shadow:var(--sh-b2)}
+.oa .robot-img{filter:drop-shadow(0 22px 30px rgba(11,125,108,.22))}
+.oa #v-home.chatting .robot-wrap{filter:drop-shadow(0 10px 16px rgba(11,125,108,.20))}
+/* ③ 抬起：悬停升一级（只有真有指针的设备才给，触屏上悬停是伪状态） */
+@media (hover:hover) and (pointer:fine){
+  .oa .card:hover, .oa .task-card:hover, .oa .contact-card:hover,
+  .oa .kb-tile:hover, .oa .metric:hover{box-shadow:var(--sh-2)}
+}
+
+/* ---- 3.3 对比度：白字填充改用 --brand-deep；图标/小字改用品牌墨色 ---- */
+.oa .ab-pill, .oa .org-chip.on, .oa .cbtn.send, .oa .tab.fab .icw{background:var(--brand-deep)}
+.oa .org-chip.on{border-color:var(--brand-deep)}
+/* 小号品牌文字（10–13px，达不到「大字号」门槛，需 4.5:1）→ --brand-ink 6.25:1 */
+.oa .sec-title .more, .oa .contact-row .cact-reveal, .oa .rail-item.on,
+.oa .rail-item.on em, .oa .tab.on{color:var(--brand-ink)}
+/* 图标与线条（图形阈值 3.0:1）→ --brand-strong */
+.oa .kb-tile .ic, .oa .recent-item .ri-ico, .oa .dnav-item.on .ic{color:var(--brand-strong)}
+.oa .kpi-float.k1 .k-val{color:var(--brand-strong)}
+/* 两个品牌头部：原渐变最亮端 #12b39a 上白字只有 2.64:1，
+   连 17px/700 的大字号门槛（3.0:1）都过不了。改为深青绿渐变。 */
+.oa .profile, .oa .collab-head{background:linear-gradient(135deg,#0b7d6c,#096355)}
+.oa .profile .pr, .oa .mydata div span{color:rgba(255,255,255,.95)}
+/* 品牌面上的次级动作：由「半透明白底」改为「白底 + 品牌墨字」——
+   半透明白压青绿时对比度约 2:1，且糊成一团；实心白片读作独立一层。 */
+.oa .layout-btn, .oa .collab-head .newtask{
+  background:#fff; color:var(--brand-ink); border-color:rgba(255,255,255,.9);
+  box-shadow:0 1px 2px rgba(9,99,85,.18);
+}
+.oa .layout-btn:hover, .oa .collab-head .newtask:hover{background:#f2fbf9}
+.oa .layout-btn:active, .oa .collab-head .newtask:active{background:#e6f7f3}
+/* 计数小片压 --surface-3 时未达 4.5:1，换到更浅的 --surface-2 */
+.oa .dnav-item .n{background:var(--surface-2)}
+
+/* ---- 3.4 字体层级：主标题与正文拉开到 2.5× 以上 ---- */
+.oa .assist h1{font-size:clamp(27px, 7.8vw, 32px); letter-spacing:-.025em}
+.oa #v-home.chatting .assist h1{font-size:clamp(20px, 5.6vw, 22px)}
+.oa .sec-title{font-size:15px}
+.oa .sec-title .more{font-size:12px}
+.oa .lrow .t1, .oa .rank-row .n{font-size:13.5px}
+.oa .bub{font-size:13.5px}
+.oa .empty{font-size:12.5px}
+.oa .bub.ans p, .oa .hintbar b, .oa .empty div, .oa .muted{text-wrap:pretty}
+
+/* ---- 3.5 命中区：可视尺寸基本不变，可点区域补到 44px ----
+   口径：外壳与主操作（顶栏按钮、底部导航、发送、组织 chip、行内操作钮）一律 ≥44px；
+   正文里的行内文字链（如「显示」联系方式、资料卡上的布局按钮）保持原尺寸不膨胀，
+   否则会把正文行高撑开 —— 它们属于 WCAG 2.5.8 的 24px 档，不是 44px 档。 */
+.oa .cbtn, .oa .cbtn.send{width:44px; height:44px}
+.oa .ab-pill{height:44px}
+.oa .org-chip{height:44px}
+.oa .icon-act{height:44px}
+.oa .pillgroup{height:44px}
+.oa .rail-item{min-height:60px}
+/* 品牌头部的主操作也补到 44：同时把上下内边距收一收，带子才不会白长高 */
+.oa .collab-head{padding:8px 16px calc(8px + 4px)}
+.oa .collab-head .newtask{height:44px}
+.oa .contact-row .cact-reveal{padding:6px 4px; margin-left:3px}
+
+/* ---- 3.6 交互反馈：按下回弹 + 悬停/聚焦升层 ---- */
+.oa .rail-item, .oa .kb-tile, .oa .org-chip, .oa .icon-act, .oa .dnav-item,
+.oa .sheet-opt, .oa .recent-item, .oa .cbtn, .oa .ab-btn, .oa .robot-tag,
+.oa .layout-btn, .oa .ab-pill, .oa .sheet-cancel, .oa .collab-head .newtask,
+.oa .sec-title .more, .oa .contact-row .cact-reveal, .oa .tab .ic, .oa .ab-pill .ic,
+.oa .searchbar, .oa .composer .box{
+  transition:transform var(--dur-fast) var(--ease-spring),
+             background var(--dur-fast) var(--ease),
+             box-shadow var(--dur-fast) var(--ease),
+             border-color var(--dur-fast) var(--ease),
+             color var(--dur-fast) var(--ease);
+}
+.oa .rail-item:active, .oa .kb-tile:active, .oa .org-chip:active, .oa .icon-act:active,
+.oa .dnav-item:active, .oa .sheet-opt:active, .oa .ab-btn:active, .oa .cbtn:active,
+.oa .robot-tag:active, .oa .layout-btn:active, .oa .ab-pill:active,
+.oa .sheet-cancel:active, .oa .collab-head .newtask:active{transform:scale(.96)}
+.oa .tab:active .ic{transform:scale(.9)}
+/* 输入态：容器抬到浮动层并给一圈品牌柔光，键盘焦点落在哪一目了然 */
+.oa .searchbar:focus-within, .oa .composer .box:focus-within{
+  border-color:var(--brand-line);
+  box-shadow:var(--sh-2), 0 0 0 3px var(--brand-soft);
+}
+
+/* ---- 3.7 动效：视图淡入、列表分级入场、数字人回应 ---- */
+@keyframes oa-view-in{from{opacity:0} to{opacity:1}}
+@keyframes oa-item-in{from{opacity:0; transform:translateY(7px)} to{opacity:1; transform:none}}
+@keyframes oa-nod{
+  0%{transform:rotate(0)} 28%{transform:rotate(-3.4deg)}
+  62%{transform:rotate(2.6deg)} 100%{transform:rotate(0)}
+}
+@media (prefers-reduced-motion: no-preference){
+  .oa .view.on{animation:oa-view-in var(--dur) var(--ease) both}
+  /* 首页不做「逐子元素上浮」。数字人是整屏的稳定锚点，让它跟着一起上浮既不合语义，
+     也会让「三角指向锚点」被量成入场动画的中间帧 —— 各子元素延迟不同，偏差不抵消，
+     实测偏 1.2°（E4）。首页整体淡入即可；分级入场只留给列表页。 */
+  .oa #v-home.on > *{animation:none}
+  /* 卡片内的行按序入场：延迟封顶在第 5 项后，长列表不会一直「刷」下去 */
+  .oa .card > *, .oa .contact-card > *{animation:oa-item-in 240ms var(--ease) both}
+  .oa .card > *:nth-child(2), .oa .contact-card > *:nth-child(2){animation-delay:35ms}
+  .oa .card > *:nth-child(3), .oa .contact-card > *:nth-child(3){animation-delay:70ms}
+  .oa .card > *:nth-child(4), .oa .contact-card > *:nth-child(4){animation-delay:105ms}
+  .oa .card > *:nth-child(5), .oa .contact-card > *:nth-child(5){animation-delay:140ms}
+  .oa .card > *:nth-child(n+6), .oa .contact-card > *:nth-child(n+6){animation-delay:170ms}
+  /* 数字人回应新气泡：一次性点头，说明「这条是冲着它说的」 */
+  .oa #v-home.chatting .robot-wrap.nod{animation:oa-nod 460ms var(--ease) 1}
+}
+@media (prefers-reduced-motion: reduce){
+  .oa .view.on, .oa .card > *, .oa .contact-card > *,
+  .oa #v-home.chatting .robot-wrap.nod{animation:none}
+  .oa *{scroll-behavior:auto}
+}

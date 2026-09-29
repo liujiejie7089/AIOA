@@ -102,9 +102,38 @@ async def main():
         chk('登录成功（%s）' % USER, True)
         await page.wait_for_timeout(2500)
 
-        # ---------------- A. 经典形态回归 ----------------
-        om = await page.evaluate("() => document.querySelector('.phone').classList.contains('oa-mode')")
-        chk('A1 登录后默认经典形态（无 oa-mode）', om is False, 'oa-mode=%s' % om)
+        # ---------------- A. 默认形态 + 经典形态回归 ----------------
+        # A0 全新访客默认进入新版（本轮口径翻转：原为「默认经典」）。
+        #    判据必须是「默认」本身，故先确认本上下文没有 aioa_mode 记忆 ——
+        #    否则测到的是「记忆」而不是「默认」，换个浏览器就是另一个结果。
+        fresh = await page.evaluate("""() => ({
+          om: document.querySelector('.phone').classList.contains('oa-mode'),
+          mode: state.mode,
+          ls: localStorage.getItem('aioa_mode'),
+          oaTabbar: getComputedStyle(document.getElementById('oaTabs')).display,
+          classicPages: getComputedStyle(document.querySelector('.pages')).display
+        })""")
+        chk('A0 全新访客默认进入新版（oa-mode / mode=oa / 无记忆 / 经典层隐藏）',
+            fresh['om'] is True and fresh['mode'] == 'oa' and fresh['ls'] is None
+            and fresh['oaTabbar'] != 'none' and fresh['classicPages'] == 'none', fresh)
+        await shot(page, '01-oa-default-home')
+
+        # A1 新版「我的」的镜像按钮可切到经典 —— 切过去是为了跑下面的经典回归；
+        #    这一步同时也覆盖了「新版里那个按钮真的能出去」。
+        await page.click('#oaTabs .tab[data-view="me"]')
+        await page.wait_for_timeout(600)
+        await page.click('#oaMeSwitch')
+        await page.wait_for_timeout(900)
+        sw = await page.evaluate("""() => ({
+          om: document.querySelector('.phone').classList.contains('oa-mode'),
+          mode: state.mode,
+          ls: localStorage.getItem('aioa_mode'),
+          classicTabbar: getComputedStyle(document.querySelector('.phone > .tabbar')).display,
+          oaRoot: getComputedStyle(document.getElementById('oaRoot')).display })""")
+        chk('A1 新版「我的」按钮切到经典形态（并写入记忆）',
+            sw['om'] is False and sw['mode'] == 'classic' and sw['ls'] == 'classic'
+            and sw['classicTabbar'] != 'none' and sw['oaRoot'] == 'none', sw)
+
         for pid, label in [('page-home', '工作台'), ('page-todo', '待办'),
                            ('page-chat', '会话'), ('page-agent', '专家与员工')]:
             await page.evaluate("(p) => switchTabById(p)", pid)
@@ -161,15 +190,24 @@ async def main():
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
           mode: state.mode,
           ls: localStorage.getItem('aioa_mode'),
-          oaTabbar: !!document.querySelector('#oaTabs') && getComputedStyle(document.querySelector('#oaTabs')).display !== 'none',
+          /* #oaTabs 自身的 computed display 恒为 flex —— oa-mode 之外是由祖先
+             .oa 整体 display:none 收起的。所以「可见」只能问 .oa 容器本身，
+             问 #oaTabs 得到的是恒真值（原 B2 就是这样一条假断言）。 */
+          oaRoot: getComputedStyle(document.getElementById('oaRoot')).display,
           classicTabbar: getComputedStyle(document.querySelector('.phone > .tabbar')).display,
           pages: getComputedStyle(document.querySelector('.pages')).display
         })""")
         chk('B1 切到 OA：.phone.oa-mode 生效', st['oa'] is True, st)
-        chk('B2 OA 底部菜单可见、经典底部菜单隐藏', st['oaTabbar'] and st['classicTabbar'] == 'none', st)
+        chk('B2 OA 外壳可见、经典底部菜单隐藏', st['oaRoot'] != 'none' and st['classicTabbar'] == 'none', st)
         chk('B3 经典页面层隐藏', st['pages'] == 'none', st)
         chk('B4 模式写入本地记忆', st['ls'] == 'oa', 'aioa_mode=%s' % st['ls'])
         await shot(page, '02-oa-home')
+
+        # 显式回到 OA 首页：本轮是从新版「我的」切出去再切回来的，S.view 还停在 me。
+        # 不点回首页，下面 C1/C2 读到的是「上一次渲染留在 DOM 里的旧值」——
+        # 看着是绿的，实际测的是缓存，这类假绿比失败更危险。
+        await page.click('#oaTabs .tab[data-view="home"]')
+        await page.wait_for_timeout(900)
 
         # C. 首页数据
         home = await page.evaluate("""() => ({
@@ -252,6 +290,42 @@ async def main():
                   return out;
                 }""")
                 chk('E2 三角落位在气泡边框上', all(on_edge), on_edge)
+
+            # E4 切走再切回首页：气泡若是在别的视图里追加的（首页当时 display:none，
+            #    量到零矩形），回到首页必须重新落位 —— 否则那批三角停在初始态 0deg。
+            await page.click('#oaTabs .tab[data-view="kb"]')
+            await page.wait_for_timeout(700)
+            await page.click('#oaTabs .tab[data-view="home"]')
+            await page.wait_for_timeout(900)
+            geo2 = await tail_geometry(page)
+            if geo2.get('skip'):
+                chk('E4 切回首页后三角几何可测', False, geo2['skip'])
+            else:
+                items2 = geo2['items']
+                worst2 = max((i['err'] for i in items2), default=999)
+                chk('E4 切走再切回首页后三角仍指向数字人（误差 < 1°，共 %d 个）' % len(items2),
+                    bool(items2) and worst2 < 1.0,
+                    '最大误差 %s°' % worst2)
+
+            # E5 窄视口 320px：原实现在 <360px 时退化成「恒朝正上方」，
+            #    那就不再指向数字人了 —— 这里正是为「指向」这一条补的边界断言。
+            await page.set_viewport_size({'width': 320, 'height': 844})
+            await page.wait_for_timeout(700)
+            await page.evaluate("() => window.oaLayoutTails()")
+            await page.wait_for_timeout(250)
+            geo3 = await tail_geometry(page)
+            if geo3.get('skip'):
+                chk('E5 窄视口下三角几何可测', False, geo3['skip'])
+            else:
+                items3 = geo3['items']
+                worst3 = max((i['err'] for i in items3), default=999)
+                chk('E5 窄视口 320px 下三角仍指向数字人（误差 < 1°，共 %d 个）' % len(items3),
+                    bool(items3) and worst3 < 1.0,
+                    '最大误差 %s°' % worst3)
+            await shot(page, '06b-oa-narrow-320')
+            await page.set_viewport_size({'width': 390, 'height': 844})
+            await page.wait_for_timeout(700)
+            await page.evaluate("() => window.oaLayoutTails()")
 
         await page.evaluate("() => window.oaSetMode && window.oaSetMode('oa')")
         await page.wait_for_timeout(400)
