@@ -707,6 +707,8 @@
   .me-head{display:flex;align-items:center;gap:12px}
   .me-head .avatar{width:52px;height:52px;border-radius:15px}
   .me-head .avatar .ic{width:26px;height:26px}
+  /* 布局切换按钮钉在名字最右侧；唯一状态是 S.mode（OA 应用层） */
+  .me-head .js-layout-switch{margin-left:auto;flex-shrink:0;white-space:nowrap}
   .quota-big{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:24px;font-weight:700;color:var(--blue-dark);letter-spacing:-.02em}
 
   /* ---------- 11. 登录门 ---------- */
@@ -1005,6 +1007,9 @@
           <div style="font-weight:700;font-size:15.5px" id="meName" data-page-node-id="MSOqDVyry7FZhNNm6Jfw8G">—</div>
           <div class="muted" id="meRole" data-page-node-id="HYA9HBnEGelSepgoNLeu1q">企业成员身份</div>
         </div>
+        <!-- 布局切换（唯一出口）：S.mode 是唯一状态，这里只是它的一个按钮镜像。
+             OA 层（_oa_app.js）统一绑定 .js-layout-switch，两侧文案由它同步。 -->
+        <button type="button" class="btn ghost small js-layout-switch" id="classicMeSwitch">切换布局</button>
       </div>
 
       <!-- V36：我的数据统计 —— 全部为库表实时计数（GET /api/v1/stats/me），不写死、不 mock -->
@@ -2106,38 +2111,53 @@ async function uploadKb(){
   try{ await API.kbUpload(name, 'doc', 0); toast('已登记，进入解析队列'); state.kbDocs = await API.kbDocs() || []; renderKb(); }
   catch(e){ toast('登记失败：'+e.message); }
 }
+/* 账本口径（纯函数，唯一入口）：OA 形态的「额度与账单」页与本页读同一份推导，
+   避免两套界面各自解释同一条流水（历史缺陷类型：判定与展示各写一遍后悄悄分叉）。
+   账本字段：total_tokens 兼容 totalTokens / prompt+completion 求和。 */
+function billTokens(b){
+  if(!b) return 0;
+  if(b.totalTokens != null) return b.totalTokens;
+  if(b.total_tokens != null) return b.total_tokens;
+  return (b.promptTokens||0) + (b.completionTokens||0);
+}
+function billSourceLabel(b){
+  b = b || {};
+  return b.bizTitle || b.expertName || b.appName || b.bizType || 'AI 服务';
+}
 function renderBill(){
   const box = $('billList');
   const list = state.bill||[];
   if(!list.length){ box.innerHTML = emptyBox('本月还没有用量记录'); return; }
   box.innerHTML = list.slice(0,20).map(b=>{
     const t = (b.createdAt||'').replace('T',' ').slice(0,16);
-    const who = b.bizTitle || b.expertName || b.appName || b.bizType || 'AI 服务';
-    // 账本字段：total_tokens 兼容 totalTokens / prompt+completion 求和
-    const tk = b.totalTokens != null ? b.totalTokens
-      : (b.total_tokens != null ? b.total_tokens : ((b.promptTokens||0)+(b.completionTokens||0)));
-    return '<div class="row"><span>'+esc(t)+' · '+esc(who)+'</span><span class="hl num">+'+fmt(tk)+' 词元</span></div>';
+    return '<div class="row"><span>'+esc(t)+' · '+esc(billSourceLabel(b))+'</span>'+
+      '<span class="hl num">+'+fmt(billTokens(b))+' 词元</span></div>';
   }).join('') + '<div class="muted" style="margin-top:8px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>';
 }
 function exportBill(){
   const rows = [['时间','来源','词元']];
   (state.bill||[]).forEach(b=>rows.push([(b.createdAt||'').replace('T',' ').slice(0,19),
-    b.bizTitle||b.bizType||'AI 服务',
-    b.totalTokens != null ? b.totalTokens : ((b.promptTokens||0)+(b.completionTokens||0))]));
+    billSourceLabel(b), billTokens(b)]));
   const csv = '\uFEFF' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download = 'AIOA用量账单.csv'; a.click();
   toast('账单明细已导出');
 }
+/* 操作留痕口径（纯函数，唯一入口）：OA 形态的「我的操作记录」与本页同源。
+   判定「成功」的三态：status 为 ok / SUCCESS / 缺失（旧记录无该字段）。 */
+function logIsOk(l){
+  return !!l && (l.status === 'ok' || l.status === 'SUCCESS' || l.status == null);
+}
+function logActionText(l){ l = l || {}; return l.action || l.type || '操作'; }
+function logStatusLabel(l){ l = l || {}; return l.label || (logIsOk(l) ? '成功' : '失败'); }
 function renderLog(){
   const box = $('logList');
   const list = state.log||[];
   if(!list.length){ box.innerHTML = emptyBox('暂无操作记录'); return; }
   box.innerHTML = list.slice(0,20).map(l=>{
-    const okd = (l.status === 'ok' || l.status === 'SUCCESS' || l.status == null);
-    return '<div class="row"><span>'+esc((l.createdAt||'').replace('T',' ').slice(0,16))+' '+esc(l.action||l.type||'操作')+'</span>'+
-      '<span class="badge '+(okd?'ok':'danger')+'">'+esc(l.label || (okd?'成功':'失败'))+'</span></div>';
+    return '<div class="row"><span>'+esc((l.createdAt||'').replace('T',' ').slice(0,16))+' '+esc(logActionText(l))+'</span>'+
+      '<span class="badge '+(logIsOk(l)?'ok':'danger')+'">'+esc(logStatusLabel(l))+'</span></div>';
   }).join('');
 }
 function renderPackages(){
@@ -3403,6 +3423,16 @@ function onFbInput(){
   if(el && cnt) cnt.textContent = el.value.length + ' / 2000';
 }
 
+/* 提交结果如实转述：delivered=false 表示已记录但逐级上溯后无人可派（不是提交失败）。
+   两形态共用同一份措辞 —— 否则会出现「新版说已送达、老版说无人可派」这种同事实两口径。 */
+function fbSubmitToast(r){
+  if(r && r.delivered){
+    toast('已提交，' + (r.assigneeScopeLabel || '管理员')
+      + (r.assigneeName ? '（' + r.assigneeName + '）' : '') + ' 会收到通知');
+  }else{
+    toast((r && r.deliveryNote) || '已记录，暂无可派管理员');
+  }
+}
 async function submitFeedback(){
   const el = $('fbContent');
   const content = ((el && el.value) || '').trim();
@@ -3416,12 +3446,7 @@ async function submitFeedback(){
       contact: ((($('fbContact')||{}).value) || '').trim() || null,
       anonymous: !!((($('fbAnonymous')||{}).checked))
     });
-    // 送达情况如实转述：delivered=false 表示已记录但逐级上溯后无人可派（不是提交失败）
-    if(r && r.delivered){
-      toast('已提交，' + (r.assigneeScopeLabel || '管理员') + (r.assigneeName ? '（' + r.assigneeName + '）' : '') + ' 会收到通知');
-    }else{
-      toast((r && r.deliveryNote) || '已记录，暂无可派管理员');
-    }
+    fbSubmitToast(r);
     el.value = ''; onFbInput();
     const c = $('fbContact'); if(c) c.value = '';
     const a = $('fbAnonymous'); if(a) a.checked = false;
@@ -3445,10 +3470,13 @@ function renderFeedback(){
   renderFbInbox();
 }
 
-function renderFbRoute(){
-  const el = $('fbRouteHint');
-  if(!el) return;
-  const inboxPending = (state.fbInbox && typeof state.fbInbox.pending === 'number') ? state.fbInbox.pending : 0;
+/* 反馈路由说明（纯函数，唯一入口）：文案由后端返回的 scope/层级字段推导，不写死。
+   OA 形态的「投诉与建议」页与本页同源引用 —— 组织调整后两边同时改口，不会一边对一边错。 */
+function fbInboxPending(){
+  return (state.fbInbox && typeof state.fbInbox.pending === 'number') ? state.fbInbox.pending : 0;
+}
+function fbRouteLine(){
+  const inboxPending = fbInboxPending();
   const mine = (state.fbMine && asArray(state.fbMine.items)) || [];
   let line;
   if(mine.length){
@@ -3465,13 +3493,23 @@ function renderFbRoute(){
   if(inboxPending > 0){
     line += '<br><b>你名下有 ' + inboxPending + ' 条待处理反馈</b>，见下方「收到的建议」。';
   }
-  el.innerHTML = line;
+  return line;
+}
+function renderFbRoute(){
+  const el = $('fbRouteHint');
+  if(!el) return;
+  el.innerHTML = fbRouteLine();
+  const inboxPending = fbInboxPending();
   const hint = $('fbEntryHint');
   if(hint) hint.textContent = inboxPending > 0 ? ('待处理 ' + inboxPending + ' ›') : '›';
 }
 
-/** 单条反馈卡片。forInbox=true 时按「接收人视角」渲染：给回复框、显示联系方式。 */
-function fbItemHtml(f, forInbox){
+/** 单条反馈卡片。forInbox=true 时按「接收人视角」渲染：给回复框、显示联系方式。
+ *  idPrefix：两个形态的「投诉与建议」会同时在 DOM 里（一个隐藏），旧的固定 id
+ *  会撞成同名 id，而 $() 永远返回前一个 —— 表现为「在新版里回复，报『请先填写答复内容』」。
+ *  故 id 带前缀，回复按钮改为按 DOM 邻近查找，不再依赖全局 id。 */
+function fbItemHtml(f, forInbox, idPrefix){
+  const px = idPrefix || 'fb';
   const h = [];
   h.push('<div class="fb-item">');
   h.push('<div class="fb-head">'
@@ -3492,9 +3530,9 @@ function fbItemHtml(f, forInbox){
     // 已关闭的不给回复框（后端也会拒绝，这里只是不让用户白点）
     if(f.status !== 'CLOSED'){
       h.push('<div class="fb-reply-box">'
-        + '<input class="fb-input" id="fbReply'+f.id+'" maxlength="2000" '
+        + '<input class="fb-input" id="'+px+'Reply'+f.id+'" maxlength="2000" '
         + 'placeholder="写下你的答复，提交人会收到站内通知">'
-        + '<button class="btn small" onclick="replyFeedback('+f.id+')">回复</button></div>');
+        + '<button class="btn small" onclick="replyFeedback('+f.id+', this)">回复</button></div>');
     }
   }
   h.push('</div>');
@@ -3529,8 +3567,10 @@ function renderFbInbox(){
   }
 }
 
-async function replyFeedback(id){
-  const el = $('fbReply'+id);
+/* btn：回复按钮自身（内联 onclick 传入）。优先按 DOM 邻近取输入框，兼容两形态并存 */
+async function replyFeedback(id, btn){
+  const box = (btn && btn.closest) ? btn.closest('.fb-reply-box') : null;
+  const el = (box && box.querySelector('.fb-input')) || $('fbReply'+id);
   const content = ((el && el.value) || '').trim();
   if(!content){ toast('请先填写答复内容'); return; }
   try{
@@ -3874,12 +3914,19 @@ function renderMe(){
   if(state.quotaInfo) applyQuota(state.quotaInfo);
   updateQuotaUI();
 }
-function updateQuotaUI(){
+/* 额度口径（纯函数，唯一入口）：OA 形态的「额度与账单」页与本页读同一份推导。
+   usedPct 用「已用比例」，与下方告警阈值 85% 同源。 */
+function quotaNumbers(){
   const total = Math.max(0, (state.quota||0) + (state.free||0));
   const left = Math.max(0, state.left != null ? state.left : (total - (state.used||0)));
-  $('quotaNum').textContent = fmt(left);
-  $('quotaTotal').textContent = fmt(total);
-  const pct = total > 0 ? Math.min(100, Math.round((total - left) / total * 100)) : 0;
+  const usedPct = total > 0 ? Math.min(100, Math.round((total - left) / total * 100)) : 0;
+  return {total: total, left: left, usedPct: usedPct};
+}
+function updateQuotaUI(){
+  const q = quotaNumbers();
+  $('quotaNum').textContent = fmt(q.left);
+  $('quotaTotal').textContent = fmt(q.total);
+  const pct = q.usedPct;
   const bar = $('quotaBar');
   bar.querySelector('i').style.width = pct + '%';
   bar.classList.toggle('low', pct > 80);

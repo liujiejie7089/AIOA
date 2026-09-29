@@ -100,28 +100,20 @@
       <div id="oaOrgList"></div>
     </section>
 
-    <!-- ⑤ 我的（含「界面版本」切换） -->
+    <!-- ⑤ 我的 -->
     <section class="view" id="v-me">
       <div class="profile">
         <div class="row1">
           <div class="pava" id="oaMeAva">·</div>
-          <div>
+          <div class="pinfo">
             <div class="pn" id="oaMeName">—</div>
             <div class="pr" id="oaMeRole">—</div>
           </div>
+          <!-- 布局切换（离开新版形态的唯一出口）：钉在名字最右侧。
+               两个形态的「我的」各有一个镜像按钮，都只改 S.mode 这一个状态。 -->
+          <button type="button" class="layout-btn js-layout-switch" id="oaMeSwitch">切换布局</button>
         </div>
         <div class="mydata" id="oaMeData"></div>
-      </div>
-
-      <div class="switch-card">
-        <div class="switch-head"><svg class="ic"><use href="#i-swap"/></svg><b>界面版本</b></div>
-        <div class="switch-desc">在「协同工作台」与「经典工作台」之间切换，底部菜单与首页会同步变化。</div>
-        <div class="seg" id="oaSeg">
-          <div class="thumb"></div>
-          <button class="on" data-mode="oa">新版 · 协同</button>
-          <button data-mode="classic">原版 · 经典</button>
-        </div>
-        <div class="switch-note"><svg class="ic"><use href="#i-info"/></svg>经典工作台保留既有工作台/待办/会话形态，功能完全一致。</div>
       </div>
 
       <div class="sec-title" style="margin-left:2px">账户</div>
@@ -156,6 +148,61 @@
     <section class="view" id="v-recent">
       <div class="sec-title" style="margin-left:2px">最近会话 <span class="muted">点击继续对话</span></div>
       <div class="card" id="oaRecentList"></div>
+    </section>
+
+    <!-- ⑫ 额度与账单：OA 内查看（原先会跳经典形态的 page-bill） -->
+    <section class="view" id="v-bill">
+      <div class="card" id="oaBillQuota"></div>
+      <div class="sec-title" style="margin-left:2px">用量流水 <span class="muted" id="oaBillCnt"></span></div>
+      <div class="card" id="oaBillList"></div>
+      <button type="button" class="btn ghost small" id="oaBillExport">导出明细</button>
+    </section>
+
+    <!-- ⑬ 我的操作记录：OA 内查看（原先会跳经典形态的 page-log） -->
+    <section class="view" id="v-log">
+      <div class="sec-title" style="margin-left:2px">操作留痕 <span class="muted" id="oaLogCnt"></span></div>
+      <div class="card" id="oaLogList"></div>
+      <div class="muted" style="margin:0 2px">记录不可篡改，保存 ≥ 3 年</div>
+    </section>
+
+    <!-- ⑭ 权限申请：OA 内申请与查看（原先会跳经典形态的 page-perm）。
+         申请 / 回收一律调用经典形态的 applyPermission / revokePermission ——
+         表单口径（含「以部门名义申请」的主体字段）只在那一个函数里判定，这里不复制。 -->
+    <section class="view" id="v-perm">
+      <div class="card">
+        <div class="muted" style="line-height:1.75">部分数字员工类型需额外权限（如「请假审批」需
+          <b>approval:leave</b>）。提交后逐级上报（部门负责人 → 企业管理员 → 租户管理员，从你的上一级起），
+          通过后立即生效、无需重新登录。</div>
+      </div>
+      <div class="sec-title" style="margin-left:2px">可申请权限</div>
+      <div class="card" id="oaPermCatalog"></div>
+      <div class="sec-title" style="margin-left:2px">我已持有的权限</div>
+      <div class="card" id="oaPermHold"></div>
+      <div class="sec-title" style="margin-left:2px">我的申请</div>
+      <div class="card" id="oaPermMine"></div>
+    </section>
+
+    <!-- ⑮ 投诉与建议：OA 内提交与查看答复（原先会跳经典形态的 page-feedback）。
+         条目沿用经典形态的 fbItemHtml（同一份条目渲染口径，含答复与回复框）。 -->
+    <section class="view" id="v-feedback">
+      <div class="card"><div class="muted" id="oaFbRoute" style="line-height:1.75">正在读取你的组织归属…</div></div>
+      <div class="card">
+        <div class="sec-title" style="margin-top:0">我要反馈</div>
+        <div class="fb-cats" id="oaFbCats"></div>
+        <textarea class="fb-input" id="oaFbContent" rows="4" maxlength="2000"
+                  placeholder="请描述你遇到的问题或建议（最多 2000 字）"></textarea>
+        <input class="fb-input" id="oaFbContact" type="text" maxlength="128"
+               placeholder="联系方式（可选，便于线下回复）">
+        <label class="fb-anon"><input type="checkbox" id="oaFbAnonymous"> 对上级匿名（你自己仍能看到记录与答复）</label>
+        <div style="display:flex;gap:8px;margin-top:11px;align-items:center">
+          <button type="button" class="btn small" id="oaFbSubmit">提交</button>
+          <span class="muted" id="oaFbCount">0 / 2000</span>
+        </div>
+      </div>
+      <div class="sec-title" style="margin-left:2px">收到的建议 <span class="muted" id="oaFbInboxCnt"></span></div>
+      <div class="card" id="oaFbInbox"></div>
+      <div class="sec-title" style="margin-left:2px">我的提交 <span class="muted" id="oaFbMineCnt"></span></div>
+      <div class="card" id="oaFbMine"></div>
     </section>
 
     <!-- ⑪ 审批详情：OA 内查看与决策（不跳经典形态的 page-todo-detail） -->

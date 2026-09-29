@@ -3,8 +3,10 @@
 
 覆盖：
   A 经典形态回归      —— 登录后五个 Tab 逐个走查，console 无错、无横向溢出
-  B 双形态切换        —— 经典「我的」→ 新版；OA「我的」→ 回经典；刷新后记忆
+  B 双形态切换        —— 经典「我的」单按钮 → 新版；OA「我的」单按钮 → 回经典；刷新后记忆
   C OA 五个主视图     —— 首页 / 任务 / 知识库 / 部门 / 我的
+     C9 账户四内页    —— 额度与账单 / 操作记录 / 权限申请 / 投诉与建议：全部留在新版内，
+                        判据查「逃逸后果」（oa-mode / mode / localStorage）而非某经典页有无 .active
   D 数字人链路        —— 点击 → 选择卡 → 数字员工清单 → 原地对话坞（不跳转）
   E 气泡三角几何      —— 逐气泡比对「计算方向角 θ+90°」与「实际 --tail-angle」，误差 < 1°
   F 抽屉与子页        —— 抽屉、定时任务、插件-技能、最近会话
@@ -112,12 +114,48 @@ async def main():
             await no_overflow(page, '经典·' + label)
         await page.evaluate("() => switchTabById('page-me')")
         await page.wait_for_timeout(600)
-        has_seg = await page.is_visible('#classicSeg')
-        chk('A3 经典「我的」含界面版本切换控件', has_seg)
+        # 经典「我的」的布局切换：单个按钮，钉在名字最右侧；原「界面版本」分段控件已移除
+        cme = await page.evaluate("""() => {
+          const b = document.getElementById('classicMeSwitch');
+          const n = document.getElementById('meName');
+          const seg = document.querySelector('#classicSeg');
+          if(!b || !n) return {ok:false, why:'按钮或名字缺失'};
+          const rb = b.getBoundingClientRect(), rn = n.getBoundingClientRect();
+          return {ok:true, text: b.textContent.trim(),
+                  rightOfName: rb.left > rn.right - 1,
+                  sameRow: rb.top < rn.bottom && rb.bottom > rn.top,
+                  segGone: seg === null,
+                  btnRight: Math.round(rb.right), nameRight: Math.round(rn.right),
+                  vw: document.documentElement.clientWidth};
+        }""")
+        chk('A3 经典「我的」布局控件=名字最右侧单个按钮',
+            cme.get('ok') and cme['text'] == '切换布局' and cme['rightOfName']
+            and cme['sameRow'] and cme['segGone'], cme)
         await shot(page, '01-classic-me-with-switch')
 
+        # A4-A6 经典形态回归：本轮把账单/留痕/额度的口径抽成了共享纯函数
+        # （billTokens / logIsOk / quotaNumbers / fbRouteLine），被抽走的实现若漏接线，
+        # 现象是经典页静默变空白 —— 这里按「容器已渲染」判定，不依赖是否真有数据。
+        cl = await page.evaluate("""() => ({
+          meName: (document.getElementById('meName')||{}).textContent,
+          meRole: (document.getElementById('meRole')||{}).textContent,
+          quotaNum: (document.getElementById('quotaNum')||{}).textContent,
+          bill: (document.getElementById('billList')||{}).innerHTML || '',
+          log: (document.getElementById('logList')||{}).innerHTML || '',
+          fbRoute: (document.getElementById('fbRouteHint')||{}).innerHTML || ''
+        })""")
+        chk('A4 经典「我的」姓名/身份/额度均已渲染',
+            cl['meName'] not in (None, '', '—') and cl['meRole'] not in (None, '', '—')
+            and cl['quotaNum'] not in (None, ''),
+            {'name': cl['meName'], 'role': cl['meRole'], 'quota': cl['quotaNum']})
+        chk('A5 经典「用量账单」「我的操作记录」容器已渲染',
+            len(cl['bill'].strip()) > 0 and len(cl['log'].strip()) > 0,
+            {'billLen': len(cl['bill']), 'logLen': len(cl['log'])})
+        chk('A6 经典「投诉与建议」路由说明已渲染', len(cl['fbRoute'].strip()) > 0,
+            cl['fbRoute'][:60])
+
         # ---------------- B. 切换到 OA ----------------
-        await page.click('#classicSeg button[data-mode="oa"]')
+        await page.click('#classicMeSwitch')
         await page.wait_for_timeout(1200)
         st = await page.evaluate("""() => ({
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
@@ -410,11 +448,87 @@ async def main():
             len(ic['missing']) == 0,
             '引用 %d 个唯一图标；缺失=%s' % (ic['total'], ic['missing']))
 
+        # G3 已挂载元素里不得有重复 id。
+        # 两形态（经典 page-* 与 OA .oa）**同时在 DOM**，各自渲染时若拼同一个 id，
+        # getElementById 恒返回文档中靠前的那个 ⇒ 在新版里操作却读到老版的空值
+        # （本轮真实修掉过一处：反馈回复框 fbReply<id>）。
+        # 必须查运行时 DOM，不能查源码文本：同一个 ?: 的两臂各写一次 id 是正常的。
+        dup = await page.evaluate("""() => {
+          const seen = {};
+          document.querySelectorAll('[id]').forEach(el => {
+            seen[el.id] = (seen[el.id] || 0) + 1;
+          });
+          const out = Object.keys(seen).filter(k => seen[k] > 1).map(k => k + '×' + seen[k]);
+          return {total: Object.keys(seen).length, dup: out};
+        }""")
+        chk('G3 DOM 内无重复 id（两形态并存不得撞名）',
+            len(dup['dup']) == 0, '已挂载 id %d 个；重复=%s' % (dup['total'], dup['dup']))
+
+        # ---------------- C9. 「我的」账户四内页：跳转一律留在新版内 ----------------
+        # 判据必须查「逃逸的后果」本身（mode / oa-mode / localStorage），
+        # 而不是查某个经典页有没有 .active —— 经典页可能保留上一次的 .active，会假阴性。
+        await page.click('#oaTabs .tab[data-view="me"]')
+        await page.wait_for_timeout(800)
+        me = await page.evaluate("""() => {
+          const b = document.getElementById('oaMeSwitch');
+          const n = document.getElementById('oaMeName');
+          const rb = b ? b.getBoundingClientRect() : null;
+          const rn = n ? n.getBoundingClientRect() : null;
+          return {
+            card: !!document.querySelector('#v-me .switch-card'),
+            btn: b ? b.textContent.trim() : null,
+            rightOfName: !!(rb && rn && rb.left > rn.right - 1),
+            sameRow: !!(rb && rn && rb.top < rn.bottom && rb.bottom > rn.top),
+            rows: [...document.querySelectorAll('#oaMeActions [data-view]')].map(r => r.dataset.view)
+          };
+        }""")
+        chk('C9a OA「我的」已无「界面版本」卡片', me['card'] is False)
+        chk('C9b OA「我的」布局按钮=名字最右侧单个按钮「切换布局」',
+            me['btn'] == '切换布局' and me['rightOfName'] and me['sameRow'], me)
+        chk('C9c 账户四入口顺序与视图名正确',
+            me['rows'] == ['bill', 'log', 'perm', 'feedback'], me['rows'])
+        await no_overflow(page, 'OA·我的')
+        await shot(page, '15-oa-me-account')
+
+        for view, label, box in [('bill', '额度与账单', 'oaBillQuota'),
+                                 ('log', '我的操作记录', 'oaLogList'),
+                                 ('perm', '权限申请', 'oaPermCatalog'),
+                                 ('feedback', '投诉与建议', 'oaFbRoute')]:
+            await page.click('#oaTabs .tab[data-view="me"]')
+            await page.wait_for_timeout(600)
+            await page.click('#oaMeActions [data-view="%s"]' % view)
+            await page.wait_for_timeout(1100)
+            got = await page.evaluate("""(id) => {
+              const el = document.getElementById(id);
+              return {
+                view: window.oaState.view,
+                oa: document.querySelector('.phone').classList.contains('oa-mode'),
+                mode: localStorage.getItem('aioa_mode'),
+                rendered: !!el && el.innerHTML.trim().length > 0,
+                title: document.getElementById('oaTitle').textContent.trim()
+              };
+            }""", box)
+            chk('C9d 入口「%s」进入新版内视图 %s' % (label, view),
+                got['view'] == view and got['oa'] is True and got['mode'] == 'oa', got)
+            chk('C9e 入口「%s」页面已渲染（非空白）' % label, got['rendered'], got)
+            await no_overflow(page, 'OA·' + label)
+            await shot(page, '16-oa-' + view)
+
+        # 回「我的」再验一次：新版内往返不应把模式改回去
+        await page.click('#oaTabs .tab[data-view="me"]')
+        await page.wait_for_timeout(600)
+        round = await page.evaluate("""() => ({
+          oa: document.querySelector('.phone').classList.contains('oa-mode'),
+          mode: localStorage.getItem('aioa_mode'),
+          view: window.oaState.view })""")
+        chk('C9f 四页往返后仍在新版（未被弹回经典）',
+            round['oa'] is True and round['mode'] == 'oa' and round['view'] == 'me', round)
+
         # ---------------- B5. 回到经典 + 刷新记忆 ----------------
         await page.click('#oaTabs .tab[data-view="me"]')
         await page.wait_for_timeout(700)
         await shot(page, '13-oa-me')
-        await page.click('#oaSeg button[data-mode="classic"]')
+        await page.click('#oaMeSwitch')
         await page.wait_for_timeout(900)
         back = await page.evaluate("""() => ({
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
@@ -431,7 +545,7 @@ async def main():
         # 再切到 OA 后刷新，验证反向记忆
         await page.evaluate("() => switchTabById('page-me')")
         await page.wait_for_timeout(600)
-        await page.click('#classicSeg button[data-mode="oa"]')
+        await page.click('#classicMeSwitch')
         await page.wait_for_timeout(900)
         await page.reload(wait_until='domcontentloaded')
         await page.wait_for_timeout(2800)

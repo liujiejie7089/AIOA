@@ -707,6 +707,8 @@
   .me-head{display:flex;align-items:center;gap:12px}
   .me-head .avatar{width:52px;height:52px;border-radius:15px}
   .me-head .avatar .ic{width:26px;height:26px}
+  /* 布局切换按钮钉在名字最右侧；唯一状态是 S.mode（OA 应用层） */
+  .me-head .js-layout-switch{margin-left:auto;flex-shrink:0;white-space:nowrap}
   .quota-big{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:24px;font-weight:700;color:var(--blue-dark);letter-spacing:-.02em}
 
   /* ---------- 11. 登录门 ---------- */
@@ -1236,6 +1238,20 @@
   border:0;background:transparent;font-family:inherit;font-size:11.5px;
   color:var(--brand);padding:0;margin-left:7px;cursor:pointer;font-weight:600;
 }
+/* ---- ⑤ 「我的」：布局切换按钮（离开新版形态的唯一出口） ----
+   原「界面版本」分段控件已移除：它把「选择布局」摆成了一屏卡片，与账户区抢注意力。
+   现在只剩一个按钮，钉在名字最右侧；两个形态的「我的」各有一个镜像按钮。 */
+.oa .profile .pinfo{min-width:0;flex:1}
+.oa .layout-btn{
+  margin-left:auto;flex-shrink:0;white-space:nowrap;
+  font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;
+  padding:6px 12px;border-radius:var(--r-full);
+  border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);color:#fff;
+  transition:background var(--dur-fast) var(--ease);
+}
+.oa .layout-btn:hover{background:rgba(255,255,255,.32)}
+.oa .layout-btn:active{background:rgba(255,255,255,.42)}
+
 /* ---- ④ 徽标与小组件 ---- */
 .oa .stamp{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;
   border-radius:var(--r-sm);padding:2px 7px;background:var(--brand-soft);color:var(--brand-ink)}
@@ -1498,25 +1514,15 @@
 
     <!-- ========== 我的 ========== -->
     <div class="page" id="page-me">
-      <!-- 界面版本切换：唯一状态是 S.mode（OA 应用层），本卡片只是镜像。
-           经典形态与 OA 形态的「我的」各有一份，两边都可双向切换。 -->
-      <div class="card reveal" style="padding:13px 14px">
-        <div style="display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px;margin-bottom:4px">
-          <svg class="ic" style="width:16px;height:16px;color:var(--blue)"><use href="#i-swap"/></svg>界面版本
-        </div>
-        <div class="muted" style="font-size:11.5px;margin-bottom:10px">在「协同工作台」与「经典工作台」之间切换，底部菜单与首页会同步变化。</div>
-        <div id="classicSeg">
-          <button class="on" data-mode="classic">原版 · 经典</button>
-          <button data-mode="oa">新版 · 协同</button>
-        </div>
-      </div>
-
       <div class="card me-head reveal">
         <div class="avatar"><svg class="ic"><use href="#i-user"/></svg></div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:15.5px" id="meName">—</div>
           <div class="muted" id="meRole">企业成员身份</div>
         </div>
+        <!-- 布局切换（唯一出口）：S.mode 是唯一状态，这里只是它的一个按钮镜像。
+             OA 层（_oa_app.js）统一绑定 .js-layout-switch，两侧文案由它同步。 -->
+        <button type="button" class="btn ghost small js-layout-switch" id="classicMeSwitch">切换布局</button>
       </div>
 
       <!-- V36：我的数据统计 —— 全部为库表实时计数（GET /api/v1/stats/me），不写死、不 mock -->
@@ -1879,28 +1885,20 @@
       <div id="oaOrgList"></div>
     </section>
 
-    <!-- ⑤ 我的（含「界面版本」切换） -->
+    <!-- ⑤ 我的 -->
     <section class="view" id="v-me">
       <div class="profile">
         <div class="row1">
           <div class="pava" id="oaMeAva">·</div>
-          <div>
+          <div class="pinfo">
             <div class="pn" id="oaMeName">—</div>
             <div class="pr" id="oaMeRole">—</div>
           </div>
+          <!-- 布局切换（离开新版形态的唯一出口）：钉在名字最右侧。
+               两个形态的「我的」各有一个镜像按钮，都只改 S.mode 这一个状态。 -->
+          <button type="button" class="layout-btn js-layout-switch" id="oaMeSwitch">切换布局</button>
         </div>
         <div class="mydata" id="oaMeData"></div>
-      </div>
-
-      <div class="switch-card">
-        <div class="switch-head"><svg class="ic"><use href="#i-swap"/></svg><b>界面版本</b></div>
-        <div class="switch-desc">在「协同工作台」与「经典工作台」之间切换，底部菜单与首页会同步变化。</div>
-        <div class="seg" id="oaSeg">
-          <div class="thumb"></div>
-          <button class="on" data-mode="oa">新版 · 协同</button>
-          <button data-mode="classic">原版 · 经典</button>
-        </div>
-        <div class="switch-note"><svg class="ic"><use href="#i-info"/></svg>经典工作台保留既有工作台/待办/会话形态，功能完全一致。</div>
       </div>
 
       <div class="sec-title" style="margin-left:2px">账户</div>
@@ -1935,6 +1933,61 @@
     <section class="view" id="v-recent">
       <div class="sec-title" style="margin-left:2px">最近会话 <span class="muted">点击继续对话</span></div>
       <div class="card" id="oaRecentList"></div>
+    </section>
+
+    <!-- ⑫ 额度与账单：OA 内查看（原先会跳经典形态的 page-bill） -->
+    <section class="view" id="v-bill">
+      <div class="card" id="oaBillQuota"></div>
+      <div class="sec-title" style="margin-left:2px">用量流水 <span class="muted" id="oaBillCnt"></span></div>
+      <div class="card" id="oaBillList"></div>
+      <button type="button" class="btn ghost small" id="oaBillExport">导出明细</button>
+    </section>
+
+    <!-- ⑬ 我的操作记录：OA 内查看（原先会跳经典形态的 page-log） -->
+    <section class="view" id="v-log">
+      <div class="sec-title" style="margin-left:2px">操作留痕 <span class="muted" id="oaLogCnt"></span></div>
+      <div class="card" id="oaLogList"></div>
+      <div class="muted" style="margin:0 2px">记录不可篡改，保存 ≥ 3 年</div>
+    </section>
+
+    <!-- ⑭ 权限申请：OA 内申请与查看（原先会跳经典形态的 page-perm）。
+         申请 / 回收一律调用经典形态的 applyPermission / revokePermission ——
+         表单口径（含「以部门名义申请」的主体字段）只在那一个函数里判定，这里不复制。 -->
+    <section class="view" id="v-perm">
+      <div class="card">
+        <div class="muted" style="line-height:1.75">部分数字员工类型需额外权限（如「请假审批」需
+          <b>approval:leave</b>）。提交后逐级上报（部门负责人 → 企业管理员 → 租户管理员，从你的上一级起），
+          通过后立即生效、无需重新登录。</div>
+      </div>
+      <div class="sec-title" style="margin-left:2px">可申请权限</div>
+      <div class="card" id="oaPermCatalog"></div>
+      <div class="sec-title" style="margin-left:2px">我已持有的权限</div>
+      <div class="card" id="oaPermHold"></div>
+      <div class="sec-title" style="margin-left:2px">我的申请</div>
+      <div class="card" id="oaPermMine"></div>
+    </section>
+
+    <!-- ⑮ 投诉与建议：OA 内提交与查看答复（原先会跳经典形态的 page-feedback）。
+         条目沿用经典形态的 fbItemHtml（同一份条目渲染口径，含答复与回复框）。 -->
+    <section class="view" id="v-feedback">
+      <div class="card"><div class="muted" id="oaFbRoute" style="line-height:1.75">正在读取你的组织归属…</div></div>
+      <div class="card">
+        <div class="sec-title" style="margin-top:0">我要反馈</div>
+        <div class="fb-cats" id="oaFbCats"></div>
+        <textarea class="fb-input" id="oaFbContent" rows="4" maxlength="2000"
+                  placeholder="请描述你遇到的问题或建议（最多 2000 字）"></textarea>
+        <input class="fb-input" id="oaFbContact" type="text" maxlength="128"
+               placeholder="联系方式（可选，便于线下回复）">
+        <label class="fb-anon"><input type="checkbox" id="oaFbAnonymous"> 对上级匿名（你自己仍能看到记录与答复）</label>
+        <div style="display:flex;gap:8px;margin-top:11px;align-items:center">
+          <button type="button" class="btn small" id="oaFbSubmit">提交</button>
+          <span class="muted" id="oaFbCount">0 / 2000</span>
+        </div>
+      </div>
+      <div class="sec-title" style="margin-left:2px">收到的建议 <span class="muted" id="oaFbInboxCnt"></span></div>
+      <div class="card" id="oaFbInbox"></div>
+      <div class="sec-title" style="margin-left:2px">我的提交 <span class="muted" id="oaFbMineCnt"></span></div>
+      <div class="card" id="oaFbMine"></div>
     </section>
 
     <!-- ⑪ 审批详情：OA 内查看与决策（不跳经典形态的 page-todo-detail） -->
@@ -2826,38 +2879,53 @@ async function uploadKb(){
   try{ await API.kbUpload(name, 'doc', 0); toast('已登记，进入解析队列'); state.kbDocs = await API.kbDocs() || []; renderKb(); }
   catch(e){ toast('登记失败：'+e.message); }
 }
+/* 账本口径（纯函数，唯一入口）：OA 形态的「额度与账单」页与本页读同一份推导，
+   避免两套界面各自解释同一条流水（历史缺陷类型：判定与展示各写一遍后悄悄分叉）。
+   账本字段：total_tokens 兼容 totalTokens / prompt+completion 求和。 */
+function billTokens(b){
+  if(!b) return 0;
+  if(b.totalTokens != null) return b.totalTokens;
+  if(b.total_tokens != null) return b.total_tokens;
+  return (b.promptTokens||0) + (b.completionTokens||0);
+}
+function billSourceLabel(b){
+  b = b || {};
+  return b.bizTitle || b.expertName || b.appName || b.bizType || 'AI 服务';
+}
 function renderBill(){
   const box = $('billList');
   const list = state.bill||[];
   if(!list.length){ box.innerHTML = emptyBox('本月还没有用量记录'); return; }
   box.innerHTML = list.slice(0,20).map(b=>{
     const t = (b.createdAt||'').replace('T',' ').slice(0,16);
-    const who = b.bizTitle || b.expertName || b.appName || b.bizType || 'AI 服务';
-    // 账本字段：total_tokens 兼容 totalTokens / prompt+completion 求和
-    const tk = b.totalTokens != null ? b.totalTokens
-      : (b.total_tokens != null ? b.total_tokens : ((b.promptTokens||0)+(b.completionTokens||0)));
-    return '<div class="row"><span>'+esc(t)+' · '+esc(who)+'</span><span class="hl num">+'+fmt(tk)+' 词元</span></div>';
+    return '<div class="row"><span>'+esc(t)+' · '+esc(billSourceLabel(b))+'</span>'+
+      '<span class="hl num">+'+fmt(billTokens(b))+' 词元</span></div>';
   }).join('') + '<div class="muted" style="margin-top:8px">输入 / 输出词元分列计价，流水与平台账本一致，明细可导出对账</div>';
 }
 function exportBill(){
   const rows = [['时间','来源','词元']];
   (state.bill||[]).forEach(b=>rows.push([(b.createdAt||'').replace('T',' ').slice(0,19),
-    b.bizTitle||b.bizType||'AI 服务',
-    b.totalTokens != null ? b.totalTokens : ((b.promptTokens||0)+(b.completionTokens||0))]));
+    billSourceLabel(b), billTokens(b)]));
   const csv = '\uFEFF' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download = 'AIOA用量账单.csv'; a.click();
   toast('账单明细已导出');
 }
+/* 操作留痕口径（纯函数，唯一入口）：OA 形态的「我的操作记录」与本页同源。
+   判定「成功」的三态：status 为 ok / SUCCESS / 缺失（旧记录无该字段）。 */
+function logIsOk(l){
+  return !!l && (l.status === 'ok' || l.status === 'SUCCESS' || l.status == null);
+}
+function logActionText(l){ l = l || {}; return l.action || l.type || '操作'; }
+function logStatusLabel(l){ l = l || {}; return l.label || (logIsOk(l) ? '成功' : '失败'); }
 function renderLog(){
   const box = $('logList');
   const list = state.log||[];
   if(!list.length){ box.innerHTML = emptyBox('暂无操作记录'); return; }
   box.innerHTML = list.slice(0,20).map(l=>{
-    const okd = (l.status === 'ok' || l.status === 'SUCCESS' || l.status == null);
-    return '<div class="row"><span>'+esc((l.createdAt||'').replace('T',' ').slice(0,16))+' '+esc(l.action||l.type||'操作')+'</span>'+
-      '<span class="badge '+(okd?'ok':'danger')+'">'+esc(l.label || (okd?'成功':'失败'))+'</span></div>';
+    return '<div class="row"><span>'+esc((l.createdAt||'').replace('T',' ').slice(0,16))+' '+esc(logActionText(l))+'</span>'+
+      '<span class="badge '+(logIsOk(l)?'ok':'danger')+'">'+esc(logStatusLabel(l))+'</span></div>';
   }).join('');
 }
 function renderPackages(){
@@ -4123,6 +4191,16 @@ function onFbInput(){
   if(el && cnt) cnt.textContent = el.value.length + ' / 2000';
 }
 
+/* 提交结果如实转述：delivered=false 表示已记录但逐级上溯后无人可派（不是提交失败）。
+   两形态共用同一份措辞 —— 否则会出现「新版说已送达、老版说无人可派」这种同事实两口径。 */
+function fbSubmitToast(r){
+  if(r && r.delivered){
+    toast('已提交，' + (r.assigneeScopeLabel || '管理员')
+      + (r.assigneeName ? '（' + r.assigneeName + '）' : '') + ' 会收到通知');
+  }else{
+    toast((r && r.deliveryNote) || '已记录，暂无可派管理员');
+  }
+}
 async function submitFeedback(){
   const el = $('fbContent');
   const content = ((el && el.value) || '').trim();
@@ -4136,12 +4214,7 @@ async function submitFeedback(){
       contact: ((($('fbContact')||{}).value) || '').trim() || null,
       anonymous: !!((($('fbAnonymous')||{}).checked))
     });
-    // 送达情况如实转述：delivered=false 表示已记录但逐级上溯后无人可派（不是提交失败）
-    if(r && r.delivered){
-      toast('已提交，' + (r.assigneeScopeLabel || '管理员') + (r.assigneeName ? '（' + r.assigneeName + '）' : '') + ' 会收到通知');
-    }else{
-      toast((r && r.deliveryNote) || '已记录，暂无可派管理员');
-    }
+    fbSubmitToast(r);
     el.value = ''; onFbInput();
     const c = $('fbContact'); if(c) c.value = '';
     const a = $('fbAnonymous'); if(a) a.checked = false;
@@ -4165,10 +4238,13 @@ function renderFeedback(){
   renderFbInbox();
 }
 
-function renderFbRoute(){
-  const el = $('fbRouteHint');
-  if(!el) return;
-  const inboxPending = (state.fbInbox && typeof state.fbInbox.pending === 'number') ? state.fbInbox.pending : 0;
+/* 反馈路由说明（纯函数，唯一入口）：文案由后端返回的 scope/层级字段推导，不写死。
+   OA 形态的「投诉与建议」页与本页同源引用 —— 组织调整后两边同时改口，不会一边对一边错。 */
+function fbInboxPending(){
+  return (state.fbInbox && typeof state.fbInbox.pending === 'number') ? state.fbInbox.pending : 0;
+}
+function fbRouteLine(){
+  const inboxPending = fbInboxPending();
   const mine = (state.fbMine && asArray(state.fbMine.items)) || [];
   let line;
   if(mine.length){
@@ -4185,13 +4261,23 @@ function renderFbRoute(){
   if(inboxPending > 0){
     line += '<br><b>你名下有 ' + inboxPending + ' 条待处理反馈</b>，见下方「收到的建议」。';
   }
-  el.innerHTML = line;
+  return line;
+}
+function renderFbRoute(){
+  const el = $('fbRouteHint');
+  if(!el) return;
+  el.innerHTML = fbRouteLine();
+  const inboxPending = fbInboxPending();
   const hint = $('fbEntryHint');
   if(hint) hint.textContent = inboxPending > 0 ? ('待处理 ' + inboxPending + ' ›') : '›';
 }
 
-/** 单条反馈卡片。forInbox=true 时按「接收人视角」渲染：给回复框、显示联系方式。 */
-function fbItemHtml(f, forInbox){
+/** 单条反馈卡片。forInbox=true 时按「接收人视角」渲染：给回复框、显示联系方式。
+ *  idPrefix：两个形态的「投诉与建议」会同时在 DOM 里（一个隐藏），旧的固定 id
+ *  会撞成同名 id，而 $() 永远返回前一个 —— 表现为「在新版里回复，报『请先填写答复内容』」。
+ *  故 id 带前缀，回复按钮改为按 DOM 邻近查找，不再依赖全局 id。 */
+function fbItemHtml(f, forInbox, idPrefix){
+  const px = idPrefix || 'fb';
   const h = [];
   h.push('<div class="fb-item">');
   h.push('<div class="fb-head">'
@@ -4212,9 +4298,9 @@ function fbItemHtml(f, forInbox){
     // 已关闭的不给回复框（后端也会拒绝，这里只是不让用户白点）
     if(f.status !== 'CLOSED'){
       h.push('<div class="fb-reply-box">'
-        + '<input class="fb-input" id="fbReply'+f.id+'" maxlength="2000" '
+        + '<input class="fb-input" id="'+px+'Reply'+f.id+'" maxlength="2000" '
         + 'placeholder="写下你的答复，提交人会收到站内通知">'
-        + '<button class="btn small" onclick="replyFeedback('+f.id+')">回复</button></div>');
+        + '<button class="btn small" onclick="replyFeedback('+f.id+', this)">回复</button></div>');
     }
   }
   h.push('</div>');
@@ -4249,8 +4335,10 @@ function renderFbInbox(){
   }
 }
 
-async function replyFeedback(id){
-  const el = $('fbReply'+id);
+/* btn：回复按钮自身（内联 onclick 传入）。优先按 DOM 邻近取输入框，兼容两形态并存 */
+async function replyFeedback(id, btn){
+  const box = (btn && btn.closest) ? btn.closest('.fb-reply-box') : null;
+  const el = (box && box.querySelector('.fb-input')) || $('fbReply'+id);
   const content = ((el && el.value) || '').trim();
   if(!content){ toast('请先填写答复内容'); return; }
   try{
@@ -4594,12 +4682,19 @@ function renderMe(){
   if(state.quotaInfo) applyQuota(state.quotaInfo);
   updateQuotaUI();
 }
-function updateQuotaUI(){
+/* 额度口径（纯函数，唯一入口）：OA 形态的「额度与账单」页与本页读同一份推导。
+   usedPct 用「已用比例」，与下方告警阈值 85% 同源。 */
+function quotaNumbers(){
   const total = Math.max(0, (state.quota||0) + (state.free||0));
   const left = Math.max(0, state.left != null ? state.left : (total - (state.used||0)));
-  $('quotaNum').textContent = fmt(left);
-  $('quotaTotal').textContent = fmt(total);
-  const pct = total > 0 ? Math.min(100, Math.round((total - left) / total * 100)) : 0;
+  const usedPct = total > 0 ? Math.min(100, Math.round((total - left) / total * 100)) : 0;
+  return {total: total, left: left, usedPct: usedPct};
+}
+function updateQuotaUI(){
+  const q = quotaNumbers();
+  $('quotaNum').textContent = fmt(q.left);
+  $('quotaTotal').textContent = fmt(q.total);
+  const pct = q.usedPct;
   const bar = $('quotaBar');
   bar.querySelector('i').style.width = pct + '%';
   bar.classList.toggle('low', pct > 80);
@@ -5589,7 +5684,7 @@ function applyMode(){
   var on = (S.mode === 'oa') && authed();
   p.classList.toggle('oa-mode', on);
   state.mode = S.mode;                       // 便于自检脚本读取
-  syncSegs();
+  syncLayoutBtns();
   if(on) oaRender();
 }
 
@@ -5600,16 +5695,17 @@ function setMode(m){
   toast(S.mode === 'oa' ? '已切换到「新版 · 协同工作台」' : '已切换到「原版 · 经典工作台」');
 }
 
-/* 两个切换控件（经典「我的」与 OA「我的」）都只是 S.mode 的镜像 */
-function syncSegs(){
-  var a = $o('oaSeg'), b = $o('classicSeg');
-  if(a){
-    a.classList.toggle('alt', S.mode === 'classic');
-    a.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x.dataset.mode === S.mode); });
-  }
-  if(b){
-    b.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x.dataset.mode === S.mode); });
-  }
+/* 切换布局：离开新版形态的唯一出口。两个形态的「我的」里各有一个按钮，都指向这里。 */
+function toggleMode(){ setMode(S.mode === 'oa' ? 'classic' : 'oa'); }
+
+/* 两个按钮都只是 S.mode 的镜像：不各自持有状态，也不写死「当前是哪个版本」之外的判断。
+   title 说明点下去会去哪里 —— 否则在经典形态里看到「切换布局」会误以为会切到经典。 */
+function syncLayoutBtns(){
+  var to = (S.mode === 'oa') ? '经典工作台' : '协同工作台';
+  document.querySelectorAll('.js-layout-switch').forEach(function(b){
+    b.title = '切换到' + to;
+    b.setAttribute('aria-label', '切换到' + to);
+  });
 }
 
 /* ---------------------------------------------------------------- 2. OA 导航 */
@@ -5624,7 +5720,12 @@ var META = {
   timers:  {t:'定时任务',      tab:null, sub:1},
   skills:  {t:'插件 · 技能',   tab:null, sub:1},
   recent:  {t:'最近会话',      tab:null, sub:1},
-  appr:    {t:'审批详情',      tab:null, sub:1}
+  appr:    {t:'审批详情',      tab:null, sub:1},
+  /* 原先这四项会切回经典形态，现改为 OA 内视图：新版里不再有「悄悄跳到老版」的入口 */
+  bill:    {t:'额度与账单',    tab:null, sub:1},
+  log:     {t:'我的操作记录',  tab:null, sub:1},
+  perm:    {t:'权限申请',      tab:null, sub:1},
+  feedback:{t:'投诉与建议',    tab:null, sub:1}
 };
 
 function oaGo(view){
@@ -5636,6 +5737,20 @@ function oaGo(view){
   oaCloseDrawer(); oaCloseSheet();
   oaRender();
   var p = $o('v-' + view); if(p){ p.scrollTop = 0; var m = p.querySelector('.rail-main'); if(m) m.scrollTop = 0; }
+  oaRefreshView(view);
+}
+
+/* 进入需要实时数据的子页时补一次拉取，再按同源 state 重绘。
+   只在 oaGo 里触发（oaRender 不触发），因此不会自激。
+   拉取动作一律复用经典形态已有的加载器，避免出现第二套口径。 */
+function oaRefreshView(view){
+  var p = null;
+  if(view === 'bill')      p = API.ledger().then(function(r){ state.bill = arr(r); });
+  else if(view === 'log')  p = API.logs().then(function(r){ state.log = arr(r); });
+  else if(view === 'perm') p = (typeof refreshPermissions === 'function') ? refreshPermissions() : null;
+  else if(view === 'feedback') p = (typeof reloadFeedback === 'function') ? reloadFeedback() : null;
+  if(!p) return;
+  p.catch(function(){}).then(function(){ if(S.mode === 'oa' && S.view === view) oaRender(); });
 }
 
 function oaRender(){
@@ -5660,7 +5775,7 @@ function oaRender(){
     right.innerHTML = (S.view === 'home' && unread > 0)
       ? '<span class="ab-pill" id="oaBell">'+ic('bell',15)+' '+n(unread)+'</span>' : '';
     var bell = $o('oaBell');
-    if(bell) bell.onclick = function(){ oaGoClassic('page-log'); };
+    if(bell) bell.onclick = function(){ oaGo('log'); };
   }
   // 底部 Tab
   document.querySelectorAll('#oaTabs .tab').forEach(function(x){
@@ -5685,16 +5800,16 @@ function oaRender(){
   if(S.view === 'skills')  renderSkills();
   if(S.view === 'recent')  renderRecent();
   if(S.view === 'appr')    renderApprDetail();
+  if(S.view === 'bill')    renderOaBill();
+  if(S.view === 'log')     renderOaLog();
+  if(S.view === 'perm')    renderOaPerm();
+  if(S.view === 'feedback') renderOaFeedback();
 }
 
-/* 切到经典形态并打开某个既有页面：经典页不在 OA 层内，必须显式过渡（并在界面上标注） */
-function oaGoClassic(pageId){
-  S.mode = 'classic';
-  try{ localStorage.setItem(LS_MODE, 'classic'); }catch(e){}
-  applyMode();
-  go(pageId);
-  if(typeof setTitle === 'function') setTitle(pageId);
-}
+/* 说明：本文件曾有一个 oaGoClassic(pageId)——切回经典形态并打开某个经典页。
+   它被「我的」里 4 个账户入口与两处通知入口当作内部跳转用，结果是「在新版里点一下就被弹到老版」。
+   现全部改为 OA 内视图（bill / log / perm / feedback），离开新版形态的唯一出口只剩
+   「切换布局」按钮 → toggleMode()。故此函数已删除，不留半条逃生路。 */
 
 /* --------------------------------------------------------------- 3. 首页渲染 */
 function renderHome(){
@@ -5712,7 +5827,7 @@ function renderHome(){
     var first = items[0] || {};
     tag.innerHTML = ic('doc',14) + ' ' + txt(first.title || first.content || '有新通知') ;
     tag.style.display = '';
-    tag.onclick = function(){ oaGoClassic('page-log'); };
+    tag.onclick = function(){ oaGo('log'); };
   }else{
     tag.style.display = 'none';
   }
@@ -6060,25 +6175,232 @@ function renderMe(){
   }
   var acts = $o('oaMeActions');
   if(acts){
+    /* 4 个入口一律 OA 内跳转。原来它们写的是「打开经典工作台页面」并真的切回老版 ——
+       在新版里点任意一条就被弹出新版，与「所有页面跳转都在新版内」冲突。 */
     var links = [
-      ['wallet','额度与账单','page-bill'],
-      ['log','我的操作记录','page-log'],
-      ['shield','权限申请','page-perm'],
-      ['megaphone','投诉与建议','page-feedback']
+      ['wallet','额度与账单','bill','查看剩余额度与用量流水'],
+      ['log','我的操作记录','log','查看账号操作留痕'],
+      ['shield','权限申请','perm','申请与查看已持有的权限'],
+      ['megaphone','投诉与建议','feedback','提交反馈、查看答复']
     ];
     acts.innerHTML = links.map(function(l){
-      return '<div class="lrow" data-classic="'+l[2]+'">'+ic(l[0])+
+      return '<div class="lrow" data-view="'+l[2]+'">'+ic(l[0])+
         '<div class="txt"><div class="t1">'+l[1]+'</div>'+
-        '<div class="t2">打开经典工作台页面</div></div>'+ic('chevron')+'</div>';
+        '<div class="t2">'+l[3]+'</div></div>'+ic('chevron')+'</div>';
     }).join('') +
     '<div class="lrow" id="oaMeLogout">'+ic('logout')+
       '<div class="txt"><div class="t1" style="color:var(--red)">退出登录</div></div>'+ic('chevron')+'</div>';
-    acts.querySelectorAll('[data-classic]').forEach(function(r){
+    acts.querySelectorAll('[data-view]').forEach(function(r){
       r.style.cursor = 'pointer';
-      r.onclick = function(){ oaGoClassic(r.dataset.classic); };
+      r.onclick = function(){ oaGo(r.dataset.view); };
     });
     var lo = $o('oaMeLogout');
     if(lo){ lo.style.cursor = 'pointer'; lo.onclick = function(){ doLogout(); S.mode = 'classic'; }; }
+  }
+}
+
+/* ------------------------------- 7.5 我的 · 账户四个内页（全部在新版内完成）
+   这四项原先调 oaGoClassic() 切回经典形态 —— 在新版里点一下就被弹出新版。
+   现在改为 OA 内视图。三条纪律：
+   ① 事实口径一律复用经典形态抽出的纯函数（quotaNumbers / billTokens / billSourceLabel /
+      logIsOk / logStatusLabel / logActionText / fbRouteLine / fbInboxPending / permStatusText /
+      permStatusClass / permPathText），本层不再重新解释一次账本、留痕、权限或反馈路由；
+   ② 动作复用经典形态的既有函数（applyPermission / revokePermission / exportBill / fbSubmitToast），
+      表单口径不复制；
+   ③ 徽标只有「皮肤」不同（经典 .badge → OA .chip），文案仍取上面那些函数。
+   ---------------------------------------------------------------------------- */
+/* 千分位：复用经典形态的 fmt；缺失时退化为原值，不静默变成 NaN */
+function qn(v){ return (typeof fmt === 'function') ? fmt(v) : String(v == null ? 0 : v); }
+/* 经典徽标类 → OA 徽标类（同一语义两套皮肤，文案不在此处另写） */
+var CHIP_OF_BADGE = {wait:'wait', ok:'due', danger:'rej', off:'done', go:'prog'};
+function badgeChip(cls, text){ return chip(CHIP_OF_BADGE[cls] || 'done', text); }
+
+/* ① 额度与账单 */
+function renderOaBill(){
+  var q = $o('oaBillQuota');
+  if(q){
+    var nums = (typeof quotaNumbers === 'function') ? quotaNumbers() : {total:0, left:0, usedPct:0};
+    q.innerHTML =
+      '<div class="sec-title" style="margin-top:0">剩余额度</div>' +
+      '<div style="display:flex;align-items:baseline;gap:8px">' +
+        '<span class="num" style="font-size:26px;font-weight:700">' + qn(nums.left) + '</span>' +
+        '<span class="muted">/ ' + qn(nums.total) + ' 词元（本月套餐）</span>' +
+      '</div>' +
+      '<div style="height:6px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden;margin-top:10px">' +
+        '<i style="display:block;height:100%;width:' + n(nums.usedPct) + '%;background:' +
+        (nums.usedPct >= 85 ? 'var(--red)' : 'var(--brand)') + '"></i>' +
+      '</div>' +
+      '<div class="muted" style="margin-top:7px">已用 ' + n(nums.usedPct) + '%' +
+        (nums.usedPct >= 85 ? ' · 额度偏低，可在首页让我帮你申请扩容' : '') + '</div>';
+  }
+  var box = $o('oaBillList');
+  if(box){
+    var list = arr(state.bill);
+    var cnt = $o('oaBillCnt');
+    if(cnt) cnt.textContent = list.length ? ('最近 ' + Math.min(list.length, 20) + ' 条') : '';
+    box.innerHTML = list.length
+      ? list.slice(0, 20).map(function(b){
+          return '<div class="lrow">' + ic('wallet') +
+            '<div class="txt"><div class="t1">' + txt(billSourceLabel(b)) + '</div>' +
+            '<div class="t2">' + txt(dt(b.createdAt)) + '</div></div>' +
+            '<span class="num" style="font-weight:700">+' + qn(billTokens(b)) + '</span></div>';
+        }).join('')
+      : empty('本月还没有用量记录');
+  }
+}
+
+/* ② 我的操作记录 */
+function renderOaLog(){
+  var box = $o('oaLogList'); if(!box) return;
+  var list = arr(state.log);
+  var cnt = $o('oaLogCnt');
+  if(cnt) cnt.textContent = list.length ? ('共 ' + list.length + ' 条') : '';
+  box.innerHTML = list.length
+    ? list.slice(0, 20).map(function(l){
+        return '<div class="lrow">' + ic('log') +
+          '<div class="txt"><div class="t1">' + txt(logActionText(l)) + '</div>' +
+          '<div class="t2">' + txt(dt(l.createdAt)) + '</div></div>' +
+          chip(logIsOk(l) ? 'due' : 'rej', logStatusLabel(l)) + '</div>';
+      }).join('')
+    : empty('暂无操作记录');
+}
+
+/* ③ 权限申请：可申请 / 我已持有 / 我的申请（申请与回收走经典形态同一入口） */
+function renderOaPerm(){
+  var cbox = $o('oaPermCatalog');
+  if(cbox){
+    var items = arr((state.permCatalog || {}).items);
+    cbox.innerHTML = items.length
+      ? items.map(function(it){
+          var right;
+          if(it.held) right = chip('due','已持有');
+          else if(it.pending) right = chip('wait','审批中');
+          else right = '<button type="button" class="btn small" data-apply="' +
+            txt(it.permissionCode) + '">申请</button>';
+          return '<div class="lrow">' + ic('shield') +
+            '<div class="txt"><div class="t1">' + txt(it.permissionName || it.permissionCode) + '</div>' +
+            '<div class="t2">' + txt(it.permissionCode) +
+              (it.workerType ? ' · 用于 ' + txt(it.workerType) : '') +
+              ' · 审批角色：' + txt(it.requiredRoles || '—') + '</div></div>' + right + '</div>';
+        }).join('')
+      : '<div class="muted" style="padding:4px 0">暂无可申请的权限项</div>';
+    cbox.querySelectorAll('[data-apply]').forEach(function(b){
+      b.onclick = function(){ applyPermission(b.dataset.apply); };
+    });
+  }
+
+  var hbox = $o('oaPermHold');
+  if(hbox){
+    var holds = arr(state.permHoldings);
+    hbox.innerHTML = holds.length
+      ? holds.map(function(h){
+          var src = h.byGrant ? (h.byRole ? '角色 + 授权' : '授权发放') : '角色内置';
+          var exp = h.expireAt ? (' · 到期 ' + txt(String(h.expireAt).slice(0,10))) : '';
+          var btn = (h.byGrant && h.grantId)
+            ? '<button type="button" class="btn ghost small" data-revoke="' + txt(h.grantId) + '">回收</button>'
+            : '<span class="muted">有效</span>';
+          return '<div class="lrow">' + ic('check') +
+            '<div class="txt"><div class="t1">' + txt(h.permissionName || h.permissionCode) + '</div>' +
+            '<div class="t2">' + txt(src) + exp + '</div></div>' + btn + '</div>';
+        }).join('')
+      : '<div class="muted" style="padding:4px 0">暂无额外权限；通用能力（对话 / 知识库检索 / 创建数字员工）默认已开通</div>';
+    hbox.querySelectorAll('[data-revoke]').forEach(function(b){
+      // dataset 是字符串；经典入口按数字 id 比对，这里必须转回数字
+      b.onclick = function(){ revokePermission(Number(b.dataset.revoke)); };
+    });
+  }
+
+  var mbox = $o('oaPermMine');
+  if(mbox){
+    var grants = arr(state.permGrants);
+    mbox.innerHTML = grants.length
+      ? grants.map(function(g){
+          var note = g.auditNote ? '<div class="t2">意见：' + txt(g.auditNote) + '</div>' : '';
+          var dept = (g.applicantType === 'DEPARTMENT')
+            ? (' ' + chip('prog','部门申请')) : '';
+          return '<div class="lrow">' + ic('log') +
+            '<div class="txt"><div class="t1">' + txt(g.permissionName || g.permissionCode) + ' ' +
+              badgeChip(permStatusClass(g.status), permStatusText(g.status)) + dept + '</div>' +
+            '<div class="t2">' + txt(permPathText(g)) + '</div>' + note + '</div></div>';
+        }).join('')
+      : '<div class="muted" style="padding:4px 0">还没有提交过权限申请</div>';
+  }
+}
+
+/* ④ 投诉与建议：路由说明 + 表单 + 收到的建议 + 我的提交。
+   条目渲染复用经典形态的 fbItemHtml（id 前缀 oaFb，避免与经典同名 id 相撞）。 */
+function renderOaFbCats(){
+  var box = $o('oaFbCats'); if(!box) return;
+  var cats = (typeof FB_CATS === 'undefined') ? [] : FB_CATS;
+  var cur = state.fbCat || 'ADVICE';
+  box.innerHTML = cats.map(function(c){
+    return '<span class="fb-cat' + (cur === c[0] ? ' on' : '') + '" data-cat="' + txt(c[0]) + '">' +
+      txt(c[1]) + '</span>';
+  }).join('');
+  box.querySelectorAll('[data-cat]').forEach(function(el){
+    el.onclick = function(){
+      // state.fbCat 是唯一选择状态（经典表单也用同一个），两侧一起重画
+      state.fbCat = el.dataset.cat || 'ADVICE';
+      if(typeof renderFbCats === 'function') renderFbCats();
+      renderOaFbCats();
+    };
+  });
+}
+function oaFbCount(){
+  var el = $o('oaFbContent'), cnt = $o('oaFbCount');
+  if(el && cnt) cnt.textContent = el.value.length + ' / 2000';
+}
+function oaSubmitFeedback(){
+  var el = $o('oaFbContent');
+  var content = ((el && el.value) || '').trim();
+  if(!content){ toast('请先填写反馈内容'); return; }
+  var btn = $o('oaFbSubmit');
+  if(btn) btn.disabled = true;
+  API.feedbackSubmit({
+    category: state.fbCat || 'ADVICE',
+    content: content,
+    contact: ((($o('oaFbContact') || {}).value) || '').trim() || null,
+    anonymous: !!(($o('oaFbAnonymous') || {}).checked)
+  }).then(function(r){
+    if(typeof fbSubmitToast === 'function') fbSubmitToast(r);
+    el.value = ''; oaFbCount();
+    var c = $o('oaFbContact'); if(c) c.value = '';
+    var a = $o('oaFbAnonymous'); if(a) a.checked = false;
+    return (typeof reloadFeedback === 'function') ? reloadFeedback() : null;
+  }).then(function(){
+    renderOaFeedback();
+  }).catch(function(e){
+    toast('提交失败：' + (e && e.message ? e.message : '后端异常'));
+  }).then(function(){
+    if(btn) btn.disabled = false;
+  });
+}
+/* 只重画「数据驱动的部分」——表单里用户正在输入的内容一律不碰 */
+function renderOaFeedback(){
+  var route = $o('oaFbRoute');
+  if(route) route.innerHTML = (typeof fbRouteLine === 'function') ? fbRouteLine() : '';
+  renderOaFbCats();
+  var inbox = $o('oaFbInbox');
+  if(inbox){
+    var items = (state.fbInbox && arr(state.fbInbox.items)) || [];
+    var icnt = $o('oaFbInboxCnt');
+    if(icnt) icnt.textContent = items.length
+      ? ('待处理 ' + ((typeof fbInboxPending === 'function') ? fbInboxPending() : 0) + ' / 共 ' + items.length + ' 条')
+      : '';
+    inbox.innerHTML = items.length
+      ? items.map(function(f){ return fbItemHtml(f, true, 'oaFb'); }).join('')
+      : empty('暂无收到的建议');
+  }
+  var mine = $o('oaFbMine');
+  if(mine){
+    var mi = (state.fbMine && arr(state.fbMine.items)) || [];
+    var mcnt = $o('oaFbMineCnt');
+    if(mcnt) mcnt.textContent = mi.length
+      ? ('共 ' + mi.length + ' 条，待处理 ' + ((state.fbMine && state.fbMine.pending) || 0) + ' 条')
+      : '';
+    mine.innerHTML = mi.length
+      ? mi.map(function(f){ return fbItemHtml(f, false, 'oaFb'); }).join('')
+      : '<div class="muted" style="padding:4px 0">还没有提交过反馈</div>';
   }
 }
 
@@ -6590,14 +6912,20 @@ function bind(){
   var odL = $o('odLogout');
   if(odL) odL.onclick = function(){ oaCloseDrawer(); doLogout(); S.mode = 'classic'; };
 
-  var seg = $o('oaSeg');
-  if(seg) seg.querySelectorAll('button').forEach(function(b){
-    b.onclick = function(){ setMode(b.dataset.mode); };
+  /* 布局切换按钮：两个形态各一个，类名统一，新增第三个也不会漏绑 */
+  document.querySelectorAll('.js-layout-switch').forEach(function(b){
+    b.onclick = toggleMode;
   });
-  var cseg = $o('classicSeg');
-  if(cseg) cseg.querySelectorAll('button').forEach(function(b){
-    b.onclick = function(){ setMode(b.dataset.mode); };
-  });
+
+  /* 账户内页的静态控件只绑一次（renderOa* 只重画数据区，不碰用户正在输入的内容） */
+  var billExp = $o('oaBillExport');
+  if(billExp) billExp.onclick = function(){
+    if(typeof exportBill === 'function') exportBill();
+  };
+  var fbTxt = $o('oaFbContent');
+  if(fbTxt) fbTxt.addEventListener('input', oaFbCount);
+  var fbSub = $o('oaFbSubmit');
+  if(fbSub) fbSub.onclick = oaSubmitFeedback;
 
   var kbQ = $o('oaKbQ');
   if(kbQ) kbQ.addEventListener('keydown', function(e){
@@ -6669,6 +6997,24 @@ new MutationObserver(function(){
   if(!authed()){ S.convId = null; S.worker = null; S.expert = null; }
 }).observe(document.body, {attributes:true, attributeFilter:['class']});
 
+/* 经典形态刷新后补一次 OA 侧重绘。
+   refreshPermissions / renderFeedback 是经典形态里「刷数据 → 重画」的唯一入口，
+   这里只做装饰：不复制它们的分支，也不改它们的行为，只在返回后补画 OA 的对应视图。
+   （与上面的 wrapDecide 同一形态。） */
+(function wrapOaDataRefresh(){
+  function wrap(name, view){
+    var orig = window[name];
+    if(typeof orig !== 'function') return;
+    window[name] = function(){
+      var r = orig.apply(this, arguments);
+      var repaint = function(){ if(S.mode === 'oa' && S.view === view) oaRender(); };
+      if(r && typeof r.then === 'function'){ r.then(repaint, function(){}); } else { repaint(); }
+      return r;
+    };
+  }
+  wrap('refreshPermissions', 'perm');
+  wrap('renderFeedback', 'feedback');
+})();
 /* 审批决策完成后补一次 OA 侧刷新。
    commitApprovalDecision 是「多级 / 单级」分流的唯一判定点（经典脚本内），
    这里只做装饰：不复制它的分支，只在它返回后补 OA 自己的重绘。 */

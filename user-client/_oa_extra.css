@@ -82,6 +82,20 @@
   border:0;background:transparent;font-family:inherit;font-size:11.5px;
   color:var(--brand);padding:0;margin-left:7px;cursor:pointer;font-weight:600;
 }
+/* ---- ⑤ 「我的」：布局切换按钮（离开新版形态的唯一出口） ----
+   原「界面版本」分段控件已移除：它把「选择布局」摆成了一屏卡片，与账户区抢注意力。
+   现在只剩一个按钮，钉在名字最右侧；两个形态的「我的」各有一个镜像按钮。 */
+.oa .profile .pinfo{min-width:0;flex:1}
+.oa .layout-btn{
+  margin-left:auto;flex-shrink:0;white-space:nowrap;
+  font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;
+  padding:6px 12px;border-radius:var(--r-full);
+  border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);color:#fff;
+  transition:background var(--dur-fast) var(--ease);
+}
+.oa .layout-btn:hover{background:rgba(255,255,255,.32)}
+.oa .layout-btn:active{background:rgba(255,255,255,.42)}
+
 /* ---- ④ 徽标与小组件 ---- */
 .oa .stamp{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;
   border-radius:var(--r-sm);padding:2px 7px;background:var(--brand-soft);color:var(--brand-ink)}

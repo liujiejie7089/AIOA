@@ -4,10 +4,14 @@
 拼入内容
   ① 22 个缺失的图标 symbol（demo 有、index.html 没有）
   ② OA 样式层：demo CSS 的作用域化副本 + OA 外壳/对话坞样式
-  ③ 经典「我的」内的界面版本切换卡片（与 OA「我的」的同一控件互为镜像）
-  ④ .oa 容器标记（5 个主视图 + 数字员工/专家/定时/技能/最近/审批详情）
-  ⑤ OA 应用层脚本
-  ⑥ 数字人位图内联（生产镜像只 COPY index.html，外链必然 404）
+  ③ .oa 容器标记（5 个主视图 + 数字员工/专家/定时/技能/最近/审批详情
+     + 额度与账单/操作记录/权限申请/投诉与建议 4 个账户内页）
+  ④ OA 应用层脚本
+  ⑤ 数字人位图内联（生产镜像只 COPY index.html，外链必然 404）
+
+注：经典「我的」里的「切换布局」按钮与经典侧的口径纯函数（billTokens / logIsOk /
+quotaNumbers / fbRouteLine …）都在基线 _backup_index_pre_oa.html 内，本脚本不再注入它们 ——
+它们属于经典形态自身，改它们要改基线，否则下次重建会静默丢掉。
 
 同时剥离 present_files 预览注入的 data-page-node-id（800 处），
 它们只服务预览面板，不该进仓库。
@@ -120,26 +124,6 @@ def main():
     once(src, '</style>', '样式 </style>')
     src = src.replace('</style>', '</style>' + css_block, 1)
     print('注入 OA 样式层：%d 字节' % len(css_block))
-
-    # ---- 3. 经典「我的」内的切换卡片 ----
-    seg_card = '''    <div class="page" id="page-me">
-      <!-- 界面版本切换：唯一状态是 S.mode（OA 应用层），本卡片只是镜像。
-           经典形态与 OA 形态的「我的」各有一份，两边都可双向切换。 -->
-      <div class="card reveal" style="padding:13px 14px">
-        <div style="display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px;margin-bottom:4px">
-          <svg class="ic" style="width:16px;height:16px;color:var(--blue)"><use href="#i-swap"/></svg>界面版本
-        </div>
-        <div class="muted" style="font-size:11.5px;margin-bottom:10px">在「协同工作台」与「经典工作台」之间切换，底部菜单与首页会同步变化。</div>
-        <div id="classicSeg">
-          <button class="on" data-mode="classic">原版 · 经典</button>
-          <button data-mode="oa">新版 · 协同</button>
-        </div>
-      </div>
-'''
-    anchor = '    <div class="page" id="page-me">'
-    once(src, anchor, 'page-me 起始')
-    src = src.replace(anchor, seg_card, 1)
-    print('注入经典「我的」切换卡片')
 
     # ---- 4. OA 标记 ----
     markup = open(MARKUP, encoding='utf-8').read()
