@@ -122,18 +122,17 @@
 .oa .kpi-float.k4{bottom:10px; right:0}
 .oa .kpi-float.k3 .k-val{color:var(--blue-dark)}
 .oa .kpi-float.k4 .k-val{color:var(--brand-ink)}
-/* 三角：**真·SVG 三角形**（<svg class="ktail">，见 _oa_markup.html），两条 path 的 d 全部由
-   oaLayoutTails() 按几何直接算出：底边沿卡片边（中点往卡内收 1.5px，盖住卡片描边，
-   使尾巴像从卡片上长出来的）、顶点 12px 指向数字人；ktf 只填充、ktl 只描两条斜边
-   （底边不描边）。元素自身不做任何旋转 —— 局部坐标与屏幕 1:1。
-   历史教训：这里先后用过「写死的静态三角」（四张全背对数字人）与「转 45° 的方块压边切角」
-   （rotate 偏角后切出斜方块，pitfalls #105）—— 都源于「三角不是画出来的」；现改为直接画。 */
-.oa .kpi-float .ktail{
-  position:absolute; width:28px; height:28px; left:50%; top:50%;
-  transform:translate(-50%,-50%); overflow:visible; pointer-events:none;
+/* 尾巴 = **对话坞气泡的同一个尾巴组件**（.tail，13×13 旋转三角，用户口径「用气泡组件来生成」）：
+   元素、path、定位/旋转机制与 .bub .tail 完全一致，仅填充/描边色取卡片配色。
+   落位与朝向由 oaLayoutTails() 写入的 --tail-* 驱动；三角随 --tail-angle 整体旋转，
+   底边不要求与卡片边平行 —— 这正是气泡组件的形态（自绘三角路线两轮被否决，pitfalls #105）。 */
+.oa .kpi-float .tail{
+  position:absolute; width:13px; height:13px;
+  left:var(--tail-x,50%); top:var(--tail-y,50%);
+  transform:translate(-50%,-50%) rotate(var(--tail-angle,0deg));
+  transform-origin:50% 50%; pointer-events:none;
+  fill:var(--surface); stroke:var(--border); stroke-width:1;
 }
-.oa .kpi-float .ktf{fill:var(--surface)}
-.oa .kpi-float .ktl{fill:none; stroke:var(--border); stroke-width:1; stroke-linejoin:round}
 .oa .robot-tag{
   display:inline-flex; align-items:center; gap:6px; margin:0 auto;
   background:var(--surface); border:1px solid var(--brand-line); border-radius:var(--r-full);

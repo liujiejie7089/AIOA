@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""首页四张浮动指标卡（.kpi-float）的三角必须指向数字人 —— 几何 + 像素自检。
+"""首页四张浮动指标卡（.kpi-float）的尾巴必须是对话坞气泡的**同一个尾巴组件**，
+且落点在边上（不楔转角）、顶点指向数字人 —— 几何 + 像素自检。
 
 为什么需要这个脚本
     数字人四周那四张卡（待我审批 / 我发起的 / 知会未读 / 我的会话）是首页的固定构图。
-    卡片位置可以写死，但**三角的落点与朝向必须是算出来的**：数字人随视口宽度居中、
-    卡片贴两端，二者的相对角度逐宽度都不同，写死的角度换个宽度就不指向数字人了。
-    三角的演进（三次教训，详见 pitfalls #105）：
-      ① 四组写死的静态 CSS 三角 —— k1/k2 朝上、k3/k4 朝下，**四张全背对数字人**；
-      ② 「转 45° 的方块压卡片边切角」—— rotate 偏角后切出**斜方块**（用户报「出错了」）；
-      ③ 现为**真·SVG 三角形**：两条 path 的 d 由 oaLayoutTails() 按几何直接算出
-         （底边沿卡片边、中点内收 1.5px；顶点 12px 指向数字人），元素不旋转。
+    尾巴的演进（四轮，详见 pitfalls #105）：
+      ① 四组写死的静态 CSS 三角 —— 四张全背对数字人；
+      ② 「转 45° 的方块压边切角」只 rotate —— 切出斜方块（用户报「出错了」）；
+      ③ 自绘 SVG 三角（rotate+skew / 直接画 path）—— 1x 下像折角，被否决；
+      ④ 终版：**复用对话坞气泡的尾巴组件**（.tail，13×13 旋转三角，用户口径
+         「用气泡组件来生成」），落点沿边收进离转角 ≥14px 后重新指向数字人。
+    为什么必须收进：桌面宽度下「卡片中心 → 数字人」射线恰好从卡片**转角**穿出
+    （1280px 实测四个落点离转角全部 0.0px），尾巴楔在角上读不出「长在边上」；
+    手机宽度（360–430）落点在边中部附近，所以只测手机宽度发现不了（pitfalls #106）。
 
-⚠ 判据独立于页面内的算法：直接量 path 里的三个顶点坐标（底边两点 + 顶点），
-   自己按「宿主中心 → 数字人中心」重算方向角再比对，避免自证。
-   path 的 d 就是渲染的几何本体（无变换参与），读它 = 读「渲染出来的事实」。
-⚠ 一并在三个视口宽度上验：写死的角度在 390 上可能恰好对，换个宽度就偏了；
-   多宽度同时证明「角度是算的」与「resize 后重新落位」两条。
+⚠ 判据独立于页面内的算法：尾巴朝向从 computed `--tail-angle` 减去组件基准态
+   （13×13 path 顶点朝上 = 屏幕角 −90°）得到，与「最终落点 → 数字人」方向比对；
+   落点从 computed `--tail-x/--tail-y` 读回。不引用页面里的任何中间量。
+⚠ 多宽度（360/390/430 手机 + 1280×800 桌面）同时验：角度必须是算的、
+   resize 后重新落位、且桌面宽度下不楔转角。
 """
 import asyncio
 import math
@@ -28,32 +31,36 @@ BASE = 'http://127.0.0.1:5181/'
 USER = 'wjj_xu'
 PWD = 'User@123'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_shot_kpi')
-WIDTHS = [360, 390, 430]
+WIDTHS = [(360, 844), (390, 844), (430, 844), (1280, 800)]
+TAIL_D = 'M6.5 0.5 12.5 12.5 0.5 12.5z'   # 对话坞气泡尾巴组件的 path 签名
+INSET = 14                                 # 与 _oa_app.js 的 TAIL_INSET 同值
 
 fails = []
 errs = []
 
-# 每张卡「朝数字人那一侧」的边：上两张贴下边、下两张贴上边
+# 每张卡「朝数字人那一侧」的边：上两张贴下边、下两张贴上边（手机与桌面实测一致）
 EXPECT_SIDE = {'k1': 'B', 'k2': 'B', 'k3': 'T', 'k4': 'T'}
 
 MEASURE_JS = """() => {
+  // 同一帧内先刷新落位再测量：resize 后若布局产物（图片解码等）晚于 resize 事件稳定，
+  // 分两次取会拿到「旧落位 + 新几何」的错位快照（本轮实测数字人位置差 4px ⇒ 朝向差 0.9°）
+  oaLayoutTails();
+  const num = s => { const v = parseFloat(s); return isNaN(v) ? NaN : v; };
   const rr = document.querySelector('#oaRobot').getBoundingClientRect();
   const out = {robot: [rr.left, rr.top, rr.right, rr.bottom],
                A: {x: rr.left + rr.width/2, y: rr.top + rr.height/2}, cards: {}};
   ['k1','k2','k3','k4'].forEach(k => {
     const el = document.querySelector('.oa .kpi-float.' + k);
     const r = el.getBoundingClientRect();
-    const t = el.querySelector('.ktail');
-    const cs = getComputedStyle(t);
-    const d = t.querySelector('.ktf').getAttribute('d') || '';
-    // ktf 的 d = M b0 L b1 L apex Z → 6 个数；局部坐标系 = 原点在贴边点、与屏幕 1:1（元素不旋转）
-    const nums = (d.match(/-?\\d+\\.?\\d*/g) || []).map(Number);
+    const t = el.querySelector('.tail');
+    const cs = getComputedStyle(el);
     out.cards[k] = {
       box: [r.left, r.top, r.right, r.bottom],
-      cx: r.left + r.width/2, cy: r.top + r.height/2,
-      // 落点：.ktail 的 left/top 相对 padding box，补回 1px 边框
-      bx: r.left + 1 + parseFloat(cs.left), by: r.top + 1 + parseFloat(cs.top),
-      pts: nums
+      w: r.width, h: r.height,
+      d: t ? (t.querySelector('path').getAttribute('d') || '') : null,
+      tx: num(cs.getPropertyValue('--tail-x')),
+      ty: num(cs.getPropertyValue('--tail-y')),
+      ang: num(cs.getPropertyValue('--tail-angle'))
     };
   });
   return out;
@@ -67,47 +74,41 @@ def chk(name, ok, detail=''):
 
 
 def verify(width, d):
-    """按宽度逐卡核对：贴边正确 + 顶点指向数字人 + 是真三角形且底边贴在卡片边上。"""
+    """按宽度逐卡核对：组件同源 + 贴边不楔角 + 顶点指向数字人。"""
     A = d['A']
-    NU_VEC = {'T': (0, -1), 'B': (0, 1), 'L': (-1, 0), 'R': (1, 0)}
     print('— 视口 %dpx：数字人盒 %s 中心 (%.1f, %.1f)'
           % (width, [round(v, 1) for v in d['robot']], A['x'], A['y']))
     for k in ['k1', 'k2', 'k3', 'k4']:
         c = d['cards'][k]
-        box = c['box']
-        chk('%dpx %s 三角 path 有 3 个顶点（ktf 的 d 含 6 个数）' % (width, k),
-            len(c['pts']) == 6, c['pts'])
-        if len(c['pts']) != 6:
+        # ① 组件同源：path 签名必须与对话坞气泡尾巴完全一致（是复用，不是又画一个）
+        chk('%dpx %s 尾巴是气泡组件本体（path d 与 .bub .tail 一致）' % (width, k),
+            c['d'] == TAIL_D, c['d'])
+        if c['d'] != TAIL_D:
             continue
-        b0x, b0y, b1x, b1y, ax, ay = c['pts']
-        # ② 顶点朝向：直接量 path 里的顶点向量 —— 不换算任何页面公式，判据与实现不同源
-        apex = math.degrees(math.atan2(ay, ax))
-        want = math.degrees(math.atan2(A['y'] - c['cy'], A['x'] - c['cx']))
-        err = (apex - want + 180) % 360 - 180
-        dist = {'L': c['bx'] - box[0], 'T': c['by'] - box[1],
-                'R': box[2] - c['bx'], 'B': box[3] - c['by']}
+        # ② 落点：computed --tail-x/y 相对 padding box，补回 1px 边框
+        ax_ = c['box'][0] + 1 + c['tx']
+        ay_ = c['box'][1] + 1 + c['ty']
+        box = c['box']
+        dist = {'L': ax_ - box[0], 'T': ay_ - box[1],
+                'R': box[2] - ax_, 'B': box[3] - ay_}
         side = min(dist.items(), key=lambda t: t[1])[0]
-        nx, ny = NU_VEC[side]
-        # ③ 形状不变量（直接量三个顶点，不再依赖变换矩阵）：
-        #    · 底边与卡片边平行 ⇔ 底边垂直于外法线（两底点沿法线方向的投影相等）；
-        #    · 底边中点内收 1~2.5px（盖住卡片描边，尾巴才像从卡片上长出来的）；
-        #    · 顶点在卡外 10px 以上；面积 ≥ 60px²（非退化）。
-        base_n0 = b0x * nx + b0y * ny
-        base_n1 = b1x * nx + b1y * ny
-        base_mid_n = (base_n0 + base_n1) / 2
-        apex_n = ax * nx + ay * ny
-        area = abs((b1x - b0x) * (ay - b0y) - (b1y - b0y) * (ax - b0x)) / 2
-        print('  %s 卡盒=%s 落点=(%.1f,%.1f) 贴边=%s 顶点=%.1f° 目标=%.1f° 误差=%.2f° 面积=%.1f'
-              % (k, [round(v, 1) for v in box], c['bx'], c['by'], side, apex, want, err, area))
-        chk('%dpx %s 三角贴在朝数字人那一侧（期望 %s）' % (width, k, EXPECT_SIDE[k]),
+        # ③ 贴边、且沿边收进离转角 ≥ INSET（13×13 组件半宽 6.5，14 才容得下整个组件）
+        if side in ('T', 'B'):
+            along, edge = ax_ - box[0], c['w']
+        else:
+            along, edge = ay_ - box[1], c['h']
+        print('  %s 卡盒=%s 落点=(%.1f,%.1f) 贴边=%s 沿边位置=%.1f/%.1f 朝向角=%s'
+              % (k, [round(v, 1) for v in box], ax_, ay_, side, along, edge, c['ang']))
+        chk('%dpx %s 尾巴贴在朝数字人那一侧（期望 %s）' % (width, k, EXPECT_SIDE[k]),
             side == EXPECT_SIDE[k], side)
-        chk('%dpx %s 三角顶点指向数字人（误差 ≤ 0.5°）' % (width, k), abs(err) <= 0.5, '%.2f°' % err)
-        chk('%dpx %s 底边与卡片边平行（两底点法向投影差 ≤ 0.3）' % (width, k),
-            abs(base_n0 - base_n1) <= 0.3, '差 %.3f' % abs(base_n0 - base_n1))
-        chk('%dpx %s 底边中点内收 1~2.5px（盖住卡片描边）' % (width, k),
-            -2.5 <= base_mid_n <= -1.0, '内收 %.2f' % -base_mid_n)
-        chk('%dpx %s 顶点探出卡外 ≥ 10px 且面积 ≥ 60px²（真三角形）' % (width, k),
-            apex_n >= 10 and area >= 60, '探出 %.1f 面积 %.1f' % (apex_n, area))
+        chk('%dpx %s 尾巴不楔转角（沿边位置在 [%d, %.0f] 内）' % (width, k, INSET, edge - INSET),
+            INSET - 0.5 <= along <= edge - INSET + 0.5, '沿边 %.1f' % along)
+        # ④ 顶点朝向：组件基准态顶点朝上（−90°），旋转后 = ang − 90；
+        #    与「最终落点 → 数字人」比对（落点收进过，必须从落点算，不能从卡片中心算）
+        apex = c['ang'] - 90.0
+        want = math.degrees(math.atan2(A['y'] - ay_, A['x'] - ax_))
+        err = (apex - want + 180) % 360 - 180
+        chk('%dpx %s 尾巴顶点指向数字人（误差 ≤ 0.5°）' % (width, k), abs(err) <= 0.5, '%.2f°' % err)
 
 
 async def main():
@@ -138,31 +139,32 @@ async def main():
                                          '.oa .kpi-float{transition:none !important}')
         await page.wait_for_timeout(400)
 
-        chk('前置：四张浮动卡已渲染',
-            await page.evaluate("() => document.querySelectorAll('.oa .kpi-float').length") == 4)
-        # 三角是否被脚本落位过（ktf 的 d 为空 ⇒ 停在初始状态，等于没指向数字人）
-        placed = await page.evaluate("""() => [...document.querySelectorAll('.oa .kpi-float .ktf')]
-            .map(p => (p.getAttribute('d') || '').trim())""")
-        chk('前置：四张卡的三角都已被脚本画出（ktf 的 d 非空）',
-            len(placed) == 4 and all(placed), placed)
+        chk('前置：四张卡都内嵌了气泡尾巴组件',
+            await page.evaluate("() => document.querySelectorAll('.oa .kpi-float svg.tail').length") == 4)
 
-        for w in WIDTHS:
-            await page.set_viewport_size({'width': w, 'height': 844})
+        for w, h in WIDTHS:
+            await page.set_viewport_size({'width': w, 'height': h})
             await page.wait_for_timeout(450)      # resize 事件里 oaLayoutTails() 重新落位
             verify(w, await page.evaluate(MEASURE_JS))
 
+        # 手机宽度整页 + 逐卡放大（含卡外 14px 余量）：「看得对」最终要人眼过一遍
         await page.set_viewport_size({'width': 390, 'height': 844})
         await page.wait_for_timeout(450)
         await page.screenshot(path=os.path.join(OUT, 'check-home.png'))
-        # 逐卡放大（含卡外 14px 余量）：三角朝向是否「看得对」最终还是要人眼过一遍
         for k in ['k1', 'k2', 'k3', 'k4']:
             el = await page.query_selector('.oa .kpi-float.' + k)
             bb = await el.bounding_box()
             await page.screenshot(path=os.path.join(OUT, 'card-%s.png' % k),
                                   clip={'x': bb['x'] - 14, 'y': bb['y'] - 14,
                                         'width': bb['width'] + 28, 'height': bb['height'] + 28})
+        # 桌面宽度整页：用户实际看到的形态
+        await page.set_viewport_size({'width': 1280, 'height': 800})
+        await page.wait_for_timeout(450)
+        await page.screenshot(path=os.path.join(OUT, 'check-home-desktop.png'))
 
         # 数字人上浮到波峰时，卡片不得压到它的像素上（z 序上机器人后绘制，会盖住卡片）
+        await page.set_viewport_size({'width': 390, 'height': 844})
+        await page.wait_for_timeout(450)
         await page.add_style_tag(content='.oa .r-bob{animation:none !important;'
                                          'transform:translateY(-8px) !important}')
         await page.wait_for_timeout(350)
@@ -189,7 +191,6 @@ async def main():
           });
           return out;
         }""")
-        await page.screenshot(path=os.path.join(OUT, 'check-home-peak.png'))
         chk('波峰：数字人上浮 8px 时与四张卡零像素重叠',
             all(v == 0 for v in overlap.values()), overlap)
 

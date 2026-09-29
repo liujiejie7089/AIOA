@@ -1097,7 +1097,7 @@ function tailPlacement(br, A, baseDeg){
     }
   }
   return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg',
-          side:side, theta:theta};
+          pxv:px, pyv:py, side:side, theta:theta};
 }
 
 /* 变量写在**宿主**上（伪元素与子元素都靠继承拿到），
@@ -1118,31 +1118,29 @@ function oaLayoutTails(){
     if(sr && sr.width && sr.height) A = {x:sr.left + sr.width/2, y:sr.top + sr.height/2};
   }
 
-  /* ① 首页四张浮动指标卡（不对话时显示）：真·SVG 三角，顶点指向数字人。
-     不再用「转 45° 的方块压卡片边切角」—— 那条路要么背对（写死）、要么斜切成梯形（pitfalls #105）。
-     现在两条 path 的 d 全部由几何直接算出（元素自身不旋转，局部坐标与屏幕 1:1）：
-       底边 = 沿卡片边、半宽 HB，中点往卡内收 IN px（盖住卡片描边，使尾巴像从卡片上长出来）；
-       顶点 = LEN px 沿「卡片中心 → 数字人」方向 θ；
-       ktf 只填充、ktl 只描两条斜边 —— 底边不描边。 */
-  var NU = {T: -90, B: 90, L: 180, R: 0};
+/* ① 首页四张浮动指标卡：尾巴直接**复用对话坞气泡的尾巴组件**（.tail，13×13 旋转三角）——
+     用户口径「不要调整三角了，用气泡组件来生成」，不再自绘三角（自绘路线两轮被否决，
+     pitfalls #105）。落点 = 卡片中心 → 数字人 射线与卡片边的交点，但**沿边收进、
+     离转角 ≥ TAIL_INSET**：桌面宽度下该射线恰好从转角出入（实测离转角 0px），
+     尾巴楔在转角上读不出「长在边上」；收进只动沿边坐标，**朝向按最终落点重新指向数字人**
+     （组件三角随 --tail-angle 整体旋转、底边不要求贴边，正是气泡组件的形态）。 */
+  var TAIL_INSET = 14;
   home.querySelectorAll('.kpi-float').forEach(function(c){
-    var tail = c.querySelector('.ktail'); if(!tail) return;
+    var tail = c.querySelector('.tail'); if(!tail) return;
     var r = c.getBoundingClientRect(); if(!r.width || !r.height) return;
-    var p = tailPlacement(r, A, 0);
-    var nR = NU[p.side] * Math.PI/180;
-    var nx = Math.cos(nR), ny = Math.sin(nR);   /* 边外法线单位向量 */
-    var tx = ny, ty = -nx;                       /* 边切线单位向量（法线逆转 90°） */
-    var HB = 8, LEN = 13, IN = 1.5;
-    var th = p.theta * Math.PI/180;
-    var ax = LEN*Math.cos(th), ay = LEN*Math.sin(th);
-    var b0x = -IN*nx + HB*tx, b0y = -IN*ny + HB*ty;
-    var b1x = -IN*nx - HB*tx, b1y = -IN*ny - HB*ty;
-    var f = function(v){ return v.toFixed(2); };
-    tail.querySelector('.ktf').setAttribute('d',
-      'M'+f(b0x)+' '+f(b0y)+'L'+f(b1x)+' '+f(b1y)+'L'+f(ax)+' '+f(ay)+'Z');
-    tail.querySelector('.ktl').setAttribute('d',
-      'M'+f(b0x)+' '+f(b0y)+'L'+f(ax)+' '+f(ay)+'L'+f(b1x)+' '+f(b1y));
-    tail.style.left = p.x; tail.style.top = p.y;
+    var p = tailPlacement(r, A, 90);
+    /* tailPlacement 的 px/py 是**边框盒**坐标，而 CSS left/top 相对**内边盒**（差 1px 边框）。
+       先换到内边盒再收进，保证两侧离边框边都 ≥ TAIL_INSET；朝向按真实渲染落点
+       （边框盒 = 内边盒 + 1px）重新指向数字人。 */
+    var qx = p.pxv - 1, qy = p.pyv - 1;
+    if(p.side === 'L' || p.side === 'R'){
+      qy = Math.max(TAIL_INSET, Math.min(r.height - 2 - TAIL_INSET, qy));
+    } else {
+      qx = Math.max(TAIL_INSET, Math.min(r.width - 2 - TAIL_INSET, qx));
+    }
+    var th2 = Math.atan2(A.y - (r.top + 1 + qy), A.x - (r.left + 1 + qx));
+    oaApplyTail(c, {'--tail-x': qx.toFixed(2) + 'px', '--tail-y': qy.toFixed(2) + 'px',
+                    '--tail-angle': (th2*180/Math.PI + 90).toFixed(2) + 'deg'});
   });
 
   /* ② 对话坞气泡（仅对话态存在） */
