@@ -1068,18 +1068,19 @@ function oaPushBub(role, html, opts){
 function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
 
 /* 三角指向数字人：**唯一一处**算法（首页浮动指标卡与对话坞气泡共用同一份）。
-   落点 = 从宿主中心朝锚点发射的射线与宿主矩形边的交点（保证三角永远贴在边上）；
-   朝向 = 该射线的方向角 θ，再补偿「宿主自身三角的基准态」baseDeg：
-     · 对话坞 .bub .tail 是 SVG，基准态「顶点朝上」= 屏幕角 -90° ⇒ baseDeg = +90°
-     · 首页 .kpi-float::after 是转 45° 的方块（border-right+bottom 那个角为顶点），
-       基准态「顶点朝右下」= 屏幕角 +45° ⇒ baseDeg = -45°
-   （屏幕角：0°=正右、90°=正下，与 CSS rotate 同向，故 atan2(dy,dx) 可直接用。）
+   落点 = 从宿主中心朝锚点发射的射线与宿主矩形边的交点 —— 保证三角永远贴在边上，
+   且贴的是「朝数字人那一侧」的边。
+   返回：x/y 落点（相对宿主 padding box 的 CSS 值）、deg 顶点朝向（= θ + baseDeg，
+   供 SVG 三角直接 rotate）、side 落点所在边（T/B/L/R）、theta 顶点→锚点的方向角。
+   baseDeg = 宿主三角「基准态」的朝向补偿：对话坞 .bub .tail 是 SVG、基准态顶点朝上
+   （屏幕角 -90°）⇒ +90°。屏幕角：0°=正右、90°=正下，与 CSS rotate 同向，
+   故 atan2(dy,dx) 可直接用。
    视口窄也不例外 —— 之前 <360px 时退化成「恒朝正上方」，那就不再指向数字人了。
-   量不到锚点（视图隐藏中、位图未解码）时写成「贴顶边居中 + 基准朝向」而不是不写：
-   不写 = 停在 --tail-angle 的初始态，现象与「退化」相同但更隐蔽。 */
+   量不到锚点（视图隐藏中、位图未解码）时取「贴顶边居中、顶点朝上」这个中性态而不是不写：
+   不写 = 停在 CSS 兜底的初始值，现象与「退化」相同但更隐蔽。 */
 function tailPlacement(br, A, baseDeg){
   var hw = br.width/2, hh = br.height/2;
-  var px = hw, py = 0, deg = baseDeg;
+  var px = hw, py = 0, deg = baseDeg, side = 'T', theta = -90;
   if(A){
     var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
     if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
@@ -1088,17 +1089,21 @@ function tailPlacement(br, A, baseDeg){
     var tx = Math.abs(ux) < 1e-6 ? Infinity : hw/Math.abs(ux);
     var ty = Math.abs(uy) < 1e-6 ? Infinity : hh/Math.abs(uy);
     var t = Math.min(tx, ty);
-    if(isFinite(t)){ px = hw + ux*t; py = hh + uy*t; deg = th*180/Math.PI + baseDeg; }
+    if(isFinite(t)){
+      px = hw + ux*t; py = hh + uy*t;
+      theta = th*180/Math.PI;
+      deg = theta + baseDeg;
+      side = ty <= tx ? (uy > 0 ? 'B' : 'T') : (ux > 0 ? 'R' : 'L');
+    }
   }
-  return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg'};
+  return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg',
+          side:side, theta:theta};
 }
 
-/* 变量写在**宿主**上（伪元素与子元素都靠继承拿到），这样三角是子元素还是
-   ::after 都不影响调用方。 */
-function oaApplyTail(host, p){
-  host.style.setProperty('--tail-x', p.x);
-  host.style.setProperty('--tail-y', p.y);
-  host.style.setProperty('--tail-angle', p.deg);
+/* 变量写在**宿主**上（伪元素与子元素都靠继承拿到），
+   于是三角是子元素（对话坞 SVG）还是 ::after（浮动卡）都不影响调用方。 */
+function oaApplyTail(host, vars){
+  for(var k in vars) host.style.setProperty(k, vars[k]);
 }
 
 function oaLayoutTails(){
@@ -1114,11 +1119,20 @@ function oaLayoutTails(){
   }
 
   /* ① 首页四张浮动指标卡（不对话时显示）：三角一律指向数字人。
-     此前它们是写死的 CSS 静态三角 —— k1/k2 在卡顶朝上、k3/k4 在卡底朝下，
-     **四张全部背对数字人**，尾巴尖离数字人约 81px。 */
+     此前是四组写死的静态三角 —— k1/k2 在卡顶朝上、k3/k4 在卡底朝下，**四张全背对数字人**。
+     三角本体是「转 45° 的方块」压在卡片边上，切出来是不是干净三角形，取决于方块的对角线
+     是否垂直于卡片边：
+       · 只把顶点转到「数字人方向」⇒ 对角线偏了 ⇒ 切出**斜方块**（用户报「出错了」）；
+       · 先转到顶点落在边的**外法线 ν** 上（此时必切出干净三角形），再沿 ν 做 skewX
+         把顶点斜到数字人方向 —— 斜的只是顶点，底边始终与卡片边平行 ⇒ 形状恒为三角形。
+     NU = 各边的外法线屏幕角（0=正右、90=正下）。 */
+  var NU = {T: -90, B: 90, L: 180, R: 0};
   home.querySelectorAll('.kpi-float').forEach(function(c){
     var r = c.getBoundingClientRect(); if(!r.width || !r.height) return;
-    oaApplyTail(c, tailPlacement(r, A, -45));
+    var p = tailPlacement(r, A, -45), nu = NU[p.side];
+    oaApplyTail(c, {'--tail-x': p.x, '--tail-y': p.y,
+                    '--tail-rot': (nu - 45).toFixed(2) + 'deg',
+                    '--tail-skew': (nu - p.theta).toFixed(2) + 'deg'});
   });
 
   /* ② 对话坞气泡（仅对话态存在） */
@@ -1127,7 +1141,8 @@ function oaLayoutTails(){
     if(!b.querySelector('.tail')) return;
     var br = b.getBoundingClientRect();
     if(!br.width || !br.height) return;
-    oaApplyTail(b, tailPlacement(br, A, 90));
+    var p = tailPlacement(br, A, 90);
+    oaApplyTail(b, {'--tail-x': p.x, '--tail-y': p.y, '--tail-angle': p.deg});
   });
 }
 document.addEventListener('scroll', function(){ oaLayoutTails(); }, true);

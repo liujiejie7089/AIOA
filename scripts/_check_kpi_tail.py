@@ -44,13 +44,13 @@ MEASURE_JS = """() => {
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el, '::after');
     const m = cs.transform.match(/matrix\\(([^)]+)\\)/);
-    const p = m ? m[1].split(',').map(Number) : [1,0,0,1,0,0];
+    const q = m ? m[1].split(',').map(Number) : [1,0,0,1,0,0];
     out.cards[k] = {
       box: [r.left, r.top, r.right, r.bottom],
       cx: r.left + r.width/2, cy: r.top + r.height/2,
-      // 落点：::after 的 left/top 相对 padding box，补回 1px 边框
+      // 落点：::after 的 left/top 相对 padding box（与边框盒差 1px 边框，可忽略）
       bx: r.left + 1 + parseFloat(cs.left), by: r.top + 1 + parseFloat(cs.top),
-      rot: Math.atan2(p[1], p[0]) * 180 / Math.PI
+      m: q
     };
   });
   return out;
@@ -64,32 +64,35 @@ def chk(name, ok, detail=''):
 
 
 def verify(width, d):
-    """按宽度逐卡核对：贴边正确 + 顶点指向数字人 + 尾巴尖不外飘。"""
+    """按宽度逐卡核对：贴边正确 + 顶点指向数字人 + 切出来是干净三角形（不是斜方块）。"""
     A = d['A']
     print('— 视口 %dpx：数字人盒 %s 中心 (%.1f, %.1f)'
           % (width, [round(v, 1) for v in d['robot']], A['x'], A['y']))
     for k in ['k1', 'k2', 'k3', 'k4']:
         c = d['cards'][k]
         box = c['box']
-        # 顶点朝向：基准态（不旋转）时顶点在方块的右下角 = 屏幕角 45°，故顶点 = 45° + rot
-        #（自检：原实现 rotate(45deg) 的顶点朝正下 90° = 45 + 45 ✓；若按 rot-45 算会恒差 90°）
-        apex = c['rot'] + 45.0
+        a, b, cc, dd = c['m'][0], c['m'][1], c['m'][2], c['m'][3]
+        # ② 顶点 = 方块右下角（相对中心 +5.5,+5.5）经 computed transform 变换后的偏移方向。
+        #    直接拿浏览器算出来的矩阵作用于形状的已知顶点 —— 不是复算页面里那套公式。
+        vx, vy = (a + cc) * 5.5, (b + dd) * 5.5
+        apex = math.degrees(math.atan2(vy, vx))
         want = math.degrees(math.atan2(A['y'] - c['cy'], A['x'] - c['cx']))
         err = (apex - want + 180) % 360 - 180
+        # ③ 干净三角形的不变量：方块的水平对角线（左下 -5.5,+5.5 ↔ 右上 +5.5,-5.5）
+        #    变换后必须**仍然水平**（两端 y 相等）⇒ 矩阵满足 b == d。
+        #    这正是上一版的缺陷所在：只 rotate 不 skew 时 b=sin、d=cos，除 45°/225° 外都不等，
+        #    卡片边于是斜切方块 ⇒ 渲染成「斜方块」而不是三角（用户报「出错了」）。
+        skew_dy = abs(b - dd)
         dist = {'L': c['bx'] - box[0], 'T': c['by'] - box[1],
                 'R': box[2] - c['bx'], 'B': box[3] - c['by']}
         side = min(dist.items(), key=lambda t: t[1])[0]
-        tipx = c['bx'] + 5.5 * math.cos(math.radians(apex))
-        tipy = c['by'] + 5.5 * math.sin(math.radians(apex))
-        tip_d = math.hypot(A['x'] - tipx, A['y'] - tipy)
-        near_d = math.hypot(A['x'] - c['bx'], A['y'] - c['by'])
-        print('  %s 卡盒=%s 落点=(%.1f,%.1f) 贴边=%s 顶点=%.1f° 目标=%.1f° 误差=%.2f°'
-              % (k, [round(v, 1) for v in box], c['bx'], c['by'], side, apex, want, err))
+        print('  %s 卡盒=%s 落点=(%.1f,%.1f) 贴边=%s 顶点=%.1f° 目标=%.1f° 误差=%.2f° |b-d|=%.5f'
+              % (k, [round(v, 1) for v in box], c['bx'], c['by'], side, apex, want, err, skew_dy))
         chk('%dpx %s 三角贴在朝数字人那一侧（期望 %s）' % (width, k, EXPECT_SIDE[k]),
             side == EXPECT_SIDE[k], side)
         chk('%dpx %s 三角顶点指向数字人（误差 ≤ 0.5°）' % (width, k), abs(err) <= 0.5, '%.2f°' % err)
-        chk('%dpx %s 尾巴尖不向外飘（尖不比落点更远）' % (width, k), tip_d - near_d <= 0.5,
-            '差 %.2f' % (tip_d - near_d))
+        chk('%dpx %s 切出来是干净三角形（对角线保持水平，矩阵 b==d）' % (width, k),
+            skew_dy <= 1e-4, '|b-d|=%.5f' % skew_dy)
 
 
 async def main():
@@ -124,8 +127,8 @@ async def main():
             await page.evaluate("() => document.querySelectorAll('.oa .kpi-float').length") == 4)
         # 三角是否被脚本落位过（变量没写 ⇒ 停在 CSS 兜底值，等于没指向数字人）
         placed = await page.evaluate("""() => [...document.querySelectorAll('.oa .kpi-float')]
-            .map(c => getComputedStyle(c, '::after').getPropertyValue('--tail-angle').trim())""")
-        chk('前置：四张卡的三角都已被脚本落位（--tail-angle 非空）',
+            .map(c => getComputedStyle(c, '::after').getPropertyValue('--tail-rot').trim())""")
+        chk('前置：四张卡的三角都已被脚本落位（--tail-rot 非空）',
             len(placed) == 4 and all(placed), placed)
 
         for w in WIDTHS:

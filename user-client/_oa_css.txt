@@ -125,13 +125,16 @@
 /* 三角：基准态 = 右下角为顶点（border-right + border-bottom 相交的那个角）。
    落点与朝向由 oaLayoutTails() 写入的 --tail-* 决定 —— 与对话坞气泡共用同一份算法，
    「指向数字人的三角」全局只有这一处判定。
-   早先这里是四组写死的静态三角（k1/k2 在卡顶朝上、k3/k4 在卡底朝下），
-   **四张全部背对数字人**，尾巴尖离数字人约 81px。默认值只剩「脚本未跑」的兜底含义。 */
+   早先这里是四组写死的静态三角（k1/k2 在卡顶朝上、k3/k4 在卡底朝下），**四张全背对数字人**。
+   变换顺序（右起先作用）：rotate 先把顶点转到所在边的外法线上 —— 只有这时方块的对角线
+   才垂直于卡片边，切出来才是**干净三角形**；再 skewX 沿法线把顶点斜向数字人。
+   先前的写法只做 rotate、直接转到数字人方向，对角线偏约 34° ⇒ 切出斜方块。
+   skewX 只移动顶点、不动底边（底边始终水平、与卡片边平行）⇒ 形状恒为三角形。 */
 .oa .kpi-float::after{
   content:""; position:absolute; width:11px; height:11px; background:var(--surface);
   border-right:1px solid var(--border); border-bottom:1px solid var(--border);
   left:var(--tail-x,50%); top:var(--tail-y,50%);
-  transform:translate(-50%,-50%) rotate(var(--tail-angle,-45deg));
+  transform:translate(-50%,-50%) skewX(var(--tail-skew,0deg)) rotate(var(--tail-rot,45deg));
 }
 .oa .robot-tag{
   display:inline-flex; align-items:center; gap:6px; margin:0 auto;
