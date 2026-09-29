@@ -1071,7 +1071,7 @@ function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
    落点 = 从宿主中心朝锚点发射的射线与宿主矩形边的交点 —— 保证三角永远贴在边上，
    且贴的是「朝数字人那一侧」的边。
    返回：x/y 落点（相对宿主 padding box 的 CSS 值）、deg 顶点朝向（= θ + baseDeg，
-   供 SVG 三角直接 rotate）、side 落点所在边（T/B/L/R）、theta 顶点→锚点的方向角。
+   供 SVG 三角直接 rotate）。
    baseDeg = 宿主三角「基准态」的朝向补偿：对话坞 .bub .tail 是 SVG、基准态顶点朝上
    （屏幕角 -90°）⇒ +90°。屏幕角：0°=正右、90°=正下，与 CSS rotate 同向，
    故 atan2(dy,dx) 可直接用。
@@ -1080,7 +1080,7 @@ function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
    不写 = 停在 CSS 兜底的初始值，现象与「退化」相同但更隐蔽。 */
 function tailPlacement(br, A, baseDeg){
   var hw = br.width/2, hh = br.height/2;
-  var px = hw, py = 0, deg = baseDeg, side = 'T', theta = -90;
+  var px = hw, py = 0, deg = baseDeg;
   if(A){
     var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
     if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
@@ -1091,13 +1091,10 @@ function tailPlacement(br, A, baseDeg){
     var t = Math.min(tx, ty);
     if(isFinite(t)){
       px = hw + ux*t; py = hh + uy*t;
-      theta = th*180/Math.PI;
-      deg = theta + baseDeg;
-      side = ty <= tx ? (uy > 0 ? 'B' : 'T') : (ux > 0 ? 'R' : 'L');
+      deg = th*180/Math.PI + baseDeg;
     }
   }
-  return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg',
-          pxv:px, pyv:py, side:side, theta:theta};
+  return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg'};
 }
 
 /* 变量写在**宿主**上（伪元素与子元素都靠继承拿到），
@@ -1118,32 +1115,11 @@ function oaLayoutTails(){
     if(sr && sr.width && sr.height) A = {x:sr.left + sr.width/2, y:sr.top + sr.height/2};
   }
 
-/* ① 首页四张浮动指标卡：尾巴直接**复用对话坞气泡的尾巴组件**（.tail，13×13 旋转三角）——
-     用户口径「不要调整三角了，用气泡组件来生成」，不再自绘三角（自绘路线两轮被否决，
-     pitfalls #105）。落点 = 卡片中心 → 数字人 射线与卡片边的交点，但**沿边收进、
-     离转角 ≥ TAIL_INSET**：桌面宽度下该射线恰好从转角出入（实测离转角 0px），
-     尾巴楔在转角上读不出「长在边上」；收进只动沿边坐标，**朝向按最终落点重新指向数字人**
-     （组件三角随 --tail-angle 整体旋转、底边不要求贴边，正是气泡组件的形态）。 */
-  var TAIL_INSET = 14;
-  home.querySelectorAll('.kpi-float').forEach(function(c){
-    var tail = c.querySelector('.tail'); if(!tail) return;
-    var r = c.getBoundingClientRect(); if(!r.width || !r.height) return;
-    var p = tailPlacement(r, A, 90);
-    /* tailPlacement 的 px/py 是**边框盒**坐标，而 CSS left/top 相对**内边盒**（差 1px 边框）。
-       先换到内边盒再收进，保证两侧离边框边都 ≥ TAIL_INSET；朝向按真实渲染落点
-       （边框盒 = 内边盒 + 1px）重新指向数字人。 */
-    var qx = p.pxv - 1, qy = p.pyv - 1;
-    if(p.side === 'L' || p.side === 'R'){
-      qy = Math.max(TAIL_INSET, Math.min(r.height - 2 - TAIL_INSET, qy));
-    } else {
-      qx = Math.max(TAIL_INSET, Math.min(r.width - 2 - TAIL_INSET, qx));
-    }
-    var th2 = Math.atan2(A.y - (r.top + 1 + qy), A.x - (r.left + 1 + qx));
-    oaApplyTail(c, {'--tail-x': qx.toFixed(2) + 'px', '--tail-y': qy.toFixed(2) + 'px',
-                    '--tail-angle': (th2*180/Math.PI + 90).toFixed(2) + 'deg'});
-  });
+  /* 首页四张浮动指标卡**不再有尾巴**（用户口径「去掉这四个气泡」）——
+     卡片本身就是完整形态，不挂任何三角/气泡尾巴。此处不做任何落位计算；
+     若将来又要尾巴，请复用下面 ② 的对话坞尾巴组件，不要另写几何（pitfalls #105）。 */
 
-  /* ② 对话坞气泡（仅对话态存在） */
+  /* 对话坞气泡（仅对话态存在） */
   if(!home.classList.contains('chatting')) return;
   home.querySelectorAll('.bub').forEach(function(b){
     if(!b.querySelector('.tail')) return;

@@ -105,7 +105,8 @@
 .oa .kpi-float{
   position:absolute; width:112px; background:var(--surface); border:1px solid var(--border);
   border-radius:14px; padding:10px 12px; box-shadow:var(--sh-2); text-align:left;
-  transition:transform var(--dur) var(--ease); z-index:2;
+  transition:transform var(--dur) var(--ease);
+  z-index:2;   /* 卡片是交互 UI、数字人是装饰插画：矮视口下两者位图相交时 UI 必须在上面 */
 }
 .oa .kpi-float:hover{transform:translateY(-3px)}
 .oa .kpi-float .k-label{font-size:11.5px; font-weight:600; color:var(--text-2)}
@@ -122,24 +123,10 @@
 .oa .kpi-float.k4{bottom:10px; right:0}
 .oa .kpi-float.k3 .k-val{color:var(--blue-dark)}
 .oa .kpi-float.k4 .k-val{color:var(--brand-ink)}
-/* 尾巴 = **对话坞气泡的同一个尾巴组件**（.tail，13×13 旋转三角，用户口径「用气泡组件来生成」）：
-   元素、path、定位/旋转机制与 .bub .tail 完全一致，仅填充/描边色取卡片配色。
-   落位与朝向由 oaLayoutTails() 写入的 --tail-* 驱动；三角随 --tail-angle 整体旋转，
-   底边不要求与卡片边平行 —— 这正是气泡组件的形态（自绘三角路线两轮被否决，pitfalls #105）。
-   两条可见性铁律（都只有 1x 实拍能发现，几何断言全绿也拦不住）：
-   ① **白组件在浅背景上靠投影成立** —— 白填充 + #e6eaf2 描边在浅灰底上近乎隐形，
-      必须带与卡片同源的投影（drop-shadow 不支持 spread，用两段近似 --sh-2）；
-   ② 描边只描**两条斜边**（开放 path）—— 若整周描边，底边那条会横在尾巴嘴里、
-      落在卡片内部，看起来像一根多出来的线。 */
-.oa .kpi-float .tail{
-  position:absolute; width:13px; height:13px;
-  left:var(--tail-x,50%); top:var(--tail-y,50%);
-  transform:translate(-50%,-50%) rotate(var(--tail-angle,0deg));
-  transform-origin:50% 50%; pointer-events:none;
-  filter:drop-shadow(0 2px 3px rgba(20,26,38,.07)) drop-shadow(0 8px 16px rgba(20,26,38,.13));
-}
-.oa .kpi-float .tail .tf{fill:var(--surface)}
-.oa .kpi-float .tail .tl{fill:none; stroke:var(--border); stroke-width:1; stroke-linejoin:round}
+/* 尾巴（.tail）已从四张浮动卡上去掉（用户口径「去掉这四个气泡」）：卡片是完整形态。
+   对话坞气泡 .bub .tail 不受影响，仍是同一个尾巴组件（13×13 旋转三角）。
+   历史：浮动卡尾巴先后用过「写死静态三角」「方块切角」「自绘 SVG」「复用气泡组件」
+   四套实现，前两套被真实缺陷否决、后两套被口径否决 —— 见 pitfalls #105/#107。 */
 .oa .robot-tag{
   display:inline-flex; align-items:center; gap:6px; margin:0 auto;
   background:var(--surface); border:1px solid var(--brand-line); border-radius:var(--r-full);
