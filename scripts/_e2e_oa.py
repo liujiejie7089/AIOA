@@ -65,7 +65,10 @@ async def tail_geometry(page):
         const cx = br.left + br.width/2, cy = br.top + br.height/2;
         const theta = Math.atan2(A.y - cy, A.x - cx);
         let expect = (theta + Math.PI/2) * 180 / Math.PI;
-        let got = parseFloat(t.style.getPropertyValue('--tail-angle')) || 0;
+        /* 取**计算值**而非内联值：内联值把「JS 把变量写在哪个节点」这个实现细节焊进了断言，
+           变量一旦改写到宿主（.bub）上，内联读法就恒得 0、误报「三角没落位」。
+           计算值带继承，写在宿主还是三角节点都读得到真实渲染结果。 */
+        let got = parseFloat(getComputedStyle(t).getPropertyValue('--tail-angle')) || 0;
         let d = Math.abs(expect - got) % 360;
         if (d > 180) d = 360 - d;
         out.push({err: +d.toFixed(3), expect: +expect.toFixed(2), got: +got.toFixed(2)});
@@ -280,8 +283,9 @@ async def main():
                   const out = [];
                   document.querySelectorAll('.bub').forEach(b => {
                     const br = b.getBoundingClientRect();
-                    const x = parseFloat(b.querySelector('.tail').style.getPropertyValue('--tail-x'));
-                    const y = parseFloat(b.querySelector('.tail').style.getPropertyValue('--tail-y'));
+                    const tcs = getComputedStyle(b.querySelector('.tail'));
+                    const x = parseFloat(tcs.getPropertyValue('--tail-x'));
+                    const y = parseFloat(tcs.getPropertyValue('--tail-y'));
                     const eps = 1.5;
                     const okX = Math.abs(x) <= eps || Math.abs(x - br.width) <= eps;
                     const okY = Math.abs(y) <= eps || Math.abs(y - br.height) <= eps;

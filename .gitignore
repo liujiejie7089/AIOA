@@ -112,6 +112,8 @@ proxy-run*.log
 scripts/_shot_oa/
 # 知识库「点开查看/删除」交付截图（人工核对用，可随时重跑再生成）
 scripts/_shot_kbdoc/
+# 首页浮动卡三角指向自检截图（scripts/_check_kpi_tail.py 产出，可随时重跑再生成）
+scripts/_shot_kpi/
 
 # ---- 第三方系统对接资料（含凭证，严禁入库）----
 # 非遗四川接口文档原文含 SSO clientSecret / AES 密钥 / JWT 签名密钥，

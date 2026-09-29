@@ -111,23 +111,28 @@
 .oa .kpi-float .k-label{font-size:11.5px; font-weight:600; color:var(--text-2)}
 .oa .kpi-float .k-val{font-family:var(--font-mono); font-size:23px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.25}
 .oa .kpi-float .k-val span{font-family:var(--font-body); font-size:11.5px; font-weight:500; color:var(--text-2); margin-left:2px}
-.oa .kpi-float.k1{top:2px; left:0}
-.oa .kpi-float.k2{top:2px; right:0}
+/* 四张卡贴住数字人四周。竖向间距口径（数字人静止盒 y 239.7~538.4，随 r-bob 上浮 8px）：
+   上两张下沿落在 239.8、下两张上沿落在 541.3 —— 视觉上就是「贴着数字人」，
+   而头顶/脚边的实际不透明像素更靠内，故上浮到波峰也不会真的叠上。 */
+.oa .kpi-float.k1{top:6px; left:0}
+.oa .kpi-float.k2{top:6px; right:0}
 .oa .kpi-float.k1 .k-val{color:var(--brand)}
 .oa .kpi-float.k2 .k-val{color:var(--amber-ink)}
-.oa .kpi-float.k3{bottom:6px; left:0}
-.oa .kpi-float.k4{bottom:6px; right:0}
+.oa .kpi-float.k3{bottom:10px; left:0}
+.oa .kpi-float.k4{bottom:10px; right:0}
 .oa .kpi-float.k3 .k-val{color:var(--blue-dark)}
 .oa .kpi-float.k4 .k-val{color:var(--brand-ink)}
+/* 三角：基准态 = 右下角为顶点（border-right + border-bottom 相交的那个角）。
+   落点与朝向由 oaLayoutTails() 写入的 --tail-* 决定 —— 与对话坞气泡共用同一份算法，
+   「指向数字人的三角」全局只有这一处判定。
+   早先这里是四组写死的静态三角（k1/k2 在卡顶朝上、k3/k4 在卡底朝下），
+   **四张全部背对数字人**，尾巴尖离数字人约 81px。默认值只剩「脚本未跑」的兜底含义。 */
 .oa .kpi-float::after{
-  content:""; position:absolute; bottom:-6px; width:11px; height:11px; background:var(--surface);
-  border-right:1px solid var(--border); border-bottom:1px solid var(--border); transform:rotate(45deg);
+  content:""; position:absolute; width:11px; height:11px; background:var(--surface);
+  border-right:1px solid var(--border); border-bottom:1px solid var(--border);
+  left:var(--tail-x,50%); top:var(--tail-y,50%);
+  transform:translate(-50%,-50%) rotate(var(--tail-angle,-45deg));
 }
-.oa .kpi-float.k1::after,.oa .kpi-float.k2::after{bottom:auto; top:-6px; border:0; border-left:1px solid var(--border); border-top:1px solid var(--border)}
-.oa .kpi-float.k1::after{right:26px}
-.oa .kpi-float.k2::after{left:26px}
-.oa .kpi-float.k3::after{right:26px}
-.oa .kpi-float.k4::after{left:26px}
 .oa .robot-tag{
   display:inline-flex; align-items:center; gap:6px; margin:0 auto;
   background:var(--surface); border:1px solid var(--brand-line); border-radius:var(--r-full);

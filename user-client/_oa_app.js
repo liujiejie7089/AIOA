@@ -1067,37 +1067,67 @@ function oaPushBub(role, html, opts){
 }
 function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
 
-/* 气泡三角朝向：全部指向数字人锚点（用户口径「气泡三角都对着数字人」）。
-   三角基准为「顶点朝上」，故旋转量 = 方向角 θ + 90°。
-   落点 = 从气泡中心朝锚点发射的射线与气泡矩形边的交点（保证三角永远贴在边上）。
+/* 三角指向数字人：**唯一一处**算法（首页浮动指标卡与对话坞气泡共用同一份）。
+   落点 = 从宿主中心朝锚点发射的射线与宿主矩形边的交点（保证三角永远贴在边上）；
+   朝向 = 该射线的方向角 θ，再补偿「宿主自身三角的基准态」baseDeg：
+     · 对话坞 .bub .tail 是 SVG，基准态「顶点朝上」= 屏幕角 -90° ⇒ baseDeg = +90°
+     · 首页 .kpi-float::after 是转 45° 的方块（border-right+bottom 那个角为顶点），
+       基准态「顶点朝右下」= 屏幕角 +45° ⇒ baseDeg = -45°
+   （屏幕角：0°=正右、90°=正下，与 CSS rotate 同向，故 atan2(dy,dx) 可直接用。）
    视口窄也不例外 —— 之前 <360px 时退化成「恒朝正上方」，那就不再指向数字人了。
-   量不到锚点（视图隐藏中、位图未解码）时写成「正上方居中」而不是不写：
-   不写 = 停在 --tail-angle 的初始态 0deg，现象与「退化」相同但更隐蔽。 */
+   量不到锚点（视图隐藏中、位图未解码）时写成「贴顶边居中 + 基准朝向」而不是不写：
+   不写 = 停在 --tail-angle 的初始态，现象与「退化」相同但更隐蔽。 */
+function tailPlacement(br, A, baseDeg){
+  var hw = br.width/2, hh = br.height/2;
+  var px = hw, py = 0, deg = baseDeg;
+  if(A){
+    var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
+    if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
+    var th = Math.atan2(dy, dx);
+    var ux = Math.cos(th), uy = Math.sin(th);
+    var tx = Math.abs(ux) < 1e-6 ? Infinity : hw/Math.abs(ux);
+    var ty = Math.abs(uy) < 1e-6 ? Infinity : hh/Math.abs(uy);
+    var t = Math.min(tx, ty);
+    if(isFinite(t)){ px = hw + ux*t; py = hh + uy*t; deg = th*180/Math.PI + baseDeg; }
+  }
+  return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg'};
+}
+
+/* 变量写在**宿主**上（伪元素与子元素都靠继承拿到），这样三角是子元素还是
+   ::after 都不影响调用方。 */
+function oaApplyTail(host, p){
+  host.style.setProperty('--tail-x', p.x);
+  host.style.setProperty('--tail-y', p.y);
+  host.style.setProperty('--tail-angle', p.deg);
+}
+
 function oaLayoutTails(){
-  var home = $o('v-home');
-  if(!home || !home.classList.contains('chatting')) return;
+  var home = $o('v-home'); if(!home) return;
   var anchor = ROBOT || home.querySelector('.robot-wrap');
   var ar = anchor ? anchor.getBoundingClientRect() : null;
   var A = (ar && ar.width && ar.height) ? {x:ar.left + ar.width/2, y:ar.top + ar.height/2} : null;
+  /* 量不到数字人（视图隐藏中）时退到舞台中心 —— 数字人本就是 stage 的 50%/50%
+     居中，故这个回退与真值同源，不是估的。 */
+  if(!A){
+    var st = $o('oaStage'); var sr = st ? st.getBoundingClientRect() : null;
+    if(sr && sr.width && sr.height) A = {x:sr.left + sr.width/2, y:sr.top + sr.height/2};
+  }
+
+  /* ① 首页四张浮动指标卡（不对话时显示）：三角一律指向数字人。
+     此前它们是写死的 CSS 静态三角 —— k1/k2 在卡顶朝上、k3/k4 在卡底朝下，
+     **四张全部背对数字人**，尾巴尖离数字人约 81px。 */
+  home.querySelectorAll('.kpi-float').forEach(function(c){
+    var r = c.getBoundingClientRect(); if(!r.width || !r.height) return;
+    oaApplyTail(c, tailPlacement(r, A, -45));
+  });
+
+  /* ② 对话坞气泡（仅对话态存在） */
+  if(!home.classList.contains('chatting')) return;
   home.querySelectorAll('.bub').forEach(function(b){
-    var tail = b.querySelector('.tail'); if(!tail) return;
+    if(!b.querySelector('.tail')) return;
     var br = b.getBoundingClientRect();
     if(!br.width || !br.height) return;
-    var hw = br.width/2, hh = br.height/2;
-    var px = hw, py = 0, ang = 0;
-    if(A){
-      var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
-      if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
-      var th = Math.atan2(dy, dx);
-      var ux = Math.cos(th), uy = Math.sin(th);
-      var tx = Math.abs(ux) < 1e-6 ? Infinity : hw/Math.abs(ux);
-      var ty = Math.abs(uy) < 1e-6 ? Infinity : hh/Math.abs(uy);
-      var t = Math.min(tx, ty);
-      if(isFinite(t)){ px = hw + ux*t; py = hh + uy*t; ang = th + Math.PI/2; }
-    }
-    tail.style.setProperty('--tail-x', px.toFixed(2) + 'px');
-    tail.style.setProperty('--tail-y', py.toFixed(2) + 'px');
-    tail.style.setProperty('--tail-angle', (ang*180/Math.PI).toFixed(2) + 'deg');
+    oaApplyTail(b, tailPlacement(br, A, 90));
   });
 }
 document.addEventListener('scroll', function(){ oaLayoutTails(); }, true);

@@ -903,23 +903,28 @@
 .oa .kpi-float .k-label{font-size:11.5px; font-weight:600; color:var(--text-2)}
 .oa .kpi-float .k-val{font-family:var(--font-mono); font-size:23px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.25}
 .oa .kpi-float .k-val span{font-family:var(--font-body); font-size:11.5px; font-weight:500; color:var(--text-2); margin-left:2px}
-.oa .kpi-float.k1{top:2px; left:0}
-.oa .kpi-float.k2{top:2px; right:0}
+/* 四张卡贴住数字人四周。竖向间距口径（数字人静止盒 y 239.7~538.4，随 r-bob 上浮 8px）：
+   上两张下沿落在 239.8、下两张上沿落在 541.3 —— 视觉上就是「贴着数字人」，
+   而头顶/脚边的实际不透明像素更靠内，故上浮到波峰也不会真的叠上。 */
+.oa .kpi-float.k1{top:6px; left:0}
+.oa .kpi-float.k2{top:6px; right:0}
 .oa .kpi-float.k1 .k-val{color:var(--brand)}
 .oa .kpi-float.k2 .k-val{color:var(--amber-ink)}
-.oa .kpi-float.k3{bottom:6px; left:0}
-.oa .kpi-float.k4{bottom:6px; right:0}
+.oa .kpi-float.k3{bottom:10px; left:0}
+.oa .kpi-float.k4{bottom:10px; right:0}
 .oa .kpi-float.k3 .k-val{color:var(--blue-dark)}
 .oa .kpi-float.k4 .k-val{color:var(--brand-ink)}
+/* 三角：基准态 = 右下角为顶点（border-right + border-bottom 相交的那个角）。
+   落点与朝向由 oaLayoutTails() 写入的 --tail-* 决定 —— 与对话坞气泡共用同一份算法，
+   「指向数字人的三角」全局只有这一处判定。
+   早先这里是四组写死的静态三角（k1/k2 在卡顶朝上、k3/k4 在卡底朝下），
+   **四张全部背对数字人**，尾巴尖离数字人约 81px。默认值只剩「脚本未跑」的兜底含义。 */
 .oa .kpi-float::after{
-  content:""; position:absolute; bottom:-6px; width:11px; height:11px; background:var(--surface);
-  border-right:1px solid var(--border); border-bottom:1px solid var(--border); transform:rotate(45deg);
+  content:""; position:absolute; width:11px; height:11px; background:var(--surface);
+  border-right:1px solid var(--border); border-bottom:1px solid var(--border);
+  left:var(--tail-x,50%); top:var(--tail-y,50%);
+  transform:translate(-50%,-50%) rotate(var(--tail-angle,-45deg));
 }
-.oa .kpi-float.k1::after,.oa .kpi-float.k2::after{bottom:auto; top:-6px; border:0; border-left:1px solid var(--border); border-top:1px solid var(--border)}
-.oa .kpi-float.k1::after{right:26px}
-.oa .kpi-float.k2::after{left:26px}
-.oa .kpi-float.k3::after{right:26px}
-.oa .kpi-float.k4::after{left:26px}
 .oa .robot-tag{
   display:inline-flex; align-items:center; gap:6px; margin:0 auto;
   background:var(--surface); border:1px solid var(--brand-line); border-radius:var(--r-full);
@@ -7014,37 +7019,67 @@ function oaPushBub(role, html, opts){
 }
 function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
 
-/* 气泡三角朝向：全部指向数字人锚点（用户口径「气泡三角都对着数字人」）。
-   三角基准为「顶点朝上」，故旋转量 = 方向角 θ + 90°。
-   落点 = 从气泡中心朝锚点发射的射线与气泡矩形边的交点（保证三角永远贴在边上）。
+/* 三角指向数字人：**唯一一处**算法（首页浮动指标卡与对话坞气泡共用同一份）。
+   落点 = 从宿主中心朝锚点发射的射线与宿主矩形边的交点（保证三角永远贴在边上）；
+   朝向 = 该射线的方向角 θ，再补偿「宿主自身三角的基准态」baseDeg：
+     · 对话坞 .bub .tail 是 SVG，基准态「顶点朝上」= 屏幕角 -90° ⇒ baseDeg = +90°
+     · 首页 .kpi-float::after 是转 45° 的方块（border-right+bottom 那个角为顶点），
+       基准态「顶点朝右下」= 屏幕角 +45° ⇒ baseDeg = -45°
+   （屏幕角：0°=正右、90°=正下，与 CSS rotate 同向，故 atan2(dy,dx) 可直接用。）
    视口窄也不例外 —— 之前 <360px 时退化成「恒朝正上方」，那就不再指向数字人了。
-   量不到锚点（视图隐藏中、位图未解码）时写成「正上方居中」而不是不写：
-   不写 = 停在 --tail-angle 的初始态 0deg，现象与「退化」相同但更隐蔽。 */
+   量不到锚点（视图隐藏中、位图未解码）时写成「贴顶边居中 + 基准朝向」而不是不写：
+   不写 = 停在 --tail-angle 的初始态，现象与「退化」相同但更隐蔽。 */
+function tailPlacement(br, A, baseDeg){
+  var hw = br.width/2, hh = br.height/2;
+  var px = hw, py = 0, deg = baseDeg;
+  if(A){
+    var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
+    if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
+    var th = Math.atan2(dy, dx);
+    var ux = Math.cos(th), uy = Math.sin(th);
+    var tx = Math.abs(ux) < 1e-6 ? Infinity : hw/Math.abs(ux);
+    var ty = Math.abs(uy) < 1e-6 ? Infinity : hh/Math.abs(uy);
+    var t = Math.min(tx, ty);
+    if(isFinite(t)){ px = hw + ux*t; py = hh + uy*t; deg = th*180/Math.PI + baseDeg; }
+  }
+  return {x:px.toFixed(2) + 'px', y:py.toFixed(2) + 'px', deg:deg.toFixed(2) + 'deg'};
+}
+
+/* 变量写在**宿主**上（伪元素与子元素都靠继承拿到），这样三角是子元素还是
+   ::after 都不影响调用方。 */
+function oaApplyTail(host, p){
+  host.style.setProperty('--tail-x', p.x);
+  host.style.setProperty('--tail-y', p.y);
+  host.style.setProperty('--tail-angle', p.deg);
+}
+
 function oaLayoutTails(){
-  var home = $o('v-home');
-  if(!home || !home.classList.contains('chatting')) return;
+  var home = $o('v-home'); if(!home) return;
   var anchor = ROBOT || home.querySelector('.robot-wrap');
   var ar = anchor ? anchor.getBoundingClientRect() : null;
   var A = (ar && ar.width && ar.height) ? {x:ar.left + ar.width/2, y:ar.top + ar.height/2} : null;
+  /* 量不到数字人（视图隐藏中）时退到舞台中心 —— 数字人本就是 stage 的 50%/50%
+     居中，故这个回退与真值同源，不是估的。 */
+  if(!A){
+    var st = $o('oaStage'); var sr = st ? st.getBoundingClientRect() : null;
+    if(sr && sr.width && sr.height) A = {x:sr.left + sr.width/2, y:sr.top + sr.height/2};
+  }
+
+  /* ① 首页四张浮动指标卡（不对话时显示）：三角一律指向数字人。
+     此前它们是写死的 CSS 静态三角 —— k1/k2 在卡顶朝上、k3/k4 在卡底朝下，
+     **四张全部背对数字人**，尾巴尖离数字人约 81px。 */
+  home.querySelectorAll('.kpi-float').forEach(function(c){
+    var r = c.getBoundingClientRect(); if(!r.width || !r.height) return;
+    oaApplyTail(c, tailPlacement(r, A, -45));
+  });
+
+  /* ② 对话坞气泡（仅对话态存在） */
+  if(!home.classList.contains('chatting')) return;
   home.querySelectorAll('.bub').forEach(function(b){
-    var tail = b.querySelector('.tail'); if(!tail) return;
+    if(!b.querySelector('.tail')) return;
     var br = b.getBoundingClientRect();
     if(!br.width || !br.height) return;
-    var hw = br.width/2, hh = br.height/2;
-    var px = hw, py = 0, ang = 0;
-    if(A){
-      var dx = A.x - (br.left + hw), dy = A.y - (br.top + hh);
-      if(Math.abs(dx) < 1 && Math.abs(dy) < 1){ dx = 0; dy = -1; }
-      var th = Math.atan2(dy, dx);
-      var ux = Math.cos(th), uy = Math.sin(th);
-      var tx = Math.abs(ux) < 1e-6 ? Infinity : hw/Math.abs(ux);
-      var ty = Math.abs(uy) < 1e-6 ? Infinity : hh/Math.abs(uy);
-      var t = Math.min(tx, ty);
-      if(isFinite(t)){ px = hw + ux*t; py = hh + uy*t; ang = th + Math.PI/2; }
-    }
-    tail.style.setProperty('--tail-x', px.toFixed(2) + 'px');
-    tail.style.setProperty('--tail-y', py.toFixed(2) + 'px');
-    tail.style.setProperty('--tail-angle', (ang*180/Math.PI).toFixed(2) + 'deg');
+    oaApplyTail(b, tailPlacement(br, A, 90));
   });
 }
 document.addEventListener('scroll', function(){ oaLayoutTails(); }, true);

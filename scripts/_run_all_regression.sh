@@ -50,6 +50,8 @@ SUITES=(
   _e2e_oa.py
   _e2e_oa_approve.py
   _check_oa_visual.py
+  # 首页四张浮动卡的三角必须指向数字人（几何 + 波峰像素重叠）
+  _check_kpi_tail.py
 )
 
 for s in "${SUITES[@]}"; do
