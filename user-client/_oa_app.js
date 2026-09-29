@@ -27,6 +27,7 @@ var S = {
   apprDetail:null,       // 正在看的审批单 {id, scope}
   deptId:null,           // 部门筛选（null = 全部）
   orgQ:'', kbQ:'',
+  docId:null,            // 正在查看的资料（资料详情覆盖层）
   org:null,              // 组织数据缓存（profile / departments / members）
   leave:null             // 我的请假（日程数据源之一）
 };
@@ -441,8 +442,9 @@ function renderKb(){
   var docs = arr(state.kbDocs);
   var grid = $o('oaKbGrid');
   if(grid){
-    var ready = docs.filter(function(d){ return d.state === 'READY'; }).length;
-    var proc  = docs.filter(function(d){ return d.state && d.state !== 'READY' && d.state !== 'FAILED'; }).length;
+    // 状态档一律经 kbStateLevel()（唯一认识后端词表的地方）：后端返回的是小写 ok/wait/failed
+    var ready = docs.filter(function(d){ return kbStateLevel(d.state) === 'ok'; }).length;
+    var proc  = docs.filter(function(d){ return kbStateLevel(d.state) === 'progress'; }).length;
     var chunks = docs.reduce(function(s, d){ return s + n(d.chunkCount); }, 0);
     grid.innerHTML = [
       ['folder','我的文档', docs.length],
@@ -452,28 +454,95 @@ function renderKb(){
     ].map(function(x, i){
       return '<div class="kb-tile'+(i === 1 ? ' kb-blue' : (i === 3 ? ' kb-amber' : ''))+'">'+
         ic(x[0],26)+'<span>'+x[1]+'</span>'+
-        '<b class="num" style="font-size:15px;margin-top:3px">'+x[2]+'</b></div>';
+        '<b class="num" style="font-size:15px">'+x[2]+'</b></div>';
     }).join('');
   }
   var list = $o('oaKbList'); if(!list) return;
   if(!docs.length){ list.innerHTML = empty('知识库还没有文档，点右上「上传文档」'); return; }
   list.innerHTML = docs.slice(0, 30).map(function(d){
-    var st = d.state === 'READY' ? chip('due','已就绪')
-           : (d.state === 'FAILED' ? chip('rej','失败') : chip('wait', d.state || '处理中'));
+    var lv = kbStateLevel(d.state);
+    var st = lv === 'ok' ? chip('due','已就绪')
+           : (lv === 'failed' ? chip('rej','失败') : chip('wait','处理中'));
     // 后端 KbService.guessIcon 的词表精确为 {doc, sheet, pdf, file} —— 没有 'xls'。
     // 色块按该词表映射（表格=绿 xls、PDF=青 pdf、其余=蓝 doc），
     // 字形只在 i-sheet 存在时替换（i-pdf / i-file 未定义，用 doc 字形兜底，避免空白图标）。
     var icoCls = d.icon === 'sheet' ? 'xls' : (d.icon === 'pdf' ? 'pdf' : 'doc');
     var icoGlyph = d.icon === 'sheet' ? 'sheet' : 'doc';
-    return '<div class="lrow">'+
+    // 整行可点开查看（role=button + tabindex：键盘也能开）
+    return '<div class="lrow docrow" data-doc="'+n(d.id)+'" role="button" tabindex="0" '+
+        'aria-label="查看「'+txt(d.name)+'」">'+
       '<div class="file-ico '+icoCls+'">'+
         ic(icoGlyph, 18)+'</div>'+
       '<div class="txt"><div class="t1 truncate">'+txt(d.name)+'</div>'+
       // scope 是大写枚举（DocView 默认 "PERSONAL"；经典页亦用 === 'TENANT' 判定）
       '<div class="t2">'+txt(d.scope === 'TENANT' ? '企业知识库' : '我的知识库')+
         ' · '+n(d.chunkCount)+' 切片 · '+txt((d.sizeBytes ? Math.max(1, Math.round(n(d.sizeBytes)/1024))+' KB' : '—'))+
-        ' · '+txt(dt(d.createdAt))+'</div></div>'+ st +'</div>';
+        ' · '+txt(dt(d.createdAt))+'</div></div>'+ st +
+      '<svg class="ic go"><use href="#i-chevron"/></svg></div>';
   }).join('');
+  list.querySelectorAll('.docrow').forEach(function(row){
+    function open(){ oaOpenDoc(n(row.dataset.doc)); }
+    row.onclick = open;
+    row.onkeydown = function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); }
+    };
+  });
+}
+
+/* ------------------------------------------- 5b. 资料详情：点开查看 / 删除
+   ① 正文块复用经典侧的 kbDocBodyHtml()：元信息（范围/大小/切片/时间/失败原因）
+      只解释一遍，两形态不会各自分叉。
+   ② 删除按钮只对「本人上传」显示 —— 与经典 renderKb 同一显示口径；
+      真正的判定在服务端（无权会 403），前端只决定要不要给这个入口。
+   ③ 打开期间用 S.docId 做「后开者胜」的守卫：连点两份资料时，先到的响应不得
+      覆盖后开的那份（否则详情与标题会错位）。 */
+function oaOpenDoc(id){
+  if(!id) return;
+  var root = document.querySelector('#oaRoot'); if(!root) return;
+  S.docId = id;
+  var t = $o('oaDocTitle'); if(t) t.textContent = '资料详情';
+  var b = $o('oaDocBody'); if(b) b.innerHTML = '<div class="muted" style="padding:10px 2px">加载中…</div>';
+  var del = $o('oaDocDel'); if(del){ del.style.display = 'none'; del.disabled = false; }
+  root.classList.add('doc-open');
+  $o('oaDocView').setAttribute('aria-hidden', 'false');
+  API.kbDocDetail(id).then(function(r){
+    if(S.docId !== id) return;                 // 已被后一次点开取代
+    var d = (r && r.doc) || {};
+    if(t) t.textContent = d.name || '资料详情';
+    if(b) b.innerHTML = kbDocBodyHtml(r);
+    var me = state.user && state.user.id;
+    if(del && me && d.ownerUserId === me){
+      del.textContent = '删除资料';
+      del.style.display = '';
+    }
+  }).catch(function(e){
+    if(S.docId !== id) return;
+    if(b) b.innerHTML = '<div class="empty">'+ic('warn', 26)+'<div>'+txt((e && e.message) || '加载失败')+'</div></div>';
+  });
+}
+function oaCloseDoc(){
+  var root = document.querySelector('#oaRoot'); if(root) root.classList.remove('doc-open');
+  var v = $o('oaDocView'); if(v) v.setAttribute('aria-hidden', 'true');
+  S.docId = null;
+}
+async function oaDeleteDoc(){
+  var id = S.docId; if(!id) return;
+  var del = $o('oaDocDel');
+  if(del) del.disabled = true;
+  try{
+    var okDel = await askConfirm('确定删除该资料？删除后不再参与会话引用。',
+      {title:'删除资料', okText:'删除', danger:true});
+    if(!okDel) return;
+    await API.kbDelete(id);
+    oaCloseDoc();
+    toast('已删除并留痕');
+    state.kbDocs = arr(await API.kbDocs());
+    renderKb();
+  }catch(e){
+    toast('删除失败：' + ((e && e.message) || '未知错误'));
+  }finally{
+    if(del) del.disabled = false;
+  }
 }
 
 /* ------------------------------------------------------ 6. 部门 / 通讯录页面 */
@@ -1379,6 +1448,13 @@ function bind(){
     };
   }
 
+  // 资料详情覆盖层（点开查看上传的文档）
+  var dMask = $o('oaDocMask'), dBack = $o('oaDocBack'), dDone = $o('oaDocDone'), dDel = $o('oaDocDel');
+  if(dMask) dMask.onclick = oaCloseDoc;
+  if(dBack) dBack.onclick = oaCloseDoc;
+  if(dDone) dDone.onclick = oaCloseDoc;
+  if(dDel)  dDel.onclick = oaDeleteDoc;
+
   var orgQ = $o('oaOrgQ');
   if(orgQ) orgQ.addEventListener('keydown', function(e){
     if(e.key !== 'Enter') return;
@@ -1387,7 +1463,7 @@ function bind(){
   });
 
   document.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){ oaCloseDrawer(); oaCloseSheet(); }
+    if(e.key === 'Escape'){ oaCloseDoc(); oaCloseDrawer(); oaCloseSheet(); }
   });
 }
 

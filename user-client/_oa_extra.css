@@ -15,6 +15,9 @@
   --brand:#12b39a; --brand-dark:#0d9480; --brand-soft:#e6f7f3;
   --brand-line:#b7e7de; --brand-ink:#0a6d5e;
   --ab-h:52px; --tab-h:64px;
+  /* 危险动作的文字色：经典 --red #d93a3f 压在 --red-soft #fdecec 上只有 3.97:1，
+     达不到 13.5px 正文门槛；这里给同一色相加深一档（4.77:1），只用于新增控件。 */
+  --red-ink:#c62f34;
 }
 
 /* ---- ② 首页对话坞：数字人是锚点，气泡沿其下方排布 ---- */
@@ -104,3 +107,66 @@
 .oa .empty .ic{width:26px;height:26px;opacity:.5}
 .oa .appbar .ab-title{font-size:16px;font-weight:700}
 .oa .rail-main > .panel > * + *{margin-top:10px}
+
+/* ---- ⑥ 知识库「点开查看」：列表行可点 + 资料详情覆盖层 ----
+   层级：高于底部选择卡（mask z-40 / sheet z-41），故取 50/51。 */
+.oa .lrow.docrow{cursor:pointer;border-radius:var(--r-sm);transition:background var(--dur-fast) var(--ease)}
+.oa .lrow.docrow:hover{background:var(--surface-2)}
+.oa .lrow.docrow:active{background:var(--surface-3)}
+.oa .lrow.docrow .go{color:var(--text-3);opacity:.7}
+.oa .lrow.docrow:focus-visible{outline:2px solid var(--brand-strong);outline-offset:-2px}
+/* 行内 padding 原为 0（靠 border 分隔），改成可点后左右补一点内边距，
+   命中区才不至于贴着屏幕边缘；负外边距抵消，视觉位置不变。 */
+.oa #oaKbList .lrow.docrow{padding:11px 8px;margin-inline:-8px}
+
+.oa .doc-mask{
+  position:absolute; inset:0; z-index:50; background:rgba(16,22,32,.45);
+  opacity:0; visibility:hidden; transition:opacity var(--dur) var(--ease),visibility var(--dur);
+}
+.oa.doc-open .doc-mask{opacity:1;visibility:visible}
+/* 详情面板从底部升起，顶部留 6% 露出遮罩：点遮罩也能关（返回 / 关闭 / Esc 同样可关） */
+.oa .docview{
+  position:absolute; left:0; right:0; bottom:0; top:6%; z-index:51; overflow:hidden;
+  display:flex; flex-direction:column; border-radius:var(--r-xl) var(--r-xl) 0 0;
+  background:var(--bg); box-shadow:var(--sh-4);
+  transform:translateY(18px); opacity:0; visibility:hidden;
+  transition:transform var(--dur) var(--ease),opacity var(--dur) var(--ease),visibility var(--dur);
+}
+.oa.doc-open .docview{transform:none;opacity:1;visibility:visible}
+.oa .dv-head{
+  flex-shrink:0; display:flex; align-items:center; gap:4px;
+  height:calc(var(--ab-h) + env(safe-area-inset-top));
+  padding-top:env(safe-area-inset-top); padding-inline:var(--sp-3) var(--sp-3);
+  background:var(--surface); border-bottom:1px solid var(--border);
+}
+.oa .dv-back{
+  width:44px; height:44px; flex-shrink:0; border:0; background:transparent; color:var(--text);
+  display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:var(--r-sm);
+  transition:background var(--dur-fast) var(--ease);
+}
+.oa .dv-back:hover{background:var(--surface-3)}
+.oa .dv-back .ic{width:20px;height:20px}
+.oa .dv-title{
+  font-family:var(--font-display); font-size:16px; font-weight:700;
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.oa .dv-body{flex:1; min-height:0; overflow-y:auto; padding:14px var(--sp-3) 18px}
+.oa .dv-foot{
+  flex-shrink:0; display:flex; gap:10px;
+  padding:12px var(--sp-3) calc(12px + env(safe-area-inset-bottom));
+  background:var(--surface); border-top:1px solid var(--border);
+}
+.oa .dv-btn{
+  flex:1; min-height:44px; border-radius:var(--r); border:1px solid var(--border-strong);
+  background:var(--surface); color:var(--text); font-family:inherit; font-size:13.5px; font-weight:600;
+  cursor:pointer; transition:background var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease-spring);
+}
+.oa .dv-btn:hover{background:var(--surface-2)}
+.oa .dv-btn:active{transform:scale(.98)}
+.oa .dv-btn:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+.oa .dv-btn.danger{background:var(--red-soft); border-color:#f3c2c2; color:var(--red-ink)}
+.oa .dv-btn.danger:hover{filter:brightness(.97)}
+@media (prefers-reduced-motion: reduce){
+  .oa .docview{transition:opacity var(--dur-fast) linear,visibility var(--dur-fast)}
+  .oa .dv-btn:active{transform:none}
+}

@@ -45,6 +45,11 @@ SUITES=(
   verify_v48_ui.py
   verify_v48_ui_extra.py
   e2e_full_system.py
+  # 知识库「点开查看 / 删除」：接口口径 + 新版(OA)/经典 双形态 + 视觉覆盖层
+  _e2e_kb_doc.py
+  _e2e_oa.py
+  _e2e_oa_approve.py
+  _check_oa_visual.py
 )
 
 for s in "${SUITES[@]}"; do

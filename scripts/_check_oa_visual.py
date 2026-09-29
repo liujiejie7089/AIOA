@@ -115,6 +115,40 @@ PROBE = r"""() => {
 PROBE = PROBE.replace('__OAROOT__', OAROOT)   # 作用域只有一个来源，避免选择器与常量各写一份
 
 
+# 资料详情覆盖层的探针：量「点开之后页面上真实的计算值」，不看样式表写了什么
+PROBE_DOC = r"""() => {
+  const lum = (c) => {
+    const m = String(c).match(/\d+(\.\d+)?/g) || ['0','0','0'];
+    const [r,g,b] = m.slice(0,3).map(Number).map(v => {
+      v /= 255; return v <= 0.04045 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+    });
+    return 0.2126*r + 0.7152*g + 0.0722*b;
+  };
+  const cr = (a,b) => {
+    const la = lum(a), lb = lum(b);
+    const hi = Math.max(la,lb), lo = Math.min(la,lb);
+    return +(((hi+0.05)/(lo+0.05))).toFixed(2);
+  };
+  const root = document.querySelector('#oaRoot');
+  const del = document.querySelector('#oaDocDel');
+  const panel = document.querySelector('#oaDocView');
+  const pcs = panel ? getComputedStyle(panel) : null;
+  const sh = pcs ? (pcs.boxShadow || 'none') : 'none';
+  const dcs = del ? getComputedStyle(del) : null;
+  const r = del ? del.getBoundingClientRect() : {height: 0};
+  return {
+    open: !!(root && root.classList.contains('doc-open')),
+    delFg: dcs ? dcs.color : '',
+    delBg: dcs ? dcs.backgroundColor : '',
+    delRatio: dcs ? cr(dcs.color, dcs.backgroundColor) : 0,
+    delH: Math.round(r.height),
+    panelLayers: sh === 'none' ? 0 : sh.split(/,(?![^(]*\))/).length,
+    hasText: !!document.querySelector('#oaDocBody .kb-doc-text'),
+    hasTip: !!document.querySelector('#oaDocBody .perm-tip, #oaDocBody .empty')
+  };
+}"""
+
+
 async def goto_view(page, view):
     await page.click('#oaTabs .tab[data-view="%s"]' % view)
     await page.wait_for_timeout(900)
@@ -238,6 +272,41 @@ async def main():
         for sel, e in agg['hit'].items():
             print('   %-16s %sx%s  %s' % (sel, e['w'], e['h'], e['stage']))
             chk('E %s 高度 ≥ 44' % sel, e['h'] >= 44, e['h'])
+
+        # ---- F. 资料详情覆盖层（知识库「点开查看」）----
+        # 新控件也要按同一把尺子量：危险按钮的文字色是新加的令牌，不能只信样式表里写了什么。
+        print('\n--- F. 资料详情覆盖层 ---')
+        doc_id = await page.evaluate(
+            "async () => { const d = await API.kbUpload('SENTINEL-视觉探针.txt','doc',12); return d && d.id; }")
+        chk('F0 前置：已造出一份本人上传的资料', bool(doc_id), doc_id)
+        if doc_id:
+            # 走真实启动流程把列表刷出来（oaRender 在 IIFE 内，不能从外面直接调）
+            await page.reload(wait_until='domcontentloaded')
+            await page.wait_for_timeout(2500)
+            await goto_view(page, 'kb')
+            row = '#oaKbList .docrow[data-doc="%s"]' % doc_id
+            if await page.query_selector(row):
+                await page.click(row)
+                await page.wait_for_timeout(700)
+                f = await page.evaluate(PROBE_DOC)
+                chk('F1 点开后覆盖层打开', f['open'] is True, f['open'])
+                print('   .dv-btn.danger  %s on %s = %.2f（需 ≥4.5）' %
+                      (f['delFg'], f['delBg'], f['delRatio']))
+                chk('F2 删除按钮文字对比度 ≥ 4.5', f['delRatio'] >= 4.5,
+                    '%s on %s' % (f['delFg'], f['delBg']))
+                chk('F3 删除按钮命中区 ≥ 44', f['delH'] >= 44, f['delH'])
+                chk('F4 详情面板用覆盖层阴影（双层）', f['panelLayers'] >= 2, f['panelLayers'])
+                chk('F5 空正文时给的是「暂无正文」提示（不是空白）', f['hasText'] or f['hasTip'],
+                    'text=%s tip=%s' % (f['hasText'], f['hasTip']))
+                await page.click('#oaDocDone')
+                await page.wait_for_timeout(400)
+            else:
+                chk('F1 点开后覆盖层打开', False, '列表里没有刚造的那份资料')
+            await page.evaluate("async (id) => { await API.kbDelete(id); }", doc_id)
+            gone = await page.evaluate(
+                "async (id) => { try { await API.kbDocDetail(id); return false; }"
+                " catch(e) { return true; } }", doc_id)
+            chk('F6 探针造的资料已清理（独立读回 404）', gone is True)
 
         chk('前置：console 无未捕获异常', not errs, errs[:2])
         await browser.close()

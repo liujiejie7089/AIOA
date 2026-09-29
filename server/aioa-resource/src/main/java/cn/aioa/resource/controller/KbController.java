@@ -32,6 +32,7 @@ import java.util.Map;
  *
  * GET    /api/v1/kb/documents              —— 我的资料（默认）
  * GET    /api/v1/kb/documents?scope=tenant —— 租户全部资料（仅租户管理员，含平台管理员）
+ * GET    /api/v1/kb/documents/{id}          —— 单份详情（点开查看：元信息 + 已入库正文）
  * POST   /api/v1/kb/documents              —— 上传（携带正文则同步切片入库）
  * POST   /api/v1/kb/documents/{id}/retry   —— 失败重试
  * DELETE /api/v1/kb/documents/{id}         —— 删除资料（留痕）
@@ -64,9 +65,24 @@ public class KbController {
     public record UploadRequest(String name, String icon, Long sizeBytes, String content, String scope) {
     }
 
-    /** 检索命中：docId/docName/snippet/chunkIndex 为既有字段（前端在用），score 为新增的相似度（可空）。 */
+    /**
+     * 检索命中：docId/docName/snippet/chunkIndex 为既有字段（前端在用），score 为新增的相似度（可空）。
+     */
     public record HitView(Long docId, String docName, String snippet, Integer chunkIndex, Float score) {
     }
+
+    /**
+     * 单份资料详情（点开查看）：元信息 + 已入库正文。
+     *
+     * <p>{@code contentLength} 是**完整**正文长度，{@code content} 在超限时被截断为
+     * {@link #VIEW_MAX_CHARS} 字符并由 {@code truncated} 标出 —— 截断可以有，但不能静默
+     * （与本页 list 里 KB_PAGE 的教训同源）。</p>
+     */
+    public record DocDetailView(DocView doc, String content, Integer contentLength, Boolean truncated) {
+    }
+
+    /** 「点开查看」时正文的展示上限（字符）。 */
+    private static final int VIEW_MAX_CHARS = 20000;
 
     /**
      * 诊断：当前知识库档位（存储实现 / 嵌入 provider / 维度）。
@@ -105,6 +121,53 @@ public class KbController {
             docs = kbService.list(user.getTenantId(), user.getUserId());
         }
         return ApiResponse.ok(docs.stream().map(DocView::from).toList());
+    }
+
+    /**
+     * 单份资料详情（「点开查看」）：元信息 + 已入库正文。
+     *
+     * <p><b>可见性口径不在这里再写一遍</b>：直接问「该文档会不会出现在我能打开的列表里」
+     * （{@link #listedFor}）。列表里看得到、点开却 403，是本项目反复复发的缺陷类型
+     * （list 的 scope=tenant 分支就曾因裸判 ROLE_ADMIN 把租户管理员拒之门外）。</p>
+     *
+     * <p>正文取自 {@code kb_document.content} —— 知识库的设计是「上传即解析入库」，
+     * 库里保存的是解析正文与切片（原文件不落盘），因此这里展示的就是这份资料
+     * 在检索时真正被使用的那份内容。</p>
+     */
+    @GetMapping("/documents/{id}")
+    public ApiResponse<DocDetailView> detail(@PathVariable Long id) {
+        AuthUser user = AuthUserContext.require();
+        KbDocument doc = kbService.findOne(id);
+        if (doc == null) {
+            throw BizException.notFound("资料不存在：" + id);
+        }
+        if (!listedFor(user, doc)) {
+            // 跨租户与「同租户但不可见」统一 403：存在的判断只走到这里，不回显归属信息
+            throw BizException.forbidden("无权查看该资料");
+        }
+        String content = doc.getContent() == null ? "" : doc.getContent();
+        boolean truncated = content.length() > VIEW_MAX_CHARS;
+        return ApiResponse.ok(new DocDetailView(DocView.from(doc),
+                truncated ? content.substring(0, VIEW_MAX_CHARS) : content,
+                content.length(), truncated));
+    }
+
+    /**
+     * 「看得见就能点开」的判定：把两份列表（{@link KbService#list} / {@link KbService#listTenant}）
+     * 当成唯一事实源来问，本方法不复制它们的过滤条件。
+     *
+     * <p>只读动作按此判定；写动作（改 / 重试 / 删）另有归属校验，别把两者混用 ——
+     * 读的边界是「看得见」，写的边界是「有权改」。</p>
+     */
+    private boolean listedFor(AuthUser user, KbDocument doc) {
+        boolean mine = kbService.list(user.getTenantId(), user.getUserId())
+                .stream().anyMatch(d -> d.getId().equals(doc.getId()));
+        if (mine) {
+            return true;
+        }
+        return PermissionCatalog.isAdmin(user)
+                && kbService.listTenant(user.getTenantId())
+                        .stream().anyMatch(d -> d.getId().equals(doc.getId()));
     }
 
     @PostMapping("/documents")

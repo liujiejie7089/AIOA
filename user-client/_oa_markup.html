@@ -219,6 +219,21 @@
   </nav>
 
   <div class="overlay" id="oaOverlay"></div>
+
+  <!-- 资料详情（知识库「点开查看上传的文档」）：覆盖整屏，正文块与经典形态共用 kbDocBodyHtml() -->
+  <div class="doc-mask" id="oaDocMask"></div>
+  <section class="docview" id="oaDocView" role="dialog" aria-modal="true" aria-labelledby="oaDocTitle">
+    <header class="dv-head">
+      <button class="dv-back" id="oaDocBack" aria-label="返回"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="dv-title" id="oaDocTitle">资料详情</h2>
+    </header>
+    <div class="dv-body" id="oaDocBody"></div>
+    <footer class="dv-foot">
+      <button class="dv-btn danger" id="oaDocDel" style="display:none">删除资料</button>
+      <button class="dv-btn" id="oaDocDone">关闭</button>
+    </footer>
+  </section>
+
   <aside class="drawer" id="oaDrawer">
     <div class="dnav">
       <div class="dnav-item" id="odNewTask"><svg class="ic"><use href="#i-square-plus"/></svg>新工作任务</div>

@@ -663,6 +663,12 @@
   .tda-item{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--blue);
     text-decoration:none;background:var(--blue-soft);border:1px solid var(--blue-line);border-radius:14px;padding:3px 10px}
   .tda-item:hover{filter:brightness(.97)}
+  /* 资料详情「入库正文」：保留换行、可滚动（超长正文在服务端已截断并如实标注） */
+  .kb-doc-text{
+    font-size:12px;line-height:1.75;color:var(--text);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:10px;padding:10px 11px;
+    max-height:46vh;overflow:auto;white-space:pre-wrap;word-break:break-word;
+  }
   /* ---------- 审批流转路径（#211）：当前流转到谁 / 各节点由谁审核 ---------- */
   .td-flow-title{font-size:11px;color:var(--text-2);margin-bottom:6px;font-weight:600}
   /* 本部门名义发起（E-10）：与「我发起的」区分的小分区标题 */
@@ -994,10 +1000,13 @@
 .oa .kb-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-bottom:16px}
 .oa .kb-tile{background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 4px 11px; text-align:center; box-shadow:var(--sh-1); cursor:pointer; transition:transform var(--dur-fast) var(--ease)}
 .oa .kb-tile:hover{transform:translateY(-2px)}
-.oa .kb-tile .ic{width:26px;height:26px;color:var(--brand);margin-bottom:6px}
+.oa .kb-tile .ic{display:block; width:26px;height:26px;color:var(--brand);margin:0 auto 6px}
 .oa .kb-tile.kb-blue .ic{color:var(--blue)}
 .oa .kb-tile.kb-amber .ic{color:var(--amber)}
-.oa .kb-tile span{font-size:11px;font-weight:600}
+/* 标签与数字各自独占一行：早期是 inline 流，数字落在标签同行还是换行取决于标签宽度
+   （「我的文档2」换行、「已就绪2」同行），四个磁贴长得不一样。改 block 后形态固定。 */
+.oa .kb-tile span{display:block; font-size:11px;font-weight:600; line-height:1.25}
+.oa .kb-tile b{display:block; line-height:1.2; margin-top:3px}
 .oa .file-ico{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-size:11px;font-weight:700;flex-shrink:0}
 .oa .file-ico.doc{background:linear-gradient(140deg,#3b82f6,#2563eb)}
 .oa .file-ico.pdf{background:linear-gradient(140deg,#14b8a6,#0d9488)}
@@ -1161,6 +1170,9 @@
   --brand:#12b39a; --brand-dark:#0d9480; --brand-soft:#e6f7f3;
   --brand-line:#b7e7de; --brand-ink:#0a6d5e;
   --ab-h:52px; --tab-h:64px;
+  /* 危险动作的文字色：经典 --red #d93a3f 压在 --red-soft #fdecec 上只有 3.97:1，
+     达不到 13.5px 正文门槛；这里给同一色相加深一档（4.77:1），只用于新增控件。 */
+  --red-ink:#c62f34;
 }
 
 /* ---- ② 首页对话坞：数字人是锚点，气泡沿其下方排布 ---- */
@@ -1250,6 +1262,69 @@
 .oa .empty .ic{width:26px;height:26px;opacity:.5}
 .oa .appbar .ab-title{font-size:16px;font-weight:700}
 .oa .rail-main > .panel > * + *{margin-top:10px}
+
+/* ---- ⑥ 知识库「点开查看」：列表行可点 + 资料详情覆盖层 ----
+   层级：高于底部选择卡（mask z-40 / sheet z-41），故取 50/51。 */
+.oa .lrow.docrow{cursor:pointer;border-radius:var(--r-sm);transition:background var(--dur-fast) var(--ease)}
+.oa .lrow.docrow:hover{background:var(--surface-2)}
+.oa .lrow.docrow:active{background:var(--surface-3)}
+.oa .lrow.docrow .go{color:var(--text-3);opacity:.7}
+.oa .lrow.docrow:focus-visible{outline:2px solid var(--brand-strong);outline-offset:-2px}
+/* 行内 padding 原为 0（靠 border 分隔），改成可点后左右补一点内边距，
+   命中区才不至于贴着屏幕边缘；负外边距抵消，视觉位置不变。 */
+.oa #oaKbList .lrow.docrow{padding:11px 8px;margin-inline:-8px}
+
+.oa .doc-mask{
+  position:absolute; inset:0; z-index:50; background:rgba(16,22,32,.45);
+  opacity:0; visibility:hidden; transition:opacity var(--dur) var(--ease),visibility var(--dur);
+}
+.oa.doc-open .doc-mask{opacity:1;visibility:visible}
+/* 详情面板从底部升起，顶部留 6% 露出遮罩：点遮罩也能关（返回 / 关闭 / Esc 同样可关） */
+.oa .docview{
+  position:absolute; left:0; right:0; bottom:0; top:6%; z-index:51; overflow:hidden;
+  display:flex; flex-direction:column; border-radius:var(--r-xl) var(--r-xl) 0 0;
+  background:var(--bg); box-shadow:var(--sh-4);
+  transform:translateY(18px); opacity:0; visibility:hidden;
+  transition:transform var(--dur) var(--ease),opacity var(--dur) var(--ease),visibility var(--dur);
+}
+.oa.doc-open .docview{transform:none;opacity:1;visibility:visible}
+.oa .dv-head{
+  flex-shrink:0; display:flex; align-items:center; gap:4px;
+  height:calc(var(--ab-h) + env(safe-area-inset-top));
+  padding-top:env(safe-area-inset-top); padding-inline:var(--sp-3) var(--sp-3);
+  background:var(--surface); border-bottom:1px solid var(--border);
+}
+.oa .dv-back{
+  width:44px; height:44px; flex-shrink:0; border:0; background:transparent; color:var(--text);
+  display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:var(--r-sm);
+  transition:background var(--dur-fast) var(--ease);
+}
+.oa .dv-back:hover{background:var(--surface-3)}
+.oa .dv-back .ic{width:20px;height:20px}
+.oa .dv-title{
+  font-family:var(--font-display); font-size:16px; font-weight:700;
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.oa .dv-body{flex:1; min-height:0; overflow-y:auto; padding:14px var(--sp-3) 18px}
+.oa .dv-foot{
+  flex-shrink:0; display:flex; gap:10px;
+  padding:12px var(--sp-3) calc(12px + env(safe-area-inset-bottom));
+  background:var(--surface); border-top:1px solid var(--border);
+}
+.oa .dv-btn{
+  flex:1; min-height:44px; border-radius:var(--r); border:1px solid var(--border-strong);
+  background:var(--surface); color:var(--text); font-family:inherit; font-size:13.5px; font-weight:600;
+  cursor:pointer; transition:background var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease-spring);
+}
+.oa .dv-btn:hover{background:var(--surface-2)}
+.oa .dv-btn:active{transform:scale(.98)}
+.oa .dv-btn:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+.oa .dv-btn.danger{background:var(--red-soft); border-color:#f3c2c2; color:var(--red-ink)}
+.oa .dv-btn.danger:hover{filter:brightness(.97)}
+@media (prefers-reduced-motion: reduce){
+  .oa .docview{transition:opacity var(--dur-fast) linear,visibility var(--dur-fast)}
+  .oa .dv-btn:active{transform:none}
+}
 
 /* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */
 /* ============================================================================
@@ -2173,6 +2248,21 @@
   </nav>
 
   <div class="overlay" id="oaOverlay"></div>
+
+  <!-- 资料详情（知识库「点开查看上传的文档」）：覆盖整屏，正文块与经典形态共用 kbDocBodyHtml() -->
+  <div class="doc-mask" id="oaDocMask"></div>
+  <section class="docview" id="oaDocView" role="dialog" aria-modal="true" aria-labelledby="oaDocTitle">
+    <header class="dv-head">
+      <button class="dv-back" id="oaDocBack" aria-label="返回"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2 class="dv-title" id="oaDocTitle">资料详情</h2>
+    </header>
+    <div class="dv-body" id="oaDocBody"></div>
+    <footer class="dv-foot">
+      <button class="dv-btn danger" id="oaDocDel" style="display:none">删除资料</button>
+      <button class="dv-btn" id="oaDocDone">关闭</button>
+    </footer>
+  </section>
+
   <aside class="drawer" id="oaDrawer">
     <div class="dnav">
       <div class="dnav-item" id="odNewTask"><svg class="ic"><use href="#i-square-plus"/></svg>新工作任务</div>
@@ -2326,6 +2416,9 @@ const API = {
   },
   kbRetry(id){ return this.req('/v1/kb/documents/'+id+'/retry',{method:'POST'}); },
   kbDelete(id){ return this.req('/v1/kb/documents/'+id,{method:'DELETE'}); },
+  /* 单份详情（点开查看）：返回 {doc, content, contentLength, truncated}。
+     两形态共用这一个入口，可见性判定在服务端（看得见才给看）。 */
+  kbDocDetail(id){ return this.req('/v1/kb/documents/'+id); },
   kbSearch(q){ return this.req('/v1/kb/search?q='+encodeURIComponent(q)); },
   quota(){   return this.req('/v1/quota'); },
   ledger(){  return this.req('/v1/ledger?limit=50'); },
@@ -2970,6 +3063,23 @@ function gotoWorkerByName(name){
    用户只会认为「共享了却没共享给我」。截断可以有，但不能静默。 */
 const KB_PAGE = 6;
 function toggleKbList(){ state.kbExpanded = !state.kbExpanded; renderKb(); }
+/* 入库状态 → 语义档：**唯一一处认识后端词表**。
+   后端 DocView.from 把 state 统一**小写**（ok / wait / failed …），
+   任何形态要显示状态都必须经这里，别再各自写字符串比较 ——
+   新版曾用 `d.state === 'READY'` 去比小写值（恒不成立），后果有两个且同源：
+   列表徽标永远显示英文原文「ok」且配色一直是「处理中」的琥珀色，
+   概览磁贴写成「已就绪 0 / 处理中 N」——把已入库的资料说成没就绪。 */
+function kbStateLevel(state){
+  const s = String(state == null ? '' : state).toLowerCase();
+  if(s === 'ok' || s === 'ready') return 'ok';
+  if(s === 'failed' || s === 'fail') return 'failed';
+  return 'progress';
+}
+/* 语义档 → 中文文案（供弹层/浮层等非徽标场景复用） */
+function kbStateText(state){
+  const lv = kbStateLevel(state);
+  return lv === 'ok' ? '已入库' : (lv === 'failed' ? '解析失败' : '解析中');
+}
 function renderKb(){
   const box = $('kbList');
   const list = state.kbDocs||[];
@@ -2988,20 +3098,23 @@ function renderKb(){
         '</button></div>'
     : '';
   box.innerHTML = shown.map(d=>{
-    const st = d.state === 'ok' ? ['ok','已入库'] : (d.state === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
+    const lv = kbStateLevel(d.state);
+    const st = lv === 'ok' ? ['ok','已入库'] : (lv === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
     // 上传时间（yyyy-MM-ddTHH:mm:ss → MM-dd HH:mm）
     const tm = d.createdAt ? String(d.createdAt).replace('T',' ').slice(5,16) : '';
     const meta = [tm, d.chunkCount ? d.chunkCount+' 段' : '', (d.scope === 'TENANT' && d.ownerUserId !== meId) ? '共享' : '']
       .filter(Boolean).join(' · ');
-    const acts = d.state === 'failed'
+    const acts = lv === 'failed'
       ? '<button class="btn ghost small" onclick="retryKb('+d.id+')">重试</button>'
       : '';
     // 仅本人上传的资料可删除；他人共享资料只读（删除会 403）
     const del = (meId && d.ownerUserId === meId)
       ? '<button class="btn ghost small" onclick="delKb('+d.id+',this)">删除</button>'
       : '';
+    // 「查看」对所有可见资料都开放（看得见就能看内容），不按归属人过滤
+    const view = '<button class="btn ghost small" onclick="openKbDoc('+d.id+')">查看</button>';
     return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'<span class="muted" style="font-size:11px">'+(meta?' · '+meta:'')+'</span></span>'+
-      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+acts+del+'</span></div>';
+      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+view+acts+del+'</span></div>';
   }).join('') + more;
 }
 /* 文件上传入库（FR-F1/F2）：选择本地 pdf/docx/doc/xlsx/xls/txt，后端解析后切片入库 */
@@ -3014,7 +3127,7 @@ async function onKbFile(e){
     toast('正在上传并解析…');
     const d = await API.kbUploadFile(f, 'PERSONAL');
     state.kbDocs = await API.kbDocs() || []; renderKb();
-    toast(d && d.state === 'ok' ? ('已入库：'+f.name) : ('已上传，状态：'+(d && d.state || 'wait')));
+    toast(d && kbStateLevel(d.state) === 'ok' ? ('已入库：'+f.name) : ('已上传，状态：'+(d && d.state || 'wait')));
   }catch(err){ toast('上传失败：'+err.message); }
 }
 async function retryKb(id){
@@ -3027,6 +3140,51 @@ async function delKb(id){
   if(!okDel) return;
   try{ await API.kbDelete(id); state.kbDocs = await API.kbDocs() || []; renderKb(); toast('已删除并留痕'); }
   catch(e){ toast('删除失败：'+e.message); }
+}
+/* 资料详情的正文块：**两形态共用这一份**。
+   元信息口径（范围/大小/切片/时间/失败原因）只在这里解释一遍，
+   经典弹窗与新版浮层都调用它 —— 两套界面各写一份必然分叉。
+   正文取自 kb_document.content：知识库「上传即解析入库」，原文件不落盘，
+   所以这里展示的就是这份资料在检索时真正被使用的那份内容。 */
+function kbDocBodyHtml(r){
+  const d = (r && r.doc) || {};
+  const lv = kbStateLevel(d.state);
+  const st = kbStateText(d.state);
+  const rows = [
+    ['文件名', d.name || '—'],
+    ['可见范围', d.scope === 'TENANT' ? '企业知识库（租户共享）' : '我的知识库'],
+    ['状态', st],
+    ['大小', d.sizeBytes ? (Math.max(1, Math.round(Number(d.sizeBytes) / 1024)) + ' KB') : '—'],
+    ['切片', (d.chunkCount || 0) + ' 段'],
+    ['上传时间', d.createdAt ? String(d.createdAt).replace('T', ' ').slice(0, 16) : '—'],
+  ];
+  if(lv === 'failed' && d.errorMsg) rows.push(['失败原因', d.errorMsg]);
+  const content = (r && r.content) || '';
+  const total = Number((r && r.contentLength) || 0);
+  const cut = !!(r && r.truncated);
+  return '<div class="td-form">' + rows.map(x =>
+      '<div class="tdf-row"><span>' + esc(x[0]) + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
+    '<div class="td-extra-title" style="margin-top:10px">入库正文' +
+      (total ? '<span class="muted" style="margin-left:6px;font-weight:400">共 ' + total + ' 字</span>' : '') + '</div>' +
+    (content ? '<div class="kb-doc-text">' + esc(content) + '</div>'
+             : '<div class="perm-tip">这份资料还没有可展示的正文（状态：' + esc(st) + '）。' +
+               (lv === 'failed' ? '可点「重试」重新解析后再看。' : '解析完成后即可查看。') + '</div>') +
+    (cut ? '<div class="perm-tip" style="margin-top:6px">正文过长，此处仅展示前 ' + content.length + ' 字。</div>' : '');
+}
+/* 点开查看（经典形态）：在既有弹窗里展示正文块 */
+async function openKbDoc(id){
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML = '<div class="notif-modal">' +
+      '<div class="notif-head"><b>资料详情</b><span class="notif-close">×</span></div>' +
+      '<div class="notif-body"><div class="perm-tip">加载中…</div></div></div>';
+  document.body.appendChild(mask);
+  const close = () => mask.remove();
+  mask.querySelector('.notif-close').onclick = close;
+  mask.onclick = e => { if(e.target === mask) close(); };
+  const body = mask.querySelector('.notif-body');
+  try{ body.innerHTML = kbDocBodyHtml(await API.kbDocDetail(id)); }
+  catch(e){ body.innerHTML = '<div class="perm-tip">' + esc((e && e.message) || '加载失败') + '</div>'; }
 }
 /* 检索测试（FR-F3）：验证入库内容可被检索命中并查看原文片段 */
 async function testKbSearch(){
@@ -5816,6 +5974,7 @@ var S = {
   apprDetail:null,       // 正在看的审批单 {id, scope}
   deptId:null,           // 部门筛选（null = 全部）
   orgQ:'', kbQ:'',
+  docId:null,            // 正在查看的资料（资料详情覆盖层）
   org:null,              // 组织数据缓存（profile / departments / members）
   leave:null             // 我的请假（日程数据源之一）
 };
@@ -6230,8 +6389,9 @@ function renderKb(){
   var docs = arr(state.kbDocs);
   var grid = $o('oaKbGrid');
   if(grid){
-    var ready = docs.filter(function(d){ return d.state === 'READY'; }).length;
-    var proc  = docs.filter(function(d){ return d.state && d.state !== 'READY' && d.state !== 'FAILED'; }).length;
+    // 状态档一律经 kbStateLevel()（唯一认识后端词表的地方）：后端返回的是小写 ok/wait/failed
+    var ready = docs.filter(function(d){ return kbStateLevel(d.state) === 'ok'; }).length;
+    var proc  = docs.filter(function(d){ return kbStateLevel(d.state) === 'progress'; }).length;
     var chunks = docs.reduce(function(s, d){ return s + n(d.chunkCount); }, 0);
     grid.innerHTML = [
       ['folder','我的文档', docs.length],
@@ -6241,28 +6401,95 @@ function renderKb(){
     ].map(function(x, i){
       return '<div class="kb-tile'+(i === 1 ? ' kb-blue' : (i === 3 ? ' kb-amber' : ''))+'">'+
         ic(x[0],26)+'<span>'+x[1]+'</span>'+
-        '<b class="num" style="font-size:15px;margin-top:3px">'+x[2]+'</b></div>';
+        '<b class="num" style="font-size:15px">'+x[2]+'</b></div>';
     }).join('');
   }
   var list = $o('oaKbList'); if(!list) return;
   if(!docs.length){ list.innerHTML = empty('知识库还没有文档，点右上「上传文档」'); return; }
   list.innerHTML = docs.slice(0, 30).map(function(d){
-    var st = d.state === 'READY' ? chip('due','已就绪')
-           : (d.state === 'FAILED' ? chip('rej','失败') : chip('wait', d.state || '处理中'));
+    var lv = kbStateLevel(d.state);
+    var st = lv === 'ok' ? chip('due','已就绪')
+           : (lv === 'failed' ? chip('rej','失败') : chip('wait','处理中'));
     // 后端 KbService.guessIcon 的词表精确为 {doc, sheet, pdf, file} —— 没有 'xls'。
     // 色块按该词表映射（表格=绿 xls、PDF=青 pdf、其余=蓝 doc），
     // 字形只在 i-sheet 存在时替换（i-pdf / i-file 未定义，用 doc 字形兜底，避免空白图标）。
     var icoCls = d.icon === 'sheet' ? 'xls' : (d.icon === 'pdf' ? 'pdf' : 'doc');
     var icoGlyph = d.icon === 'sheet' ? 'sheet' : 'doc';
-    return '<div class="lrow">'+
+    // 整行可点开查看（role=button + tabindex：键盘也能开）
+    return '<div class="lrow docrow" data-doc="'+n(d.id)+'" role="button" tabindex="0" '+
+        'aria-label="查看「'+txt(d.name)+'」">'+
       '<div class="file-ico '+icoCls+'">'+
         ic(icoGlyph, 18)+'</div>'+
       '<div class="txt"><div class="t1 truncate">'+txt(d.name)+'</div>'+
       // scope 是大写枚举（DocView 默认 "PERSONAL"；经典页亦用 === 'TENANT' 判定）
       '<div class="t2">'+txt(d.scope === 'TENANT' ? '企业知识库' : '我的知识库')+
         ' · '+n(d.chunkCount)+' 切片 · '+txt((d.sizeBytes ? Math.max(1, Math.round(n(d.sizeBytes)/1024))+' KB' : '—'))+
-        ' · '+txt(dt(d.createdAt))+'</div></div>'+ st +'</div>';
+        ' · '+txt(dt(d.createdAt))+'</div></div>'+ st +
+      '<svg class="ic go"><use href="#i-chevron"/></svg></div>';
   }).join('');
+  list.querySelectorAll('.docrow').forEach(function(row){
+    function open(){ oaOpenDoc(n(row.dataset.doc)); }
+    row.onclick = open;
+    row.onkeydown = function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); }
+    };
+  });
+}
+
+/* ------------------------------------------- 5b. 资料详情：点开查看 / 删除
+   ① 正文块复用经典侧的 kbDocBodyHtml()：元信息（范围/大小/切片/时间/失败原因）
+      只解释一遍，两形态不会各自分叉。
+   ② 删除按钮只对「本人上传」显示 —— 与经典 renderKb 同一显示口径；
+      真正的判定在服务端（无权会 403），前端只决定要不要给这个入口。
+   ③ 打开期间用 S.docId 做「后开者胜」的守卫：连点两份资料时，先到的响应不得
+      覆盖后开的那份（否则详情与标题会错位）。 */
+function oaOpenDoc(id){
+  if(!id) return;
+  var root = document.querySelector('#oaRoot'); if(!root) return;
+  S.docId = id;
+  var t = $o('oaDocTitle'); if(t) t.textContent = '资料详情';
+  var b = $o('oaDocBody'); if(b) b.innerHTML = '<div class="muted" style="padding:10px 2px">加载中…</div>';
+  var del = $o('oaDocDel'); if(del){ del.style.display = 'none'; del.disabled = false; }
+  root.classList.add('doc-open');
+  $o('oaDocView').setAttribute('aria-hidden', 'false');
+  API.kbDocDetail(id).then(function(r){
+    if(S.docId !== id) return;                 // 已被后一次点开取代
+    var d = (r && r.doc) || {};
+    if(t) t.textContent = d.name || '资料详情';
+    if(b) b.innerHTML = kbDocBodyHtml(r);
+    var me = state.user && state.user.id;
+    if(del && me && d.ownerUserId === me){
+      del.textContent = '删除资料';
+      del.style.display = '';
+    }
+  }).catch(function(e){
+    if(S.docId !== id) return;
+    if(b) b.innerHTML = '<div class="empty">'+ic('warn', 26)+'<div>'+txt((e && e.message) || '加载失败')+'</div></div>';
+  });
+}
+function oaCloseDoc(){
+  var root = document.querySelector('#oaRoot'); if(root) root.classList.remove('doc-open');
+  var v = $o('oaDocView'); if(v) v.setAttribute('aria-hidden', 'true');
+  S.docId = null;
+}
+async function oaDeleteDoc(){
+  var id = S.docId; if(!id) return;
+  var del = $o('oaDocDel');
+  if(del) del.disabled = true;
+  try{
+    var okDel = await askConfirm('确定删除该资料？删除后不再参与会话引用。',
+      {title:'删除资料', okText:'删除', danger:true});
+    if(!okDel) return;
+    await API.kbDelete(id);
+    oaCloseDoc();
+    toast('已删除并留痕');
+    state.kbDocs = arr(await API.kbDocs());
+    renderKb();
+  }catch(e){
+    toast('删除失败：' + ((e && e.message) || '未知错误'));
+  }finally{
+    if(del) del.disabled = false;
+  }
 }
 
 /* ------------------------------------------------------ 6. 部门 / 通讯录页面 */
@@ -7168,6 +7395,13 @@ function bind(){
     };
   }
 
+  // 资料详情覆盖层（点开查看上传的文档）
+  var dMask = $o('oaDocMask'), dBack = $o('oaDocBack'), dDone = $o('oaDocDone'), dDel = $o('oaDocDel');
+  if(dMask) dMask.onclick = oaCloseDoc;
+  if(dBack) dBack.onclick = oaCloseDoc;
+  if(dDone) dDone.onclick = oaCloseDoc;
+  if(dDel)  dDel.onclick = oaDeleteDoc;
+
   var orgQ = $o('oaOrgQ');
   if(orgQ) orgQ.addEventListener('keydown', function(e){
     if(e.key !== 'Enter') return;
@@ -7176,7 +7410,7 @@ function bind(){
   });
 
   document.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){ oaCloseDrawer(); oaCloseSheet(); }
+    if(e.key === 'Escape'){ oaCloseDoc(); oaCloseDrawer(); oaCloseSheet(); }
   });
 }
 

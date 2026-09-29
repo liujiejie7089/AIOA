@@ -39,6 +39,14 @@
   机构管理员 / 普通成员 → 403（**不放宽**）。
 - `PUT` / `DELETE /api/v1/kb/documents/{id}`：跨租户一律 403；租户管理员（含平台）可管本租户**任意**资料；其余只能管本人上传的。
   改可见范围（PERSONAL ↔ TENANT）**就是「共享 / 取消共享」这个动作**，与 `scope=tenant` 同一判据，勿分叉。
+- `GET /api/v1/kb/documents/{id}`（「点开查看」，2026-09-29 新增）：返回 `{doc, content, contentLength, truncated}`。
+  - `content` 取自 `kb_document.content` —— **知识库不保存原文件**：上传即解析入库，库里只有解析正文与切片，
+    所以「查看」看到的就是检索时真正被使用的那份内容（原文件预览需另改上传链路，不是本能力的口径）。
+  - 超 `VIEW_MAX_CHARS = 20000` 字符截断，并由 `contentLength`（完整长度）+ `truncated` **如实标注**，不静默截断。
+  - **可见性判定不重写**：`KbController#listedFor` 直接问两份列表（`KbService.list` / `listTenant`）里有没有这条
+    —— 读的边界是「看得见」，写的边界是「有权改」（PUT/DELETE 仍走 tenant + 归属/管理员）。
+    两套边界别混用；「列表里看得到、点开却 403」是本项目反复复发的缺陷类型。
+  - 状态码：不存在 → 404；跨租户与「同租户但不可见」统一 → 403（不回显归属信息）。
 - 管理端页面 `web/apps/shell/src/views/KbView.vue`：默认 tab 由 `canReadTenant = hasAnyRole(auth.roles, TENANT_SCOPE_ROLES)` 推导；
   非租户管理员不渲染「租户全部资料」tab、不发 `?scope=tenant` 请求；行级操作用 `canModify(row)` 收口（无权行显示「只读」）。
 - 用户端 H5「我的知识库」（`user-client/index.html` 的 `renderKb()`）：默认只渲染前 **6** 条

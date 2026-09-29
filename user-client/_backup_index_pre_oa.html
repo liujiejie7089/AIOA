@@ -663,6 +663,12 @@
   .tda-item{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--blue);
     text-decoration:none;background:var(--blue-soft);border:1px solid var(--blue-line);border-radius:14px;padding:3px 10px}
   .tda-item:hover{filter:brightness(.97)}
+  /* 资料详情「入库正文」：保留换行、可滚动（超长正文在服务端已截断并如实标注） */
+  .kb-doc-text{
+    font-size:12px;line-height:1.75;color:var(--text);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:10px;padding:10px 11px;
+    max-height:46vh;overflow:auto;white-space:pre-wrap;word-break:break-word;
+  }
   /* ---------- 审批流转路径（#211）：当前流转到谁 / 各节点由谁审核 ---------- */
   .td-flow-title{font-size:11px;color:var(--text-2);margin-bottom:6px;font-weight:600}
   /* 本部门名义发起（E-10）：与「我发起的」区分的小分区标题 */
@@ -1389,6 +1395,9 @@ const API = {
   },
   kbRetry(id){ return this.req('/v1/kb/documents/'+id+'/retry',{method:'POST'}); },
   kbDelete(id){ return this.req('/v1/kb/documents/'+id,{method:'DELETE'}); },
+  /* 单份详情（点开查看）：返回 {doc, content, contentLength, truncated}。
+     两形态共用这一个入口，可见性判定在服务端（看得见才给看）。 */
+  kbDocDetail(id){ return this.req('/v1/kb/documents/'+id); },
   kbSearch(q){ return this.req('/v1/kb/search?q='+encodeURIComponent(q)); },
   quota(){   return this.req('/v1/quota'); },
   ledger(){  return this.req('/v1/ledger?limit=50'); },
@@ -2033,6 +2042,23 @@ function gotoWorkerByName(name){
    用户只会认为「共享了却没共享给我」。截断可以有，但不能静默。 */
 const KB_PAGE = 6;
 function toggleKbList(){ state.kbExpanded = !state.kbExpanded; renderKb(); }
+/* 入库状态 → 语义档：**唯一一处认识后端词表**。
+   后端 DocView.from 把 state 统一**小写**（ok / wait / failed …），
+   任何形态要显示状态都必须经这里，别再各自写字符串比较 ——
+   新版曾用 `d.state === 'READY'` 去比小写值（恒不成立），后果有两个且同源：
+   列表徽标永远显示英文原文「ok」且配色一直是「处理中」的琥珀色，
+   概览磁贴写成「已就绪 0 / 处理中 N」——把已入库的资料说成没就绪。 */
+function kbStateLevel(state){
+  const s = String(state == null ? '' : state).toLowerCase();
+  if(s === 'ok' || s === 'ready') return 'ok';
+  if(s === 'failed' || s === 'fail') return 'failed';
+  return 'progress';
+}
+/* 语义档 → 中文文案（供弹层/浮层等非徽标场景复用） */
+function kbStateText(state){
+  const lv = kbStateLevel(state);
+  return lv === 'ok' ? '已入库' : (lv === 'failed' ? '解析失败' : '解析中');
+}
 function renderKb(){
   const box = $('kbList');
   const list = state.kbDocs||[];
@@ -2051,20 +2077,23 @@ function renderKb(){
         '</button></div>'
     : '';
   box.innerHTML = shown.map(d=>{
-    const st = d.state === 'ok' ? ['ok','已入库'] : (d.state === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
+    const lv = kbStateLevel(d.state);
+    const st = lv === 'ok' ? ['ok','已入库'] : (lv === 'failed' ? ['danger','解析失败'] : ['wait','解析中']);
     // 上传时间（yyyy-MM-ddTHH:mm:ss → MM-dd HH:mm）
     const tm = d.createdAt ? String(d.createdAt).replace('T',' ').slice(5,16) : '';
     const meta = [tm, d.chunkCount ? d.chunkCount+' 段' : '', (d.scope === 'TENANT' && d.ownerUserId !== meId) ? '共享' : '']
       .filter(Boolean).join(' · ');
-    const acts = d.state === 'failed'
+    const acts = lv === 'failed'
       ? '<button class="btn ghost small" onclick="retryKb('+d.id+')">重试</button>'
       : '';
     // 仅本人上传的资料可删除；他人共享资料只读（删除会 403）
     const del = (meId && d.ownerUserId === meId)
       ? '<button class="btn ghost small" onclick="delKb('+d.id+',this)">删除</button>'
       : '';
+    // 「查看」对所有可见资料都开放（看得见就能看内容），不按归属人过滤
+    const view = '<button class="btn ghost small" onclick="openKbDoc('+d.id+')">查看</button>';
     return '<div class="row"><span>'+icon('doc')+' '+esc(d.name)+'<span class="muted" style="font-size:11px">'+(meta?' · '+meta:'')+'</span></span>'+
-      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+acts+del+'</span></div>';
+      '<span style="display:flex;gap:6px;align-items:center"><span class="badge '+st[0]+'">'+st[1]+'</span>'+view+acts+del+'</span></div>';
   }).join('') + more;
 }
 /* 文件上传入库（FR-F1/F2）：选择本地 pdf/docx/doc/xlsx/xls/txt，后端解析后切片入库 */
@@ -2077,7 +2106,7 @@ async function onKbFile(e){
     toast('正在上传并解析…');
     const d = await API.kbUploadFile(f, 'PERSONAL');
     state.kbDocs = await API.kbDocs() || []; renderKb();
-    toast(d && d.state === 'ok' ? ('已入库：'+f.name) : ('已上传，状态：'+(d && d.state || 'wait')));
+    toast(d && kbStateLevel(d.state) === 'ok' ? ('已入库：'+f.name) : ('已上传，状态：'+(d && d.state || 'wait')));
   }catch(err){ toast('上传失败：'+err.message); }
 }
 async function retryKb(id){
@@ -2090,6 +2119,51 @@ async function delKb(id){
   if(!okDel) return;
   try{ await API.kbDelete(id); state.kbDocs = await API.kbDocs() || []; renderKb(); toast('已删除并留痕'); }
   catch(e){ toast('删除失败：'+e.message); }
+}
+/* 资料详情的正文块：**两形态共用这一份**。
+   元信息口径（范围/大小/切片/时间/失败原因）只在这里解释一遍，
+   经典弹窗与新版浮层都调用它 —— 两套界面各写一份必然分叉。
+   正文取自 kb_document.content：知识库「上传即解析入库」，原文件不落盘，
+   所以这里展示的就是这份资料在检索时真正被使用的那份内容。 */
+function kbDocBodyHtml(r){
+  const d = (r && r.doc) || {};
+  const lv = kbStateLevel(d.state);
+  const st = kbStateText(d.state);
+  const rows = [
+    ['文件名', d.name || '—'],
+    ['可见范围', d.scope === 'TENANT' ? '企业知识库（租户共享）' : '我的知识库'],
+    ['状态', st],
+    ['大小', d.sizeBytes ? (Math.max(1, Math.round(Number(d.sizeBytes) / 1024)) + ' KB') : '—'],
+    ['切片', (d.chunkCount || 0) + ' 段'],
+    ['上传时间', d.createdAt ? String(d.createdAt).replace('T', ' ').slice(0, 16) : '—'],
+  ];
+  if(lv === 'failed' && d.errorMsg) rows.push(['失败原因', d.errorMsg]);
+  const content = (r && r.content) || '';
+  const total = Number((r && r.contentLength) || 0);
+  const cut = !!(r && r.truncated);
+  return '<div class="td-form">' + rows.map(x =>
+      '<div class="tdf-row"><span>' + esc(x[0]) + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
+    '<div class="td-extra-title" style="margin-top:10px">入库正文' +
+      (total ? '<span class="muted" style="margin-left:6px;font-weight:400">共 ' + total + ' 字</span>' : '') + '</div>' +
+    (content ? '<div class="kb-doc-text">' + esc(content) + '</div>'
+             : '<div class="perm-tip">这份资料还没有可展示的正文（状态：' + esc(st) + '）。' +
+               (lv === 'failed' ? '可点「重试」重新解析后再看。' : '解析完成后即可查看。') + '</div>') +
+    (cut ? '<div class="perm-tip" style="margin-top:6px">正文过长，此处仅展示前 ' + content.length + ' 字。</div>' : '');
+}
+/* 点开查看（经典形态）：在既有弹窗里展示正文块 */
+async function openKbDoc(id){
+  const mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML = '<div class="notif-modal">' +
+      '<div class="notif-head"><b>资料详情</b><span class="notif-close">×</span></div>' +
+      '<div class="notif-body"><div class="perm-tip">加载中…</div></div></div>';
+  document.body.appendChild(mask);
+  const close = () => mask.remove();
+  mask.querySelector('.notif-close').onclick = close;
+  mask.onclick = e => { if(e.target === mask) close(); };
+  const body = mask.querySelector('.notif-body');
+  try{ body.innerHTML = kbDocBodyHtml(await API.kbDocDetail(id)); }
+  catch(e){ body.innerHTML = '<div class="perm-tip">' + esc((e && e.message) || '加载失败') + '</div>'; }
 }
 /* 检索测试（FR-F3）：验证入库内容可被检索命中并查看原文片段 */
 async function testKbSearch(){

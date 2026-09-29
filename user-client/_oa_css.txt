@@ -208,10 +208,13 @@
 .oa .kb-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-bottom:16px}
 .oa .kb-tile{background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px 4px 11px; text-align:center; box-shadow:var(--sh-1); cursor:pointer; transition:transform var(--dur-fast) var(--ease)}
 .oa .kb-tile:hover{transform:translateY(-2px)}
-.oa .kb-tile .ic{width:26px;height:26px;color:var(--brand);margin-bottom:6px}
+.oa .kb-tile .ic{display:block; width:26px;height:26px;color:var(--brand);margin:0 auto 6px}
 .oa .kb-tile.kb-blue .ic{color:var(--blue)}
 .oa .kb-tile.kb-amber .ic{color:var(--amber)}
-.oa .kb-tile span{font-size:11px;font-weight:600}
+/* 标签与数字各自独占一行：早期是 inline 流，数字落在标签同行还是换行取决于标签宽度
+   （「我的文档2」换行、「已就绪2」同行），四个磁贴长得不一样。改 block 后形态固定。 */
+.oa .kb-tile span{display:block; font-size:11px;font-weight:600; line-height:1.25}
+.oa .kb-tile b{display:block; line-height:1.2; margin-top:3px}
 .oa .file-ico{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-mono);font-size:11px;font-weight:700;flex-shrink:0}
 .oa .file-ico.doc{background:linear-gradient(140deg,#3b82f6,#2563eb)}
 .oa .file-ico.pdf{background:linear-gradient(140deg,#14b8a6,#0d9488)}
