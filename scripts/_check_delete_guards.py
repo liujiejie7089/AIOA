@@ -231,12 +231,23 @@ def checks(t):
     ))
 
     # ============================================================ D5 先冻账号、再软删租户
-    i_freeze = ten_ok.find("UPDATE sys_user SET status = 'DISABLED'")
+    #
+    # ★ 2026-09-30 收紧：账号必须**冻结并软删**（`DISABLED` + `deleted_at`），角色行一并清理。
+    #   只冻结的话，平台「人员管理」渲染的是 `sys_user`（跨租户全集）⇒ 已删租户的账号
+    #   仍会挂成一个分组继续展示。用户反馈「我已经删除了 test 租户，但人员管理还能看到 test」即此。
+    m_freeze = re.search(r'"UPDATE sys_user SET status = \'DISABLED\'.*?tenantId\);', ten_ok, re.S)
+    freeze_stmt = m_freeze.group(0) if m_freeze else ""
+    i_freeze = m_freeze.start() if m_freeze else -1
     i_soft = ten_ok.find("UPDATE sys_tenant SET deleted_at")
     out.append((
-        "D5 租户删除顺序：先冻结全部账号，再软删租户行（反序会留下「租户查不到、账号仍可登录」）",
-        i_freeze >= 0 and i_soft >= 0 and i_freeze < i_soft,
-        "freeze@%s softdel@%s" % (i_freeze, i_soft),
+        "D5 租户删除顺序：先**冻结并清理**全部账号（DISABLED + deleted_at，角色行同清），"
+        "再软删租户行（只冻结不清理 ⇒ 人员管理仍展示已删租户的账号；反序 ⇒ 「租户查不到、账号仍可登录」）",
+        i_freeze >= 0 and i_soft >= 0 and i_freeze < i_soft
+        and "deleted_at = NOW(6)" in freeze_stmt
+        and '"UPDATE sys_user_role SET deleted_at' in ten_ok,
+        "freeze@%s softdel@%s 账号含deleted_at=%s 角色已清=%s" % (
+            i_freeze, i_soft, "deleted_at = NOW(6)" in freeze_stmt,
+            '"UPDATE sys_user_role SET deleted_at' in ten_ok),
     ))
 
     # ============================================================ D6 层级顶端不能当申请人
@@ -381,6 +392,12 @@ def checks(t):
     # 两条都不会编译报错，也不会让既有套件变红（既有套件只验「空机构可删」），只能静态钉住。
     ten_ok2 = _method_body(ten, "public void onApproved(Map<String, Object> order) {")
     CASCADE = [
+        # ★ 2026-09-30 补「账号 / 账号角色」：平台「人员管理」渲染的是 `sys_user`（跨租户全集），
+        #   2026-09-24 那次级联只覆盖了 `org_*` ⇒ 已删租户的**账号**仍挂成一个分组继续展示
+        #   （用户反馈「我已经删除了 test 租户，但人员管理还能看到 test」）。
+        #   模式串**必须带上 deleted_at**：只判 `status = 'DISABLED'` 会把「退回只冻结」误判成已级联。
+        ("账号", '"UPDATE sys_user SET status = \'DISABLED\', deleted_at = NOW(6)'),
+        ("账号角色", '"UPDATE sys_user_role SET deleted_at'),
         ("员工账号绑定", '"UPDATE org_member_account SET deleted_at'),
         ("员工", '"UPDATE org_member SET deleted_at'),
         ("部门", '"UPDATE org_department SET deleted_at'),
@@ -432,7 +449,10 @@ def checks(t):
         # 三个变更出口：保存（新增/编辑）、申请删除、状态流转（停用/恢复/注销/冻结）
         and inst_code.count("await refreshScopeStores()") >= 3
         # 机构清单不再吞错：`.catch(() => [])` 会把失败信封渲染成一张空表（铁律 #2/#3）
-        and "listInstitutions().catch(" not in inst_code
+        # ★ 用正则而不是字面量 `listInstitutions().catch(`：该调用已参数化
+        #   （`listInstitutions(statusFilter ? {status} : undefined)`），写死空参形态会让
+        #   这条守卫在参数化之后**静默失效**（突变异步漂移，自检会报「突变未生效」）。
+        and not re.search(r"listInstitutions\s*\([^)]*\)\s*\.catch\(", inst_code)
         and "refreshTenantScope" in ten_admin_code and "loadTenantScope()" in ten_admin_code
         # 两个变更出口：保存（开通/编辑租户）、停用/启用
         and ten_admin_code.count("await refreshTenantScope()") >= 2
@@ -636,11 +656,23 @@ def selftest():
          # ★ 锚点里**不能带 `// ② 软删租户行` 这类注释**：load() 已用 _strip_java_comments 去掉注释，
          #   注释会留下一行只剩缩进的空白（`\n        \n        `），带注释的锚点永远匹配不上。
          #   故这里改用正则、用 `\s*` 跨过空白区间 —— 不要写死缩进（首版就是这样「突变未生效」）。
+         #   ★ 变量名用 `\w+` 而不是写死：2026-09-30 把 `int frozen` 改名成 `int users`（语义从
+         #     「冻结」变成「冻结并清理」），写死变量名会让这条突变**静默失效**。
          lambda t: dict(t, ten_del=re.sub(
-             r"(int frozen = jdbc\.update\(\"UPDATE sys_user SET status = 'DISABLED.*?tenantId\);)(\s*)"
+             r"(int \w+ = jdbc\.update\(\"UPDATE sys_user SET status = 'DISABLED.*?tenantId\);)(\s*)"
              r"(int rows = jdbc\.update\(\"UPDATE sys_tenant SET deleted_at.*?tenantId\);)",
              r"\3\2\1", t["ten_del"], count=1, flags=re.S)),
          ["D5"]),
+        ("D5b 账号只冻结不软删（已删租户的账号仍会挂成一个分组出现在人员管理里）",
+         lambda t: dict(t, ten_del=t["ten_del"].replace(
+             "UPDATE sys_user SET status = 'DISABLED', deleted_at = NOW(6), ",
+             "UPDATE sys_user SET status = 'DISABLED', ", 1)),
+         ["D5", "D13"]),
+        ("D13h 级联漏掉账号角色清理（角色行残留）",
+         lambda t: dict(t, ten_del=re.sub(
+             r'\s*int userRoles = jdbc\.update\("UPDATE sys_user_role SET deleted_at.*?tenantId\);',
+             "", t["ten_del"], count=1, flags=re.S)),
+         ["D5", "D13"]),
         ("D6 放开平台管理员发起机构删除（审批人会静默指错）",
          lambda t: dict(t, inst_del=t["inst_del"].replace(
              "if (actor.getTenantId() == null || actor.getTenantId() == 0L) {",
@@ -783,9 +815,11 @@ def selftest():
              ln for ln in t["inst_view"].splitlines() if "await refreshScopeStores()" not in ln)),
          ["D14"]),
         ("D14b 机构清单又退回静默吞错（403/500 被渲染成一张空表 = 看起来「数据没了」）",
-         lambda t: dict(t, inst_view=t["inst_view"].replace(
-             "      listInstitutions(),",
-             "      listInstitutions().catch(() => [] as Institution[]),", 1)),
+         # ★ 锚点跟着调用形态走：该调用现在带筛选参数，写死 `"      listInstitutions(),"` 会匹配不上
+         #   ⇒ 突变未生效（本条自检正是在 2026-09-30 参数化之后报出来的）。改成正则追加 `.catch(...)`。
+         lambda t: dict(t, inst_view=re.sub(
+             r"(listInstitutions\s*\([^)]*\))",
+             r"\1.catch(() => [] as Institution[])", t["inst_view"], count=1)),
          ["D14"]),
         ("D14c 租户页开通后不再刷新租户作用域（新租户在顶部下拉里选不到）",
          lambda t: dict(t, ten_admin_view="\n".join(

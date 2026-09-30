@@ -31,6 +31,14 @@ import java.util.Map;
  * 过滤器据此拒绝本次认证（401）。所以把该租户账号置为 DISABLED 就能<b>即刻</b>作废存量令牌，
  * 否则会出现「租户已删除、其管理员仍能调接口」——不可逆动作不能留下这种口子。
  * （与 {@code TenantController.changeStatus} 停用租户同一手法。）</p>
+ *
+ * <p><b>为什么账号还要「软删」而不只是 DISABLED</b>（2026-09-30 修复）：平台管理员的
+ * 「人员管理」按租户分组渲染，它取的是 {@code sys_user}（<b>跨租户全集</b>），而
+ * {@code org_member} 只是成员关系 —— 于是只清 {@code org_member} 会留下
+ * 「员工没了、账号还在」的残影：租户在列表里消失，它的账号却仍挂成一个分组继续展示。
+ * 用户反馈「我已经删除了 test 租户，但组织与员工里的人员管理还能看到 test」即此。
+ * 这与 {@code onApproved} 里 2026-09-24 修的机构/部门/员工级联是<b>同一类缺陷</b>——
+ * 该次只覆盖了 {@code org_*}，漏了 {@code sys_user}。故此处一并软删账号与其角色行。</p>
  */
 @Slf4j
 @Service
@@ -164,9 +172,14 @@ public class TenantDeleteService implements ApprovalCallback {
      * 只软删租户行的结果是：租户在列表里没了，但它名下的机构/部门/员工<b>照旧出现在管理端</b>，
      * 正是用户反馈的「通过平台管理员删除后，相关数据仍继续展示」。故此处按由内向外的顺序
      * 把整条子树一并软删：
-     * 员工账号绑定 → 员工 → 部门 → 机构（含已注销的）→ 租户行。
+     * <b>账号与角色 → 员工账号绑定 → 员工 → 部门 → 机构（含已注销的）→ 租户行</b>。
      * 租户行放最后：前面任何一步失败都会回滚，租户仍在，流程可重试；反过来则会留下
      * 「租户已删、下级数据还在」的不可逆脏状态。</p>
+     *
+     * <p><b>账号为什么也在级联里</b>（2026-09-30 修复）：平台「人员管理」渲染的是 {@code sys_user}
+     * 而非 {@code org_member}，2026-09-24 那次只清了 {@code org_*}，于是「已删租户的账号」
+     * 仍以一个分组继续展示（用户反馈「删了 test 租户，人员管理还能看到 test」）。
+     * 账号**同时置 DISABLED 并写 {@code deleted_at}**：前者作废存量令牌，后者让全集视图不再展示它。</p>
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -184,8 +197,13 @@ public class TenantDeleteService implements ApprovalCallback {
         if (blocked != null) {
             throw BizException.badRequest("审批期间该租户已不再满足删除条件，本次不执行删除：" + blocked);
         }
-        // ① 冻结全部账号：让该租户已签发的令牌立刻失效（见类注释）
-        int frozen = jdbc.update("UPDATE sys_user SET status = 'DISABLED', updated_at = NOW(6) "
+        // ① 冻结**并软删**全部账号与角色：
+        //    · DISABLED —— 让该租户已签发的令牌立刻失效（见类注释）；
+        //    · deleted_at —— 「人员管理」渲染的是 sys_user（跨租户全集），只冻结不软删的话，
+        //      租户在列表里没了、它的账号仍挂成一个分组继续展示。
+        int users = jdbc.update("UPDATE sys_user SET status = 'DISABLED', deleted_at = NOW(6), "
+                + "updated_at = NOW(6) WHERE tenant_id = ? AND deleted_at IS NULL", tenantId);
+        int userRoles = jdbc.update("UPDATE sys_user_role SET deleted_at = NOW(6), updated_at = NOW(6) "
                 + "WHERE tenant_id = ? AND deleted_at IS NULL", tenantId);
         // ② 级联终止组织数据：员工账号绑定 → 员工 → 部门 → 机构（含已注销的）
         int bindings = jdbc.update("UPDATE org_member_account SET deleted_at = NOW(6), updated_at = NOW(6) "
@@ -203,14 +221,15 @@ public class TenantDeleteService implements ApprovalCallback {
             throw BizException.badRequest("删除未生效：租户行未更新（可能已被并发删除）：" + tenantId);
         }
         audit.record(tenantId, 0L, null, "TENANT_DELETE_APPROVE", "SYS_TENANT", tenantId,
-                "租户删除审核通过并执行：删除租户「" + t.get("name") + "」，同步冻结账号 " + frozen
-                        + " 个、清理机构 " + insts + " 个 / 部门 " + depts + " 个 / 员工 " + members
-                        + " 名 / 账号绑定 " + bindings + " 条",
-                t, Map.of("orderId", String.valueOf(order.get("id")), "frozenUsers", frozen,
+                "租户删除审核通过并执行：删除租户「" + t.get("name") + "」，同步冻结并清理账号 " + users
+                        + " 个 / 角色 " + userRoles + " 条、清理机构 " + insts + " 个 / 部门 " + depts
+                        + " 个 / 员工 " + members + " 名 / 账号绑定 " + bindings + " 条",
+                t, Map.of("orderId", String.valueOf(order.get("id")), "frozenUsers", users,
+                        "cascadedUserRoles", userRoles,
                         "cascadedInstitutions", insts, "cascadedDepartments", depts,
                         "cascadedMembers", members, "cascadedBindings", bindings));
-        log.info("tenant deleted by approval: id={} name={} frozenUsers={} insts={} depts={} members={} bindings={} orderId={}",
-                tenantId, t.get("name"), frozen, insts, depts, members, bindings, order.get("id"));
+        log.info("tenant deleted by approval: id={} name={} users={} userRoles={} insts={} depts={} members={} bindings={} orderId={}",
+                tenantId, t.get("name"), users, userRoles, insts, depts, members, bindings, order.get("id"));
     }
 
     /** 审批驳回：租户与账号<b>保持原状</b>（不冻结、不软删），可再次申请。 */
