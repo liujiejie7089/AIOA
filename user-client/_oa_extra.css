@@ -170,3 +170,41 @@
   .oa .docview{transition:opacity var(--dur-fast) linear,visibility var(--dur-fast)}
   .oa .dv-btn:active{transform:none}
 }
+
+/* ---- ⑦ 职责推荐块（回答后「换更对口的同事」的入口，同老版 guide-block） ----
+   它作为数字人的一条发言落进对话坞，故沿用 .bub 的外观：自动获得指向数字人的三角
+   （oaLayoutTails 只认 .bub），不需要另写几何。这里只补「行是可点区」的样式。 */
+.oa .bub.guide{max-width:96%;padding:11px 12px}
+.oa .bub .g-head{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}
+.oa .bub .g-head b{font-size:12.5px;font-weight:700;color:var(--text)}
+.oa .bub .g-tip{font-size:10.5px;color:var(--text-3);line-height:1.5}
+.oa .bub .g-row{
+  display:flex;align-items:center;gap:8px;
+  border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);
+  padding:8px 9px;margin-top:6px;cursor:pointer;
+  transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease);
+}
+.oa .bub .g-row:hover{background:var(--brand-soft);border-color:var(--brand-line)}
+.oa .bub .g-row:active{transform:scale(.995)}
+.oa .bub .g-row:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+.oa .bub .g-main{min-width:0;flex:1}
+.oa .bub .g-label{
+  font-size:12.5px;font-weight:600;color:var(--brand-ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.oa .bub .g-desc{
+  font-size:11px;color:var(--text-2);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.oa .bub .g-why{font-size:10px;color:var(--text-3);margin-top:2px}
+.oa .bub .g-re{
+  flex-shrink:0;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;
+  padding:5px 9px;min-height:28px;border-radius:var(--r-full);
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--text);
+}
+.oa .bub .g-re:hover{background:var(--surface-3)}
+.oa .bub .g-re:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+@media (prefers-reduced-motion: reduce){
+  .oa .bub .g-row{transition:none}
+  .oa .bub .g-row:active{transform:none}
+}

@@ -10,6 +10,9 @@
   D 数字人链路        —— 点击 → 选择卡 → 数字员工清单 → 原地对话坞（不跳转）
   E 气泡三角几何      —— 逐气泡比对「计算方向角 θ+90°」与「实际 --tail-angle」，误差 < 1°
   F 抽屉与子页        —— 抽屉、定时任务、插件-技能、最近会话
+  H 职责推荐与表单直出 —— 回答后按职责推荐更对口的数字人（理由必须来自后端分类器）、
+                        点名称直接更换（并换会话）、请假表单由数字人当场给出（两个条件缺一不可）、
+                        两形态共用同一 id 时互不遮挡
 输出：scripts/_shot_oa/*.png + 控制台逐项结论
 退出码非零 = 有断言失败。
 """
@@ -633,6 +636,183 @@ async def main():
         chk('B7 刷新后保持 OA 形态', after2['oa'] is True and after2['mode'] == 'oa', after2)
         await no_overflow(page, 'OA·刷新后')
         await shot(page, '14-oa-after-reload')
+
+        # ---------------- H. 职责推荐 / 换人 / 表单直出（与老版同一套逻辑） ----------------
+        # 每条断言都要能说清理由来自哪里：
+        #   推荐行 = 后端职责分类器（POST /v1/workers/intent）或问句字面命中；
+        #   请假表单 = 「用户主动提请假」且「当前数字人是请假类」**两个条件同时成立**。
+        # 语料取本租户真实在册员工：先选一个**非**请假类数字员工，再问请假 —— 负向与正向各一遍。
+        await page.click('#oaTabs .tab[data-view="home"]')
+        await page.wait_for_timeout(700)
+
+        # H1 选一个非请假类数字员工（负向场景的起点；类型取自接口，不写死名字）
+        await page.click('#oaRobot')
+        await page.wait_for_timeout(450)
+        await page.click('#oaSheet .sheet-opt[data-target="workers"]')
+        await page.wait_for_timeout(1000)
+        h1 = await page.evaluate("""() => {
+          const ws = state.workers || [];
+          const rows = [...document.querySelectorAll('#oaWorkersList [data-worker]')];
+          const pick = rows.find(r => {
+            const w = ws.find(x => String(x.id) === r.dataset.worker) || {};
+            return String(w.workerType || '').toUpperCase() !== 'LEAVE_APPROVER' && w.on !== false;
+          });
+          if(!pick) return {err: '没有非请假类数字员工可选'};
+          pick.click();
+          const w = ws.find(x => String(x.id) === pick.dataset.worker) || {};
+          return {id: pick.dataset.worker, name: w.name, type: w.workerType};
+        }""")
+        await page.wait_for_timeout(900)
+        h1s = await page.evaluate("() => ({name: (window.oaState.worker||{}).name, conv: window.oaState.convId})")
+        chk('H1 已选中一个非请假类数字员工（负向场景起点）',
+            bool(h1.get('name')) and h1s['name'] == h1.get('name'), h1)
+
+        LEAVEY_Q = '我想请假三天，需要走什么流程'
+        NONLEAVE_Q = '帮我把这句话写得更正式一些：明天开会'
+
+        async def ask(q, want_guide=False, want_form=False, settle_ms=700):
+            """真实发一条消息并等回答收口（S.busy 释放 + 出现新的 AI 气泡）。
+
+            收口（推荐块 / 请假表单）要等一次 intent 调用才落地，故：
+              · **正向**断言一律等明确的 DOM 条件（want_guide / want_form），不猜毫秒数；
+              · **负向**断言没有可等的条件，只能给足窗口 —— 负向的唯一失败模式是「等太早」，
+                所以窗口给宽（等太早 = 假绿；等太久不会造成假红）。"""
+            st0 = await page.evaluate("""() => ({
+              bubs: document.querySelectorAll('#oaDockList .bub').length,
+              guides: document.querySelectorAll('#oaDockList .bub.guide').length,
+              forms: document.querySelectorAll('#leaveForm').length })""")
+            await page.fill('#oaInput', q)
+            await page.click('#oaSendBtn')
+            await page.wait_for_function(
+                "() => !window.oaState.busy && document.querySelectorAll('#oaDockList .bub').length > "
+                + str(st0['bubs']), timeout=90000)
+            if want_guide:
+                try:
+                    await page.wait_for_function(
+                        "() => document.querySelectorAll('#oaDockList .bub.guide').length > "
+                        + str(st0['guides']), timeout=20000)
+                except Exception:
+                    pass          # 等不到就交给断言报红，不在这里吞掉
+            if want_form:
+                try:
+                    await page.wait_for_function(
+                        "() => document.querySelectorAll('#leaveForm').length > "
+                        + str(st0['forms']), timeout=25000)
+                except Exception:
+                    pass
+            await page.wait_for_timeout(settle_ms)
+            answered = await page.evaluate("""() => {
+              const bs = [...document.querySelectorAll('#oaDockList .bub.ai')];
+              const last = bs[bs.length - 1];
+              return last ? (last.textContent || '').trim().length : 0;
+            }""")
+            return {'before': st0['bubs'], 'answerLen': answered}
+
+        async def guide_state():
+            return await page.evaluate("""() => {
+              const gs = [...document.querySelectorAll('#oaDockList .bub.guide')];
+              const g = gs[gs.length - 1];
+              if(!g) return {found: false};
+              return {found: true, hasTail: !!g.querySelector('.tail'),
+                rows: [...g.querySelectorAll('.g-row')].map(r => ({
+                  label: ((r.querySelector('.g-label') || {}).textContent || '').trim(),
+                  why: ((r.querySelector('.g-why') || {}).textContent || '').trim(),
+                  re: !!(r.querySelector('.g-re'))
+                }))};
+            }""")
+
+        async def leave_forms():
+            return await page.evaluate("""() => {
+              const dock = document.getElementById('oaDockList');
+              const f = document.getElementById('leaveForm');
+              const sel = document.getElementById('lfType');
+              return {
+                count: document.querySelectorAll('#leaveForm').length,
+                inDock: !!(f && dock && dock.contains(f)),
+                types: sel ? sel.options.length : 0,
+                placeholder: sel ? sel.options[0].textContent : null
+              };
+            }""")
+
+        # H2 问「请假」，但当前数字人不管请假 ⇒ 出推荐、**不出表单**（负向：两个条件缺一不可）
+        h2 = await ask(LEAVEY_Q, want_guide=True)
+        chk('H2 回答已收口（有正文）', h2['answerLen'] > 0, h2)
+        g1 = await guide_state()
+        chk('H2a 回答后出现「转给更专业的同事」推荐块', g1['found'] is True, g1)
+        chk('H2b 推荐块带三角（与其它气泡同形，指向数字人）', g1.get('hasTail') is True, g1)
+        rows_txt = ' | '.join(r['label'] + '/' + r['why'] for r in g1.get('rows', []))
+        hit = [r for r in g1.get('rows', []) if '请假' in r['label']]
+        chk('H2c 推荐里含职责对口的请假类数字员工', len(hit) > 0, rows_txt)
+        chk('H2d 推荐理由来自后端职责分类器（识别为「…」）',
+            bool(hit) and any('识别为' in r['why'] for r in hit), rows_txt)
+        chk('H2e 推荐行都带「换他重答」', all(r['re'] for r in g1.get('rows', [])),
+            g1.get('rows'))
+        f2 = await leave_forms()
+        chk('H2f 负向：数字人不具请假职责 ⇒ 不发表单', f2['count'] == 0, f2)
+        await shot(page, '17-oa-guide-suggest')
+
+        # H3 点推荐行 ⇒ 直接更换数字人（同老版点名称切换），且换人真的要换会话
+        await page.evaluate("""() => {
+          const gs = [...document.querySelectorAll('#oaDockList .bub.guide')];
+          const g = gs[gs.length - 1];
+          const r = [...g.querySelectorAll('.g-row')].find(x => x.textContent.indexOf('请假') >= 0);
+          r.click();
+        }""")
+        await page.wait_for_timeout(1000)
+        h3 = await page.evaluate("""() => {
+          const w = window.oaState.worker || {};
+          const full = (state.workers || []).find(x => String(x.id) === String(w.id)) || {};
+          return {name: w.name, type: String(full.workerType || ''),
+                  conv: window.oaState.convId,
+                  bar: (document.querySelector('.dock-list .oa-who') || {}).textContent || ''};
+        }""")
+        chk('H3 点推荐行即更换数字人（顶部标出当前对话对象）',
+            '请假' in str(h3['name']) and '请假' in str(h3['bar']), h3)
+        chk('H3a 换人即换会话（会话在创建时绑定数字员工，沿用旧会话会让「换人」不生效）',
+            h3['conv'] is None, h3)
+        await shot(page, '18-oa-guide-switched')
+
+        # H4 负向：数字人已是请假类，但问句不是请假 ⇒ 仍不发表单
+        await page.evaluate("() => { const f = document.getElementById('leaveForm'); if(f) f.remove(); }")
+        h4 = await ask(NONLEAVE_Q, settle_ms=4000)     # 负向：给足窗口，等太早 = 假绿
+        chk('H4 回答已收口（有正文）', h4['answerLen'] > 0, h4)
+        f4 = await leave_forms()
+        chk('H4a 负向：问句不是请假 ⇒ 请假类数字人也不发表单', f4['count'] == 0, f4)
+
+        # H5 正向：请假类数字人 + 请假问句 ⇒ 表单由数字人当场给出（同老版「表单融入对话流」）
+        h5 = await ask('我要请假两天', want_form=True)
+        chk('H5 回答已收口（有正文）', h5['answerLen'] > 0, h5)
+        f5 = await leave_forms()
+        chk('H5a 表单直出：请假表单落在对话坞内（不跳转、不换页）', f5['inDock'] is True, f5)
+        chk('H5b 假种下拉来自后端配置（非「暂无可用假种」占位）',
+            f5['types'] > 0 and '暂无' not in str(f5['placeholder']), f5)
+        chk('H5c 文档内 #leaveForm 恰好 1 份（两形态共用同一 id，不得撞名）', f5['count'] == 1, f5)
+        await shot(page, '19-oa-leave-form')
+
+        # H6 表单气泡与其它气泡同形：三角仍指向数字人
+        geo_h = await tail_geometry(page)
+        chk('H6 表单在坞里时三角几何仍成立（气泡数 %s）' % geo_h.get('bubbles'),
+            not geo_h.get('skip') and len(geo_h.get('items', [])) > 0
+            and max(i['err'] for i in geo_h['items']) < 1.0,
+            geo_h.get('skip') or [i for i in geo_h.get('items', []) if i['err'] >= 1.0])
+
+        # H7 离开新版 ⇒ 新版注入的表单必须撤掉，否则经典的「文档里已有表单就不再发」判据会被挡住。
+        # 多等一会儿是刻意的：若「在途收口」漏过代次判据，它会正好在这段时间里补一份表单出来。
+        await page.evaluate("() => window.oaSetMode('classic')")
+        await page.wait_for_timeout(2500)
+        h7 = await page.evaluate("""() => ({
+          oa: document.querySelector('.phone').classList.contains('oa-mode'),
+          count: document.querySelectorAll('#leaveForm').length })""")
+        chk('H7 切回经典时撤掉新版注入的请假表单（解除对经典发放判据的遮挡）',
+            h7['oa'] is False and h7['count'] == 0, h7)
+
+        # H8 反向：经典形态自己发一份表单时，文档里仍恰好 1 份（同一 id 共用，不互相遮挡）
+        await page.evaluate("() => { if(typeof openLeaveFlow === 'function') openLeaveFlow(); }")
+        await page.wait_for_timeout(900)
+        h8 = await page.evaluate("() => document.querySelectorAll('#leaveForm').length")
+        chk('H8 经典形态可正常发放请假表单（文档内恰好 1 份）', h8 == 1, h8)
+        await page.evaluate("() => window.oaSetMode('oa')")
+        await page.wait_for_timeout(800)
 
         # ---------------- 控制台 ----------------
         chk('G1 console 无 error / 无未捕获异常', len(errors) == 0, errors[:5])

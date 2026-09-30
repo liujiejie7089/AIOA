@@ -1151,7 +1151,7 @@
 /* index.html 的 .tab 与 demo 的 .tab 同名：OA 内的以本段为准 */
 .oa .tab{text-decoration:none}
 
-/* ===== 段 2：外壳显隐 + 对话坞 + 锚点气泡 + 部门联系方式 ===== */
+/* ===== 段 2：外壳显隐 + 对话坞 + 锚点气泡 + 职责推荐块 + 部门联系方式 ===== */
 /* ============================================================================
    OA 形态外壳规则（index.html 侧新增，不来自 oa-demo）
    职责：① 双形态显隐 ② 首页对话坞与锚点气泡（demo 里没有原地对话）
@@ -1323,6 +1323,44 @@
 @media (prefers-reduced-motion: reduce){
   .oa .docview{transition:opacity var(--dur-fast) linear,visibility var(--dur-fast)}
   .oa .dv-btn:active{transform:none}
+}
+
+/* ---- ⑦ 职责推荐块（回答后「换更对口的同事」的入口，同老版 guide-block） ----
+   它作为数字人的一条发言落进对话坞，故沿用 .bub 的外观：自动获得指向数字人的三角
+   （oaLayoutTails 只认 .bub），不需要另写几何。这里只补「行是可点区」的样式。 */
+.oa .bub.guide{max-width:96%;padding:11px 12px}
+.oa .bub .g-head{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}
+.oa .bub .g-head b{font-size:12.5px;font-weight:700;color:var(--text)}
+.oa .bub .g-tip{font-size:10.5px;color:var(--text-3);line-height:1.5}
+.oa .bub .g-row{
+  display:flex;align-items:center;gap:8px;
+  border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);
+  padding:8px 9px;margin-top:6px;cursor:pointer;
+  transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease);
+}
+.oa .bub .g-row:hover{background:var(--brand-soft);border-color:var(--brand-line)}
+.oa .bub .g-row:active{transform:scale(.995)}
+.oa .bub .g-row:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+.oa .bub .g-main{min-width:0;flex:1}
+.oa .bub .g-label{
+  font-size:12.5px;font-weight:600;color:var(--brand-ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.oa .bub .g-desc{
+  font-size:11px;color:var(--text-2);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.oa .bub .g-why{font-size:10px;color:var(--text-3);margin-top:2px}
+.oa .bub .g-re{
+  flex-shrink:0;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;
+  padding:5px 9px;min-height:28px;border-radius:var(--r-full);
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--text);
+}
+.oa .bub .g-re:hover{background:var(--surface-3)}
+.oa .bub .g-re:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+@media (prefers-reduced-motion: reduce){
+  .oa .bub .g-row{transition:none}
+  .oa .bub .g-row:active{transform:none}
 }
 
 /* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */
@@ -5969,6 +6007,7 @@ var S = {
   worker:null,           // 数字员工
   expert:null,           // 专家
   busy:false,
+  lastQuery:'',          // 上一轮问句（推荐相关职责同事、换人重答都以它为唯一依据）
   controller:null,
   apprDetail:null,       // 正在看的审批单 {id, scope}
   deptId:null,           // 部门筛选（null = 全部）
@@ -6020,8 +6059,12 @@ function applyMode(){
 }
 
 function setMode(m){
+  var was = S.mode;
   S.mode = (m === 'oa') ? 'oa' : 'classic';
   try{ localStorage.setItem(LS_MODE, S.mode); }catch(e){}
+  // 离开新版：撤掉新版注入的请假表单（两形态共用一个文档，见 oaDropOwnLeaveForm 的说明），
+  // 并作废在途的收口 —— 否则它会在切走之后才把表单塞进已隐藏的对话坞。
+  if(was === 'oa' && S.mode !== 'oa'){ oaAnswerSeq++; try{ oaDropOwnLeaveForm(); }catch(e){} }
   applyMode();
   toast(S.mode === 'oa' ? '已切换到「新版 · 协同工作台」' : '已切换到「原版 · 经典工作台」');
 }
@@ -7092,6 +7135,10 @@ function oaBanner(){
 
 function oaPickWorker(w){
   if(!w) return;
+  // 换了对话对象就要换会话：后端在**创建会话时**把 workerId 绑上去（API.ensureConversation 同款），
+  // 沿用旧会话会让「换人」只换了个称呼、回答仍出自原数字员工（老版 startChat 同样重置会话）。
+  // 换了对话对象：作废在途收口（按旧对象给出的推荐已不成立）
+  if(!S.worker || w.id !== S.worker.id){ S.convId = null; oaAnswerSeq++; }
   S.worker = w; S.expert = null;
   oaGo('home');
   oaBanner();
@@ -7102,6 +7149,8 @@ function oaPickWorker(w){
 }
 function oaPickExpert(e){
   if(!e) return;
+  // 同 oaPickWorker：换人即换会话，并作废在途收口
+  if(!S.expert || e.key !== S.expert.key){ S.convId = null; oaAnswerSeq++; }
   S.expert = e; S.worker = null;
   oaGo('home');
   oaBanner();
@@ -7124,6 +7173,8 @@ async function oaSend(){
   var q = String(input.value || '').trim();
   if(!q || S.busy) return;
   input.value = '';
+  // 上一轮问句只在这一处落定：推荐相关职责同事、换人重答都以它为准，不会串到上一条
+  S.lastQuery = q;
   oaPushBub('user', txt(q));
 
   var bubble = oaPushBub('ai', '<span class="tx"><span class="typing"><i></i><i></i><i></i></span></span>');
@@ -7133,6 +7184,7 @@ async function oaSend(){
   S.busy = true;
   var stop = $o('oaStop'); if(stop) stop.style.display = '';
   var text = '';
+  var answered = false;
 
   try{
     var convId = await oaEnsureConv();
@@ -7179,6 +7231,7 @@ async function oaSend(){
     else{
       bubble.classList.add('ans');
       tx.innerHTML = (typeof formatAnswer === 'function' ? formatAnswer(text) : txt(text));
+      answered = true;
     }
   }catch(e){
     tx.textContent = '请求失败：' + (e.message || '请检查网络或后端服务');
@@ -7190,6 +7243,9 @@ async function oaSend(){
     oaLayoutTails();
     refreshShared();
   }
+  // 收口（与老版 afterAnswer 同一批动作）：推荐更对口的同事 + 按需当场发表单。
+  // 放在 finally 之后，且不 await —— S.busy 已释放，推荐晚到一步不该拖住下一次提问。
+  if(answered) oaAfterOaAnswer();
 }
 
 async function oaStop(){
@@ -7203,6 +7259,7 @@ async function oaStop(){
 function oaNewChat(){
   if(S.busy){ toast('正在生成，请先停止'); return; }
   S.convId = null; S.worker = null; S.expert = null;
+  oaAnswerSeq++;                       // 清空对话坞 ⇒ 作废在途收口（否则它会往空坞里补一条）
   var list = dockEl(); if(list) list.innerHTML = '';
   oaSetChatting(false);
   S.view = 'home'; oaGo('home');
@@ -7236,6 +7293,208 @@ async function oaNewTask(){
       }
     }
   });
+}
+
+/* --------------------------------------- 9.5 职责推荐 / 换人 / 表单直出（同老版）
+   与经典形态（老版）同一套逻辑，只是把载体换成首页对话坞：
+     · 老版：回答回来固定给一个「转给更专业的同事」块（guidanceBlock），点名称即换人；
+       问句命中请假、且当前是请假类数字员工时，由它当场发放《请假申请》（afterAnswer）。
+     · 新版：同样两件事 —— 推荐块落在对话坞里，表单直接插进对话流。
+   判据只认两个可核对的来源，别的一概不用（铁律 1）：
+     (a) 后端职责分类器 POST /v1/workers/intent —— 与「新工作任务」同一个判定点，不另写一套；
+     (b) 问句里**字面**出现该员工名 / 职责名，或老版专家词表里的词（逐字复用 scoreExpert）。
+   两个都拿不到 ⇒ 不推荐：与老版同一取舍（宁可少推荐，也不给无关入口）。 */
+
+var GUIDE_CAP = 3;
+/* 收口代次：回答后的「推荐 + 表单」要等一次 intent 调用才落地。
+   等待期间用户可能已经切走形态或换了对象 —— 用代次把在途收口作废，
+   否则会往已隐藏的对话坞里塞一份请假表单，并让经典形态再发一份 ⇒ 同一 id 出现两份。 */
+var oaAnswerSeq = 0;
+
+function oaWhoType(){
+  var w = S.worker;
+  if(!w) return '';
+  if(w.workerType) return String(w.workerType);
+  var hit = arr(state.workers).filter(function(x){ return x.id === w.id; })[0];
+  return hit ? String(hit.workerType || '') : '';
+}
+
+/* 是否「请假类」数字员工：与老版 isLeaveCapable 同一判据（类型码 + 名称/职责文本）。
+   会话绑定可能只带 id（从「最近」续聊），故回落到 state.workers 补类型。 */
+function oaLeaveCapable(){
+  var w = S.worker;
+  if(!w) return false;
+  var key = (oaWhoType() + ' ' + (w.roleName || w.name || '')).trim();
+  return /LEAVE_APPROVER|请假|假勤|休假/.test(key);
+}
+
+/* 问句问的是不是请假：与老版 isLeaveRequest 同一份词表 */
+function oaIsLeaveRequest(q){
+  return /请假|休假|调休|年假|病假|事假|婚假|产假|丧假|探亲假/.test(String(q || ''));
+}
+
+/* 一位数字员工是否值得推荐；返回 null = 不推荐。
+   排除当前对话对象本身 —— 「更换数字人」不该把当前这位再推荐一遍。 */
+function oaWorkerHit(w, q, intent){
+  if(!w || w.on === false) return null;
+  if(S.worker && w.id === S.worker.id) return null;
+  var s = String(q || '').toLowerCase();
+  var type = String(w.workerType || '').toUpperCase();
+  var name = String(w.name || '');
+  var role = String(w.roleName || '');
+  var text = [name, role, w.duty, w.description || ''].join(' ');
+  var score = 0, why = '';
+  if(intent && intent.role && intent.role !== 'GENERAL' && type === String(intent.role).toUpperCase()){
+    score += 10; why = '识别为「' + (intent.roleName || role || intent.role) + '」';
+  }
+  var kws = arr(intent && intent.matched);
+  for(var i = 0; i < kws.length && !why; i++){
+    var k = String(kws[i] || '').toLowerCase();
+    if(k.length >= 2 && text.toLowerCase().indexOf(k) >= 0){
+      score += 6; why = '职责含「' + kws[i] + '」';
+    }
+  }
+  if(!why && role && s.indexOf(role.toLowerCase()) >= 0){ score += 6; why = '问句提到「' + role + '」'; }
+  if(!why && name && s.indexOf(name.toLowerCase()) >= 0){ score += 5; why = '问句提到「' + name + '」'; }
+  return score > 0 ? {kind:'worker', w:w, score:score, why:why} : null;
+}
+
+/* 专家：逐字复用老版的 scoreExpert —— 老版推荐的正是专家，这里不另写第二套口径。
+   （expertKeywords / scoreExpert 与经典形态同在这一个单文件内，故可直接调用。） */
+function oaExpertHits(q){
+  if(typeof scoreExpert !== 'function') return [];
+  return arr(state.experts)
+    .filter(function(e){ return e && e.key && !e.isDefault && !(S.expert && e.key === S.expert.key); })
+    .map(function(e){ return {kind:'expert', e:e, score:scoreExpert(e, q), why:'领域相关'}; })
+    .filter(function(x){ return x.score > 0; });
+}
+
+/* 推荐清单：数字员工在前（职责优先），专家在后；同分按名称稳定排序，保证可断言。 */
+function oaSuggestList(q, intent){
+  var ws = [];
+  arr(state.workers).forEach(function(w){
+    var h = oaWorkerHit(w, q, intent);
+    if(h) ws.push(h);
+  });
+  var byName = function(a, b, ka, kb){
+    return (b.score - a.score) || String(ka || '').localeCompare(String(kb || ''), 'zh-Hans-CN');
+  };
+  ws.sort(function(a, b){ return byName(a, b, a.w.name, b.w.name); });
+  var es = oaExpertHits(q).sort(function(a, b){ return byName(a, b, a.e.name, b.e.name); });
+  return ws.concat(es).slice(0, GUIDE_CAP);
+}
+
+/* 推荐块 DOM（作为数字人的一条「发言」落进对话坞，故自然带上指向数字人的三角） */
+function oaGuideHtml(items){
+  var rows = items.map(function(it, i){
+    var isW = it.kind === 'worker';
+    var name = isW ? (it.w.name || '数字员工') : (it.e.name || it.e.key);
+    var desc = isW ? ('职责：' + (it.w.roleName || '数字员工') + (it.w.duty ? ' · ' + it.w.duty : ''))
+                   : (it.e.description || it.e.desc || '');
+    return '<div class="g-row" data-gi="' + i + '" role="button" tabindex="0">' +
+        '<div class="g-main">' +
+          '<div class="g-label">' + (isW ? '换「' : '转「') + txt(name) + '」</div>' +
+          (desc ? '<div class="g-desc">' + txt(desc) + '</div>' : '') +
+          (it.why ? '<div class="g-why">' + txt(it.why) + '</div>' : '') +
+        '</div>' +
+        '<button type="button" class="g-re" data-re="' + i + '"' +
+          ' title="换成这一位，并把上一个问题原样再问一遍">换他重答</button>' +
+      '</div>';
+  }).join('');
+  return '<div class="g-head"><b>需要我转给更专业的同事吗？</b>' +
+    '<span class="g-tip">点名称直接更换数字人，或点「换他重答」用他再答一遍</span></div>' + rows;
+}
+
+function oaPushGuide(items){
+  var b = oaPushBub('ai', oaGuideHtml(items));
+  if(!b) return null;
+  b.classList.add('guide');
+  b.querySelectorAll('[data-gi]').forEach(function(row){
+    row.onclick = function(){ oaTakeSuggestion(items[Number(row.dataset.gi)]); };
+    row.onkeydown = function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); oaTakeSuggestion(items[Number(row.dataset.gi)]); }
+    };
+  });
+  b.querySelectorAll('[data-re]').forEach(function(btn){
+    btn.onclick = function(ev){
+      ev.stopPropagation();
+      oaTakeSuggestion(items[Number(btn.dataset.re)], true);
+    };
+  });
+  return b;
+}
+
+/* 采纳一条推荐：换成这一位；redo = 顺手把上一个问题原样再问一遍（老版「重新回答」）。
+   与老版 reAnswer 同一语义：既重发原问句、也切换角色，两步都在同一次点击里完成。 */
+function oaTakeSuggestion(it, redo){
+  if(!it) return;
+  if(it.kind === 'worker'){
+    if(S.worker && it.w.id === S.worker.id){ toast('已经在和这一位对话'); return; }
+    oaPickWorker(it.w);
+  }else{
+    oaPickExpert(it.e);
+  }
+  if(!redo) return;
+  var q = S.lastQuery;
+  if(!q){ toast('还没有可重答的问题'); return; }
+  var i = $o('oaInput'); if(i) i.value = q;
+  oaSend();
+}
+
+/* 表单直出：与老版 afterAnswer 同一对判据 —— 用户主动提请假 + 当前是请假类数字员工。
+   两个条件缺一不可，否则会出现「一边说不管请假、一边发表单」的自相矛盾。 */
+function oaMaybeLeaveForm(){
+  if(!oaIsLeaveRequest(S.lastQuery) || !oaLeaveCapable()) return false;
+  if(document.getElementById('leaveForm')) return false;      // 文档里已有一份，不重复发放
+  if(typeof leaveFormHtml !== 'function') return false;
+  oaPushBub('ai', '已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml());
+  if(typeof ensureLeaveTypes === 'function') ensureLeaveTypes(); // 假种来自后端配置，写死会打不到真实链路
+  oaScrollDock();
+  oaLayoutTails();
+  return true;
+}
+
+/* 两形态共用一个文档，而请假表单的 id 是固定的（lfType/lfStart…，经典 helper 全靠它们取值）。
+   故**同一时刻只允许存在一份**：
+     · 新版要发新表单前，先清掉经典形态遗留的那份（那个页面此刻整体隐藏，已无法操作），
+       顺带作废它暂存的附件 —— 否则会把上一份表单的证明材料带进这次提交；
+     · 离开新版回经典时，把新版注入的那份撤掉，否则经典的「文档里已有表单就不再发」判据
+       会因此跳过发放，表现为「经典问请假却不出表单」。 */
+function oaDropStaleLeaveForm(){
+  var f = document.getElementById('leaveForm');
+  var dock = dockEl();
+  if(!f || (dock && dock.contains(f))) return;
+  f.remove();
+  try{ if(typeof leaveAttachments !== 'undefined') leaveAttachments = []; }catch(e){}
+}
+function oaDropOwnLeaveForm(){
+  var dock = dockEl();
+  if(!dock) return;
+  var f = document.getElementById('leaveForm');
+  if(f && dock.contains(f)){
+    f.remove();
+    try{ if(typeof leaveAttachments !== 'undefined') leaveAttachments = []; }catch(e){}
+  }
+}
+
+/* 回答收口：先把更对口的同事推荐出来，再按需当场发表单。
+   刻意**不 await** 在 oaSend 的 try 里 —— 推荐是收口的增强，不该让「能不能再发一条」等它
+   （intent 一次最多 8s 超时）。代价是它可能在异步等待期间「过期」，故用代次挡掉过期轮次。 */
+async function oaAfterOaAnswer(){
+  var q = S.lastQuery;
+  if(!q) return;
+  var seq = ++oaAnswerSeq;
+  oaDropStaleLeaveForm();
+  var intent = null;
+  try{ intent = await API.workerIntent(q); }catch(e){ intent = null; }
+  // 过期判据（任一成立即放弃本轮收口，不写任何 DOM）：
+  //   ① 已经离开新版（走的是经典形态；对话坞此时整体隐藏）；
+  //   ② 又发了一条新问句（本轮推荐会串到新问题上）；
+  //   ③ 换了对话对象（按旧对象给的推荐已不成立）。
+  if(seq !== oaAnswerSeq || S.mode !== 'oa' || S.lastQuery !== q) return;
+  var items = oaSuggestList(q, intent);
+  if(items.length) oaPushGuide(items);
+  oaMaybeLeaveForm();
 }
 
 /* ------------------------------------------------------------- 10. 抽屉 / 弹层 */
