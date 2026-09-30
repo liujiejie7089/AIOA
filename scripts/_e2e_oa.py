@@ -44,6 +44,27 @@ async def no_overflow(page, where):
     chk('横向溢出=0 · ' + where, v['sw'] <= v['cw'] + 1, 'scrollWidth=%s clientWidth=%s' % (v['sw'], v['cw']))
 
 
+# 「回答」里出现这些字样 = 这一轮根本没有产出正文（额度耗尽 / 后端报错 / 未返回）。
+# 必须**单列一条断言**判它：否则「回答已收口（有正文）」会被一条 27 字的错误文案满足，
+# 真因（环境额度耗尽）就被后面一连串「推荐块没出现」误报成功能缺陷 —— 实测踩过一次。
+# 用**完整错误句**而不是裸词：请假表单里就有「年假/病假/事假（不占额度）」，
+# 用裸词 `额度` 会把一张正常发出的表单判成环境错误（也实测踩过一次）。
+ENV_ERR_WORDS = ('免费额度已用完', '额度已用完', '额度不足', '请求失败：', '生成失败：',
+                 '本次未返回内容', '请检查网络或后端服务')
+
+
+def chk_answered(tag, r):
+    """断言这一轮真的产出了正文，并把「这是环境错误文案」直接写在结论里。"""
+    text = str(r.get('text', ''))
+    bad = [w for w in ENV_ERR_WORDS if w in text]
+    ok = r['answerLen'] > 0 and not bad
+    detail = {'len': r['answerLen'], 'text': text[:60]}
+    if not ok:
+        detail['归因'] = ('【环境】回答是错误文案而非正文（命中 %s）——先修环境（如额度）'
+                          '再看后面各条，别当成功能缺陷' % bad) if bad else '回答为空'
+    return chk(tag, ok, detail)
+
+
 async def shot(page, name):
     p = os.path.join(OUT, name + '.png')
     await page.screenshot(path=p)
@@ -679,6 +700,7 @@ async def main():
                 所以窗口给宽（等太早 = 假绿；等太久不会造成假红）。"""
             st0 = await page.evaluate("""() => ({
               bubs: document.querySelectorAll('#oaDockList .bub').length,
+              ai: document.querySelectorAll('#oaDockList .bub.ai').length,
               guides: document.querySelectorAll('#oaDockList .bub.guide').length,
               forms: document.querySelectorAll('#leaveForm').length })""")
             await page.fill('#oaInput', q)
@@ -701,12 +723,14 @@ async def main():
                 except Exception:
                     pass
             await page.wait_for_timeout(settle_ms)
-            answered = await page.evaluate("""() => {
-              const bs = [...document.querySelectorAll('#oaDockList .bub.ai')];
-              const last = bs[bs.length - 1];
-              return last ? (last.textContent || '').trim().length : 0;
-            }""")
-            return {'before': st0['bubs'], 'answerLen': answered}
+            # 取「本轮新增的第一个 ai 气泡」= 回答气泡本身（收口推的推荐块/表单排在它后面）。
+            # 若取「最后一个 ai 气泡」，请假那轮量到的会是**表单**，把「有没有正文」问错对象。
+            text = await page.evaluate("""(n) => {
+              const bs = [...document.querySelectorAll('#oaDockList .bub.ai')].slice(n);
+              const a = bs[0];
+              return a ? (a.textContent || '').trim() : '';
+            }""", st0['ai'])
+            return {'before': st0['bubs'], 'answerLen': len(text), 'text': text}
 
         async def guide_state():
             return await page.evaluate("""() => {
@@ -720,6 +744,12 @@ async def main():
                   re: !!(r.querySelector('.g-re'))
                 }))};
             }""")
+
+        async def guide_rows_all():
+            """坞内**全部**推荐块的行标签，按出现顺序（旧 → 新）。"""
+            return await page.evaluate("""() => [...document.querySelectorAll('#oaDockList .bub.guide')]
+              .map(g => [...g.querySelectorAll('.g-row')].map(r =>
+                ((r.querySelector('.g-label') || {}).textContent || '').trim()))""")
 
         async def leave_forms():
             return await page.evaluate("""() => {
@@ -736,7 +766,7 @@ async def main():
 
         # H2 问「请假」，但当前数字人不管请假 ⇒ 出推荐、**不出表单**（负向：两个条件缺一不可）
         h2 = await ask(LEAVEY_Q, want_guide=True)
-        chk('H2 回答已收口（有正文）', h2['answerLen'] > 0, h2)
+        chk_answered('H2 回答已收口（有正文）', h2)
         g1 = await guide_state()
         chk('H2a 回答后出现「转给更专业的同事」推荐块', g1['found'] is True, g1)
         chk('H2b 推荐块带三角（与其它气泡同形，指向数字人）', g1.get('hasTail') is True, g1)
@@ -745,18 +775,23 @@ async def main():
         chk('H2c 推荐里含职责对口的请假类数字员工', len(hit) > 0, rows_txt)
         chk('H2d 推荐理由来自后端职责分类器（识别为「…」）',
             bool(hit) and any('识别为' in r['why'] for r in hit), rows_txt)
-        chk('H2e 推荐行都带「换他重答」', all(r['re'] for r in g1.get('rows', [])),
-            g1.get('rows'))
+        # 先要求「有行」再逐行判：只写 all(...) 的话，空列表会让它恒真（没有推荐 = 通过）。
+        chk('H2e 推荐行都带「换他重答」',
+            bool(g1.get('rows')) and all(r['re'] for r in g1['rows']), g1.get('rows'))
         f2 = await leave_forms()
         chk('H2f 负向：数字人不具请假职责 ⇒ 不发表单', f2['count'] == 0, f2)
         await shot(page, '17-oa-guide-suggest')
 
         # H3 点推荐行 ⇒ 直接更换数字人（同老版点名称切换），且换人真的要换会话
-        await page.evaluate("""() => {
+        # 没有推荐块时**不在这里崩**（会掩盖 H2a 的真因），只返回 False，交给下面的断言报红。
+        h3click = await page.evaluate("""() => {
           const gs = [...document.querySelectorAll('#oaDockList .bub.guide')];
           const g = gs[gs.length - 1];
+          if(!g) return false;
           const r = [...g.querySelectorAll('.g-row')].find(x => x.textContent.indexOf('请假') >= 0);
+          if(!r) return false;
           r.click();
+          return true;
         }""")
         await page.wait_for_timeout(1000)
         h3 = await page.evaluate("""() => {
@@ -766,8 +801,9 @@ async def main():
                   conv: window.oaState.convId,
                   bar: (document.querySelector('.dock-list .oa-who') || {}).textContent || ''};
         }""")
+        h3['clicked'] = h3click
         chk('H3 点推荐行即更换数字人（顶部标出当前对话对象）',
-            '请假' in str(h3['name']) and '请假' in str(h3['bar']), h3)
+            h3click and '请假' in str(h3['name']) and '请假' in str(h3['bar']), h3)
         chk('H3a 换人即换会话（会话在创建时绑定数字员工，沿用旧会话会让「换人」不生效）',
             h3['conv'] is None, h3)
         await shot(page, '18-oa-guide-switched')
@@ -775,18 +811,36 @@ async def main():
         # H4 负向：数字人已是请假类，但问句不是请假 ⇒ 仍不发表单
         await page.evaluate("() => { const f = document.getElementById('leaveForm'); if(f) f.remove(); }")
         h4 = await ask(NONLEAVE_Q, settle_ms=4000)     # 负向：给足窗口，等太早 = 假绿
-        chk('H4 回答已收口（有正文）', h4['answerLen'] > 0, h4)
+        chk_answered('H4 回答已收口（有正文）', h4)
         f4 = await leave_forms()
         chk('H4a 负向：问句不是请假 ⇒ 请假类数字人也不发表单', f4['count'] == 0, f4)
 
         # H5 正向：请假类数字人 + 请假问句 ⇒ 表单由数字人当场给出（同老版「表单融入对话流」）
+        gpre = await guide_rows_all()      # H5d 的快照：本轮之前坞里已有的推荐块
         h5 = await ask('我要请假两天', want_form=True)
-        chk('H5 回答已收口（有正文）', h5['answerLen'] > 0, h5)
+        chk_answered('H5 回答已收口（有正文）', h5)
         f5 = await leave_forms()
         chk('H5a 表单直出：请假表单落在对话坞内（不跳转、不换页）', f5['inDock'] is True, f5)
         chk('H5b 假种下拉来自后端配置（非「暂无可用假种」占位）',
             f5['types'] > 0 and '暂无' not in str(f5['placeholder']), f5)
         chk('H5c 文档内 #leaveForm 恰好 1 份（两形态共用同一 id，不得撞名）', f5['count'] == 1, f5)
+
+        # H5d 自己不会被推荐给自己：「更换」的语义是换一位，不是再推荐当前这位。
+        #      此刻当前对象就是那位「会命中推荐判据」的请假助手，所以规则只在这一刻验得到。
+        #      判据必须落在**本轮新产出的块**上：坞里那块 H2 留下的推荐是当时（当前对象=政策快讯员）
+        #      合法生成的、并且刻意保留在坞里 —— 拿它当证据会得到一个假阳性（实测踩过一次）。
+        #      同时必须带**阳性对照**：更早那轮确实推荐过请假助手（H2c 已证），否则「本轮没推荐它」
+        #      可能只是因为「这个问句本来就推不出它」，整条断言退化成恒真。
+        gpost = await guide_rows_all()
+        new_blocks = gpost[len(gpre):]
+        uname = await page.evaluate("() => ((window.oaState.worker || {}).name || '')")
+        has_self = lambda rows: any(uname and uname in lb for lb in rows)
+        pre_hit = any(has_self(rows) for rows in gpre)        # 阳性对照
+        new_hit = any(has_self(rows) for rows in new_blocks)  # 被测规则
+        chk('H5d 当前就是请假助手 ⇒ 本轮不再把「请假助手」推荐给自己（对照：更早那轮确实推荐过它）',
+            pre_hit and not new_hit,
+            {'self': uname, 'pre_blocks': len(gpre), 'new_blocks': len(new_blocks),
+             '对照_更早块命中': pre_hit, '本轮命中': new_hit, 'new_rows': new_blocks})
         await shot(page, '19-oa-leave-form')
 
         # H6 表单气泡与其它气泡同形：三角仍指向数字人
