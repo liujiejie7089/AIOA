@@ -108,12 +108,14 @@ proxy-run*.log
 .workbuddy/shots/
 # 验收截图产物（可随时重跑套件再生成）
 .workbuddy/artifacts/
-# OA 形态 e2e 截图（scripts/_e2e_oa.py 产出，21 张约 5MB，可随时重跑再生成）
-scripts/_shot_oa/
-# 知识库「点开查看/删除」交付截图（人工核对用，可随时重跑再生成）
-scripts/_shot_kbdoc/
-# 首页浮动卡三角指向自检截图（scripts/_check_kpi_tail.py 产出，可随时重跑再生成）
-scripts/_shot_kpi/
+# 自检脚本产出的截图目录，一律不入库（人工核对用，可随时重跑再生成）。
+# 收敛为通配：原先只写死 _shot_oa/_shot_kbdoc/_shot_kpi 三个，新增截图目录时会漏掉，
+# 变成「未忽略的残留」堆在工作区里（2026-09-30 清理时实测）。
+#   _shot_oa/    ← scripts/_e2e_oa.py
+#   _shot_kbdoc/ ← 知识库「点开查看/删除」交付截图
+#   _shot_kpi/   ← scripts/_check_kpi_tail.py（首页浮动卡三角指向自检）
+# 要长期留证请 `cp` 到 logs/proof/（该目录是有意保留的举证目录）。
+scripts/_shot_*/
 
 # ---- 第三方系统对接资料（含凭证，严禁入库）----
 # 非遗四川接口文档原文含 SSO clientSecret / AES 密钥 / JWT 签名密钥，
