@@ -59,6 +59,12 @@
             <artifactId>aioa-gitee</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
+        <!-- 项目管理域（PM，docs/40）：立项 / 成员 / 任务 / 仓库绑定。 -->
+        <dependency>
+            <groupId>cn.aioa</groupId>
+            <artifactId>aioa-project</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
         <!-- 非遗四川 2023（scfy）只读接入。整模块由 aioa.integration.scfy.enabled
              开关控制，默认关闭 ⇒ 不注册任何工具、模型能力清单里不出现。 -->
         <dependency>

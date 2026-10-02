@@ -285,3 +285,105 @@ export const GITEE_VISIBILITIES = [
 export const GITEE_VISIBILITY_LABEL: Record<string, string> = Object.fromEntries(
   GITEE_VISIBILITIES.map((v) => [v.value, v.label])
 ) as Record<string, string>
+
+// ============================================================================
+// 项目管理（PM，V71 / docs/40）
+// ============================================================================
+// ⚠ 三层必须同源：菜单（MainLayout）→ 路由 meta.allowRoles（router/index.ts）→ 后端
+//   PermissionCatalog。历史上三处各写一套就出过「菜单能进但接口 403」与
+//   「接口放开但菜单藏起来」两类镜像缺陷。
+
+/** 项目管理可见范围：所有组织内角色（只读边界由后端数据范围 + 项目内角色决定）。 */
+export const PM_VIEW_ROLES: readonly string[] = [
+  ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN, ROLE.DEPT_LEADER, ROLE.MEMBER
+]
+
+/** 新建项目：四级管理者（与后端 {@code PermissionCatalog.PM_CREATORS} 同源，不含普通成员）。 */
+export const PM_CREATE_ROLES: readonly string[] = [
+  ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN, ROLE.DEPT_LEADER
+]
+
+/**
+ * 项目类型（与后端 {@code PmProjectType} 同源）。
+ *
+ * <p>它是「配置面」的开关：{@code DEV} 才渲染代码仓库相关配置项。
+ * 界面只做渲染，真正的拒绝在后端（BR-01）—— 前端隐藏不是安全边界。</p>
+ */
+export const PM_PROJECT_TYPES = [
+  { value: 'BUSINESS', label: '业务项目', hint: '只含业务字段，不涉及代码仓库' },
+  { value: 'DEV', label: '开发项目', hint: '可绑定代码仓库，任务可关联仓库 / issue / 分支 / 提交' }
+] as const
+
+export const PM_PROJECT_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  PM_PROJECT_TYPES.map((t) => [t.value, t.label])
+) as Record<string, string>
+
+/** 项目状态（与后端 {@code PmProjectStatus} 同源）。 */
+export const PM_PROJECT_STATUS = [
+  { value: 'DRAFT', label: '草稿', tag: 'info' },
+  { value: 'ACTIVE', label: '进行中', tag: 'primary' },
+  { value: 'SUSPENDED', label: '暂停', tag: 'warning' },
+  { value: 'CLOSED', label: '已结项', tag: 'success' },
+  { value: 'ARCHIVED', label: '已归档', tag: 'info' }
+] as const
+
+export const PM_PROJECT_STATUS_LABEL: Record<string, string> = Object.fromEntries(
+  PM_PROJECT_STATUS.map((s) => [s.value, s.label])
+) as Record<string, string>
+
+export const PM_PROJECT_STATUS_TAG: Record<string, string> = Object.fromEntries(
+  PM_PROJECT_STATUS.map((s) => [s.value, s.tag])
+) as Record<string, string>
+
+/** 只读终态：已结项 / 已归档（与后端 {@code PmProjectStatus.isReadOnly} 同源）。 */
+export const PM_PROJECT_READONLY_STATUS: readonly string[] = ['CLOSED', 'ARCHIVED']
+
+/** 项目内角色（与后端 {@code PmProjectRoles} 同源）。**不是系统角色**，仅在本项目内生效。 */
+export const PM_PROJECT_ROLES = [
+  { value: 'OWNER', label: '项目负责人' },
+  { value: 'PM', label: '项目经理' },
+  { value: 'DEV', label: '开发' },
+  { value: 'MEMBER', label: '成员' },
+  { value: 'VIEWER', label: '只读' }
+] as const
+
+export const PM_PROJECT_ROLE_LABEL: Record<string, string> = Object.fromEntries(
+  PM_PROJECT_ROLES.map((r) => [r.value, r.label])
+) as Record<string, string>
+
+/** 任务状态（与后端 {@code PmTaskStatus} 同源）。 */
+export const PM_TASK_STATUS = [
+  { value: 'TODO', label: '待办', tag: 'info' },
+  { value: 'DOING', label: '进行中', tag: 'primary' },
+  { value: 'BLOCKED', label: '阻塞', tag: 'warning' },
+  { value: 'DONE', label: '已完成', tag: 'success' },
+  { value: 'CANCELED', label: '已取消', tag: 'info' }
+] as const
+
+export const PM_TASK_STATUS_LABEL: Record<string, string> = Object.fromEntries(
+  PM_TASK_STATUS.map((s) => [s.value, s.label])
+) as Record<string, string>
+
+export const PM_TASK_STATUS_TAG: Record<string, string> = Object.fromEntries(
+  PM_TASK_STATUS.map((s) => [s.value, s.tag])
+) as Record<string, string>
+
+/** 任务优先级（与后端 {@code PmTaskStatus.PRIORITIES} 同源）。 */
+export const PM_TASK_PRIORITIES = [
+  { value: 'LOW', label: '低' },
+  { value: 'MEDIUM', label: '中' },
+  { value: 'HIGH', label: '高' },
+  { value: 'URGENT', label: '紧急' }
+] as const
+
+export const PM_TASK_PRIORITY_LABEL: Record<string, string> = Object.fromEntries(
+  PM_TASK_PRIORITIES.map((p) => [p.value, p.label])
+) as Record<string, string>
+
+/** 项目成员仓库同步态（与后端 {@code pm_project_member.repo_sync_status} 同源）。 */
+export const PM_REPO_SYNC_STATUS_LABEL: Record<string, string> = {
+  NA: '无需同步',
+  SYNCED: '已同步',
+  PENDING: '待同步',
+  FAILED: '同步失败'
+}

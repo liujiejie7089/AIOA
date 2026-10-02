@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { TOKEN_KEY } from '@/api'
-import { EXPERT_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
+import { EXPERT_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, PM_VIEW_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -163,6 +163,9 @@ const routes: RouteRecordRaw[] = [
       { path: 'review-records', name: 'review-records', component: () => import('@/views/ReviewRecordsView.vue'), meta: { title: '审核记录', allowRoles: REVIEW_RECORD_ROLES } },
       { path: 'gitee/projects', name: 'gitee-projects', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '项目与仓库', allowRoles: GITEE_VIEW_ROLES } },
       { path: 'gitee/projects/:id', name: 'gitee-project-detail', component: () => import('@/views/GiteeProjectDetailView.vue'), meta: { title: '项目详情', allowRoles: GITEE_VIEW_ROLES } },
+      // 项目管理（PM，V71 / docs/40）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog 三处共用 PM_VIEW_ROLES。
+      { path: 'pm/projects', name: 'pm-projects', component: () => import('@/views/PmProjectsView.vue'), meta: { title: '项目管理', allowRoles: PM_VIEW_ROLES } },
+      { path: 'pm/projects/:id', name: 'pm-project-detail', component: () => import('@/views/PmProjectDetailView.vue'), meta: { title: '项目详情', allowRoles: PM_VIEW_ROLES } },
       // V5x 消息中心：对所有已登录角色可见（人人都要看自己的通知）。
       // 通道配置 / 投递记录两个页签在页内按 isTenantAdmin 收起，非管理员不发起其接口请求（否则 403）。
       // 不加 allowRoles / minTier —— 三层同源：菜单(MainLayout) → 路由 meta → 后端都已对齐「全员可见」。

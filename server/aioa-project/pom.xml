@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>cn.aioa</groupId>
+    <artifactId>aioa-server</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>aioa-project</artifactId>
+  <name>aioa-project</name>
+  <description>项目管理域（PM，docs/40）：立项（业务/开发两类型）/ 项目成员与角色 / 任务状态机 / 代码仓库绑定</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-security</artifactId>
+    </dependency>
+    <!-- 依赖组织域：项目成员只能从在册员工（org_member）里选，作用域收窄也读机构/部门 -->
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-org</artifactId>
+    </dependency>
+    <!-- 依赖 Gitee 域：BR-06 的仓库绑定读/写 gitee_project.pm_project_id。
+         这是**只读映射**依赖（不改 Gitee 侧建仓/同步逻辑），不引入循环。 -->
+    <dependency>
+      <groupId>cn.aioa</groupId>
+      <artifactId>aioa-gitee</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

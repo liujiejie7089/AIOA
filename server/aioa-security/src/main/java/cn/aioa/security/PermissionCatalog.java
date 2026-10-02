@@ -98,6 +98,32 @@ public final class PermissionCatalog {
      */
     public static final String GITEE_BIND = "gitee:bind";
 
+    // ---- 项目管理（PM，V71 / docs/40）----
+    /**
+     * 查看项目管理（项目列表与详情）。全体登录用户可读，**可见范围由数据范围收紧**：
+     * 平台/租户管理员看全量，企业管理员看本机构，部门负责人看其负责部门，成员看「本部门 + 我参与的项目」。
+     */
+    public static final String PM_PROJECT_VIEW = "pm:project:view";
+    /**
+     * 新建项目。
+     *
+     * <p>限四级管理者（不含普通成员）：项目是**有预算与合同**的载体，创建权过宽会让
+     * 「谁都能建一个有预算的空项目」。普通成员若确有需要，可经权限申请链路获得。</p>
+     */
+    public static final String PM_PROJECT_CREATE = "pm:project:create";
+    /**
+     * 管理项目本身（改基础信息 / 改状态 / 软删 / 绑解仓库）。
+     *
+     * <p>权限码只做**粗闸**（机构管理员及以上）；真正的判定是「项目内角色 OWNER/PM」，
+     * 由服务层按 {@code project_id} 查 {@code pm_project_member} 得出 ——
+     * 系统角色表达不了「在这个项目里是 PM、在另一个项目里只是成员」。</p>
+     */
+    public static final String PM_PROJECT_MANAGE = "pm:project:manage";
+    /** 管理项目成员与角色。粗闸全员，细判由服务层按项目内角色（OWNER/PM）收窄。 */
+    public static final String PM_MEMBER_MANAGE = "pm:member:manage";
+    /** 管理项目任务。粗闸全员，细判由服务层按项目内角色（OWNER/PM/DEV + 任务负责人）收窄。 */
+    public static final String PM_TASK_MANAGE = "pm:task:manage";
+
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
     public static final String ROLE_USER = "ROLE_USER";
@@ -131,6 +157,10 @@ public final class PermissionCatalog {
     private static final Set<String> EXPERT_MANAGERS = Set.of(
             ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN);
 
+    /** 可新建项目者：四级管理者（不含普通成员 / 普通用户）。 */
+    private static final Set<String> PM_CREATORS = Set.of(
+            ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN, ROLE_DEPT_LEADER);
+
     /** 权限码 → 允许的角色。 */
     private static final Map<String, Set<String>> GRANTS = Map.ofEntries(
             Map.entry(CHAT_BASIC, ALL),
@@ -145,7 +175,14 @@ public final class PermissionCatalog {
             // Gitee 项目与代码仓库：查看/管理/绑定对全体登录用户开放，范围由部门作用域收紧
             Map.entry(PROJECT_VIEW, ALL),
             Map.entry(PROJECT_MANAGE, ALL),
-            Map.entry(GITEE_BIND, ALL));
+            Map.entry(GITEE_BIND, ALL),
+            // 项目管理（PM）：查看/成员/任务对全员开放（范围与项目内角色在服务层收紧）；
+            // 新建限四级管理者；「管理项目本身」的粗闸为机构管理员级（细判为项目内 OWNER/PM）
+            Map.entry(PM_PROJECT_VIEW, ALL),
+            Map.entry(PM_PROJECT_CREATE, PM_CREATORS),
+            Map.entry(PM_PROJECT_MANAGE, ORG_ADMINS),
+            Map.entry(PM_MEMBER_MANAGE, ALL),
+            Map.entry(PM_TASK_MANAGE, ALL));
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
     private static final Map<String, String> ROLE_NAMES = Map.of(
@@ -172,7 +209,12 @@ public final class PermissionCatalog {
             Map.entry(APPROVAL_LEAVE, "请假审批"),
             Map.entry(PROJECT_VIEW, "项目与代码仓库（查看）"),
             Map.entry(PROJECT_MANAGE, "项目与代码仓库（管理）"),
-            Map.entry(GITEE_BIND, "Gitee 账号绑定"));
+            Map.entry(GITEE_BIND, "Gitee 账号绑定"),
+            Map.entry(PM_PROJECT_VIEW, "项目管理（查看）"),
+            Map.entry(PM_PROJECT_CREATE, "项目管理（新建项目）"),
+            Map.entry(PM_PROJECT_MANAGE, "项目管理（管理项目）"),
+            Map.entry(PM_MEMBER_MANAGE, "项目管理（成员与角色）"),
+            Map.entry(PM_TASK_MANAGE, "项目管理（任务）"));
 
     /**
      * 权限码 → 对应数字员工类型（申请单「目的」展示用）。

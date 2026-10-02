@@ -177,13 +177,18 @@
             <el-menu-item v-if="showTenantMenu" index="/biz-systems">业务系统</el-menu-item>
           </el-sub-menu>
 
-          <!-- 成果与项目：成果沉淀 + 仓库联动 -->
-          <el-sub-menu v-if="showTenantMenu || showGiteeMenu" index="output">
+          <!-- 成果与项目：成果沉淀 + 项目管理 + 仓库联动 -->
+          <el-sub-menu v-if="showTenantMenu || showPmMenu || showGiteeMenu" index="output">
             <template #title>
               <el-icon><FolderOpened /></el-icon>
               <span>成果与项目</span>
             </template>
             <el-menu-item v-if="showTenantMenu" index="/results">成果沉淀</el-menu-item>
+            <!--
+              项目管理（PM，V71）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
+              三处共用 PM_VIEW_ROLES —— 可见边界由后端数据范围 + 项目内角色收紧。
+            -->
+            <el-menu-item v-if="showPmMenu" index="/pm/projects">项目管理</el-menu-item>
             <!--
               项目与仓库（V48 Gitee 联动）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
               三处共用 GITEE_VIEW_ROLES —— 只读边界由后端按部门作用域收窄（人人有入口，只能看本部门）。
@@ -365,6 +370,7 @@ import {
 import {
   EXPERT_MANAGER_ROLES,
   GITEE_VIEW_ROLES,
+  PM_VIEW_ROLES,
   ORG_VIEW_ROLES,
   REVIEW_RECORD_ROLES,
   ROLE,
@@ -456,6 +462,8 @@ const showExpertMenu = computed(() => hasAnyRole(roles.value, EXPERT_MANAGER_ROL
 const showReviewRecordMenu = computed(() => hasAnyRole(roles.value, REVIEW_RECORD_ROLES))
 /** 项目与仓库（V48 Gitee 联动）：与路由 meta.allowRoles、后端 PermissionCatalog 共用 GITEE_VIEW_ROLES。 */
 const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
+/** 项目管理（PM，V71）：与路由 meta.allowRoles、后端 PermissionCatalog 共用 PM_VIEW_ROLES。 */
+const showPmMenu = computed(() => hasAnyRole(roles.value, PM_VIEW_ROLES))
 
 /**
  * 侧边菜单的高亮项。
@@ -486,6 +494,7 @@ const PATH_GROUP: Record<string, string> = {
   '/biz-systems': 'svc',
   // 成果与项目
   '/results': 'output',
+  '/pm/projects': 'output',
   '/gitee/projects': 'output',
   // 运营管理
   '/kpi': 'ops',
@@ -516,7 +525,11 @@ const PATH_GROUP: Record<string, string> = {
 const initialOpenedGroups = computed<string[]>(() => {
   const p = route.path
   // 项目详情 `/gitee/projects/:id`、子应用 `/app/:code` 均按前缀归组
-  const g = PATH_GROUP[p] || (p.startsWith('/gitee/') ? 'output' : p.startsWith('/app/') ? 'apps' : '')
+  // 项目详情 `/pm/projects/:id` 与 `/gitee/projects/:id` 均按前缀归「成果与项目」组，
+  // 否则进入详情后菜单组会收起 —— 用户点进项目再想切回列表，得重新展开一次。
+  const g = PATH_GROUP[p] || (p.startsWith('/gitee/') ? 'output'
+    : p.startsWith('/pm/') ? 'output'
+      : p.startsWith('/app/') ? 'apps' : '')
   return g ? [g] : []
 })
 
