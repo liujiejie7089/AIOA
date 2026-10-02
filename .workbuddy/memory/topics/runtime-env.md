@@ -14,6 +14,10 @@
   ```
   原因：`aioa.web.h5-dir`/`web-dir` 默认值是**容器内**路径 `/app/h5`、`/app/web`（`application.yml` 只给 `${AIOA_WEB_H5_DIR:/app/h5}`，本机没有这俩 env）⇒ 在 Windows 上落到 `C:\app\h5`，不存在。
   **启动期就会打 WARN 指名要 `--aioa.web.h5-dir` 覆盖**（`AioaStaticConfig`），重启后**先 grep 这行确认拿到的是「（存在）」而不是「不可用」**，别等套件红了才回头查。
+  ✅ **2026-10-02：两个启动入口已补齐这两个参数**（此前**都缺**，`start-backend.bat` 还挂着一个不存在的 `application-local.yml` profile）——`start-all.sh` 后端段与 `start-backend.bat` 现在都会显式传参，并在启动前把「缺 `index.html`」喊出来（附重新组装命令）。
+  ⚠️ **对照实验结论（别再靠推理）**：不传参 ⇒ `/aioa/web/`、`/aioa/h5/` **均 404** 而 `/actuator/health` 200；传参 ⇒ 均 200。日志里报的是 `C:\app\h5` / `C:\app\web`。
+  ⚠️ **写进 .sh 的路径必须过 `cygpath -m`**：git bash 的 `pwd` 返回 `/c/Users/...`，Windows 上的 Java **认不出**（会当成当前盘的 `\c\Users\...`）⇒ 目录「不存在」照样 404；jar 若用绝对路径同理（用相对路径则无此问题，因为脚本已 `cd` 到仓库根）。
+  ⚠️ `%LOCALAPPDATA%` **不含 `Temp` 这一层**（`C:\Users\..\AppData\Local`）；组装 webroot 要么用 `%TEMP%`，要么拼 `%LOCALAPPDATA%\Temp`。写成 `${LOCALAPPDATA}/Temp` 才是对的。
   管理端临时 webroot（`%TEMP%\aioa-webroot`）会**随系统清理消失**；`ls` 一下，没了就从 `web/apps/*/dist` 重新组装（需含 `index.html`、`assets/`、`subapps/<name>/`）。
   改 shell 源码后**必须重打包 + 同步 webroot 才能在界面上看见**（只改 `src/` 是看不见的）：
   ```bash

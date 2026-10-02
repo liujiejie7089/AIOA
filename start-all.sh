@@ -12,6 +12,43 @@ PY="C:/Users/刘尖尖/.workbuddy/binaries/python/envs/default/Scripts/python.ex
 JAVA="C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java"
 JAR="server/aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar"
 
+# ---- 单端口静态目录：必须**显式**传给后端 ----
+# application.yml 的默认值是**容器内**路径 ${AIOA_WEB_H5_DIR:/app/h5} / ${AIOA_WEB_WEB_DIR:/app/web}，
+# 本机没有这两个 env ⇒ 在 Windows 上落到 `C:\app\h5`、`C:\app\web`（不存在）
+# ⇒ `/aioa/h5/`、`/aioa/web/` **全部 404**，而 `/api/v1/**` 照常可用。
+# 症状极易被误判成「前端产物没部署」，故此处显式传参并把缺失目录在启动前就喊出来。
+ROOT="$(pwd)"
+# ★ git bash 的 `pwd` 是 `/c/Users/...` 形式，Windows 上的 Java **认不出**这种路径
+#   （会当成当前盘的 `\c\Users\...`）⇒ 交给 JVM 的每个路径都必须过 cygpath -m
+#   转成正斜杠的 Windows 形式（`C:/Users/...`）。漏转 = 目录「不存在」⇒ 依旧 404。
+winpath() { cygpath -m "$1" 2>/dev/null || echo "$1"; }
+H5_DIR="${AIOA_WEB_H5_DIR:-$(winpath "$ROOT/user-client")}"
+if [ -n "${AIOA_WEB_WEB_DIR:-}" ]; then
+  WEB_DIR="$AIOA_WEB_WEB_DIR"
+else
+  # 与既有约定一致：管理端产物组装在 %TEMP%\aioa-webroot（随系统清理会消失，故下面做存在性检查）
+  # 注意 %LOCALAPPDATA% **不含** Temp 这一层，别拿它直接拼。
+  if [ -n "${TEMP:-}" ]; then
+    TMPROOT="$TEMP"
+  elif [ -n "${LOCALAPPDATA:-}" ]; then
+    TMPROOT="$LOCALAPPDATA\\Temp"
+  else
+    TMPROOT="$ROOT"
+  fi
+  WEB_DIR="$(winpath "$TMPROOT")/aioa-webroot"
+fi
+
+static_precheck() {
+  if [ ! -f "$H5_DIR/index.html" ]; then
+    echo "[warn] 用户端 H5 目录缺 index.html：$H5_DIR ⇒ /aioa/h5/ 将返回 404"
+  fi
+  if [ ! -f "$WEB_DIR/index.html" ]; then
+    echo "[warn] 管理端目录缺 index.html：$WEB_DIR ⇒ /aioa/web/ 将返回 404"
+    echo "       从 web/apps/*/dist 重新组装："
+    echo "       cp web/apps/shell/dist/index.html \"$WEB_DIR/index.html\" && cp -r web/apps/shell/dist/assets/. \"$WEB_DIR/assets/\""
+  fi
+}
+
 port_up() { netstat -ano | grep -E ":$1[[:space:]]" | grep -q LISTENING; }
 
 # ---- Gitee 接线：默认生产（授权跳转真的去 gitee.com）----
@@ -34,8 +71,13 @@ else
   if [ ! -f "$JAR" ]; then
     echo "[warn] $JAR 不存在，先执行: cd server && bash mvnw -DskipTests package"
   else
+    static_precheck
     echo "[start] backend :8080 (logs/boot.log)"
-    "$JAVA" -Dspring.flyway.validate-on-migrate=false -jar "$JAR" > logs/boot.log 2>&1 &
+    echo "        h5-dir =$H5_DIR"
+    echo "        web-dir=$WEB_DIR"
+    "$JAVA" -Dspring.flyway.validate-on-migrate=false -jar "$JAR" \
+      --aioa.web.h5-dir="$H5_DIR" \
+      --aioa.web.web-dir="$WEB_DIR" > logs/boot.log 2>&1 &
   fi
 fi
 
