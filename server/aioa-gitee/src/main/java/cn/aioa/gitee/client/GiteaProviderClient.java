@@ -596,6 +596,10 @@ public class GiteaProviderClient implements RepoProviderClient {
     private static HttpClient buildHttpClient(GiteaProperties props) {
         HttpClient.Builder b = HttpClient.newBuilder()
                 .proxy(NO_PROXY)
+                // 与 common/http/AgentHttpClient、integration/scfy/ScfyClient 口径一致：固定 HTTP/1.1。
+                // 自建 Gitea 常以**明文 http://** 暴露（内网 3000 端口），不固定协议版本时 JDK 会
+                // 先发 h2c 升级请求，被服务端判为非法请求而断开 —— 表现为与业务无关的连接失败。
+                .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(Duration.ofSeconds(Math.max(1, props.getHttpTimeoutSeconds())));
 

@@ -75,6 +75,12 @@ public class GiteeClient implements RepoProviderClient {
 
     private final HttpClient http = HttpClient.newBuilder()
             .proxy(NO_PROXY)
+            // 与 common/http/AgentHttpClient、integration/scfy/ScfyClient 口径一致：固定 HTTP/1.1。
+            // 不固定时 JDK 会对**明文 http://** 目标先发 h2c 升级请求，而多数轻量 HTTP 服务端
+            //（uvicorn 桩、部分自建 Gitea 前置）不认这个升级，直接回「Unsupported upgrade
+            // request」并断开 ⇒ 表现为「Gitee 拒绝了本次授权：Invalid HTTP request received」
+            // 这种与业务无关的假象。真实 gitee.com 走 HTTPS+ALPN 不受影响，钉 1.1 无副作用。
+            .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
