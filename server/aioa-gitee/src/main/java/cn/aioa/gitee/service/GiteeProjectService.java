@@ -20,6 +20,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -74,8 +75,15 @@ public class GiteeProjectService {
      *
      * <p>本方法只做「校验 + 落库 + 入队」：真正的建仓在异步任务里执行。
      * 因此接口是毫秒级返回，用户看到的是「创建中」而不是转圈等待外网调用。</p>
+     *
+     * <p><b>为什么是 {@code REQUIRES_NEW}</b>：本方法会被 PM 立项（{@code PmProjectService.create}）
+     * 在「自动建仓」分支里调用，而调用方自己也开着事务、且把本方法的异常当作**可吞的警告**
+     * （建仓失败不应阻断立项）。若共用同一个事务，本方法抛出的异常会先把该事务标记成
+     * rollback-only，外层再想提交就只剩 {@code UnexpectedRollbackException} ⇒ 表现为
+     * 「立项接口 500，且项目行/成员行一条都没落库」，与调用方注释声明的语义完全相反。
+     * 开一个独立事务后，本方法失败**不可能**污染调用方事务，调用方的 try/catch 才真正生效。</p>
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
     public GiteeProject create(AuthUser user, Map<String, Object> body) {
         tokenService.assertEnabled();
         requirePermission(user, PermissionCatalog.PROJECT_MANAGE);

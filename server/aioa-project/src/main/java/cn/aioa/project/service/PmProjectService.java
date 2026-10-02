@@ -165,18 +165,30 @@ public class PmProjectService {
         } else if (createRepo) {
             // 自动建仓是「尽力而为」：Gitee 未配置组织 / 未绑令牌 / 部门非法时，
             // 建仓不可用，但立项本身仍应成功 —— 把原因作为警告回传，而不是让用户丢一次立项。
-            try {
-                Map<String, Object> cb = new HashMap<>();
-                cb.put("name", name);
-                cb.put("description", str(body.get("description")));
-                cb.put("departmentId", departmentId);
-                cb.put("visibility", str(body.get("repoVisibility")));
-                GiteeProject repo = giteeProjectService.create(user, cb);
-                repoBindMapper.bind(tenantId, repo.getId(), p.getId());
-            } catch (Exception e) {
-                repoWarning = "项目已创建，但自动建仓未成功：" + e.getMessage()
-                        + "（可在「项目与仓库」建好仓库后，回本项目详情页「仓库」页签绑定）";
-                log.warn("自动建仓失败 projectId={} name={}: {}", p.getId(), name, e.toString());
+            if (departmentId == null || departmentId <= 0) {
+                // departmentId=0 是**内部哨兵值**（表示机构直属、未挂具体部门），不是真实部门。
+                // 建仓必须落在真实部门下（仓库名派生自部门，`GiteeProjectService.create` 会
+                // requireDepartment 校验）。把这个哨兵值原样传下去，只会换来一句
+                // 「归属部门不存在或不属于当前租户」，还白跑一次跨模块校验 ——
+                // 于是一句话前置拦掉，并给出**可执行**的补救路径。
+                repoWarning = "项目已创建，但未自动建仓：自动建仓需要项目先指定归属部门"
+                        + "（本项目为机构直属、未挂具体部门，无法派生仓库名）。"
+                        + "请编辑项目补上归属部门后重试，或到「项目与仓库」建好仓库后"
+                        + "回本项目详情页「仓库」页签绑定。";
+            } else {
+                try {
+                    Map<String, Object> cb = new HashMap<>();
+                    cb.put("name", name);
+                    cb.put("description", str(body.get("description")));
+                    cb.put("departmentId", departmentId);
+                    cb.put("visibility", str(body.get("repoVisibility")));
+                    GiteeProject repo = giteeProjectService.create(user, cb);
+                    repoBindMapper.bind(tenantId, repo.getId(), p.getId());
+                } catch (Exception e) {
+                    repoWarning = "项目已创建，但自动建仓未成功：" + e.getMessage()
+                            + "（可在「项目与仓库」建好仓库后，回本项目详情页「仓库」页签绑定）";
+                    log.warn("自动建仓失败 projectId={} name={}: {}", p.getId(), name, e.toString());
+                }
             }
         }
 

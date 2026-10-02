@@ -781,3 +781,36 @@
     修法：词表换成 `免费额度已用完 / 额度已用完 / 额度不足 / 请求失败： / 生成失败： /
     本次未返回内容 / 请检查网络或后端服务`（带冒号、带完整语义）。
     判据：**做「异常文案识别」时，词表条目要与正常文案做过对抗 —— 短词首先怀疑。**
+
+116. **共用事务所里的 `try/catch` 是假的：内层失败先把事务标成 rollback-only，外层再想提交只剩 500。**
+    现场（`docs/42` 第三节）：PM 立项带 `createRepo:true` 调 `GiteeProjectService.create`
+    （该方法 `@Transactional`），内层抛 `BizException("归属部门不存在…")`。
+    调用方明明写了 `try/catch` 并把异常转成 `repoWarning`（注释还写着「建仓失败不阻断立项」），
+    实际却是 **`POST /pm/projects` 返回 500，且项目行、成员行一条都没落库** ——
+    因为内层异常经由同一个事务传播后已把事务标记为 rollback-only，catch 只吞掉了「异常对象」，
+    吞不掉「事务已判死」这个事实，外层返回时提交阶段抛 `UnexpectedRollbackException`。
+    修法：让被调用的写操作**自带独立事务**——
+    `@Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)`；
+    或者把该动作挪到 `TransactionSynchronization#afterCommit` / 事件监听器里。
+    判据：**凡出现「A 的异常被 catch 成警告、但接口仍 500 / 数据仍全回滚」，
+    第一个要查的就是 A 是否与外层共用事务**；`catch` 的存在不能证明失败被隔离。
+
+117. **「内部哨兵值」不得跨出本模块边界 —— 否则它会把一句前置校验变成一次注定失败的下游调用。**
+    现场（`docs/42` 第三节，与 116 同一条链路）：`PmProjectService.create` 在
+    `departmentId` 缺失时补 `0L`（含义是「机构直属、未挂具体部门」，纯内部哨兵），
+    却把 `0L` 原样塞进建仓参数。而 `GiteeProjectService.create` 要求部门**真实存在**
+    （`requireDepartment`）⇒ `0L` 必然换来「归属部门不存在」，白跑一次跨模块校验，
+    并与 116 叠加成 500。修法：在**边界上**判掉（`departmentId == null || departmentId <= 0`
+    就改走警告分支，并给出可执行的中文补救路径），而不是让下游去解释哨兵值。
+    判据：**一个值如果在定义处是「没有」的编码（0 / -1 / "" / 空集合），它一旦被当作
+    「一个真实的值」传给别的模块，就是缺陷温床** —— 边界处要么换成真实值，要么明确不带。
+
+118. **「端口通」不能推定「启动入口是好的」—— 排查启动问题必须看进程命令行。**
+    现场（`docs/42` 第一节）：:8080 一直正常服务，看起来毫无问题；
+    实际上它是**手工**带 `-Dspring.flyway.validate-on-migrate=false` 起的，
+    而仓库里的 `start-backend.bat` 并没有这个参数、且挂着一个不存在的 profile
+    ⇒ 换任何人按脚本重启都会直接 `MigrationChecksumMismatchException` 起不来。
+    根因是 `V68__remove_sub_tenant.sql` 被应用 20 分钟后又被改过，而
+    `application.yml` 开着 `validate-on-migrate: true`。
+    判据：**别拿健康检查当「启动链路健康」的证据；`Get-CimInstance Win32_Process` 看命令行，
+    再拿脚本原样跑一遍临时端口**（本次即用 18083 复验，见 `docs/42` 第一节「补充」）。
