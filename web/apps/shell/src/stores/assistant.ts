@@ -129,6 +129,10 @@ export const useAssistantStore = defineStore('assistant', {
         createdAt: now
       }
       this.messages.push(aiMessage)
+      // ★ 只能通过响应式数组取回代理对象再改（见下方 aiAt 的说明）。
+      //   `aiMessage` 是 push 进去的**原始对象**，直接改它不会触发渲染。
+      const aiIndex = this.messages.length - 1
+      const aiAt = (): ChatMessage => this.messages[aiIndex]
       this.error = ''
       this.streaming = true
 
@@ -147,24 +151,24 @@ export const useAssistantStore = defineStore('assistant', {
           signal,
           handlers: {
             onDelta: (delta) => {
-              if (delta) aiMessage.content += delta
+              if (delta) aiAt().content += delta
             },
             onCompleted: (fullText) => {
-              if (fullText != null && fullText !== '') aiMessage.content = fullText
-              if (!aiMessage.content) aiMessage.content = '（助手未返回内容）'
+              if (fullText != null && fullText !== '') aiAt().content = fullText
+              if (!aiAt().content) aiAt().content = '（助手未返回内容）'
             },
             onError: (message) => {
               this.error = message
-              aiMessage.error = true
-              if (!aiMessage.content) aiMessage.content = `生成失败：${message}`
+              aiAt().error = true
+              if (!aiAt().content) aiAt().content = `生成失败：${message}`
             }
           }
         })
       } catch (error) {
         if (!signal.aborted) {
           this.error = error instanceof Error ? error.message : '助手请求失败'
-          aiMessage.error = true
-          if (!aiMessage.content) aiMessage.content = `生成失败：${this.error}`
+          aiAt().error = true
+          if (!aiAt().content) aiAt().content = `生成失败：${this.error}`
         }
       } finally {
         this.streaming = false

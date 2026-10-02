@@ -14,7 +14,11 @@
   ```
   原因：`aioa.web.h5-dir`/`web-dir` 默认值是**容器内**路径 `/app/h5`、`/app/web`（`application.yml` 只给 `${AIOA_WEB_H5_DIR:/app/h5}`，本机没有这俩 env）⇒ 在 Windows 上落到 `C:\app\h5`，不存在。
   **启动期就会打 WARN 指名要 `--aioa.web.h5-dir` 覆盖**（`AioaStaticConfig`），重启后**先 grep 这行确认拿到的是「（存在）」而不是「不可用」**，别等套件红了才回头查。
-  ✅ **2026-10-02：两个启动入口已补齐这两个参数**（此前**都缺**，`start-backend.bat` 还挂着一个不存在的 `application-local.yml` profile）——`start-all.sh` 后端段与 `start-backend.bat` 现在都会显式传参，并在启动前把「缺 `index.html`」喊出来（附重新组装命令）。
+  ✅ **2026-10-02 订正（原文曾误写「两个入口已补齐」，实测只对了一半）**：
+  - `start-all.sh` 后端段（第 78 行）**确实**带了 `-Dspring.flyway.validate-on-migrate=false` + 两个静态目录参数。
+  - `start-backend.bat` **此前没有** flyway 参数，且挂着 `--spring.profiles.active=local` —— 而 `server/aioa-boot/src/main/resources/` 下**只有 `application.yml`，没有 `application-local.yml`** ⇒ 那是个静默 no-op（不报错、只是误导排障）。
+  - 该 bat 在本轮已补齐三处（b1 删掉不存在 profile / b2 补 flyway 参数对齐 `start-all.sh` / b3 加「缺 `index.html` 就 `[WARN]`、缺 jar 就打印构建命令并 `exit /b 1`」的前置检查）；同一组参数换 18083 端口实测启动成功且 `/aioa/web/` 200（详见 `docs/42` §一）。
+  - ⚠️ **往 `.bat` 里加 `echo` 一律用英文**：cmd.exe 按 OEM 代码页（中文机常 936）读文件，而文件是 UTF-8 ⇒ 中文 `echo` 必然乱码（`REM` 注释不受影响）。
   ⚠️ **对照实验结论（别再靠推理）**：不传参 ⇒ `/aioa/web/`、`/aioa/h5/` **均 404** 而 `/actuator/health` 200；传参 ⇒ 均 200。日志里报的是 `C:\app\h5` / `C:\app\web`。
   ⚠️ **写进 .sh 的路径必须过 `cygpath -m`**：git bash 的 `pwd` 返回 `/c/Users/...`，Windows 上的 Java **认不出**（会当成当前盘的 `\c\Users\...`）⇒ 目录「不存在」照样 404；jar 若用绝对路径同理（用相对路径则无此问题，因为脚本已 `cd` 到仓库根）。
   ⚠️ `%LOCALAPPDATA%` **不含 `Temp` 这一层**（`C:\Users\..\AppData\Local`）；组装 webroot 要么用 `%TEMP%`，要么拼 `%LOCALAPPDATA%\Temp`。写成 `${LOCALAPPDATA}/Temp` 才是对的。
@@ -81,6 +85,24 @@
   V66 租户层级+域名 / V67 员工↔账号 / V68 移除子租户 / **V69 机构·租户删除审批流** / **V70 部门删除审批流**）。
   更早：V59 bridge 工具网关 / V60 工作流加签·子流程 / V61 模型手动添加+默认模型改 MiniMax / V62 默认 AI。
 - 已应用迁移**不可改**(checksum)，只能追加；文档里的版本号只是预测。
+- ★★ **血的教训（2026-10-02 实修，`docs/42` §一）**：`V68__remove_sub_tenant.sql` 在**被应用 20 分钟后**
+  被改过（文件 mtime 09-28 12:03:17 vs `installed_on` 09-28 11:43:14），改动进了提交 `a259445`；
+  加上 `application.yml` 开着 `validate-on-migrate: true` ⇒ **此后任何一次不带 `-D` 的启动都必然失败**：
+  ```
+  Migration checksum mismatch for migration version 68
+  -> Applied to database : 2036569566
+  -> Resolved locally    : -1046176694
+  ```
+  现场之所以还活着，是因为当时那个 8080 进程是**手工**加了 `-Dspring.flyway.validate-on-migrate=false` 起的
+  —— **「服务在跑」不等于「启动入口是好的」**，排查启动问题时必须去看进程命令行，而不是看端口通不通。
+- **修法**：先证明「改动是非语义的」（比对 `DESC sys_tenant` / `SHOW INDEX` 与 V68 的 DDL 是否一致，
+  别一上来就 repair，否则会掩盖真实 schema 漂移），再一次性对齐历史行：
+  ```sql
+  UPDATE flyway_schema_history SET checksum=-1046176694 WHERE version='68' AND checksum=2036569566;
+  ```
+  然后**不带**绕过参数起一个临时端口实例，看到 `Schema up to date / No migration necessary` 才算修好。
+- ⚠️ **其他环境（生产 10.0.0.3）历史行里同样存的是旧校验和**，升级时会以同样的方式启动失败；
+  部署手册的升级步骤里必须包含这一次 repair。
 - 「平台管理员创建专家模板」（2026-09-22）**无需新迁移** —— `ai_expert` 的 `tenant_id/source_template_id/template_version/visible_scope/kb_scope/default_enabled/category` + V34 审核列已够用。
 - ★ **重打包前必须停掉 :8080**：运行中的 JVM 锁住 `aioa-boot-*.jar`，`repackage` 会以
   `Unable to rename ... .jar.original` 失败（2026-09-28 实测）。产物判据仍是体积 82–110MB。

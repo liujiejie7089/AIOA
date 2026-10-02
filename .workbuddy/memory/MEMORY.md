@@ -20,6 +20,8 @@
 | **多租户领域模型（平台/租户/机构/部门/员工/用户 六层）** | **`docs/38`** —— 唯一进度权威：批次 A（租户层级+域名+平台调额度）、B（机构类型收敛+信用代码校验）、C（员工↔账号多对多中间表，V67）已完成，D/E 未开工 |
 | **项目管理模块（PM：立项→成员→任务→文档→经费→合同，兼容业务/开发两类型）** | **`docs/40`** —— **批次 1 已实装**（立项/成员/任务/仓库绑定，V71）。模块 = `server/aioa-project`；守卫单一判定点 = `support/ProjectTypeGuard`；前端 = `web/apps/shell/src/{api/pm.ts,views/PmProject*View.vue}`。**收口三件套**：`scripts/_check_pm_guards.py`（静态 12 + `--selftest` 12）· `scripts/_smoke_pm.py`（接口 17，含数据范围 M9a–e）· `scripts/_e2e_pm_ui.py`（界面 18，单端口 `:8080/aioa/web`，含 `--selftest` 4）。**批次 2–4（文档/经费/合同）未开工**。要点：11 张 `pm_*` 表（V71 已出 3 张，V72/V73 待出）+ `gitee_project` 加 `pm_project_id`；`gitee_task` 是异步队列**不是**业务任务（新表叫 `pm_task`）；「云端文件夹」全库无对象存储，先留 `storage_kind` 抽象位；审批复用 `biz_type=PM_CONTRACT/PM_EXPENSE`；ADR-007 只借开源领域模型不嵌第二套运行时。**仓库绑定不建映射表**：靠 `UPDATE ... WHERE pm_project_id IS NULL` 的原子影响行数保证「一仓库只归一项目」；解绑只置空不删行。 |
 | **`gitee_project` 加列零回归哨兵** | `scripts/_check_gitee_repo_write.py`（R1 新列不得泄漏到既有接口 / R2 既有 INSERT 仍落库 / R3 新列语义自洽）。**需后端以 `source scripts/gitee-e2e-env.sh` 启动**（Gitee 指向桩 :8090）；前置不满足时记 SKIP 并返回非 0，**不伪装 PASS** |
+| **缺陷台账（每条给出可复跑的判据 + 处置三态）** | **`docs/42`** —— 2026-10-02 模拟项目全流程自检 + 管理端 AI 助手修复。本轮留存哨兵：`scripts/_repro_admin_assistant_ui.py`（AI 助手，12/12）· `scripts/_e2e_pm_simulated_project.py`（PM 全流程，33/0/1）· `scripts/_check_sse_termination.py`（SSE 终止块，报告型哨兵：恒退出 0，看 `[STATUS]`；D-C 未修时恒为 `DEFECT-PRESENT`）。故事：本目录 `2026-09-30.md` §八 |
+| **管理端 SSE / AI 助手** | `web/apps/shell/src/api/runs.ts`（终态帧后断流**不是**失败，抛 `StreamEndedAfterCompletion` 吞掉；**不能只 `return`**，否则 `fetch-event-source` 按 1s 无限重连）· `src/stores/assistant.ts`（改消息必须经 `this.messages[i]` 取代理对象）。服务端 `SseEmitter` 未发终止块（SPR-14444 同类）**未修**，H5 端免疫 |
 
 ## 铁律（每次都要遵守）
 
