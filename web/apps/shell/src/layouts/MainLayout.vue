@@ -177,8 +177,8 @@
             <el-menu-item v-if="showTenantMenu" index="/biz-systems">业务系统</el-menu-item>
           </el-sub-menu>
 
-          <!-- 成果与项目：成果沉淀 + 项目管理 + 仓库联动 -->
-          <el-sub-menu v-if="showTenantMenu || showPmMenu || showGiteeMenu" index="output">
+          <!-- 成果与项目：成果沉淀 + 项目管理 -->
+          <el-sub-menu v-if="showTenantMenu || showPmMenu" index="output">
             <template #title>
               <el-icon><FolderOpened /></el-icon>
               <span>成果与项目</span>
@@ -187,13 +187,18 @@
             <!--
               项目管理（PM，V71）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
               三处共用 PM_VIEW_ROLES —— 可见边界由后端数据范围 + 项目内角色收紧。
+
+              ★ 2026-10-03：原「项目与仓库」（V48 Gitee 联动）**已不再是独立一级菜单**。
+              代码仓库本就属于「开发项目」的一部分，独立菜单与「项目管理」重复且会让用户
+              以为存在两套仓库入口。现在拆成两处（都不再是「浏览仓库」的重复入口）：
+                · 日常使用 → 「项目管理 → 开发项目 → 代码仓库」页签（PmProjectDetailView），
+                  业务项目**不渲染**该页签（BR-01）；
+                · 租户级配置（企业初始化 / 组织 / 令牌 / 校准）→ 「系统配置 → 仓库配置」
+                  （/settings/repo-config，页内按租户管理员门控）。
+              旧路径 /gitee/projects（全量总览）仍保留、但不进菜单：由开发项目的
+              「代码仓库」页签提供入口，既有的深链与两个 V48/V50 哨兵继续可用。
             -->
             <el-menu-item v-if="showPmMenu" index="/pm/projects">项目管理</el-menu-item>
-            <!--
-              项目与仓库（V48 Gitee 联动）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog
-              三处共用 GITEE_VIEW_ROLES —— 只读边界由后端按部门作用域收窄（人人有入口，只能看本部门）。
-            -->
-            <el-menu-item v-if="showGiteeMenu" index="/gitee/projects">项目与仓库</el-menu-item>
           </el-sub-menu>
 
           <!-- 运营管理：经营数据 / 配额管理 -->
@@ -291,6 +296,12 @@
 
             租户管理员只看得到「系统参数」（路由 minTier=tenant），平台管理员三项全可见；
             组可见性取 showTenantMenu（TENANT_SCOPE_ROLES 含 ROLE_ADMIN，平台管理员已覆盖）。
+
+            2026-10-03：新增「仓库配置」——原「项目与仓库」页里的**租户级配置**
+            （企业初始化 / 组织 / 令牌 / 任务统计与校准）搬到这里。它属于运行配置域，
+            不属于「成果与项目」；代码仓库的日常使用入口在「项目管理 → 开发项目」里。
+            本项条件写 showGiteeMenu 是为了与路由 meta.allowRoles 共用同一常量
+            （GITEE_VIEW_ROLES ⊇ TENANT_SCOPE_ROLES，故在本组内恒真，不改变可见集合）。
           -->
           <el-sub-menu v-if="showTenantMenu" index="syscfg">
             <template #title>
@@ -298,6 +309,7 @@
               <span>系统配置</span>
             </template>
             <el-menu-item index="/settings">系统参数</el-menu-item>
+            <el-menu-item v-if="showGiteeMenu" index="/settings/repo-config">仓库配置</el-menu-item>
             <el-menu-item v-if="isPlatformAdmin" index="/sys-apps">功能管理</el-menu-item>
             <el-menu-item v-if="isPlatformAdmin" index="/sys-models">模型管理</el-menu-item>
           </el-sub-menu>

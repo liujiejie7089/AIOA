@@ -40,25 +40,48 @@
         </el-card>
       </el-tab-pane>
 
-      <!-- ==================== 仓库（仅开发项目渲染） ==================== -->
+      <!-- ==================== 仓库（仅开发项目渲染） ====================
+           ★ 2026-10-03：本页签 = 代码仓库的**日常使用入口**。
+           原先管理端还有一级菜单「项目与仓库」，与「项目管理」重复（同一个仓库两处入口，
+           用户会以为存在两套）。现在菜单里那一项已撤掉，仓库跟着「开发项目」出现；
+           租户级配置（企业初始化 / 组织 / 令牌 / 校准）在「系统配置 → 仓库配置」。 -->
       <el-tab-pane v-if="isDev" label="代码仓库" name="repos">
         <el-card shadow="never">
           <template #header>
             <div class="card-header">
-              <span>已绑定仓库</span>
-              <el-button v-if="project?.canManage" size="small" type="primary" @click="openBind">绑定仓库</el-button>
+              <span>本项目仓库</span>
+              <div>
+                <el-button size="small" @click="router.push('/gitee/projects')">仓库总览与配置</el-button>
+                <el-button v-if="project?.canManage" size="small" type="primary" @click="openBind">绑定仓库</el-button>
+              </div>
             </div>
           </template>
           <el-table :data="boundRepos" size="small">
-            <el-table-column prop="name" label="仓库名" min-width="160" />
-            <el-table-column label="路径" min-width="200">
+            <el-table-column prop="name" label="仓库名" min-width="150" />
+            <el-table-column label="路径" min-width="190">
               <template #default="{ row }">{{ [row.gitee_owner, row.gitee_repo].filter(Boolean).join('/') || '—' }}</template>
             </el-table-column>
-            <el-table-column prop="default_branch" label="默认分支" width="120" />
-            <el-table-column prop="status" label="状态" width="100" />
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column prop="default_branch" label="默认分支" width="100" />
+            <el-table-column label="状态" width="96">
+              <template #default="{ row }">
+                <el-tag size="small" :type="GITEE_PROJECT_STATUS_TAG[row.status] || 'info'">
+                  {{ GITEE_PROJECT_STATUS_LABEL[row.status] || row.status || '—' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <!-- 失败原因：建仓/配置 Webhook 失败时后端写在 error_msg 里（人话，含后续怎么办）。
+                 不展示它，用户只会看到「创建失败」而没有下一步。 -->
+            <el-table-column label="失败原因" min-width="230">
+              <template #default="{ row }">
+                <span v-if="row.error_msg" class="repo-error">{{ row.error_msg }}</span>
+                <span v-else class="hint">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="240" fixed="right">
               <template #default="{ row }">
                 <el-link v-if="row.gitee_html_url" :href="row.gitee_html_url" target="_blank" type="primary" style="margin-right: 8px">打开</el-link>
+                <el-button size="small" text type="primary" @click="router.push('/gitee/projects/' + row.id)">详情</el-button>
+                <el-button v-if="row.status && row.status !== 'ACTIVE'" size="small" text type="warning" @click="retryRepo(row)">重试建仓</el-button>
                 <el-button v-if="project?.canManage" size="small" text type="danger" @click="unbind(row)">解绑</el-button>
               </template>
             </el-table-column>
@@ -66,6 +89,10 @@
               <div style="padding: 16px 0" class="hint">尚未绑定代码仓库</div>
             </template>
           </el-table>
+          <p class="hint" style="margin: 10px 0 0">
+            自动建仓要求项目有真实归属部门（仓库名由部门派生）；企业组织或令牌未就绪时，
+            先到「仓库总览与配置」完成初始化，再回来点「重试建仓」。
+          </p>
         </el-card>
       </el-tab-pane>
 
@@ -292,8 +319,13 @@ import {
 import {
   PM_PROJECT_TYPE_LABEL, PM_PROJECT_STATUS, PM_PROJECT_STATUS_LABEL, PM_PROJECT_STATUS_TAG,
   PM_PROJECT_ROLE_LABEL, PM_TASK_STATUS, PM_TASK_STATUS_LABEL, PM_TASK_STATUS_TAG,
-  PM_TASK_PRIORITIES, PM_TASK_PRIORITY_LABEL, PM_REPO_SYNC_STATUS_LABEL
+  PM_TASK_PRIORITIES, PM_TASK_PRIORITY_LABEL, PM_REPO_SYNC_STATUS_LABEL,
+  // 仓库状态文案与 el-tag 类型复用仓库模块那一份常量（单一判定点），
+  // 不要在这里另写一套「创建中/可用/失败」映射 —— 两处口径必漂移。
+  GITEE_PROJECT_STATUS_LABEL, GITEE_PROJECT_STATUS_TAG
 } from '@/constants/permissions'
+// 重试建仓：仓库的写入动作仍由仓库模块的接口负责（PM 只是入口，不复制业务规则）。
+import { giteeRetryProject, giteeErrMsg } from '@/api/gitee'
 
 const route = useRoute()
 const router = useRouter()
@@ -462,6 +494,24 @@ async function unbind(row: PmRepo) {
   }
 }
 
+/**
+ * 重试建仓（仅非 ACTIVE 的行显示入口）。
+ *
+ * <p>为什么放在这里：建仓是**异步任务**（`gitee_task`），用户看到「创建失败」后，
+ * 修好前置条件（补归属部门 / 完成企业初始化）总得有个地方让它再跑一次 ——
+ * 原先那个入口只在「项目与仓库」页，现在仓库跟着开发项目走，入口也必须跟过来，
+ * 否则用户会被指到一个已从菜单撤掉的页面。</p>
+ */
+async function retryRepo(row: PmRepo) {
+  try {
+    await giteeRetryProject(row.id)
+    ElMessage.success('已重新排入建仓任务，稍后刷新查看状态')
+    await loadRepos()
+  } catch (e) {
+    ElMessage.error(giteeErrMsg(e, '重试建仓失败'))
+  }
+}
+
 // ---------------------------------------------------------------- 任务
 function openTask(row?: PmTask) {
   if (row) {
@@ -626,5 +676,14 @@ onMounted(loadAll)
   color: var(--el-text-color-regular);
   font-size: 13px;
   line-height: 1.6;
+}
+/* 建仓/配置 Webhook 的失败原因：后端回的是给人读的整句（含「怎么补救」）。
+   用 danger 色是因为这一列**只在失败行**才可能有值（成功行显示「—」），
+   属于需要用户处理的异常态；允许换行，避免长句撑破表格。 */
+.repo-error {
+  color: var(--el-color-danger);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
 }
 </style>

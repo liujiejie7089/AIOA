@@ -161,7 +161,18 @@ const routes: RouteRecordRaw[] = [
       { path: 'content-reviews', name: 'content-reviews', component: () => import('@/views/ContentReviewView.vue'), meta: { title: '内容审核', allowRoles: PLATFORM_ONLY_ROLES } },
       // V36 需求④：审核记录中心（平台管理员全量 / 租户管理员本租户）
       { path: 'review-records', name: 'review-records', component: () => import('@/views/ReviewRecordsView.vue'), meta: { title: '审核记录', allowRoles: REVIEW_RECORD_ROLES } },
-      { path: 'gitee/projects', name: 'gitee-projects', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '项目与仓库', allowRoles: GITEE_VIEW_ROLES } },
+      // ==========================================================================
+      // 仓库联动（V48）—— 2026-10-03 起**不再有独立一级菜单**，拆成两个入口：
+      //   · 「仓库配置」（菜单：系统配置 → 仓库配置）→ 同一组件 + meta.configOnly，
+      //      只渲染租户级配置卡（企业初始化 / 组织 / 令牌 / 任务统计与校准），不渲染仓库列表；
+      //   · 代码仓库的日常使用入口在「项目管理 → 开发项目 → 代码仓库」页签（见 PmProjectDetailView），
+      //      业务项目不渲染该页签（BR-01）。
+      // 旧的 /gitee/projects 保留为「全量总览」，但**不进菜单**：入口由开发项目的代码仓库页签
+      // 提供，这样既有的深链、以及钉住本页的两个哨兵
+      // （_check_gitea_cfg_failure_ui.py / _check_gitea_ui_provider.py）继续可用。
+      // 三层同源：菜单(MainLayout) → 路由 meta.allowRoles → 后端 PermissionCatalog 共用 GITEE_VIEW_ROLES。
+      { path: 'gitee/projects', name: 'gitee-projects', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '仓库总览', allowRoles: GITEE_VIEW_ROLES } },
+      { path: 'settings/repo-config', name: 'repo-config', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '仓库配置', allowRoles: GITEE_VIEW_ROLES, configOnly: true } },
       { path: 'gitee/projects/:id', name: 'gitee-project-detail', component: () => import('@/views/GiteeProjectDetailView.vue'), meta: { title: '项目详情', allowRoles: GITEE_VIEW_ROLES } },
       // 项目管理（PM，V71 / docs/40）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog 三处共用 PM_VIEW_ROLES。
       { path: 'pm/projects', name: 'pm-projects', component: () => import('@/views/PmProjectsView.vue'), meta: { title: '项目管理', allowRoles: PM_VIEW_ROLES } },

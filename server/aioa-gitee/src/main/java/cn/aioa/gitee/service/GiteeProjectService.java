@@ -126,7 +126,7 @@ public class GiteeProjectService {
         // 而不是悄悄建一个没有归属组织的空项目。
         String owner = tenantConfigService.effectiveOrg(tenantId);
         if (!StringUtils.hasText(owner)) {
-            throw BizException.badRequest("本企业未配置 " + props.providerLabel() + " 组织，请先在「项目与仓库」中配置");
+            throw BizException.badRequest("本企业未配置 " + props.providerLabel() + " 组织，请先在「系统配置 → 仓库配置」中配置");
         }
         p.setGiteeOwner(owner);
         p.setGiteeRepo(repoPath);

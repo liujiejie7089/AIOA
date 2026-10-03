@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
  * <p><b>关于开发项目的仓库协作者同步（BR-04）</b>：成员变更后置 {@code repo_sync_status}。
  * 本批次**只落状态**，真正推送协作者到托管平台的链路（依赖每位员工已绑定 Gitee/Gitea 账号）
  * 在下一批次接入既有 outbox。为避免误导，接口在开发项目上会回一个
- * {@code repoSyncNote} 明说当前需在「项目与仓库」页手工加协作者 —— 不静默假装已同步。</p>
+ * {@code repoSyncNote} 明说当前需到项目详情页「代码仓库」页签手工加协作者 —— 不静默假装已同步。</p>
  */
 @Slf4j
 @Service
@@ -243,7 +243,7 @@ public class PmProjectMemberService {
         }
         return "成员变更已记录（待同步 " + repos + " 个仓库的协作者）。"
                 + "仓库协作者自动同步将于下一批次接入托管平台 outbox；"
-                + "当前如需立即生效，请在「项目与仓库」对应仓库中手工添加协作者。";
+                + "当前如需立即生效，请在项目详情页「代码仓库」页签打开对应仓库后手工添加协作者。";
     }
 
     private void requireMemberManager(AuthUser user, PmProject p) {

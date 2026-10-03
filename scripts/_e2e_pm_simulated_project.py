@@ -321,7 +321,9 @@ def part_d(h):
     for k, v in CREATED.items():
         print("    %-18s %s" % (k, v))
     print("  注：仓库是 gitee 上的真实对象，软删项目不会删它（purgeRepo=false）；"
-          "需要清理请在「项目与仓库」删除并勾选移除仓库。")
+          "需要清理请调 DELETE /gitee/projects/{id}?purgeRepo=true。"
+          "界面上的删除入口在仓库列表里（开发项目详情 →「代码仓库」页签 →「仓库总览与配置」，"
+          "即 /gitee/projects；该页自 2026-10-03 起已不进菜单）。")
     if CLEAN:
         for key in ("业务项目", "开发项目"):
             pid = (CREATED.get(key) or "")

@@ -173,7 +173,7 @@ public class PmProjectService {
                 // 于是一句话前置拦掉，并给出**可执行**的补救路径。
                 repoWarning = "项目已创建，但未自动建仓：自动建仓需要项目先指定归属部门"
                         + "（本项目为机构直属、未挂具体部门，无法派生仓库名）。"
-                        + "请编辑项目补上归属部门后重试，或到「项目与仓库」建好仓库后"
+                        + "请编辑项目补上归属部门后重试，或到「仓库总览与配置」建好仓库后"
                         + "回本项目详情页「仓库」页签绑定。";
             } else {
                 try {
@@ -186,7 +186,7 @@ public class PmProjectService {
                     repoBindMapper.bind(tenantId, repo.getId(), p.getId());
                 } catch (Exception e) {
                     repoWarning = "项目已创建，但自动建仓未成功：" + e.getMessage()
-                            + "（可在「项目与仓库」建好仓库后，回本项目详情页「仓库」页签绑定）";
+                            + "（可先到「仓库总览与配置」建好仓库，再回本项目详情页「代码仓库」页签绑定）";
                     log.warn("自动建仓失败 projectId={} name={}: {}", p.getId(), name, e.toString());
                 }
             }

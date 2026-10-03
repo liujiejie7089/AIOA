@@ -33,7 +33,7 @@
       :closable="false"
       show-icon
       title="仓库联动模块未启用"
-      :description="`后端尚未配置 ${cfgKey}.*（组织、Webhook 回调基址等），「项目与仓库」功能暂不可用。请联系系统管理员在后端开启配置。`"
+      :description="`后端尚未配置 ${cfgKey}.*（组织、Webhook 回调基址等），「${pageName}」功能暂不可用。请联系系统管理员在后端开启配置。`"
       style="margin-bottom: 12px"
     />
 
@@ -208,8 +208,10 @@
         </div>
       </el-card>
 
-      <!-- (d) 项目列表 -->
-      <el-card shadow="never">
+      <!-- (d) 项目列表
+           ★ 2026-10-03：仓库不再是独立菜单，「仓库配置」（meta.configOnly）只负责租户级配置，
+           仓库列表交给「项目管理 → 开发项目 → 代码仓库」页签，故此处按 configOnly 收起。 -->
+      <el-card v-if="!configOnly" shadow="never">
         <template #header>
           <div class="card-header">
             <span>项目列表（{{ rows.length }}）</span>
@@ -438,7 +440,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -454,6 +456,7 @@ import {
   GITEE_VISIBILITIES, TENANT_SCOPE_ROLES, hasAnyRole
 } from '@/constants/permissions'
 
+const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
@@ -486,20 +489,43 @@ const pName = computed(() => config.value?.providerLabel || 'Gitee')
 /**
  * 是否**确实知道**托管方是谁（= 配置已成功取到）。
  *
- * <p>页头据此决定要不要自称托管方：不知道时只能写「项目与仓库」。
+ * <p>页头据此决定要不要自称托管方：不知道时就只写页名（不自称托管方）。
  * 曾直接拿 `pName`（回落 'Gitee'）拼页头，于是 gitea 接线下**服务不可达**时
- * 整页回落成「项目与仓库（Gitee 联动）」——用户截图里看到的正是这句
+ * 整页回落成「Gitee 联动」——用户截图里看到的正是这句
  * （2026-09-18）。「不知道」就说不知道，不要让回落值冒充事实。</p>
  */
 const providerKnown = computed(() => !!config.value?.providerLabel)
+/**
+ * 本页的两种形态（同一组件，两个路由）：
+ * - `/gitee/projects`（默认）：**总览** —— 配置卡 + 仓库列表，2026-10-03 起不进菜单，
+ *   入口在「项目管理 → 开发项目 → 代码仓库」页签；
+ * - `/settings/repo-config`（`meta.configOnly`）：**只做租户级配置** —— 只渲染配置卡，
+ *   不渲染仓库列表、不拉部门与仓库数据（省掉一次对没有列表需求的用户无用的请求）。
+ */
+const configOnly = computed(() => route.meta?.configOnly === true)
+/**
+ * 页头主体名：随形态变化，避免「配置页自称项目与仓库」这种口径漂移。
+ *
+ * <p>两形态的名字必须与路由 `meta.title` 一致（菜单/页签/页头三处一个名字），
+ * 否则同一个页面在两个入口下自称不同，用户截图对不上。特别是总览形态：
+ * 2026-10-03 起它叫「仓库总览」而**不再叫「项目与仓库」**——「项目与仓库」这个
+ * 概念本身已随独立菜单一起撤销，页面上不留它的痕迹（否则 verify_v48_ui.py 里
+ * 「菜单里不该再有它」的精确匹配断言会在 providerLabel 缺失时被页头误命中）。</p>
+ */
+const pageName = computed(() => (configOnly.value ? '仓库配置' : '仓库总览'))
 const headerTitle = computed(() =>
-  providerKnown.value ? `项目与仓库（${pName.value} 联动）` : '项目与仓库'
+  providerKnown.value ? `${pageName.value}（${pName.value} 联动）` : pageName.value
 )
-const headerDesc = computed(() =>
-  providerKnown.value
+const headerDesc = computed(() => {
+  if (configOnly.value) {
+    return providerKnown.value
+      ? `配置本企业与 ${pName.value} 的对接（组织、访问令牌、初始化与校准）。代码仓库的日常使用请到「项目管理 → 开发项目 → 代码仓库」。`
+      : '配置本企业与代码托管方的对接（组织、访问令牌、初始化与校准）。代码仓库的日常使用请到「项目管理 → 开发项目 → 代码仓库」。'
+  }
+  return providerKnown.value
     ? `平台管理业务（项目、部门、成员、权限），${pName.value} 作为底层代码仓库；此处只显示你有权查看的部门项目。`
     : '平台管理业务（项目、部门、成员、权限）；此处只显示你有权查看的部门项目。'
-)
+})
 /** 该托管方的后端配置前缀（aioa.gitee / aioa.gitea），让「未启用」提示指向真正生效的配置段。 */
 const cfgKey = computed(() => config.value?.configKey || 'aioa.gitee')
 /** 企业初始化的令牌权限要求（整句，随托管方）：回落 Gitee 的说法，与后端默认 provider 一致。 */
@@ -1065,8 +1091,13 @@ async function reload() {
 
 /** 模块可用时拉取的数据：绑定 / 部门 / 项目 /（租户管理员）任务统计 + 企业组织配置。 */
 async function initData() {
-  await Promise.allSettled([loadBinding(), loadDepartments()])
-  await loadProjects()
+  // configOnly（/settings/repo-config）只做租户级配置：不拉部门与仓库列表，
+  // 少一次对「只来配组织/令牌」的用户毫无用处的请求（也少一次权限面暴露）。
+  if (!configOnly.value) {
+    await Promise.allSettled([loadDepartments()])
+    await loadProjects()
+  }
+  await loadBinding()
   if (isTenantAdmin.value) {
     await Promise.allSettled([loadTaskStats(), loadTenantConfig(), loadInitStatus()])
   }

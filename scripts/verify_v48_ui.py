@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
 """V48 · Gitee 仓库联动 前端真实浏览器验证（独立验证，不修改任何被跟踪源码）。
 
+⚠️ **本脚本在当前环境（2026-10-03 起）跑不了，且不是被本次改动弄坏的**：
+   1. 账号绑定的是 **`znkj*` 租户**（`znkj_admin` / `znkjyf_admin` / `znsfb_ldr`），
+      而该租户已不在本库 —— `SELECT COUNT(*) FROM sys_user WHERE username LIKE 'znkj%'` = 0，
+      登录直接 `用户名或密码错误`；
+   2. 入口写死 **dev server `http://127.0.0.1:5173`**（需先 `pnpm dev`），而当前形态是
+      单端口产物 `http://127.0.0.1:8080/aioa/web`（docs/33）。
+   要在本环境复跑，需先把 ROLES 换成当前租户的三档账号（如 `dsj_admin` /
+   `fagai_admin` / `fagai_li`），并把 `SHELL` 指到 8080 的产物路径。
+   覆盖同类能力的**可跑**替代：`scripts/_verify_repo_menu_merge.py`（19 项）、
+   `scripts/_e2e_pm_ui.py`（18 项）、`scripts/_check_menu_scroll.py`（28 项）。
+
 驱动 Edge 无头浏览器，对三档角色（租户管理员 / 企业管理员 / 部门负责人）逐一验证：
 菜单与路由、页面渲染、控制台/5xx、角色门控陷阱、详情五 Tab、深链、跨租户/不存在、
 交互边界、错误文案贯通，以及伸长的 OAuth 绑定与网页上传提交。
@@ -159,12 +170,22 @@ def main():
             menu = page.get_by_text("项目与仓库", exact=True)
             menu_visible = menu.count() > 0 and menu.first.is_visible()
             redirected = "/gitee/projects" not in page.url
-            check(f"1.菜单+路由[{name}]", menu_visible and not redirected,
-                  f"menu={menu_visible} url={page.url}")
+            # 2026-10-03 口径变更（产品要求）：**「项目与仓库」不再是独立一级菜单** ——
+            # 代码仓库本就属于「开发项目」，同一条侧栏里两个入口（项目管理 / 项目与仓库）
+            # 会让用户以为存在两套仓库。现在：
+            #   · 日常使用 → 「项目管理 → 开发项目 → 代码仓库」页签；
+            #   · 租户级配置（组织 / 令牌 / 初始化 / 校准）→ 「系统配置 → 仓库配置」；
+            #   · 本页 /gitee/projects 保留为「总览」，但不进菜单（入口在开发项目页签里）。
+            # 因此本条断言从「菜单里有它」改为「路由可达 + 菜单里**不该**再有它」：
+            # 否则会把这次刻意的产品变更一直报成回归（恒红的守卫比没有守卫更糟）。
+            check(f"1.路由可达且已撤出菜单[{name}]", (not redirected) and (not menu_visible),
+                  f"menu={menu_visible}(期望 False) url={page.url}")
 
             # 视图是否真的渲染出来（锚点：我的 Gitee 账号）
             view_ok = page.get_by_text("我的 Gitee 账号", exact=False).count() > 0
-            intro = page.get_by_text("项目与仓库（Gitee 联动）").count() > 0
+            # 页头也随之改名：本页 2026-10-03 起自称「仓库总览」（与路由 meta.title 同源），
+            # 不再自称「项目与仓库」——否则上面那条精确匹配断言会把页头自己命中。
+            intro = page.get_by_text("仓库总览（Gitee 联动）").count() > 0
             bind_card = view_ok
             list_card = page.get_by_text("项目列表", exact=False).count() > 0
             rows = page.locator(".el-table__row").count()
