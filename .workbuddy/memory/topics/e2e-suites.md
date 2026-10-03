@@ -423,3 +423,28 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   再在**对应分包**里查该改动的关键字 ⇒ 两条同时成立才算「已部署」。
 - 附：`curl -o /tmp/x` 在本机 Git Bash 会因 Windows 路径解析写出 0 字节（`bytes=0` 是假象），
   用管道 `curl … | head -c N` 或显式写到仓库内相对路径再删。
+
+## 2026-10-03 更新：新增「菜单/信息架构」哨兵 + 一条**跑不了**的老哨兵（桶 A 增补）
+
+**新增（已入库，长期哨兵）**：`scripts/_verify_repo_menu_merge.py`（**19 项**）——
+核「代码仓库并入开发项目、撤掉独立菜单」这件事。要点：
+- 只读**侧栏容器 `.layout-menu` 的 `textContent`**（不是整页 body）：侧栏子菜单默认折叠，
+  `inner_text()` 对不可见文本静默返回空 ⇒ 必须**先展开**再读，否则全体假红。
+- 判「菜单项已撤」带**对照**（同组「成果沉淀」「项目管理」仍在、别组「系统参数」仍在），
+  避免「整组菜单被删 / 页面没渲染」被当成通过。
+- 含 **BR-01 负向对照**：业务项目详情**不得**有「代码仓库」页签，且**反向守卫**
+  「业务项目页签数 ≥3」（否则白屏会假绿）。
+- 切页签后再断言页签内容（详情页默认停在「概览」）。证据截图落 `logs/proof/`。
+
+**⚠️ 跑不了的哨兵（桶 A 增补）**：`scripts/verify_v48_ui.py` **在本环境跑不了**，
+  **且不是被 2026-10-03 的改动弄坏的**：账号绑 `znkj*` 租户
+  （`SELECT COUNT(*) FROM sys_user WHERE username LIKE 'znkj%'` = **0**，同 5.5 的桶 A 成因），
+  入口写死 dev `:5173`（现形态是 8080 单端口产物）。症状是**登录即 `用户名或密码错误`**。
+  ⇒ 可跑的同类替代：`_verify_repo_menu_merge.py`(19) · `_e2e_pm_ui.py`(18) · `_check_menu_scroll.py`(28)。
+  ⇒ **登录失败先查账号是否存在（桶 A），别先怀疑自己刚改的代码。**
+
+**同日复跑（webroot 重建后，同一 bundle 覆盖 PM 页与仓库页）**：
+  `_verify_repo_menu_merge` 19/19 · `_check_menu_scroll` 28/28 · `_check_pm_guards` 12/12 ·
+  `_smoke_pm` 15/15(+M7 SKIP) · `_e2e_pm_ui` 18/18 ·
+  `_e2e_pm_simulated_project --clean` 33 PASS/0 FAIL/1 KNOWN-BUG(B1)。
+  跨套件互证：`_e2e_pm_ui` 的侧栏清单里已无「项目与仓库」、有「仓库配置」。
