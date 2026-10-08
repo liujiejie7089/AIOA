@@ -8,7 +8,7 @@
 | 项目结构 · 打包 · 起服务 · 端口 · 账号 · env · Flyway | `topics/runtime-env.md` |
 | 编码 / 改缺陷 / 排查异常 | `topics/pitfalls.md`（**已修坑清单，勿回退**；编号以文件内为准） |
 | 跑套件 / 写验收 / 收口 | `topics/e2e-suites.md` |
-| **用户端双形态（经典 / OA 协同：构建链 · 断言 · 已知未验项）** | **`docs/39`**（计划）· `user-client/_build_oa.py`（**唯一构建入口，产物 index.html 不可手改**）· `scripts/_e2e_oa.py`（**106 项**，2026-09-30 新增 H 组 + H5d）· `scripts/_check_dto_fields.py`（DTO 口径哨兵）· 本目录 `2026-09-30.md` §二/§四 · `2026-09-29.md` §v6 |
+| **用户端双形态（经典 / OA 协同：构建链 · 断言 · 已知未验项）** | **`docs/39`**（计划）· `user-client/_build_oa.py`（**唯一构建入口，产物 index.html 不可手改**）· `scripts/_e2e_oa.py`（**106 项**，2026-09-30 新增 H 组 + H5d；**H 组需要 agent :8000 在线**，否则 14 项全红且归因文案会明说）· `scripts/_check_dto_fields.py`（DTO 口径哨兵）· **`scripts/_verify_h5_pm_contacts.py`**（11 项：通讯录排除自己 + 项目面板接真 PM + 非成员负向对照；**fixture = T1008 两项目 56/57 + 仓库 165，有意保留**，重建步骤见 `2026-10-08.md` §五）· 本目录 `2026-10-08.md` · `2026-09-30.md` §二/§四 · `2026-09-29.md` §v6 |
 | 接口口径 · 登录 · 角色 · 权限链 | `topics/api-permissions.md` |
 | 知识库 / 检索 / 向量库 | `topics/vector-store-milvus.md` |
 | 仓库联动 Gitee/Gitea | `topics/repo-provider-gitea.md` |

@@ -6014,7 +6014,8 @@ var S = {
   orgQ:'', kbQ:'',
   docId:null,            // 正在查看的资料（资料详情覆盖层）
   org:null,              // 组织数据缓存（profile / departments / members）
-  leave:null             // 我的请假（日程数据源之一）
+  leave:null,            // 我的请假（日程数据源之一）
+  projects:null          // 我可见的项目（PM 模块，进入任务页时拉取）
 };
 var LS_MODE = 'aioa_mode';
 /* 默认形态：全新访客（以及登出之后）进入新版。
@@ -6130,6 +6131,9 @@ function oaRefreshView(view){
   else if(view === 'log')  p = API.logs().then(function(r){ state.log = arr(r); });
   else if(view === 'perm') p = (typeof refreshPermissions === 'function') ? refreshPermissions() : null;
   else if(view === 'feedback') p = (typeof reloadFeedback === 'function') ? reloadFeedback() : null;
+  // 项目面板接真 PM 模块（/v1/pm/projects，可见性由后端 canSee 唯一判定点收窄）。
+  else if(view === 'collab') p = API.req('/v1/pm/projects?pageSize=100')
+      .then(function(r){ S.projects = arr(r); });
   if(!p) return;
   p.catch(function(){}).then(function(){ if(S.mode === 'oa' && S.view === view) oaRender(); });
 }
@@ -6231,7 +6235,7 @@ function renderCollab(){
   var sch = scheduleItems();
 
   setEm('oaRailTask', todo.length);
-  setEm('oaRailProj', projectGroups(mine, dept).length);
+  setEm('oaRailProj', arr(S.projects).length);
   setEm('oaRailAppr', todo.length + mine.length);
   setEm('oaRailSch', sch.length);
 
@@ -6243,7 +6247,7 @@ function renderCollab(){
   });
 
   renderTaskPanel(todo);
-  renderProjectPanel(mine, dept);
+  renderProjectPanel();
   renderApprovalPanel(todo, cc, mine, dept);
   renderSchedulePanel(sch);
 }
@@ -6263,28 +6267,27 @@ function renderTaskPanel(todo){
   bindApprovalRows(el);
 }
 
-/* 项目面板：后端无通用项目模块 ⇒ 按业务类型归集我的申请 + 本部门申请（口径标注在标题里） */
-function projectGroups(mine, dept){
-  var g = {};
-  mine.forEach(function(a){ var k = bizName(a.bizType); (g[k] = g[k] || []).push(a); });
-  dept.forEach(function(a){ var k = bizName(a.bizType); (g[k] = g[k] || []).push(a); });
-  return Object.keys(g).map(function(k){ return {name:k, list:g[k]}; });
-}
-function renderProjectPanel(mine, dept){
+/* 项目面板：接真 PM 模块（/v1/pm/projects）。
+   可见性由后端 canSee 唯一判定点收窄（本部门项目 / 本人参与的项目 BR-15）——
+   成员被管理员加进项目后，这里就能看到；此前用「审批单按业务类型归集」冒充项目，
+   与 PM 模块完全无涉，是真缺陷（2026-10-08 修复）。
+   状态 / 类型标签与管理端 constants/permissions.ts 的 PM_PROJECT_STATUS(_LABEL) 同源。 */
+var PM_STATUS_LABEL = {DRAFT:'草稿', ACTIVE:'进行中', SUSPENDED:'暂停', CLOSED:'已结项', ARCHIVED:'已归档'};
+function renderProjectPanel(){
   var el = $o('p-projects'); if(!el) return;
-  var groups = projectGroups(mine, dept);
-  if(!groups.length){ el.innerHTML = empty('暂无申请记录'); return; }
-  el.innerHTML = '<div class="hintbar">'+ic('info')+
-      '<div><b>按业务类型归集</b><div class="muted" style="margin-top:3px">'+
-      '由「我发起的」与「本部门名义发起」合并，后端暂无独立项目模块</div></div></div>' +
-    groups.map(function(g){
-      var done = g.list.filter(function(a){ return a.status === 'APPROVED'; }).length;
-      var pct = Math.round(done / g.list.length * 100);
-      return '<div class="task-card"><div class="task-line" style="margin-top:0">'+
-        '<div class="tl-name truncate">'+txt(g.name)+'</div>'+chip('prog', pct+'%')+'</div>'+
-        '<div class="tl-meta">'+ic('task',13)+'共 '+g.list.length+' 单 · 已通过 '+done+
-        ' · 待审 '+g.list.filter(function(a){return a.status==='PENDING';}).length+'</div></div>';
-    }).join('');
+  if(S.projects === null){ el.innerHTML = empty('项目加载中…'); return; }
+  var list = arr(S.projects);
+  if(!list.length){ el.innerHTML = empty('暂无可见项目（被加为项目成员、或项目挂到本部门后在此可见）'); return; }
+  el.innerHTML = list.map(function(p){
+    var isDev = p.projectType === 'DEV';
+    return '<div class="task-card"><div class="task-line" style="margin-top:0">'+
+      '<div class="tl-name truncate">'+txt(p.name)+'</div>'+
+      chip(isDev ? 'prog' : 'wait', isDev ? '开发项目' : '业务项目')+'</div>'+
+      '<div class="tl-meta">'+ic('task',13)+'任务 '+n(p.taskDoneCount)+'/'+n(p.taskCount)+
+        ' · 成员 '+n(p.memberCount)+(isDev ? ' · 仓库 '+n(p.repoCount) : '')+
+        ' · '+txt(PM_STATUS_LABEL[p.status] || p.status || '—')+
+        (p.projectNo ? ' · '+txt(p.projectNo) : '')+'</div></div>';
+  }).join('');
 }
 
 /* 审批面板：四分段，计数与列表同源 */
@@ -6591,7 +6594,15 @@ async function loadOrgMembers(){
   var dq = S.deptId ? ((q ? q + '&' : '?') + 'departmentId=' + S.deptId) : '';
   var res = await API.req('/v1/org/members' + q + dq);
   S.org = S.org || {};
-  S.org.members = arr(res && res.items ? res.items : res);
+  var items = arr(res && res.items ? res.items : res);
+  // 通讯录排除自己：条目是员工档（userId = 账号 id），拿登录态账号比对；
+  // 真排除掉时计数同步减一，否则「共 N 人」与列表条数对不上。
+  var meId = state.user && state.user.id;
+  if(meId != null && items.some(function(x){ return x.userId === meId; })){
+    items = items.filter(function(x){ return x.userId !== meId; });
+    if(res && typeof res.total === 'number') res.total -= 1;
+  }
+  S.org.members = items;
   S.org.total = res && res.total;
 }
 async function loadOrgAll(){
