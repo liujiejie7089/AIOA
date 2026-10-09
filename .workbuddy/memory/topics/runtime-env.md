@@ -35,7 +35,10 @@
     同一轮里连续删到第 40 个就被 SIGTERM，**不是命令写错**。要清 400+ 个陈旧 hash 产物时，
     用 **`mv` 移出服务目录**（如 `%TEMP%\aioa-webroot-stale-<HHMM>`，非删除）而不是硬删。
   核验已生效：`curl /aioa/web/assets/<新 chunk>` 返回 200 且旧入口 `index.html` 已指向新 hash。
-- 系统 `mvn` 已损坏只能用 `mvnw`；**勿 `rm -rf target`**（用 `mvnw clean`）。
+- 系统 `mvn` 包装脚本已损坏只能用 `mvnw`；**勿 `rm -rf target`**（用 `mvnw clean`）。
+  `server/mvnw` 用的是系统 Maven **3.9.11**（`D:/Program Files/develop/apache-maven-3.9.11`）。
+  **`.tools/`（apache-maven-3.9.9 + 老的 `mvnw.sh` 临时启动器）已于 2026-10-09 删除** ——
+  它被 `server/mvnw` 取代、全仓无引用，不要再去 `.tools/` 找 maven（见 `2026-10-09.md`）。
 - fat-jar 判据：正常 ~82–110MB，若 ~20KB = **stripped-jar**（没停 JVM 就重打包，运行中 JVM 随后 `NoClassDefFoundError`）。
 - **同一时刻只允许一个 Maven 构建**；`-pl <m>` **必须带 `-am`**。
 - 改 `agent/app/**` 必须重启 uvicorn（非 `--reload`）。`bash start-all.sh` 一键起（幂等，日志 `logs/`）。
