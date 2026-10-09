@@ -31,7 +31,9 @@
   （租户 2 现状：FAILED 10 / DELETED 39 / **ACTIVE 0**，error_msg 逐条指向 webhook-base-url）。
   回调路径固定 `{base}/api/v1/gitee/webhook/{项目id}`。**本机 127.0.0.1 不可能被 Gitee 回调** ⇒
   本地环境无法满足该步，必须给公网/内网穿透地址；配好后对失败项目点「重试建仓」只补跑 webhook 步。
-- **界面完善（提交 `e46f845`）**：`/gitee/config` 的 `webhookBaseUrlConfigured` 此前**前端从未消费**，
-  管理员只有拿到 FAILED 项目才知道；现已在「仓库配置」页顶部告警。
-  哨兵 `scripts/_verify_gitee_webhook_hint.py`（3 项）：断言「界面提示 ⟺ 后端 flag」（两边各自取数）。
+- **界面完善（提交 `e46f845` / `de3f8c8`）**：`/gitee/config` 的 `webhookBaseUrlConfigured` 此前**前端从未消费**，
+  管理员只有拿到 FAILED 项目才知道；现已在**两处**告警：「仓库配置」页顶部 +
+  PM 项目详情「代码仓库」页签（仅 DEV；FAILED 行正在这里被看到）。
+  哨兵 `scripts/_verify_gitee_webhook_hint.py`（**5 项**）：断言「界面提示 ⟺ 后端 flag」，
+  两页各自与后端取数比对（本机 false / 配好 true 都有区分力）；已跑负向自检证明判据非恒真。
 
