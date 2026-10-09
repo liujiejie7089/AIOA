@@ -18,3 +18,20 @@
 - ⚠️ **真机专属限制：Webhook 入站不可达**（本机两层 NAT 无回程路由），出站全正常；套件用「本地构造报文 + 正确 HMAC 直投平台端点」，验的是**协议正确性**，**不等于网络可达性**。
 - **仍叫 `Gitee` 的地方**（有意保留）：`log.*` 文案、类名、`gitee_*` 表名 —— 改名属纯重构。
 
+## 真实 Gitee（gitee.com）接线现状（2026-10-09 实测）
+
+- **建仓已通**：租户 2 的真实组织 `yjiud`（Gitee org id 17016656，desc `aioa`）可正常建仓；
+  `dsj_admin` 的个人绑定就是真实账号 `liu-yang20`（uid 14032724，scope 含 `projects`+`hook`）。
+- **企业令牌非必需**：`GiteeTokenService.requireAccessToken` 先取**个人绑定**，解不开才回落企业令牌
+  （`gitee_tenant_config`）。故租户 2 `init_status=PENDING`/`tokenConfigured=false` **不影响建仓**。
+- **个人令牌过期会自动刷新**：`tokenExpired=true` 但 `hasRefreshToken=true` 时，一次真实调用即刷新；
+  只读端点是探活好办法：`GET /gitee/projects/{id}/branches`（真数据 = `master @ <sha>`）。
+- ★**唯一阻塞 = Webhook 回调地址**：`aioa.gitee.webhook-base-url` 留空 ⇒ `GiteeRepoTaskHandler.callbackUrl()`
+  抛 `IllegalStateException` ⇒ webhook 步 `markFailed(项目)`。**建仓其实已成功**，但项目停在 FAILED/未就绪
+  （租户 2 现状：FAILED 10 / DELETED 39 / **ACTIVE 0**，error_msg 逐条指向 webhook-base-url）。
+  回调路径固定 `{base}/api/v1/gitee/webhook/{项目id}`。**本机 127.0.0.1 不可能被 Gitee 回调** ⇒
+  本地环境无法满足该步，必须给公网/内网穿透地址；配好后对失败项目点「重试建仓」只补跑 webhook 步。
+- **界面完善（提交 `e46f845`）**：`/gitee/config` 的 `webhookBaseUrlConfigured` 此前**前端从未消费**，
+  管理员只有拿到 FAILED 项目才知道；现已在「仓库配置」页顶部告警。
+  哨兵 `scripts/_verify_gitee_webhook_hint.py`（3 项）：断言「界面提示 ⟺ 后端 flag」（两边各自取数）。
+
