@@ -52,6 +52,8 @@ SUITES=(
   _check_oa_visual.py
   # 首页四张浮动卡的三角必须指向数字人（几何 + 波峰像素重叠）
   _check_kpi_cards.py
+  # 部署面：application.yml 引用的环境变量必须被 compose 透传（否则在 .env 里改它是空转）
+  _check_compose_env_wiring.py
 )
 
 for s in "${SUITES[@]}"; do

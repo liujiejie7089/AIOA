@@ -226,6 +226,10 @@ services:
       AIOA_GITEE_WEBHOOK_SECRET: ${AIOA_GITEE_WEBHOOK_SECRET:-}
       AIOA_GITEE_TOKEN_ENC_KEY: ${AIOA_GITEE_TOKEN_ENC_KEY:-aioa-dev-gitee-token-key-please-change}
       AIOA_GITEE_BIND_RETURN_URL: ${AIOA_GITEE_BIND_RETURN_URL:-http://localhost/}
+      # ★ 这两键此前未透传 ⇒ 容器拿不到 ⇒ 在 .env 里改它们**是空转**（只有 yml 默认生效）。
+      #   默认值与 application.yml 一致，不改变现有行为。
+      AIOA_GITEE_SYNC_ENABLED: ${AIOA_GITEE_SYNC_ENABLED:-true}
+      AIOA_GITEE_SYNC_CRON: "${AIOA_GITEE_SYNC_CRON:-0 17 * * * *}"
 
       # ---- Gitea ----
       AIOA_GITEA_ENABLED: ${AIOA_GITEA_ENABLED:-false}

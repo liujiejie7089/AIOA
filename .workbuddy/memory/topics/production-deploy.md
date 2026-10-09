@@ -192,6 +192,11 @@
   `jdbc:mysql://${MYSQL_HOST:-…}:${MYSQL_PORT:-…}` / `${MYSQL_USER:-…}` / `${MYSQL_PASSWORD:-…}` 现拼的，
   `environment:` 覆盖同名值。只有**不经 compose、直接 `java -jar`** 时才读 `.env` 这三个键。
 - ⇒ **`MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` 本 compose 完全不读**（compose 里没有 mysql 服务）。
+- ★ **防这类「空转」的哨兵（2026-10-09 新增）**：`python scripts/_check_compose_env_wiring.py`
+  —— 判据是「`application.yml` 引用的每个 `${VAR}` 要么被 compose 透传，要么在 BENIGN 白名单里写明理由」，
+  带反恒真下限与 `--selftest`（7 项）。已登记进 `_run_all_regression.sh`。
+  **实例**：`AIOA_GITEE_SYNC_ENABLED` / `_SYNC_CRON` 曾未透传 ⇒ 在 `.env` 里关 sync 是空转（2026-10-09 已修）。
+  ⚠️ 白名单里的 `AIOA_GITEA_*_TRUST_STORE*` / `_INSECURE_SKIP_VERIFY`：**启用 Gitea 前必须一并透传**。
 - 遗留隐患已清：compose 中曾有旧机默认值 `${MYSQL_HOST:-192.168.31.129}`、`${MYSQL_PASSWORD:-yjiud}`
   —— **缺键时会静默连到别的机器**，已改为 `:-10.0.0.5` / `:-13049` / `:-aioa` / `:-10.0.0.7`（口令默认留空，缺了就明确报鉴权失败）。
 - 仍未改的两处旧值（**已声明冻结/非本路径**，别照抄）：`deploy/.env.example`（文件头自称
