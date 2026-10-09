@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""compose 环境变量「透传面」静态校验（防静默空转）。
+"""compose 环境变量「透传面」静态校验（防静默空转）+ 有效值渲染。
 
 为什么需要它：容器拿到的环境变量 = ``deploy/docker-compose.yml`` 里 ``server`` 服务
 ``environment:`` 块中**显式列出**的那些 —— 本 compose **没有 env_file**，``deploy/.env``
@@ -8,7 +8,7 @@
     application.yml 里写了 ``${AIOA_XXX:default}``，``.env`` 里也老老实实填了值，
     但 compose 没透传 ⇒ 容器拿不到 ⇒ 只有 yml 的 default 生效，而且**不报任何错**。
 
-真实实例（2026-10-09，本次修复）：``AIOA_GITEE_SYNC_ENABLED`` / ``AIOA_GITEE_SYNC_CRON``
+真实实例（2026-10-09，已修）：``AIOA_GITEE_SYNC_ENABLED`` / ``AIOA_GITEE_SYNC_CRON``
 未透传 ⇒ 在 .env 里把 sync 关掉是空转（容器永远按 yml 默认 ``true`` 跑）。
 同类历史实例见 ``.workbuddy/memory/topics/production-deploy.md`` 的
 「★ 环境变量注入路径」一节（``SPRING_DATASOURCE_*`` 同名键被 compose 现拼覆盖）。
@@ -21,6 +21,10 @@
 用法：
     python scripts/_check_compose_env_wiring.py              # 校验
     python scripts/_check_compose_env_wiring.py --selftest   # 负向自检（判据必须能报红）
+    python scripts/_check_compose_env_wiring.py --render     # 渲染「容器真正会收到的值」
+                                                             #（本机无 docker 时替代
+                                                             #  `docker compose config`；
+                                                             #  敏感键自动打码）
 退出码：0 = 通过（允许 WARN）；1 = 有 FAIL。
 """
 from __future__ import annotations
@@ -33,6 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 COMPOSE = "deploy/docker-compose.yml"
 APP_YML = "server/aioa-boot/src/main/resources/application.yml"
+DOTENV = "deploy/.env"
 SERVICE = "server"
 
 # 反恒真的下限：解析器真坏了（正则不匹配）会得到 0 个引用，那会「恒绿」。
@@ -59,6 +64,9 @@ BENIGN = {
 }
 
 REF_RE = re.compile(r"\$\{([A-Z0-9_]+)(?::([^}]*))?\}")
+WHOLE_INTERP_RE = re.compile(r"^\$\{([A-Z0-9_]+)(?::-(.*))?\}$", re.S)
+# compose 的插值语法是 ${VAR:-default}（注意与 yml 的 ${VAR:default} 差一个横杠）
+SECRET_KEY_RE = re.compile(r"SECRET|PASSWORD|PASSWD|_PASS$|TOKEN|ENC_KEY|API_KEY", re.I)
 
 
 def extract_refs(yml_text: str) -> "dict[str, str]":
@@ -69,8 +77,8 @@ def extract_refs(yml_text: str) -> "dict[str, str]":
     return out
 
 
-def compose_env_keys(compose_text: str, service: str = SERVICE) -> "set[str]":
-    """按缩进取出 <service>.environment 下显式列出的键。
+def compose_env_exprs(compose_text: str, service: str = SERVICE) -> "dict[str, str]":
+    """按缩进取出 <service>.environment 下的 KEY -> 右侧原始表达式。
 
     不依赖 pyyaml（跑脚本的 python 未必装），只认本文件的结构：
       services:            (0 缩进)
@@ -103,8 +111,8 @@ def compose_env_keys(compose_text: str, service: str = SERVICE) -> "set[str]":
     if env_start is None:
         raise AssertionError("服务 %r 下找不到 environment: 块" % service)
 
-    keys: "set[str]" = set()
-    key_re = re.compile(r"^ {6}([A-Z0-9_]+):")
+    out: "dict[str, str]" = {}
+    item_re = re.compile(r"^ {6}([A-Z0-9_]+):\s*(.*)$")
     for i in range(env_start + 1, len(lines)):
         ln = lines[i]
         if ln.strip() == "" or ln.lstrip().startswith("#"):
@@ -112,10 +120,14 @@ def compose_env_keys(compose_text: str, service: str = SERVICE) -> "set[str]":
         indent = len(ln) - len(ln.lstrip(" "))
         if indent <= 4:
             break
-        m = key_re.match(ln)
+        m = item_re.match(ln)
         if m:
-            keys.add(m.group(1))
-    return keys
+            out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def compose_env_keys(compose_text: str, service: str = SERVICE) -> "set[str]":
+    return set(compose_env_exprs(compose_text, service))
 
 
 def classify(refs, passed, benign) -> "tuple[list[str], list[str]]":
@@ -124,6 +136,59 @@ def classify(refs, passed, benign) -> "tuple[list[str], list[str]]":
     fails = [v for v in missing if v not in benign]
     warns = [v for v in missing if v in benign]
     return fails, warns
+
+
+def load_dotenv(text: str) -> "dict[str, str]":
+    """解析 .env：去引号、去行尾注释（仅当 # 前有空白）。"""
+    out: "dict[str, str]" = {}
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        k, v = k.strip(), v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+            v = v[1:-1]
+        else:
+            m = re.search(r"\s+#", v)
+            if m:
+                v = v[: m.start()].rstrip()
+        out[k] = v
+    return out
+
+
+def resolve(expr: str, dotenv: "dict[str, str]") -> str:
+    """复刻 compose 插值：${VAR} / ${VAR:-default}（未设**或为空**都取 default）。
+
+    ⚠️ 必须**先剥掉 YAML 引号**：compose 文件里可以写成
+    ``KEY: "${VAR:-0 17 * * * *}"``，YAML 解析后引号由 compose 去除、再插值。
+    """
+    expr = expr.strip()
+    if len(expr) >= 2 and expr[0] == expr[-1] and expr[0] in ("'", '"'):
+        expr = expr[1:-1]
+    m = WHOLE_INTERP_RE.match(expr)
+    if not m:
+        return expr
+    var, default = m.group(1), m.group(2)
+    val = dotenv.get(var, "")
+    if val == "":
+        return default if default is not None else ""
+    return val
+
+
+def mask(key: str, val: str) -> str:
+    if SECRET_KEY_RE.search(key) and val:
+        return "%s…(len=%d)" % (val[:4], len(val))
+    return val
+
+
+def run_render() -> int:
+    exprs = compose_env_exprs(Path(ROOT / COMPOSE).read_text(encoding="utf-8"))
+    dotenv = load_dotenv(Path(ROOT / DOTENV).read_text(encoding="utf-8"))
+    print("# 容器真正会收到的值（等价 `docker compose config`；.env=%s）" % DOTENV)
+    for k in sorted(exprs):
+        print("  %-38s = %s" % (k, mask(k, resolve(exprs[k], dotenv))))
+    return 0
 
 
 def run_selftest() -> int:
@@ -150,10 +215,12 @@ def run_selftest() -> int:
     benign2 = dict(BENIGN)
     benign2["AIOA_FAKE_MISSING_VAR"] = "自检占位"
     fails2, warns2 = classify(r, compose_env_keys(fake_compose), benign2)
-    chk("S3 白名单内的豁免 => 降为 WARN", fails2 == [] and warns2 == ["AIOA_FAKE_MISSING_VAR"], repr((fails2, warns2)))
+    chk("S3 白名单内的豁免 => 降为 WARN",
+        fails2 == [] and warns2 == ["AIOA_FAKE_MISSING_VAR"], repr((fails2, warns2)))
 
     passed_real = compose_env_keys(Path(ROOT / COMPOSE).read_text(encoding="utf-8"))
-    chk("S4 真实 compose 能解析出 environment 键（>50）", len(passed_real) > 50, "keys=%d" % len(passed_real))
+    chk("S4 真实 compose 能解析出 environment 键（>50）", len(passed_real) > 50,
+        "keys=%d" % len(passed_real))
 
     refs_real = extract_refs(Path(ROOT / APP_YML).read_text(encoding="utf-8"))
     chk("S5 真实 application.yml 能抽出引用（>60）", len(refs_real) > 60, "refs=%d" % len(refs_real))
@@ -163,6 +230,20 @@ def run_selftest() -> int:
     f3, _ = classify(fake_refs, passed_real - {"AIOA_GITEE_SYNC_ENABLED"}, BENIGN)
     chk("S6 把真实键从透传里摘掉 => 必须报 FAIL", "AIOA_GITEE_SYNC_ENABLED" in f3, repr(f3))
 
+    chk("S7a 插值：未设 => 取 default", resolve("${A:-xyz}", {}) == "xyz")
+    chk("S7b 插值：已设 => 取已设值", resolve("${A:-xyz}", {"A": "v"}) == "v")
+    chk("S7c 插值：已设但为空 => 取 default（compose 语义）", resolve("${A:-xyz}", {"A": ""}) == "xyz")
+    chk("S7d 非插值原样返回", resolve("plain", {"A": "v"}) == "plain")
+    chk("S7e 带 YAML 引号的插值也能解析（本次实测踩到）",
+        resolve('"${A:-0 17 * * * *}"', {"A": "0 5 * * * *"}) == "0 5 * * * *"
+        and resolve('"${A:-0 17 * * * *}"', {}) == "0 17 * * * *")
+
+    de = load_dotenv('A=1\nB="x y"\nC=z # 注释\n#D=2\nE=\n')
+    chk("S8 .env 解析：值/引号/行尾注释/空值",
+        de == {"A": "1", "B": "x y", "C": "z", "E": ""}, repr(de))
+
+    chk("S9 敏感键打码生效", mask("X_SECRET", "abcdef") == "abcd…(len=6)" and mask("X_HOST", "h") == "h")
+
     print("[SELFTEST] %s" % ("全部通过" if bad == 0 else "%d 项失败" % bad))
     return 1 if bad else 0
 
@@ -170,9 +251,12 @@ def run_selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--render", action="store_true")
     args = ap.parse_args()
     if args.selftest:
         return run_selftest()
+    if args.render:
+        return run_render()
 
     refs = extract_refs(Path(ROOT / APP_YML).read_text(encoding="utf-8"))
     passed = compose_env_keys(Path(ROOT / COMPOSE).read_text(encoding="utf-8"))
@@ -188,8 +272,7 @@ def main() -> int:
     for v in warns:
         print("[WARN] %s 未透传（白名单豁免）：%s" % (v, BENIGN[v]))
     for v in fails:
-        print("[FAIL] %s 被 application.yml 引用、但 compose 未透传 ⇒ 在 .env 里设它**是空转**"
-              % v)
+        print("[FAIL] %s 被 application.yml 引用、但 compose 未透传 ⇒ 在 .env 里设它**是空转**" % v)
         print("       修法：在 deploy/docker-compose.yml 的 server.environment 补 "
               "`%s: ${%s:-<yml默认值>}`（或登记进 BENIGN 并写清理由）" % (v, v))
 
