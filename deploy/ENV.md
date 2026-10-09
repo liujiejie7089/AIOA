@@ -140,13 +140,20 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 | `…_WEB_URL` | 网页域 | `https://gitee.com` | 同 | — |
 | `…_OAUTH_AUTHORIZE_URL` | **用户浏览器**授权页基址（与服务端域解耦） | `https://gitee.com` | 同 | — |
 | `…_CLIENT_ID` / `…_CLIENT_SECRET` | OAuth 应用凭据 | 空 | `CHANGE_ME__` | ★ |
-| `…_REDIRECT_URI` | 回调地址，须与登记页**逐字符一致** | `http://127.0.0.1:8080/…/bind/callback` | `https://aioa.example.com/…/bind/callback` | — |
+| `…_REDIRECT_URI` | 回调地址，须与登记页**逐字符一致** | `http://127.0.0.1:8080/…/bind/callback` | `https://mall.egoaicloud.com/aioa/api/v1/gitee/bind/callback` | — |
 | `…_SCOPE` | 授权范围 | Gitee 含 `projects hook` | 同 | — |
 | `…_ORG` | 建仓所在组织 | 空＝用户名下 | `<gitee-org>` | — |
-| `…_WEBHOOK_BASE_URL` | 反向回调基址 | **空**（本地不可达） | `https://aioa.example.com` | — |
+| `…_WEBHOOK_BASE_URL` | 反向回调基址 | **空**（本地不可达） | `https://mall.egoaicloud.com/aioa` | — |
 | `…_WEBHOOK_SECRET` | 回调签名密钥 | 空＝每仓库随机 | `CHANGE_ME__` | ★ |
 | `…_TOKEN_ENC_KEY` | 授权令牌 AES-256 加密密钥 | `DEV_ONLY__` | `CHANGE_ME__` | ★ |
-| `AIOA_GITEE_BIND_RETURN_URL` | 授权完成后前端回跳 | `http://localhost:5173/` | `https://aioa.example.com/` | — |
+| `AIOA_GITEE_BIND_RETURN_URL` | 授权完成后前端回跳 | `http://localhost:5173/` | `https://mall.egoaicloud.com/aioa/web/` | — |
+
+> ★ **生产公网入口（2026-10-09 实测确认）**：域名 `mall.egoaicloud.com`（正确拼写 `egoai`，**不是** `egooai`）
+> → A `219.151.186.24`；该机 443 证书 SAN 即此域名；openresty 把 `/aioa/...` **原样转发**（不剥前缀）到
+> `10.0.0.3:8080`。实测 `GET /aioa/api/v1/pm/projects` → **401**（已到后端）、
+> `GET /aioa/api/v1/gitee/webhook/1` → **405**（webhook 路由存在、POST-only）
+> ⇒ 回调 `{WEBHOOK_BASE_URL}/api/v1/gitee/webhook/{项目id}` 公网可达。
+> 「10.0.0.3 能访问外网」只解决**出方向**（调 Gitee API 建仓/配钩子）；Webhook 是**入方向**，靠这个入口。
 | `AIOA_GITEE_SYNC_ENABLED` / `_SYNC_CRON` | 定时校准开关/表达式 | `true` / `0 17 * * * *` | 同 | — |
 | `AIOA_GITEA_REPO_NAME_SOURCE` | 仓库标识来源 `AUTO\|NAME\|PATH` | `AUTO` | `AUTO` | — |
 | `AIOA_GITEA_INSECURE_SKIP_VERIFY` | 跳过 TLS 校验 | `false` | **必须 `false`** | — |

@@ -144,7 +144,26 @@
 | `AIOA_KB_EMBEDDING_MODEL` | `quentinz/bge-small-zh-v1.5` | Ollama 上真实存在的名字（含命名空间） |
 | `AIOA_KB_EMBEDDING_DIMS` | `512` | 必须与 `AIOA_MILVUS_DIMS` 一致 |
 | `MODEL_DEFAULT` / `MINIMAX_API_KEY` | `minimax` / **必填** | **Key 必须与 `MODEL_DEFAULT` 同名**；留空或不配对 ⇒ **静默降级 echo**（不报错，现象=回答一直回声） |
-| `AIOA_GITEE_ENABLED` / `AIOA_GITEE_SYNC_ENABLED` | `false` | 私网 IP 无法被 Gitee 回调，先关（功能自动隐藏） |
+| `AIOA_GITEE_ENABLED` / `AIOA_GITEE_SYNC_ENABLED` | `true` | **已可打通**（2026-10-09 实测，见下方「★ Gitee 公网入口」）。旧值 `false`（「私网 IP 无法被 Gitee 回调」）**已作废** |
+| `AIOA_GITEE_REDIRECT_URI` | `https://mall.egoaicloud.com/aioa/api/v1/gitee/bind/callback` | 必须与 Gitee 应用里登记的回调地址**逐字符一致**（含 `/aioa` 前缀） |
+| `AIOA_GITEE_WEBHOOK_BASE_URL` | `https://mall.egoaicloud.com/aioa` | 回调路径 = `{此值}/api/v1/gitee/webhook/{projectId}`，**已实测公网可达** |
+| `AIOA_GITEE_BIND_RETURN_URL` | `https://mall.egoaicloud.com/aioa/web/` | 绑定完成回跳的 H5 地址 |
+| `AIOA_GITEE_CLIENT_ID` / `_CLIENT_SECRET` / `AIOA_GITEE_TOKEN_ENC_KEY` | `CHANGE_ME__…` 占位 | **只能填 `deploy/.env`**（`.env.production` 入库，填真值=把密钥提交） |
+
+### ★ Gitee 公网入口（2026-10-09 实测确认，推翻了旧「私网无法回调」结论）
+- **域名拼写是 `mall.egoaicloud.com`（ego**ai**，单 `o` 后接 `ai`）** —— 双 `o` 的
+  `mall.egooaicloud.com` **不存在**（DoH 解析失败）。拼错 ⇒ DNS 失败 + 证书 CN 不匹配 ⇒ 授权/webhook
+  **静默失败**。全库 grep `egooaicloud` = 0 命中 ⇒ 正字无误，勿再造错拼。
+- 链路：`mall.egoaicloud.com` → A 记录 `219.151.186.24`（隧道机/入口机）→ 其 `:443` 终结 TLS
+  （证书 SAN = `mall.egoaicloud.com`，实测 SNI 匹配）→ openresty **原样**（**不剥前缀**）转发 `/aioa/...`
+  到 `10.0.0.3:8080`。
+- 探活（走公网域名）：`GET /aioa/api/v1/pm/projects` → **401**（后端确实可达）·
+  `GET /aioa/api/v1/gitee/webhook/1` → **405**（路由存在，仅 POST）⇒ webhook 回调面**已就绪**。
+- **`10.0.0.3` 能访问外网 = 只有出方向**（AIOA→Gitee API 的建仓/同步够用）；**入方向**（Gitee 回调我们的
+  webhook）不走 10.0.0.3，走上面这个公网入口。二者别混为一谈。
+- 结论：**webhook 唯一的旧阻塞项 `AIOA_GITEE_WEBHOOK_BASE_URL` 在生产已有真实值**
+  （`https://mall.egoaicloud.com/aioa`），无需内网穿透。剩余只欠 Gitee OAuth 的
+  `client_id`/`client_secret`（已绑 `liu-yang20` 账号）与 `AIOA_GITEE_TOKEN_ENC_KEY`（真值填 `deploy/.env`）。
 
 ### ★ 含特殊字符的口令必须用单引号（2026-09-20 实测）
 - MySQL 口令末尾是 `$`，而 `$` 是 **compose 插值字符** ⇒ 双引号/裸写会被吃掉尾部（现象：口令长度少 1、`Access denied`）。
