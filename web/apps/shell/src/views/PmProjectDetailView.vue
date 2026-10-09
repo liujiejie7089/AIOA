@@ -288,16 +288,230 @@
         </el-dialog>
       </el-tab-pane>
 
-      <!-- ============ 经费 / 合同：随批次 4 交付（不做假界面） ============ -->
-      <el-tab-pane
-        v-for="ph in placeholders"
-        :key="ph.name"
-        :label="ph.label"
-        :name="ph.name"
-      >
-        <el-card shadow="never">
-          <el-empty :description="ph.hint" />
+      <!-- ======= 经费（批次 4 / docs/43 §4）：追加式流水，红冲纠错，无修改入口 ======= -->
+      <el-tab-pane :label="`经费（${expenses.length}）`" name="expenses">
+        <el-card shadow="never" v-loading="expenseLoading">
+          <el-alert
+            v-if="expenseList?.summary.overrun"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="累计支出已超预算（仅警示，不阻断继续录入）"
+            style="margin-bottom: 10px"
+          />
+          <el-row :gutter="12" style="margin-bottom: 12px">
+            <el-col :span="6"><el-statistic title="预算总额" :value="Number(expenseList?.summary.budgetAmount || 0)" /></el-col>
+            <el-col :span="6"><el-statistic title="累计收入" :value="Number(expenseList?.summary.totalIncome || 0)" /></el-col>
+            <el-col :span="6"><el-statistic title="累计支出" :value="Number(expenseList?.summary.totalOutcome || 0)" /></el-col>
+            <el-col :span="6"><el-statistic title="结余" :value="Number(expenseList?.summary.balance || 0)" /></el-col>
+          </el-row>
+          <div class="card-header" style="margin-bottom: 8px">
+            <div>
+              <el-select v-model="expenseFilter.direction" clearable placeholder="方向" size="small" style="width: 110px" @change="loadExpenses">
+                <el-option v-for="d in expenseList?.summary.directions || []" :key="d.value" :label="d.label" :value="d.value" />
+              </el-select>
+              <el-select v-model="expenseFilter.category" clearable placeholder="分类" size="small" style="width: 150px; margin-left: 8px" @change="loadExpenses">
+                <el-option v-for="c in expenseList?.summary.categories || []" :key="c.value" :label="c.label" :value="c.value" />
+              </el-select>
+            </div>
+            <el-button v-if="expenseList?.canManage" size="small" type="primary" @click="openExpense">追加流水</el-button>
+          </div>
+          <el-table :data="expenses" size="small">
+            <el-table-column prop="occurredAt" label="发生日期" width="110" />
+            <el-table-column label="方向" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.direction === 'IN' ? 'success' : 'warning'">{{ row.directionLabel }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="分类" width="130">
+              <template #default="{ row }">{{ row.categoryLabel }}</template>
+            </el-table-column>
+            <el-table-column label="金额" width="130" align="right">
+              <template #default="{ row }">
+                <span :class="row.isReversal ? 'hint' : (row.direction === 'IN' ? 'money-in' : 'money-out')">{{ fmtMoney(row.amount) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="分摊比例" width="100">
+              <template #default="{ row }">{{ row.allocRatio != null ? row.allocRatio : '—' }}</template>
+            </el-table-column>
+            <el-table-column label="来源" width="110">
+              <template #default="{ row }">
+                <el-tag v-if="row.isReversal" size="small" type="info">红冲</el-tag>
+                <el-tag v-else-if="row.contractPaymentId" size="small" type="success">合同自动</el-tag>
+                <span v-else class="hint">手工录入</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="remark" label="摘要" min-width="180" show-overflow-tooltip />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  v-if="expenseList?.canManage && !row.isReversal"
+                  size="small"
+                  text
+                  type="danger"
+                  @click="reverseExpense(row)"
+                >红冲</el-button>
+              </template>
+            </el-table-column>
+            <template #empty><div style="padding: 16px 0" class="hint">暂无经费流水</div></template>
+          </el-table>
+          <p class="hint" style="margin: 10px 0 0">
+            经费流水为<b>追加式账目</b>：已录入的流水不可修改、不可删除；录入有误请用「红冲」追加一条同方向的<b>负额（红字）</b>流水纠正，原行保留可追溯。
+          </p>
         </el-card>
+
+        <el-dialog v-model="expenseVisible" title="追加经费流水" width="520px">
+          <el-form label-width="90px" size="small">
+            <el-form-item label="方向" required>
+              <el-radio-group v-model="expenseForm.direction">
+                <el-radio value="OUT">支出</el-radio>
+                <el-radio value="IN">收入</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="分类" required>
+              <el-select v-model="expenseForm.category" style="width: 100%">
+                <el-option v-for="c in expenseList?.summary.categories || []" :key="c.value" :label="c.label" :value="c.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="金额" required>
+              <el-input-number v-model="expenseForm.amount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="发生日期">
+              <el-date-picker v-model="expenseForm.occurredAt" type="date" value-format="YYYY-MM-DD" placeholder="默认今天" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="分摊比例">
+              <el-input-number v-model="expenseForm.allocRatio" :min="0" :precision="2" :controls="false" placeholder="分摊/占比，可留空" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="摘要">
+              <el-input v-model="expenseForm.remark" type="textarea" :rows="2" placeholder="费用明细说明" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button size="small" @click="expenseVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingExpense" @click="saveExpense">保存</el-button>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
+
+      <!-- ============ 合同（批次 4 / docs/43 §4）：采购付款 / 收款 + 收付款明细（BR-09） ============ -->
+      <el-tab-pane :label="`合同（${contracts.length}）`" name="contracts">
+        <el-card shadow="never" v-loading="contractLoading">
+          <template #header>
+            <div class="card-header">
+              <el-select v-model="contractFilter.direction" clearable placeholder="方向" size="small" style="width: 150px" @change="loadContracts">
+                <el-option v-for="d in contractList?.directions || []" :key="d.value" :label="d.label" :value="d.value" />
+              </el-select>
+              <el-button v-if="contractList?.canManage" size="small" type="primary" @click="openContract()">新建合同</el-button>
+            </div>
+          </template>
+          <el-table :data="contracts" size="small">
+            <el-table-column prop="contractNo" label="合同编号" width="140" />
+            <el-table-column prop="name" label="合同名称" min-width="180" show-overflow-tooltip />
+            <el-table-column label="方向" width="120">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.direction === 'IN' ? 'success' : 'warning'">{{ row.directionLabel }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="partyName" label="对方单位" min-width="140" show-overflow-tooltip />
+            <el-table-column label="金额" width="130" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.amount) }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.statusLabel }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="操作" width="240" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" text type="primary" @click="openPayments(row)">收付款</el-button>
+                <el-button v-if="contractList?.canManage" size="small" text type="primary" @click="openContract(row)">编辑</el-button>
+                <el-select
+                  v-if="contractList?.canManage && row.status !== 'CLOSED' && row.status !== 'TERMINATED'"
+                  :model-value="row.status"
+                  size="small"
+                  style="width: 104px"
+                  @change="(v: string) => changeContractStatus(row, v)"
+                >
+                  <el-option v-for="s in contractList?.statuses || []" :key="s.value" :label="s.label" :value="s.value" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <template #empty><div style="padding: 16px 0" class="hint">暂无合同</div></template>
+          </el-table>
+          <p class="hint" style="margin: 10px 0 0">
+            确认收付款时，系统会在同一事务内自动生成一条经费流水（单一事实源），无需重复登记；已确认的收付款不可修改，只能红冲。
+          </p>
+        </el-card>
+
+        <el-dialog v-model="contractVisible" :title="contractForm.id ? '编辑合同' : '新建合同'" width="600px">
+          <el-form label-width="90px" size="small">
+            <el-form-item label="合同编号" required>
+              <el-input v-model="contractForm.contractNo" :disabled="!!contractForm.id" placeholder="全企业唯一，如 HT-2026-001" />
+            </el-form-item>
+            <el-form-item label="合同名称" required><el-input v-model="contractForm.name" /></el-form-item>
+            <el-form-item label="方向" required>
+              <el-radio-group v-model="contractForm.direction" :disabled="!!contractForm.id">
+                <el-radio value="OUT">采购付款</el-radio>
+                <el-radio value="IN">收款</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="对方单位"><el-input v-model="contractForm.partyName" /></el-form-item>
+            <el-form-item label="合同金额">
+              <el-input-number v-model="contractForm.amount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="签订日期">
+              <el-date-picker v-model="contractForm.signedAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button size="small" @click="contractVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingContract" @click="saveContract">保存</el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog v-model="payVisible" :title="`收付款明细 - ${currentContract?.name || ''}`" width="780px">
+          <div style="margin-bottom: 10px">
+            <el-button v-if="contractList?.canManage" size="small" type="primary" @click="openAddPayment">新增期次</el-button>
+          </div>
+          <el-table :data="payments" size="small">
+            <el-table-column prop="seq" label="期次" width="60" />
+            <el-table-column label="计划金额" width="130" align="right">
+              <template #default="{ row }">{{ fmtMoney(row.planAmount) }}</template>
+            </el-table-column>
+            <el-table-column prop="planDate" label="计划日期" width="110" />
+            <el-table-column label="实收/实付" width="130" align="right">
+              <template #default="{ row }">{{ row.actualAmount != null ? fmtMoney(row.actualAmount) : '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="actualDate" label="实际日期" width="110" />
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.status === 'CONFIRMED' ? 'success' : (row.status === 'REVERSED' ? 'info' : 'warning')">
+                  {{ row.statusLabel }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="contractList?.canManage && row.status === 'PLANNED'" size="small" text type="primary" @click="confirmPayment(row)">确认</el-button>
+                <el-button v-if="contractList?.canManage && row.status === 'CONFIRMED'" size="small" text type="danger" @click="reversePayment(row)">红冲</el-button>
+              </template>
+            </el-table-column>
+            <template #empty><div style="padding: 16px 0" class="hint">暂无收付款计划</div></template>
+          </el-table>
+        </el-dialog>
+
+        <el-dialog v-model="payFormVisible" title="新增收付款计划" width="460px">
+          <el-form label-width="90px" size="small">
+            <el-form-item label="计划金额" required>
+              <el-input-number v-model="payForm.planAmount" :min="0" :precision="2" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="计划日期">
+              <el-date-picker v-model="payForm.planDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button size="small" @click="payFormVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingPayment" @click="doAddPayment">保存</el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
     </el-tabs>
 
@@ -408,8 +622,13 @@ import {
   pmMembers, pmMemberCandidates, pmAddMember, pmChangeMemberRole, pmRemoveMember, pmErrMsg,
   // 文档（批次 3 / docs/43）：企业级公共（只读挂载）与项目专属（可写）同树呈现
   pmDocTree, pmCreateFolder, pmDeleteFolder, pmCreateDocument, pmDocDetail, pmDeleteDocument,
+  // 经费 / 合同（批次 4 / docs/43 §4）：经费为追加式账目（无修改端点），合同确认收付款自动生成流水（BR-09）
+  pmExpenses, pmCreateExpense, pmReverseExpense,
+  pmContracts, pmCreateContract, pmUpdateContract, pmChangeContractStatus,
+  pmContractPayments, pmAddContractPayment, pmConfirmContractPayment, pmReverseContractPayment,
   type PmProject, type PmRepo, type PmTask, type PmTaskList, type PmMember, type PmMemberList,
-  type PmMemberCandidate, type PmDocTree, type PmDocNode, type PmDocItem
+  type PmMemberCandidate, type PmDocTree, type PmDocNode, type PmDocItem,
+  type PmExpenseList, type PmExpenseItem, type PmContractList, type PmContractItem, type PmContractPaymentItem
 } from '@/api/pm'
 import {
   PM_PROJECT_TYPE_LABEL, PM_PROJECT_STATUS, PM_PROJECT_STATUS_LABEL, PM_PROJECT_STATUS_TAG,
@@ -467,11 +686,6 @@ const newMemberRole = ref('MEMBER')
  * 后端同样是这个口径（{@code ProjectTypeGuard}），前端隐藏不是安全边界。</p>
  */
 const isDev = computed(() => project.value?.projectType === 'DEV')
-
-const placeholders = [
-  { name: 'budget', label: '经费', hint: '项目经费收支流水随批次 4 交付' },
-  { name: 'contract', label: '合同', hint: '合同、收付款明细与里程碑随批次 4 交付' }
-]
 
 function fmtMoney(v?: number | string) {
   if (v === undefined || v === null || v === '') return '—'
@@ -960,10 +1174,281 @@ async function removeDoc(row: PmDocItem) {
   }
 }
 
-watch(tab, (v) => {
-  if (v === 'docs' && !docTree.value) {
-    loadDocTree()
+/* ==================== 经费（批次 4 / docs/43 §4） ====================
+ * 追加式账目：页面**只有**「追加」和「红冲」，没有编辑/删除 —— 与后端一致（无 PUT/DELETE 端点）。
+ * 不要在这里加「编辑流水」按钮：那会造出一个后端必然 404/405 的假入口。 */
+
+const expenseList = ref<PmExpenseList | null>(null)
+const expenses = ref<PmExpenseItem[]>([])
+const expenseLoading = ref(false)
+const expenseFilter = reactive({ direction: '', category: '' })
+const expenseVisible = ref(false)
+const savingExpense = ref(false)
+const expenseForm = reactive<{
+  direction: 'IN' | 'OUT'; category: string; amount: number
+  occurredAt: string; allocRatio?: number; remark: string
+}>({ direction: 'OUT', category: 'OTHER', amount: 0, occurredAt: '', allocRatio: undefined, remark: '' })
+
+async function loadExpenses() {
+  expenseLoading.value = true
+  try {
+    const res = await pmExpenses(projectId, {
+      direction: expenseFilter.direction || undefined,
+      category: expenseFilter.category || undefined
+    })
+    expenseList.value = res
+    expenses.value = res.items
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '加载经费失败'))
+  } finally {
+    expenseLoading.value = false
   }
+}
+
+function openExpense() {
+  Object.assign(expenseForm, { direction: 'OUT', category: 'OTHER', amount: 0, occurredAt: '', allocRatio: undefined, remark: '' })
+  expenseVisible.value = true
+}
+
+async function saveExpense() {
+  if (!expenseForm.category) {
+    ElMessage.warning('请选择费用分类')
+    return
+  }
+  savingExpense.value = true
+  try {
+    await pmCreateExpense(projectId, {
+      direction: expenseForm.direction,
+      category: expenseForm.category,
+      amount: expenseForm.amount,
+      occurredAt: expenseForm.occurredAt || undefined,
+      allocRatio: expenseForm.allocRatio ?? undefined,
+      remark: expenseForm.remark || undefined
+    })
+    expenseVisible.value = false
+    ElMessage.success('已追加')
+    await loadExpenses()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '保存失败'))
+  } finally {
+    savingExpense.value = false
+  }
+}
+
+async function reverseExpense(row: PmExpenseItem) {
+  let reason = ''
+  try {
+    const r = await ElMessageBox.prompt('红冲原因（可选，将记入红冲行摘要）', `红冲流水 ${fmtMoney(row.amount)}`, {
+      inputPlaceholder: '如：录入金额有误',
+      confirmButtonText: '确认红冲',
+      cancelButtonText: '取消'
+    })
+    reason = String(r.value || '')
+  } catch {
+    return
+  }
+  try {
+    await pmReverseExpense(projectId, row.id, reason || undefined)
+    ElMessage.success('已红冲（原行保留，新增反向流水）')
+    await loadExpenses()
+  } catch (e) {
+    // 重复红冲 → 后端 409，原文展示
+    ElMessage.error(pmErrMsg(e, '红冲失败'))
+  }
+}
+
+/* ==================== 合同 + 收付款（批次 4 / docs/43 §4） ==================== */
+
+const contractList = ref<PmContractList | null>(null)
+const contracts = ref<PmContractItem[]>([])
+const contractLoading = ref(false)
+const contractFilter = reactive({ direction: '' })
+const contractVisible = ref(false)
+const savingContract = ref(false)
+const contractForm = reactive<{
+  id?: number; contractNo: string; name: string; direction: 'IN' | 'OUT'
+  partyName: string; amount: number; signedAt: string
+}>({ contractNo: '', name: '', direction: 'OUT', partyName: '', amount: 0, signedAt: '' })
+
+const payVisible = ref(false)
+const payFormVisible = ref(false)
+const savingPayment = ref(false)
+const currentContract = ref<PmContractItem | null>(null)
+const payments = ref<PmContractPaymentItem[]>([])
+const payForm = reactive({ planAmount: 0, planDate: '' })
+
+async function loadContracts() {
+  contractLoading.value = true
+  try {
+    const res = await pmContracts(projectId, { direction: contractFilter.direction || undefined })
+    contractList.value = res
+    contracts.value = res.items
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '加载合同失败'))
+  } finally {
+    contractLoading.value = false
+  }
+}
+
+function openContract(row?: PmContractItem) {
+  if (row) {
+    Object.assign(contractForm, {
+      id: row.id, contractNo: row.contractNo, name: row.name, direction: row.direction,
+      partyName: row.partyName || '', amount: Number(row.amount) || 0, signedAt: row.signedAt || ''
+    })
+  } else {
+    Object.assign(contractForm, {
+      id: undefined, contractNo: '', name: '', direction: 'OUT', partyName: '', amount: 0, signedAt: ''
+    })
+  }
+  contractVisible.value = true
+}
+
+async function saveContract() {
+  if (!contractForm.name.trim()) {
+    ElMessage.warning('请填写合同名称')
+    return
+  }
+  if (!contractForm.id && !contractForm.contractNo.trim()) {
+    ElMessage.warning('请填写合同编号')
+    return
+  }
+  savingContract.value = true
+  try {
+    if (contractForm.id) {
+      await pmUpdateContract(projectId, contractForm.id, {
+        name: contractForm.name.trim(),
+        partyName: contractForm.partyName || undefined,
+        amount: contractForm.amount,
+        signedAt: contractForm.signedAt || undefined
+      })
+    } else {
+      await pmCreateContract(projectId, {
+        contractNo: contractForm.contractNo.trim(),
+        name: contractForm.name.trim(),
+        direction: contractForm.direction,
+        partyName: contractForm.partyName || undefined,
+        amount: contractForm.amount,
+        signedAt: contractForm.signedAt || undefined
+      })
+    }
+    contractVisible.value = false
+    ElMessage.success('已保存')
+    await loadContracts()
+  } catch (e) {
+    // 编号重复（409）/ 已结不可改（409）原文展示
+    ElMessage.error(pmErrMsg(e, '保存失败'))
+  } finally {
+    savingContract.value = false
+  }
+}
+
+async function changeContractStatus(row: PmContractItem, status: string) {
+  if (status === row.status) return
+  try {
+    await pmChangeContractStatus(projectId, row.id, status)
+    ElMessage.success('状态已更新')
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '变更状态失败'))
+  } finally {
+    await loadContracts()
+  }
+}
+
+async function openPayments(row: PmContractItem) {
+  currentContract.value = row
+  payVisible.value = true
+  await loadPayments()
+}
+
+async function loadPayments() {
+  if (!currentContract.value) return
+  try {
+    const res = await pmContractPayments(projectId, currentContract.value.id)
+    payments.value = res.items
+    currentContract.value = res.contract
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '加载收付款失败'))
+  }
+}
+
+function openAddPayment() {
+  payForm.planAmount = 0
+  payForm.planDate = ''
+  payFormVisible.value = true
+}
+
+async function doAddPayment() {
+  if (!currentContract.value) return
+  savingPayment.value = true
+  try {
+    await pmAddContractPayment(projectId, currentContract.value.id, {
+      planAmount: payForm.planAmount,
+      planDate: payForm.planDate || undefined
+    })
+    payFormVisible.value = false
+    ElMessage.success('已新增期次')
+    await loadPayments()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '新增失败'))
+  } finally {
+    savingPayment.value = false
+  }
+}
+
+/**
+ * 确认实收/实付 —— BR-09：后端同事务自动生成经费流水，前端**不再**另行登记。
+ * 成功后同时刷新经费页（若已加载），让用户立刻看到自动入库的那条流水。
+ */
+async function confirmPayment(row: PmContractPaymentItem) {
+  if (!currentContract.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确认第 ${row.seq} 期实收/实付 ${fmtMoney(row.planAmount)}？系统将自动生成一条经费流水。`,
+      '确认收付款',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await pmConfirmContractPayment(projectId, currentContract.value.id, row.id, {})
+    ElMessage.success('已确认，已自动生成经费流水')
+    await loadPayments()
+    if (expenseList.value) await loadExpenses()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '确认失败'))
+    await loadPayments()
+  }
+}
+
+async function reversePayment(row: PmContractPaymentItem) {
+  if (!currentContract.value) return
+  let reason = ''
+  try {
+    const r = await ElMessageBox.prompt('红冲原因（可选）', `红冲第 ${row.seq} 期收付款`, {
+      inputPlaceholder: '如：款项退回',
+      confirmButtonText: '确认红冲',
+      cancelButtonText: '取消'
+    })
+    reason = String(r.value || '')
+  } catch {
+    return
+  }
+  try {
+    await pmReverseContractPayment(projectId, currentContract.value.id, row.id, reason || undefined)
+    ElMessage.success('已红冲（追加反向流水）')
+    await loadPayments()
+    if (expenseList.value) await loadExpenses()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '红冲失败'))
+  }
+}
+
+watch(tab, (v) => {
+  if (v === 'docs' && !docTree.value) loadDocTree()
+  else if (v === 'expenses' && !expenseList.value) loadExpenses()
+  else if (v === 'contracts' && !contractList.value) loadContracts()
 })
 
 onMounted(loadAll)
@@ -993,5 +1478,13 @@ onMounted(loadAll)
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
+}
+/* 经费金额：收入/支出取色。按中国财务阅读习惯，红色=支出（流出）、绿色=收入（流入）——
+   与股票涨跌配色无关，这里跟随「支出为负向」的通用财务配色，避免用户误读。 */
+.money-in {
+  color: var(--el-color-success);
+}
+.money-out {
+  color: var(--el-color-danger);
 }
 </style>

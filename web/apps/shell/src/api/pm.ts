@@ -351,6 +351,183 @@ export function pmDeleteDocument(projectId: number, docId: number) {
   return http.delete(`/pm/projects/${projectId}/docs/documents/${docId}`).then((r) => unwrap<void>(r))
 }
 
+// ============================================================ 经费（V73 / docs/43 §4）
+
+export interface PmExpenseItem {
+  id: number
+  projectId: number
+  /** IN 收入 / OUT 支出。 */
+  direction: string
+  directionLabel?: string
+  /** CONTRACT 合同款 / LABOR 人工 / PURCHASE 采购 / TRAVEL 差旅 / OTHER 其他。 */
+  category: string
+  categoryLabel?: string
+  amount: number | string
+  /** 分摊比例（「分摊」关键词）。 */
+  allocRatio?: number | string | null
+  occurredAt?: string
+  /** 由合同收付款确认自动生成时，溯源到 pm_contract_payment.id。 */
+  contractPaymentId?: number | null
+  /** 红冲行指向被冲销的原行 id；非空即「这是红冲行」。 */
+  reversalOf?: number | null
+  isReversal?: boolean
+  remark?: string
+  createdAt?: string
+}
+
+export interface PmExpenseList {
+  canManage: boolean
+  items: PmExpenseItem[]
+  total: number
+  summary: {
+    budgetAmount: number | string
+    totalIncome: number | string
+    totalOutcome: number | string
+    balance: number | string
+    /** 超支只警示不阻断（BR-16）。 */
+    overrun: boolean
+    categories: Array<{ value: string; label: string }>
+    directions: Array<{ value: string; label: string }>
+  }
+}
+
+export interface PmExpenseBody {
+  direction: 'IN' | 'OUT'
+  category: string
+  amount: number
+  occurredAt?: string
+  allocRatio?: number
+  remark?: string
+}
+
+export function pmExpenses(projectId: number, params: { direction?: string; category?: string } = {}) {
+  return http.get(`/pm/projects/${projectId}/expenses`, { params }).then((r) => unwrap<PmExpenseList>(r))
+}
+
+export function pmCreateExpense(projectId: number, body: PmExpenseBody) {
+  return http.post(`/pm/projects/${projectId}/expenses`, body).then((r) => unwrap<PmExpenseItem>(r))
+}
+
+/** 红冲：原行不改，追加反向流水。同一原行重复红冲 → 409。 */
+export function pmReverseExpense(projectId: number, expenseId: number, reason?: string) {
+  return http
+    .post(`/pm/projects/${projectId}/expenses/${expenseId}/reverse`, { reason })
+    .then((r) => unwrap<PmExpenseItem>(r))
+}
+
+// ============================================================ 合同 + 收付款（V73 / docs/43 §4）
+
+export interface PmContractItem {
+  id: number
+  projectId: number
+  contractNo: string
+  name: string
+  /** IN 收款合同 / OUT 采购付款合同。 */
+  direction: string
+  directionLabel?: string
+  category: string
+  partyName?: string
+  amount: number | string
+  status: string
+  statusLabel?: string
+  signedAt?: string
+  startDate?: string
+  endDate?: string
+  fileId?: number | null
+  createdAt?: string
+}
+
+export interface PmContractList {
+  canManage: boolean
+  items: PmContractItem[]
+  total: number
+  statuses: Array<{ value: string; label: string }>
+  directions: Array<{ value: string; label: string }>
+}
+
+export interface PmContractPaymentItem {
+  id: number
+  contractId: number
+  seq: number
+  planAmount: number | string
+  planDate?: string
+  actualAmount?: number | string
+  actualDate?: string
+  /** PLANNED 计划 / CONFIRMED 已确认 / REVERSED 已红冲。 */
+  status: string
+  statusLabel?: string
+  milestoneId?: number | null
+}
+
+export interface PmContractPayments {
+  contract: PmContractItem
+  items: PmContractPaymentItem[]
+  total: number
+}
+
+export interface PmContractBody {
+  contractNo: string
+  name: string
+  direction: 'IN' | 'OUT'
+  category?: string
+  partyName?: string
+  amount?: number
+  signedAt?: string
+  startDate?: string
+  endDate?: string
+  fileId?: number
+}
+
+export function pmContracts(projectId: number, params: { direction?: string } = {}) {
+  return http.get(`/pm/projects/${projectId}/contracts`, { params }).then((r) => unwrap<PmContractList>(r))
+}
+
+export function pmCreateContract(projectId: number, body: PmContractBody) {
+  return http.post(`/pm/projects/${projectId}/contracts`, body).then((r) => unwrap<PmContractItem>(r))
+}
+
+export function pmUpdateContract(projectId: number, contractId: number, body: Partial<PmContractBody>) {
+  return http.put(`/pm/projects/${projectId}/contracts/${contractId}`, body).then((r) => unwrap<PmContractItem>(r))
+}
+
+export function pmChangeContractStatus(projectId: number, contractId: number, status: string) {
+  return http
+    .post(`/pm/projects/${projectId}/contracts/${contractId}/status`, { status })
+    .then((r) => unwrap<PmContractItem>(r))
+}
+
+export function pmContractPayments(projectId: number, contractId: number) {
+  return http.get(`/pm/projects/${projectId}/contracts/${contractId}/payments`).then((r) => unwrap<PmContractPayments>(r))
+}
+
+export function pmAddContractPayment(projectId: number, contractId: number, body: { planAmount: number; planDate?: string }) {
+  return http
+    .post(`/pm/projects/${projectId}/contracts/${contractId}/payments`, body)
+    .then((r) => unwrap<PmContractPayments>(r))
+}
+
+/**
+ * 确认实收/实付 —— BR-09：后端在同一事务内自动生成一条经费流水。
+ * 前端**不要**再另行登记经费，否则同笔业务记两遍。
+ */
+export function pmConfirmContractPayment(
+  projectId: number,
+  contractId: number,
+  paymentId: number,
+  body: { actualAmount?: number; actualDate?: string } = {}
+) {
+  return http
+    .post(`/pm/projects/${projectId}/contracts/${contractId}/payments/${paymentId}/confirm`, body)
+    .then((r) => unwrap<PmContractPayments>(r))
+}
+
+/** 红冲已确认的收付款（置 REVERSED + 追加反向流水）。 */
+export function pmReverseContractPayment(projectId: number, contractId: number, paymentId: number, reason?: string) {
+  return http
+    .post(`/pm/projects/${projectId}/contracts/${contractId}/payments/${paymentId}/reverse`, { reason })
+    .then((r) => unwrap<PmContractPayments>(r))
+}
+
 // ============================================================ 错误文案
 
 /**
