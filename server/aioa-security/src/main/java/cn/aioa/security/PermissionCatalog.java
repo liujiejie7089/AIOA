@@ -123,6 +123,16 @@ public final class PermissionCatalog {
     public static final String PM_MEMBER_MANAGE = "pm:member:manage";
     /** 管理项目任务。粗闸全员，细判由服务层按项目内角色（OWNER/PM/DEV + 任务负责人）收窄。 */
     public static final String PM_TASK_MANAGE = "pm:task:manage";
+    /** 查看项目 / 企业文档。粗闸全员（范围由数据范围与项目可见性收紧）。 */
+    public static final String PM_DOC_VIEW = "pm:doc:view";
+    /**
+     * 维护文档（建文件夹 / 上传 / 大模型创建 / 删除）。
+     *
+     * <p>粗闸为机构管理员级；项目内 OWNER/PM 走 {@code PmProjectService.canManage} 另行放行
+     * （见 {@code PmDocService.canWrite}）。企业级公共文件夹（跨项目）只有本码持有者可写 ——
+     * 它没有「项目内角色」可依托。</p>
+     */
+    public static final String PM_DOC_MANAGE = "pm:doc:manage";
 
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
@@ -182,7 +192,10 @@ public final class PermissionCatalog {
             Map.entry(PM_PROJECT_CREATE, PM_CREATORS),
             Map.entry(PM_PROJECT_MANAGE, ORG_ADMINS),
             Map.entry(PM_MEMBER_MANAGE, ALL),
-            Map.entry(PM_TASK_MANAGE, ALL));
+            Map.entry(PM_TASK_MANAGE, ALL),
+            Map.entry(PM_DOC_VIEW, ALL),
+            // 文档维护：粗闸机构管理员级（企业文档管理员口径）；项目内 OWNER/PM 由服务层另行放行
+            Map.entry(PM_DOC_MANAGE, ORG_ADMINS));
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
     private static final Map<String, String> ROLE_NAMES = Map.of(
@@ -214,7 +227,9 @@ public final class PermissionCatalog {
             Map.entry(PM_PROJECT_CREATE, "项目管理（新建项目）"),
             Map.entry(PM_PROJECT_MANAGE, "项目管理（管理项目）"),
             Map.entry(PM_MEMBER_MANAGE, "项目管理（成员与角色）"),
-            Map.entry(PM_TASK_MANAGE, "项目管理（任务）"));
+            Map.entry(PM_TASK_MANAGE, "项目管理（任务）"),
+            Map.entry(PM_DOC_VIEW, "项目管理（文档查看）"),
+            Map.entry(PM_DOC_MANAGE, "项目管理（文档维护）"));
 
     /**
      * 权限码 → 对应数字员工类型（申请单「目的」展示用）。

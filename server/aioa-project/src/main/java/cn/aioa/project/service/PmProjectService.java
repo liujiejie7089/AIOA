@@ -66,6 +66,10 @@ public class PmProjectService {
     private final PmProjectMemberMapper memberMapper;
     private final PmTaskMapper taskMapper;
     private final PmRepoBindMapper repoBindMapper;
+    /** 建项目时自动建「项目文档」根目录（用户关键词：每个项目创建一个文档目录）。 */
+    private final cn.aioa.project.mapper.PmFolderMapper pmFolderMapper;
+    /** 项目软删时级联软删其文档索引（BR-07/BR-14：只软删索引，不删 sys_file 字节）。 */
+    private final cn.aioa.project.mapper.PmDocumentMapper pmDocumentMapper;
     private final OrgMemberMapper orgMemberMapper;
     private final OrgDepartmentMapper departmentMapper;
     private final OrgGuard guard;
@@ -157,6 +161,10 @@ public class PmProjectService {
         if (ownerMemberId != null) {
             insertMember(p, ownerMemberId, PmProjectRoles.OWNER, user.getUserId());
         }
+
+        // 每个项目自动建「项目文档」根目录（用户关键词：每个项目创建一个文档目录）。
+        // 直接写 mapper 而不调 PmDocService：后者依赖本服务（requireVisible），互相注入会成环。
+        createProjectRootFolder(p, user.getUserId());
 
         // 仓库绑定：绑定失败要回滚整个立项（用户明确要求绑，绑不上就不该落库）
         String repoWarning = null;
@@ -370,6 +378,16 @@ public class PmProjectService {
                 .eq(PmProjectMember::getTenantId, tenantId).eq(PmProjectMember::getProjectId, projectId));
         taskMapper.delete(new LambdaQueryWrapper<PmTask>()
                 .eq(PmTask::getTenantId, tenantId).eq(PmTask::getProjectId, projectId));
+        // 级联软删文档索引与「项目专属」文件夹（BR-07/BR-14）。
+        // 只动 scope=PROJECT 的本项目文件夹，**不动** scope=ENTERPRISE（企业级公共文件夹跨项目共享）；
+        // 文档只软删索引，**不删** sys_file 字节（保留可追溯）。
+        pmDocumentMapper.delete(new LambdaQueryWrapper<cn.aioa.project.entity.PmDocument>()
+                .eq(cn.aioa.project.entity.PmDocument::getTenantId, tenantId)
+                .eq(cn.aioa.project.entity.PmDocument::getProjectId, projectId));
+        pmFolderMapper.delete(new LambdaQueryWrapper<cn.aioa.project.entity.PmFolder>()
+                .eq(cn.aioa.project.entity.PmFolder::getTenantId, tenantId)
+                .eq(cn.aioa.project.entity.PmFolder::getScope, cn.aioa.project.entity.PmFolder.SCOPE_PROJECT)
+                .eq(cn.aioa.project.entity.PmFolder::getProjectId, projectId));
         // 解绑仓库（只置空 pm_project_id，不动 gitee_project 行本身）
         for (Map<String, Object> repo : repoBindMapper.listByProject(tenantId, projectId)) {
             Object rid = repo.get("id");
@@ -378,7 +396,7 @@ public class PmProjectService {
             }
         }
         projectMapper.deleteById(projectId);
-        log.info("PM 项目已软删 id={}（级联：成员 + 任务 + 仓库解绑）", projectId);
+        log.info("PM 项目已软删 id={}（级联：成员 + 任务 + 文档索引 + 项目专属文件夹 + 仓库解绑）", projectId);
     }
 
     // ======================================================================
@@ -610,6 +628,27 @@ public class PmProjectService {
         pm.setCreatedBy(actorId);
         pm.setCreatedAt(LocalDateTime.now());
         memberMapper.insert(pm);
+    }
+
+    /**
+     * 建「项目文档」根目录（用户关键词：每个项目创建一个文档目录）。
+     *
+     * <p>新项目在立项时即建目录；历史项目由 {@code PmDocService.ensureProjectRoot}
+     * 在首次打开文档页时补齐。这里直接写 mapper（不调 PmDocService），避免与其形成注入环。</p>
+     */
+    private void createProjectRootFolder(PmProject p, Long actorId) {
+        cn.aioa.project.entity.PmFolder f = new cn.aioa.project.entity.PmFolder();
+        f.setTenantId(p.getTenantId());
+        f.setScope(cn.aioa.project.entity.PmFolder.SCOPE_PROJECT);
+        f.setProjectId(p.getId());
+        f.setParentId(cn.aioa.project.entity.PmFolder.ROOT_PARENT);
+        f.setName(PmDocService.PROJECT_ROOT_NAME);
+        f.setStorageKind("LOCAL");
+        f.setCreatedBy(actorId);
+        f.setCreatedAt(LocalDateTime.now());
+        pmFolderMapper.insert(f);
+        f.setPath("/" + f.getId() + "/");
+        pmFolderMapper.updateById(f);
     }
 
     private Long resolveInstitutionForCreate(AuthUser user, Long tenantId, Long departmentId) {

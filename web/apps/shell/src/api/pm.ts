@@ -272,6 +272,85 @@ export function pmDeleteTask(projectId: number, taskId: number) {
   return http.delete(`/pm/projects/${projectId}/tasks/${taskId}`).then((r) => unwrap<void>(r))
 }
 
+// ============================================================ 文档（V72 / docs/43）
+
+export interface PmDocItem {
+  id: number
+  folderId: number
+  name: string
+  fileId?: number | null
+  /** UPLOAD 外部上传 / AI 大模型创建。 */
+  source: string
+  sizeBytes?: number
+  version?: number
+  tags?: string
+  uploadedBy?: number
+  createdAt?: string
+  /** 仅详情接口返回：AI 生成文档的正文。 */
+  contentText?: string | null
+}
+
+export interface PmDocNode {
+  id: number
+  name: string
+  parentId: number
+  scope: 'ENTERPRISE' | 'PROJECT'
+  /** 企业级公共文件夹在项目页是只读挂载。 */
+  readonly: boolean
+  storageKind?: string
+  children: PmDocNode[]
+  documents: PmDocItem[]
+  documentCount: number
+}
+
+export interface PmDocTree {
+  canManage: boolean
+  projectRootName?: string
+  enterpriseRootLabel?: string
+  /** 项目页：企业级（只读挂载）+ 项目专属（可写）。 */
+  enterprise?: PmDocNode[]
+  project?: PmDocNode[]
+  /** 企业文档页：仅企业级。 */
+  roots?: PmDocNode[]
+}
+
+export function pmDocTree(projectId: number) {
+  return http.get(`/pm/projects/${projectId}/docs/tree`).then((r) => unwrap<PmDocTree>(r))
+}
+
+export function pmDocEnterpriseTree() {
+  return http.get('/pm/docs/enterprise').then((r) => unwrap<PmDocTree>(r))
+}
+
+export function pmCreateFolder(projectId: number, body: { name: string; parentId?: number }) {
+  return http
+    .post(`/pm/projects/${projectId}/docs/folders`, body)
+    .then((r) => unwrap<{ id: number; name: string; parentId: number; path: string }>(r))
+}
+
+export function pmDeleteFolder(projectId: number, folderId: number) {
+  return http.delete(`/pm/projects/${projectId}/docs/folders/${folderId}`).then((r) => unwrap<void>(r))
+}
+
+/**
+ * 登记文档。`source=UPLOAD` 须先经 `/api/v1/files/upload` 拿 `fileId`；
+ * `source=AI` 传 `contentText`（大模型创建）。
+ */
+export function pmCreateDocument(
+  projectId: number,
+  body: { folderId: number; name: string; source?: 'UPLOAD' | 'AI'; fileId?: number; contentText?: string; tags?: string }
+) {
+  return http.post(`/pm/projects/${projectId}/docs/documents`, body).then((r) => unwrap<PmDocItem>(r))
+}
+
+export function pmDocDetail(projectId: number, docId: number) {
+  return http.get(`/pm/projects/${projectId}/docs/documents/${docId}`).then((r) => unwrap<PmDocItem>(r))
+}
+
+export function pmDeleteDocument(projectId: number, docId: number) {
+  return http.delete(`/pm/projects/${projectId}/docs/documents/${docId}`).then((r) => unwrap<void>(r))
+}
+
 // ============================================================ 错误文案
 
 /**

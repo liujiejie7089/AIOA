@@ -195,7 +195,100 @@
         </el-card>
       </el-tab-pane>
 
-      <!-- ============ 文档 / 经费 / 合同：随批次 3/4 交付（不做假界面） ============ -->
+      <!-- ============ 文档（批次 3 / docs/43）：企业级公共（只读挂载）+ 项目专属（可写） ============ -->
+      <el-tab-pane label="文档" name="docs">
+        <el-card shadow="never" v-loading="docLoading">
+          <div style="display: flex; gap: 16px; align-items: flex-start">
+            <div style="width: 260px; min-height: 240px; border-right: 1px solid var(--el-border-color-lighter); padding-right: 12px">
+              <el-tree
+                :data="docTreeData"
+                node-key="key"
+                :props="{ label: 'label', children: 'children' }"
+                :current-node-key="selectedDocKey"
+                highlight-current
+                default-expand-all
+                @node-click="onDocNodeClick"
+              />
+            </div>
+            <div style="flex: 1; min-width: 0">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px">
+                <span style="font-weight: 600">{{ selectedDocName || '（请选择文件夹）' }}</span>
+                <el-tag v-if="selectedDocReadonly" type="info" size="small">只读（企业级公共）</el-tag>
+                <div style="flex: 1"></div>
+                <template v-if="!selectedDocReadonly && docTree?.canManage">
+                  <el-button size="small" @click="newFolderVisible = true">新建文件夹</el-button>
+                  <el-button size="small" type="primary" :loading="uploading" @click="triggerUpload">上传文档</el-button>
+                  <el-button size="small" @click="aiDocVisible = true">AI 创建</el-button>
+                </template>
+                <span v-if="selectedDocReadonly" class="hint" style="font-size: 12px">
+                  企业级公共文档请在「企业文档」页维护
+                </span>
+              </div>
+              <input ref="fileInputRef" type="file" style="display: none" @change="onFilePicked" />
+              <el-table :data="selectedDocs" size="small" empty-text="该文件夹暂无文档">
+                <el-table-column prop="name" label="名称" min-width="200" />
+                <el-table-column label="来源" width="120">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row.source === 'AI' ? 'success' : 'info'">
+                      {{ row.source === 'AI' ? '大模型创建' : '外部上传' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="版本" width="70">
+                  <template #default="{ row }">v{{ row.version }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="140">
+                  <template #default="{ row }">
+                    <el-button link size="small" type="primary" @click="previewDoc(row)">查看</el-button>
+                    <el-button
+                      v-if="!selectedDocReadonly && docTree?.canManage"
+                      link
+                      size="small"
+                      type="danger"
+                      @click="removeDoc(row)"
+                    >
+                      删除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </el-card>
+
+        <el-dialog v-model="newFolderVisible" title="新建文件夹" width="420px">
+          <el-input v-model="newFolderName" placeholder="文件夹名称" />
+          <template #footer>
+            <el-button size="small" @click="newFolderVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingDoc" @click="doCreateFolder">创建</el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog v-model="aiDocVisible" title="AI 创建文档" width="640px">
+          <el-form label-width="72px" size="small">
+            <el-form-item label="名称"><el-input v-model="aiDocForm.name" placeholder="文档名称" /></el-form-item>
+            <el-form-item label="正文">
+              <el-input
+                v-model="aiDocForm.contentText"
+                type="textarea"
+                :rows="10"
+                placeholder="正文由项目数字人生成后回填到此处（生成侧接线见 docs/43 §5）"
+              />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button size="small" @click="aiDocVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingDoc" @click="doCreateAiDoc">保存</el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog v-model="docPreviewVisible" :title="docPreview?.name || '文档'" width="720px">
+          <pre v-if="docPreview?.contentText" style="white-space: pre-wrap; max-height: 60vh; overflow: auto">{{ docPreview.contentText }}</pre>
+          <el-empty v-else description="该文档为外部上传，请下载查看" />
+        </el-dialog>
+      </el-tab-pane>
+
+      <!-- ============ 经费 / 合同：随批次 4 交付（不做假界面） ============ -->
       <el-tab-pane
         v-for="ph in placeholders"
         :key="ph.name"
@@ -306,15 +399,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   pmProjectDetail, pmChangeProjectStatus, pmBoundRepos, pmBindableRepos, pmBindRepo, pmUnbindRepo,
   pmTasks, pmCreateTask, pmUpdateTask, pmChangeTaskStatus, pmDeleteTask,
   pmMembers, pmMemberCandidates, pmAddMember, pmChangeMemberRole, pmRemoveMember, pmErrMsg,
+  // 文档（批次 3 / docs/43）：企业级公共（只读挂载）与项目专属（可写）同树呈现
+  pmDocTree, pmCreateFolder, pmDeleteFolder, pmCreateDocument, pmDocDetail, pmDeleteDocument,
   type PmProject, type PmRepo, type PmTask, type PmTaskList, type PmMember, type PmMemberList,
-  type PmMemberCandidate
+  type PmMemberCandidate, type PmDocTree, type PmDocNode, type PmDocItem
 } from '@/api/pm'
 import {
   PM_PROJECT_TYPE_LABEL, PM_PROJECT_STATUS, PM_PROJECT_STATUS_LABEL, PM_PROJECT_STATUS_TAG,
@@ -326,6 +421,8 @@ import {
 } from '@/constants/permissions'
 // 重试建仓：仓库的写入动作仍由仓库模块的接口负责（PM 只是入口，不复制业务规则）。
 import { giteeRetryProject, giteeErrMsg } from '@/api/gitee'
+// 文档上传复用既有通用上传接口（POST /api/v1/files/upload），不另造上传通道。
+import { uploadFile } from '@/api/resource'
 
 const route = useRoute()
 const router = useRouter()
@@ -372,7 +469,6 @@ const newMemberRole = ref('MEMBER')
 const isDev = computed(() => project.value?.projectType === 'DEV')
 
 const placeholders = [
-  { name: 'docs', label: '文档', hint: '项目文档（企业级公共 / 项目专属文件夹）随批次 3 交付' },
   { name: 'budget', label: '经费', hint: '项目经费收支流水随批次 4 交付' },
   { name: 'contract', label: '合同', hint: '合同、收付款明细与里程碑随批次 4 交付' }
 ]
@@ -657,6 +753,218 @@ async function removeMember(row: PmMember) {
     ElMessage.error(pmErrMsg(e, '移除失败'))
   }
 }
+
+/* ==================== 文档（批次 3 / docs/43） ==================== */
+
+const docTree = ref<PmDocTree | null>(null)
+const docLoading = ref(false)
+const selectedDocKey = ref('')
+const selectedDocName = ref('')
+const selectedDocReadonly = ref(false)
+const selectedFolderId = ref<number | null>(null)
+const selectedDocs = ref<PmDocItem[]>([])
+const newFolderVisible = ref(false)
+const newFolderName = ref('')
+const aiDocVisible = ref(false)
+const aiDocForm = reactive({ name: '', contentText: '' })
+const docPreviewVisible = ref(false)
+const docPreview = ref<PmDocItem | null>(null)
+const savingDoc = ref(false)
+const uploading = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+interface DocTreeNode {
+  key: string
+  label: string
+  folderId: number | null
+  readonly: boolean
+  docs: PmDocItem[]
+  children: DocTreeNode[]
+}
+
+/** 企业级公共（只读挂载）与项目专属同树呈现；写操作只在项目专属下出现。 */
+const docTreeData = computed<DocTreeNode[]>(() => {
+  const mk = (n: PmDocNode): DocTreeNode => ({
+    key: `f${n.id}`,
+    label: n.name,
+    folderId: n.id,
+    readonly: n.readonly,
+    docs: n.documents || [],
+    children: (n.children || []).map(mk)
+  })
+  const nodes: DocTreeNode[] = []
+  const ent = docTree.value?.enterprise || []
+  nodes.push({
+    key: 'ent-root',
+    label: docTree.value?.enterpriseRootLabel || '企业级公共文件夹',
+    folderId: null,
+    readonly: true,
+    docs: [],
+    children: ent.map(mk)
+  })
+  ;(docTree.value?.project || []).forEach((r) => nodes.push(mk(r)))
+  return nodes
+})
+
+function projectRootId(): number | null {
+  const roots = docTree.value?.project || []
+  return roots.length ? roots[0].id : null
+}
+
+function onDocNodeClick(data: DocTreeNode) {
+  selectedDocKey.value = data.key
+  selectedDocName.value = data.label
+  selectedDocReadonly.value = !!data.readonly
+  selectedFolderId.value = data.folderId ?? null
+  selectedDocs.value = data.docs || []
+}
+
+async function loadDocTree() {
+  docLoading.value = true
+  try {
+    docTree.value = await pmDocTree(projectId)
+    const roots = docTree.value.project || []
+    if (roots.length) {
+      onDocNodeClick({
+        key: `f${roots[0].id}`,
+        label: roots[0].name,
+        folderId: roots[0].id,
+        readonly: false,
+        docs: roots[0].documents || [],
+        children: []
+      })
+    }
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e))
+  } finally {
+    docLoading.value = false
+  }
+}
+
+function triggerUpload() {
+  if (!selectedFolderId.value) {
+    ElMessage.warning('请先选择一个项目文件夹再上传')
+    return
+  }
+  fileInputRef.value?.click()
+}
+
+async function onFilePicked(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const f = input.files?.[0]
+  if (!f) return
+  if (!selectedFolderId.value) {
+    ElMessage.warning('请先选择一个项目文件夹再上传')
+    input.value = ''
+    return
+  }
+  uploading.value = true
+  try {
+    const up = await uploadFile(f)
+    await pmCreateDocument(projectId, {
+      folderId: selectedFolderId.value,
+      name: f.name,
+      source: 'UPLOAD',
+      fileId: up.id
+    })
+    ElMessage.success('已上传')
+    await loadDocTree()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e))
+  } finally {
+    uploading.value = false
+    input.value = ''
+  }
+}
+
+async function doCreateFolder() {
+  const name = newFolderName.value.trim()
+  if (!name) {
+    ElMessage.warning('请填写文件夹名称')
+    return
+  }
+  const parentId = selectedFolderId.value && !selectedDocReadonly.value ? selectedFolderId.value : projectRootId()
+  if (!parentId) {
+    ElMessage.warning('项目根目录不存在，请刷新')
+    return
+  }
+  savingDoc.value = true
+  try {
+    await pmCreateFolder(projectId, { name, parentId })
+    ElMessage.success('已创建')
+    newFolderVisible.value = false
+    newFolderName.value = ''
+    await loadDocTree()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e))
+  } finally {
+    savingDoc.value = false
+  }
+}
+
+async function doCreateAiDoc() {
+  if (!selectedFolderId.value || selectedDocReadonly.value) {
+    ElMessage.warning('请先选择一个项目文件夹')
+    return
+  }
+  if (!aiDocForm.name.trim()) {
+    ElMessage.warning('请填写文档名称')
+    return
+  }
+  if (!aiDocForm.contentText.trim()) {
+    ElMessage.warning('请填写正文')
+    return
+  }
+  savingDoc.value = true
+  try {
+    await pmCreateDocument(projectId, {
+      folderId: selectedFolderId.value,
+      name: aiDocForm.name.trim(),
+      source: 'AI',
+      contentText: aiDocForm.contentText
+    })
+    ElMessage.success('已创建')
+    aiDocVisible.value = false
+    aiDocForm.name = ''
+    aiDocForm.contentText = ''
+    await loadDocTree()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e))
+  } finally {
+    savingDoc.value = false
+  }
+}
+
+async function previewDoc(row: PmDocItem) {
+  docPreview.value = row
+  docPreviewVisible.value = true
+  try {
+    docPreview.value = await pmDocDetail(projectId, row.id)
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e))
+  }
+}
+
+async function removeDoc(row: PmDocItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除文档「${row.name}」？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await pmDeleteDocument(projectId, row.id)
+    ElMessage.success('已删除')
+    await loadDocTree()
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e))
+  }
+}
+
+watch(tab, (v) => {
+  if (v === 'docs' && !docTree.value) {
+    loadDocTree()
+  }
+})
 
 onMounted(loadAll)
 </script>
