@@ -15,6 +15,7 @@
 用法：python scripts/_verify_gitee_webhook_hint.py    （需后端 :8080 已起）
 """
 import sys
+import time
 
 import httpx
 from playwright.sync_api import sync_playwright
@@ -58,7 +59,7 @@ def main():
     if not isinstance(flag, bool):
         raise SystemExit("前提不成立，无法判定一致性")
 
-    # ---- 界面
+    # ---- 界面：仓库配置页（租户管理员）
     errors = []
     with sync_playwright() as pw:
         b = pw.chromium.launch(channel="msedge", headless=True)
@@ -69,12 +70,38 @@ def main():
         page.wait_for_timeout(1200)   # 等 /gitee/config 回填
         body = page.locator("body").inner_text()
         visible = HINT in body
+
+        # ---- 界面：PM 项目详情「代码仓库」页签（FAILED 行**正是**在这里被看到的）
+        # 造一个临时开发项目（不绑仓库），打开详情 → 切到「代码仓库」→ 同源比对
+        pid = None
+        r2 = httpx.post(API + "/pm/projects", headers=h, timeout=30, trust_env=False, json={
+            "projectNo": "PMWH-" + str(int(time.time())), "name": "Webhook提示自检-开发",
+            "projectType": "DEV"}).json()
+        pid = (r2.get("data") or {}).get("id")
+        pm_visible = None
+        if pid:
+            page.goto("%s/pm/projects/%s" % (SHELL, pid), wait_until="networkidle")
+            page.wait_for_timeout(800)
+            try:
+                page.click(".el-tabs__item:has-text('代码仓库')", timeout=8000)
+                page.wait_for_timeout(800)
+            except Exception as e:
+                print("  [info] 切换「代码仓库」页签失败：%s" % e)
+            pm_visible = ("Webhook 回调地址未配置" in page.locator("body").inner_text())
         b.close()
 
-    print("  [info] backend flag=%s / ui hint visible=%s" % (flag, visible))
-    chk("W2 ★界面提示与后端 flag 一致（flag=false⇒出现；flag=true⇒不出现）",
+    print("  [info] backend flag=%s / repo-config hint=%s / pm-detail hint=%s"
+          % (flag, visible, pm_visible))
+    chk("W2 ★仓库配置页提示与后端 flag 一致（flag=false⇒出现；flag=true⇒不出现）",
         visible == (not flag), "flag=%s visible=%s" % (flag, visible))
-    chk("W3 全程无前端 JS 异常", not errors, errors[:2])
+    if pid:
+        chk("W3 ★PM 详情「代码仓库」页签提示与后端 flag 一致（同上，且只在 DEV 渲染）",
+            pm_visible == (not flag), "flag=%s pm_visible=%s" % (flag, pm_visible))
+        rr = httpx.delete(API + "/pm/projects/%s" % pid, headers=h, timeout=30, trust_env=False).json()
+        chk("W4 临时项目已软删（自净）", rr.get("code") == 0, rr.get("message"))
+    else:
+        chk("W3 造出临时 DEV 项目（前置）", False, r2)
+    chk("W5 全程无前端 JS 异常", not errors, errors[:2])
 
     ok = sum(1 for _, v in RES if v)
     print("\n[SUMMARY] %d/%d 通过" % (ok, len(RES)))

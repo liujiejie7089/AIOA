@@ -56,6 +56,23 @@
               </div>
             </div>
           </template>
+          <!-- 平台级 Webhook 回调地址未配置：这是「仓库建出来了、却停在未就绪」的根因。
+               放在这里，是因为 FAILED 行**正是在本页签被看到**的 —— 只提示在「仓库配置」页，
+               用户仍会先在本页签对着一行「未就绪」发懵。判据取后端 /gitee/config（单一事实源）。 -->
+          <el-alert
+            v-if="webhookBaseUrlOk === false"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="平台 Webhook 回调地址未配置：新建/重试的仓库会停在「未就绪」"
+            style="margin-bottom: 8px"
+          >
+            <div class="hint">
+              建仓本身会成功，但「配置 Webhook」这步必然失败（{{ giteeProviderLabel }} 无法回调本机地址）。
+              需由管理员在「系统配置 → 仓库配置」完成 <code>{{ giteeConfigKey }}.webhook-base-url</code> 配置后，
+              再对本页「未就绪」的仓库点「重试建仓」。
+            </div>
+          </el-alert>
           <el-table :data="boundRepos" size="small">
             <el-table-column prop="name" label="仓库名" min-width="150" />
             <el-table-column label="路径" min-width="190">
@@ -639,7 +656,7 @@ import {
   GITEE_PROJECT_STATUS_LABEL, GITEE_PROJECT_STATUS_TAG
 } from '@/constants/permissions'
 // 重试建仓：仓库的写入动作仍由仓库模块的接口负责（PM 只是入口，不复制业务规则）。
-import { giteeRetryProject, giteeErrMsg } from '@/api/gitee'
+import { giteeRetryProject, giteeErrMsg, giteeConfig } from '@/api/gitee'
 // 文档上传复用既有通用上传接口（POST /api/v1/files/upload），不另造上传通道。
 import { uploadFile } from '@/api/resource'
 
@@ -657,6 +674,12 @@ const bindableRepos = ref<PmRepo[]>([])
 const bindVisible = ref(false)
 const bindRepoId = ref<number>()
 const binding = ref(false)
+
+// 仓库治理提示：Webhook 回调地址是否已配置（来自 /gitee/config，单一事实源）。
+// null = 未取到（不显示提示），避免把「接口不可达」误报成「配置缺失」。
+const webhookBaseUrlOk = ref<boolean | null>(null)
+const giteeProviderLabel = ref('Gitee')
+const giteeConfigKey = ref('aioa.gitee')
 
 const taskList = ref<PmTaskList | null>(null)
 const tasks = ref<PmTask[]>([])
@@ -720,6 +743,16 @@ async function loadRepos() {
   if (!isDev.value) {
     boundRepos.value = []
     return
+  }
+  // Webhook 回调地址是否已配置：决定仓库是否可能停在「未就绪」。取不到就置 null（不显示提示），
+  // 不能用 `false` 兜底 —— 那会把「接口不可达」误报成「配置缺失」。
+  try {
+    const cfg = await giteeConfig()
+    webhookBaseUrlOk.value = cfg.webhookBaseUrlConfigured
+    giteeProviderLabel.value = cfg.providerLabel || 'Gitee'
+    giteeConfigKey.value = cfg.configKey || 'aioa.gitee'
+  } catch {
+    webhookBaseUrlOk.value = null
   }
   try {
     boundRepos.value = await pmBoundRepos(projectId)
