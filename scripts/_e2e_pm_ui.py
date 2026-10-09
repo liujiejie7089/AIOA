@@ -228,6 +228,20 @@ def main():
             not any("代码仓库" in t for t in tabs), tabs)
         chk("B9 详情页有「任务」「成员」页签（批次 1 的其余能力入口在）",
             any(t.startswith("任务") for t in tabs) and any(t.startswith("成员") for t in tabs), tabs)
+        chk("B10 ★业务项目详情有「数字人」页签（数字人分配 + 上下文控制的入口在）",
+            any("数字人" in t for t in tabs), tabs)
+
+        # B11 点进「数字人」页签：两张功能卡必须真的渲染出来（证明不是空壳页签）。
+        #    判据取卡标题文字 —— 它们来自模板常量，不依赖任何数据，故不受自检数据有无影响。
+        try:
+            page.click(".el-tabs__item:has-text('数字人')")
+            page.wait_for_timeout(2000)
+            body_dw = page.inner_text("body")
+            chk("B11 ★「数字人」页签渲染出「分配数字员工」与「项目上下文来源」两区（非空壳）",
+                "已分配的数字员工" in body_dw and "项目上下文来源" in body_dw,
+                body_dw[:200].replace("\n", " "))
+        except Exception as e:  # noqa: BLE001
+            chk("B11 ★「数字人」页签渲染出「分配数字员工」与「项目上下文来源」两区（非空壳）", False, str(e))
 
         ctx.close()
 

@@ -530,6 +530,193 @@
           </template>
         </el-dialog>
       </el-tab-pane>
+
+      <el-tab-pane label="数字人" name="ai">
+        <!-- 已分配数字人：复用既有「数字员工」，不新建第二套 -->
+        <el-card shadow="never" v-loading="workerLoading">
+          <template #header>
+            <div class="card-header">
+              <span>已分配的数字员工（复用「数字员工」模块，不新建第二套）</span>
+              <el-button v-if="workerList?.canManage" size="small" type="primary" @click="openAssign">分配数字人</el-button>
+            </div>
+          </template>
+          <el-table :data="workers" size="small">
+            <el-table-column label="数字员工" min-width="180">
+              <template #default="{ row }">
+                {{ row.name || `#${row.workerId}` }}
+                <el-tag v-if="row.workerMissing" size="small" type="danger" effect="plain">已移除</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="120">
+              <template #default="{ row }">{{ row.workerType || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="本项目用途" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.assignRole || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="启用" width="90">
+              <template #default="{ row }">
+                <el-switch
+                  :model-value="row.enabled"
+                  :disabled="!workerList?.canManage"
+                  @change="(v: boolean) => toggleWorker(row, v)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="workerList?.canManage" size="small" text type="danger" @click="removeWorker(row)">移除</el-button>
+              </template>
+            </el-table-column>
+            <template #empty><div style="padding: 16px 0" class="hint">尚未分配数字人</div></template>
+          </el-table>
+        </el-card>
+
+        <!-- 上下文来源：后台上传 / 网上搜索 / 政策 -->
+        <el-card shadow="never" style="margin-top: 12px" v-loading="ctxLoading">
+          <template #header>
+            <div class="card-header">
+              <span>项目上下文来源（后台上传 / 网上搜索 / 政策）</span>
+              <el-button v-if="ctxList?.canManage" size="small" type="primary" @click="openCtx">新增来源</el-button>
+            </div>
+          </template>
+          <el-table :data="ctxItems" size="small">
+            <el-table-column label="来源" min-width="200" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.name }}</template>
+            </el-table-column>
+            <el-table-column label="类型" width="110">
+              <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.typeLabel }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="作用范围" width="170" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.workerName }}</template>
+            </el-table-column>
+            <el-table-column label="启用" width="90">
+              <template #default="{ row }">
+                <el-switch
+                  :model-value="row.enabled"
+                  :disabled="!ctxList?.canManage"
+                  @change="(v: boolean) => toggleCtx(row, v)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="ctxList?.canManage" size="small" text type="danger" @click="removeCtx(row)">删除</el-button>
+              </template>
+            </el-table-column>
+            <template #empty><div style="padding: 16px 0" class="hint">暂无上下文来源</div></template>
+          </el-table>
+          <p class="hint" style="margin: 10px 0 0">
+            「项目级（全体数字人）」对已分配的全部数字人生效；关闭（停用）后保留配置但不参与上下文组装。
+            移除数字员工时，其**专属**上下文来源会一并移除（项目级默认不受影响）。
+          </p>
+        </el-card>
+
+        <!-- 生效预览：现在到底会给数字人喂什么上下文 -->
+        <el-card shadow="never" style="margin-top: 12px">
+          <template #header>
+            <div class="card-header">
+              <span>生效上下文预览</span>
+              <el-select
+                v-model="scopeWorkerId"
+                size="small"
+                clearable
+                placeholder="选择数字人（留空看项目级默认）"
+                style="width: 260px"
+                @change="previewScope"
+              >
+                <el-option v-for="w in ctxList?.workers || []" :key="w.workerId" :label="w.name" :value="w.workerId" />
+              </el-select>
+            </div>
+          </template>
+          <div v-if="aiScope">
+            共 <b>{{ aiScope.effectiveCount }}</b> 项生效：
+            <el-tag v-for="s in aiScope.effective" :key="s.id" size="small" style="margin: 2px 4px 2px 0">
+              {{ s.typeLabel }}·{{ s.name }}
+            </el-tag>
+            <span v-if="!aiScope.effectiveCount" class="hint">（当前没有启用的上下文来源）</span>
+          </div>
+          <div v-else class="hint">选择数字人后查看其实际生效的上下文。</div>
+        </el-card>
+
+        <!-- 分配数字人 -->
+        <el-dialog v-model="assignVisible" title="分配数字人" width="520px">
+          <el-form label-width="90px" size="small">
+            <el-form-item label="数字员工" required>
+              <el-select v-model="assignWorkerId" filterable placeholder="从既有数字员工中选择" style="width: 100%">
+                <el-option
+                  v-for="c in workerCandidates"
+                  :key="c.workerId"
+                  :label="c.status ? `${c.name}（${c.status}）` : c.name"
+                  :value="c.workerId"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="本项目用途"><el-input v-model="assignRole" placeholder="如：项目助理 / 合同初审" /></el-form-item>
+          </el-form>
+          <p v-if="!workerCandidates.length" class="hint">暂无可分配的数字员工。请先在「数字员工」中创建并启用。</p>
+          <template #footer>
+            <el-button size="small" @click="assignVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingWorker" :disabled="!assignWorkerId" @click="doAssign">分配</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- 新增上下文来源 -->
+        <el-dialog v-model="ctxVisible" title="新增上下文来源" width="600px">
+          <el-form label-width="100px" size="small">
+            <el-form-item label="来源类型" required>
+              <el-radio-group v-model="ctxForm.sourceType">
+                <el-radio value="UPLOAD">后台上传</el-radio>
+                <el-radio value="WEB_SEARCH">网上搜索</el-radio>
+                <el-radio value="POLICY">政策</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="作用范围">
+              <el-select v-model="ctxForm.workerId" style="width: 100%">
+                <el-option label="项目级（全体数字人）" :value="0" />
+                <el-option v-for="w in ctxList?.workers || []" :key="w.workerId" :label="w.name" :value="w.workerId" />
+              </el-select>
+            </el-form-item>
+
+            <template v-if="ctxForm.sourceType === 'UPLOAD'">
+              <el-form-item label="项目文件夹">
+                <el-select v-model="ctxForm.folderId" clearable filterable placeholder="整目录纳入（可选）" style="width: 100%">
+                  <el-option v-for="f in projectFolderOptions" :key="f.id" :label="f.label" :value="f.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="单个文件 id">
+                <el-input-number v-model="ctxForm.fileId" :min="1" :controls="false" placeholder="sys_file.id（可选）" style="width: 100%" />
+              </el-form-item>
+              <p class="hint">目录与文件至少填一项（可只填目录）。</p>
+            </template>
+
+            <template v-else-if="ctxForm.sourceType === 'WEB_SEARCH'">
+              <el-form-item label="搜索关键词" required>
+                <el-input v-model="ctxForm.keywords" placeholder="多个关键词用逗号分隔，如：智慧城市,数据治理" />
+              </el-form-item>
+              <el-form-item label="限定域名">
+                <el-input v-model="ctxForm.domains" placeholder="可选，逗号分隔，如：gov.cn,ndrc.gov.cn" />
+              </el-form-item>
+              <el-form-item label="最大条数">
+                <el-input-number v-model="ctxForm.maxResults" :min="1" :max="100" />
+              </el-form-item>
+            </template>
+
+            <template v-else>
+              <el-form-item label="政策文档 id" required>
+                <el-input-number v-model="ctxForm.kbDocumentId" :min="1" :controls="false" placeholder="kb_document.id" style="width: 100%" />
+              </el-form-item>
+            </template>
+
+            <el-form-item label="显示名称">
+              <el-input v-model="ctxForm.name" placeholder="留空则按来源自动生成" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button size="small" @click="ctxVisible = false">取消</el-button>
+            <el-button size="small" type="primary" :loading="savingCtx" @click="saveCtx">保存</el-button>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- ==================== 绑定仓库 ==================== -->
@@ -643,9 +830,14 @@ import {
   pmExpenses, pmCreateExpense, pmReverseExpense,
   pmContracts, pmCreateContract, pmUpdateContract, pmChangeContractStatus,
   pmContractPayments, pmAddContractPayment, pmConfirmContractPayment, pmReverseContractPayment,
+  // 数字人 + 上下文（V74/V76 / docs/43 §5）：数字人=既有「数字员工」，上下文三类来源同表
+  pmWorkers, pmAssignWorker, pmUpdateWorker, pmUnassignWorker,
+  pmContextSources, pmCreateContextSource, pmDeleteContextSource, pmUpdateContextSource, pmAiScope,
   type PmProject, type PmRepo, type PmTask, type PmTaskList, type PmMember, type PmMemberList,
   type PmMemberCandidate, type PmDocTree, type PmDocNode, type PmDocItem,
-  type PmExpenseList, type PmExpenseItem, type PmContractList, type PmContractItem, type PmContractPaymentItem
+  type PmExpenseList, type PmExpenseItem, type PmContractList, type PmContractItem, type PmContractPaymentItem,
+  type PmWorkerList, type PmWorkerItem, type PmWorkerCandidate,
+  type PmContextSourceList, type PmContextSourceItem, type PmAiScope
 } from '@/api/pm'
 import {
   PM_PROJECT_TYPE_LABEL, PM_PROJECT_STATUS, PM_PROJECT_STATUS_LABEL, PM_PROJECT_STATUS_TAG,
@@ -1478,10 +1670,238 @@ async function reversePayment(row: PmContractPaymentItem) {
   }
 }
 
+/* ==================== 数字人 + 上下文（V74/V76 / docs/43 §5） ====================
+ * 「分配项目数字人」= 把**既有**数字员工（agent_worker）挂到项目，不新建第二套（docs/43 A3）。
+ * 「项目上下文控制」= 维护该数字人在本项目可用的知识来源（上传/网搜/政策）+ 启停 + 生效预览。 */
+
+const workerList = ref<PmWorkerList | null>(null)
+const workers = ref<PmWorkerItem[]>([])
+const workerCandidates = ref<PmWorkerCandidate[]>([])
+const workerLoading = ref(false)
+const assignVisible = ref(false)
+const assignWorkerId = ref<number>()
+const assignRole = ref('')
+const savingWorker = ref(false)
+
+const ctxList = ref<PmContextSourceList | null>(null)
+const ctxItems = ref<PmContextSourceItem[]>([])
+const ctxLoading = ref(false)
+const ctxVisible = ref(false)
+const savingCtx = ref(false)
+const scopeWorkerId = ref<number>()
+const aiScope = ref<PmAiScope | null>(null)
+
+const ctxForm = reactive<{
+  sourceType: 'UPLOAD' | 'WEB_SEARCH' | 'POLICY'
+  workerId: number
+  folderId?: number
+  fileId?: number
+  kbDocumentId?: number
+  keywords: string
+  domains: string
+  maxResults: number
+  name: string
+}>({
+  sourceType: 'UPLOAD',
+  workerId: 0,
+  keywords: '',
+  domains: '',
+  maxResults: 10,
+  name: ''
+})
+
+/** UPLOAD 可选的项目文件夹（docTree.project 扁平化；只列项目专属，企业级是只读挂载不纳入上下文写）。 */
+const projectFolderOptions = computed<Array<{ id: number; label: string }>>(() => {
+  const out: Array<{ id: number; label: string }> = []
+  const walk = (nodes: PmDocNode[], prefix: string) => {
+    nodes.forEach((n) => {
+      out.push({ id: n.id, label: `${prefix}${n.name}` })
+      if (n.children?.length) walk(n.children, `${prefix}${n.name} / `)
+    })
+  }
+  walk(docTree.value?.project || [], '')
+  return out
+})
+
+async function loadWorkers() {
+  workerLoading.value = true
+  try {
+    const res = await pmWorkers(projectId)
+    workerList.value = res
+    workers.value = res.items
+    workerCandidates.value = res.candidates
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '加载数字人失败'))
+  } finally {
+    workerLoading.value = false
+  }
+}
+
+async function loadContext() {
+  ctxLoading.value = true
+  try {
+    const res = await pmContextSources(projectId)
+    ctxList.value = res
+    ctxItems.value = res.items
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '加载上下文来源失败'))
+  } finally {
+    ctxLoading.value = false
+  }
+}
+
+function openAssign() {
+  assignWorkerId.value = undefined
+  assignRole.value = ''
+  assignVisible.value = true
+}
+
+async function doAssign() {
+  if (!assignWorkerId.value) {
+    ElMessage.warning('请选择数字员工')
+    return
+  }
+  savingWorker.value = true
+  try {
+    await pmAssignWorker(projectId, { workerId: assignWorkerId.value, assignRole: assignRole.value.trim() || undefined })
+    ElMessage.success('已分配')
+    assignVisible.value = false
+    await Promise.all([loadWorkers(), loadContext()])
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '分配失败'))
+  } finally {
+    savingWorker.value = false
+  }
+}
+
+async function toggleWorker(row: PmWorkerItem, enabled: boolean) {
+  try {
+    await pmUpdateWorker(projectId, row.id, { enabled })
+    ElMessage.success(enabled ? '已启用' : '已停用')
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '更新失败'))
+  } finally {
+    await loadWorkers()
+  }
+}
+
+async function removeWorker(row: PmWorkerItem) {
+  try {
+    await ElMessageBox.confirm(
+      `确定移除数字人「${row.name || ('#' + row.workerId)}」？其在本项目的专属上下文来源会一并移除。`,
+      '提示',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const r = await pmUnassignWorker(projectId, row.id)
+    ElMessage.success(r.removedContextSources ? `已移除（连带删除 ${r.removedContextSources} 项专属上下文）` : '已移除')
+    await Promise.all([loadWorkers(), loadContext()])
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '移除失败'))
+  }
+}
+
+async function openCtx() {
+  ctxForm.sourceType = 'UPLOAD'
+  ctxForm.workerId = 0
+  ctxForm.folderId = undefined
+  ctxForm.fileId = undefined
+  ctxForm.kbDocumentId = undefined
+  ctxForm.keywords = ''
+  ctxForm.domains = ''
+  ctxForm.maxResults = 10
+  ctxForm.name = ''
+  // 文件夹选择需要 docTree；未加载则先取一次
+  if (!docTree.value) await loadDocTree()
+  ctxVisible.value = true
+}
+
+async function saveCtx() {
+  const body: Parameters<typeof pmCreateContextSource>[1] = { sourceType: ctxForm.sourceType, workerId: ctxForm.workerId }
+  if (ctxForm.name.trim()) body.name = ctxForm.name.trim()
+  if (ctxForm.sourceType === 'UPLOAD') {
+    if (ctxForm.folderId) body.folderId = ctxForm.folderId
+    if (ctxForm.fileId) body.fileId = ctxForm.fileId
+    if (!body.folderId && !body.fileId) {
+      ElMessage.warning('后台上传来源需选择目录或填写文件 id')
+      return
+    }
+  } else if (ctxForm.sourceType === 'WEB_SEARCH') {
+    const keywords = ctxForm.keywords.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+    if (!keywords.length) {
+      ElMessage.warning('请填写至少一个搜索关键词')
+      return
+    }
+    body.config = {
+      keywords,
+      domains: ctxForm.domains.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+      maxResults: ctxForm.maxResults
+    }
+  } else {
+    if (!ctxForm.kbDocumentId) {
+      ElMessage.warning('请填写政策文档 id')
+      return
+    }
+    body.kbDocumentId = ctxForm.kbDocumentId
+  }
+  savingCtx.value = true
+  try {
+    await pmCreateContextSource(projectId, body)
+    ElMessage.success('已新增')
+    ctxVisible.value = false
+    await Promise.all([loadContext(), previewScope()])
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '新增失败'))
+  } finally {
+    savingCtx.value = false
+  }
+}
+
+async function toggleCtx(row: PmContextSourceItem, enabled: boolean) {
+  try {
+    await pmUpdateContextSource(projectId, row.id, { enabled })
+    ElMessage.success(enabled ? '已启用' : '已停用')
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '更新失败'))
+  } finally {
+    await Promise.all([loadContext(), previewScope()])
+  }
+}
+
+async function removeCtx(row: PmContextSourceItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除上下文来源「${row.name}」？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await pmDeleteContextSource(projectId, row.id)
+    ElMessage.success('已删除')
+    await Promise.all([loadContext(), previewScope()])
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '删除失败'))
+  }
+}
+
+async function previewScope() {
+  try {
+    aiScope.value = await pmAiScope(projectId, scopeWorkerId.value)
+  } catch (e) {
+    ElMessage.error(pmErrMsg(e, '加载生效上下文失败'))
+  }
+}
+
 watch(tab, (v) => {
   if (v === 'docs' && !docTree.value) loadDocTree()
   else if (v === 'expenses' && !expenseList.value) loadExpenses()
   else if (v === 'contracts' && !contractList.value) loadContracts()
+  else if (v === 'ai' && !workerList.value) {
+    loadWorkers()
+    loadContext()
+  }
 })
 
 onMounted(loadAll)

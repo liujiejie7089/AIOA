@@ -142,6 +142,14 @@ public final class PermissionCatalog {
     public static final String PM_BUDGET_MANAGE = "pm:budget:manage";
     /** 维护合同与收付款（采购/收款）。粗闸机构管理员级，项目内 OWNER/PM 另行放行。 */
     public static final String PM_CONTRACT_MANAGE = "pm:contract:manage";
+    /**
+     * 分配项目数字人 / 维护项目上下文来源。
+     *
+     * <p>粗闸机构管理员级；项目内 OWNER/PM 由服务层按项目角色另行放行。
+     * <b>不授予「新建数字人」语义</b>——数字人本体是既有的「数字员工」（{@code agent_worker}），
+     * 其增删改仍在「数字员工」域；本码只管「把既有数字员工挂到项目 + 配其上下文来源」。</p>
+     */
+    public static final String PM_AI_MANAGE = "pm:ai:manage";
 
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
@@ -207,7 +215,8 @@ public final class PermissionCatalog {
             Map.entry(PM_DOC_MANAGE, ORG_ADMINS),
             // 经费 / 合同：粗闸机构管理员级；项目内 OWNER/PM 由服务层另行放行
             Map.entry(PM_BUDGET_MANAGE, ORG_ADMINS),
-            Map.entry(PM_CONTRACT_MANAGE, ORG_ADMINS));
+            Map.entry(PM_CONTRACT_MANAGE, ORG_ADMINS),
+            Map.entry(PM_AI_MANAGE, ORG_ADMINS));
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
     private static final Map<String, String> ROLE_NAMES = Map.of(
@@ -243,7 +252,8 @@ public final class PermissionCatalog {
             Map.entry(PM_DOC_VIEW, "项目管理（文档查看）"),
             Map.entry(PM_DOC_MANAGE, "项目管理（文档维护）"),
             Map.entry(PM_BUDGET_MANAGE, "项目管理（经费流水维护）"),
-            Map.entry(PM_CONTRACT_MANAGE, "项目管理（合同与收付款）"));
+            Map.entry(PM_CONTRACT_MANAGE, "项目管理（合同与收付款）"),
+            Map.entry(PM_AI_MANAGE, "项目管理（数字人与上下文）"));
 
     /**
      * 权限码 → 对应数字员工类型（申请单「目的」展示用）。
