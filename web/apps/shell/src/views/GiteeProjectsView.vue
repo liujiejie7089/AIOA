@@ -41,6 +41,29 @@
          所以其中用到的 pName / cfgKey 一定来自服务端响应，不会是回落值。 -->
     <template v-else>
 
+      <!-- 平台级：Webhook 回调地址未配置 —— 这是「仓库建出来了、项目却停在未就绪」的**唯一**根因。
+           放在配置区最上方：管理员配好组织/令牌后仍会踩这个坑（2026-10-09 实测：租户 2 的 10 个项目
+           全部 FAILED，error_msg 逐条指向 webhook-base-url 未配置，而建仓本身早已成功）。
+           判据取后端 /gitee/config 的 webhookBaseUrlConfigured（单一事实源，前端不重算）。 -->
+      <el-alert
+        v-if="config && !config.webhookBaseUrlConfigured"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="Webhook 回调地址未配置：新建项目会停在「未就绪」"
+        style="margin-bottom: 12px"
+      >
+        <div class="small">
+          {{ pName }} 只能回调它自己能访问到的地址，本机 127.0.0.1 无效 —— 因此仓库虽能建出来，
+          但「配置 Webhook」这步必然失败，项目会被标为「未就绪（FAILED）」。
+        </div>
+        <div class="small" style="margin-top: 6px">
+          解决：把 <code>{{ cfgKey }}.webhook-base-url</code> 设为 {{ pName }} 可达的公网基址
+          （如 <code>https://your-domain</code> 或内网穿透地址），后端回调用路径为
+          <code>{base}/api/v1/gitee/webhook/&lt;项目id&gt;</code>；改后重启后端，再对失败项目点「重试建仓」。
+        </div>
+      </el-alert>
+
       <!-- (b) 我的 Gitee 账号 -->
       <el-card shadow="never" style="margin-bottom: 12px">
         <template #header>
