@@ -57,6 +57,18 @@ GIT_SSH_COMMAND='ssh -i "C:/Users/刘尖尖/.ssh/id_rsa" -o IdentitiesOnly=yes \
   流程固化：`ls-remote` 取远端 SHA → `merge-base --is-ancestor <远端SHA> HEAD` 判快进 → push → `ls-remote` 比对。
   大提交（跨模块 22 文件）与单文件提交耗时无差异 ⇒ **不必为「文件多」而改走后台**。
 
+### 🔴 2026-10-10 实测：HTTPS 已彻底不通（代理 CONNECT 502），**改走 SSH 22 端口，秒级成功**
+- HTTPS 五连试全败：`GIT_TERMINAL_PROMPT=0 git push github HEAD:main` → `schannel: server closed abruptly (missing close_notify)`；
+  加 `-c http.version=HTTP/1.1` → `CONNECT tunnel failed, response 502`；加 `-c http.sslBackend=openssl` → 同样 502。
+  ⇒ **失败点在出网代理的 CONNECT 隧道**（写通道被拦），不是证书、不是 HTTP 版本（换了都 502）。
+- ✅ **同一时刻 `ssh -T git@github.com`（22 端口）与 `-p 443 git@ssh.github.com` 都秒回 `Hi liujiejie7089!`**，
+  且 `git push git@github.com:liujiejie7089/AIOA.git HEAD:main` → `4c6ebbc..eaa05b9  HEAD -> main`，**一次成功、秒级返回**。
+- **判据**：`ls-remote`（只读）走 HTTPS 也能通（本次就是它读到 `4c6ebbc`）⇒ **读通 ≠ 写通**，别用只读成功推定能 push；
+  但 **SSH 的读写都通**。遇到 HTTPS 502/`server closed abruptly` 时，**别再反复重试 HTTPS**，直接换 SSH。
+- ✅ 已把 `github` remote 的 URL 改成 SSH：`git remote set-url github git@github.com:liujiejie7089/AIOA.git`
+  ⇒ 之后 `git push github HEAD:main` 直接走 SSH，无需再带 `-i`/`-c http.*`（默认 key 即可，无需 escalation）。
+- 收口仍按 SHA 比对：`git rev-parse HEAD` vs `git ls-remote github main`。
+
 ## 收口前必查两类脏文件
 1. 已跟踪：`git status --porcelain | grep -v '^??'` 应为空（`h5_v33_render.py` / `SMOKE_v48.py` / `gitee_stub.py` 等**老脚本是跟踪文件**）。
 2. **未跟踪但属源码**：`grep '^??'` **逐条判过** —— `git diff` **只显示已跟踪文件**，只看它会**整块漏掉新增文件**；`??` 列表**常被 `head` 截断**，必须看全量。
