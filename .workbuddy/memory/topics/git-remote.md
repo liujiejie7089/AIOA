@@ -69,6 +69,21 @@ GIT_SSH_COMMAND='ssh -i "C:/Users/刘尖尖/.ssh/id_rsa" -o IdentitiesOnly=yes \
   ⇒ 之后 `git push github HEAD:main` 直接走 SSH，无需再带 `-i`/`-c http.*`（默认 key 即可，无需 escalation）。
 - 收口仍按 SHA 比对：`git rev-parse HEAD` vs `git ls-remote github main`。
 
+### 🔴 2026-10-10 当晚实测修正：SSH **22 端口在本网络被拒**，改走 **SSH 443**（`ssh.github.com:443`）
+- `ssh -T git@github.com`（22）→ **`Connection refused`**（注意：是**被主动拒绝**、**不是超时**）
+  ⇒ 同一天早上还能秒推的 22 端口，当晚已不通（换网络/代理策略变了的典型表现）。
+- ✅ `ssh -T -p 443 git@ssh.github.com` → `Hi liujiejie7089!`；
+  `ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git` 的 `ls-remote` 与 `push` **都秒级成功**。
+- ✅ 本次实推：`git push <443 URL> HEAD:main` → `0278051..19a60ec`，随后 `ls-remote` 复核 SHA 一致（7 个提交）。
+- ⚠️ HTTPS 仍然不通（`curl https://github.com` → `CRYPT_E_NO_REVOCATION_CHECK 0x80092012`）⇒ 出网代理的**写通道依旧被拦**。
+- ✅ **已把 `github` remote 永久切成 443 形式**：
+  `git remote set-url github ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git`
+  ⇒ 之后 **`git push github HEAD:main` 直接可用**（本机已把 `[ssh.github.com]:443` 写进 known_hosts，无需 `-i`、无需 escalation、无需 `-c http.*`）。
+- **判据（固化）**：推送前先跑三条探针，**谁通走谁**，别再反复重试已确认不通的那条：
+  `ssh -T git@github.com`（22）· `ssh -T -p 443 git@ssh.github.com`（443）· `curl -m12 -o /dev/null -w '%{http_code}' https://github.com`（HTTPS）。
+  三者里**只要 443 通就一定能推**。
+- 流程仍是：`ls-remote` 取远端 SHA → `git merge-base --is-ancestor <远端SHA> HEAD` 判快进 → push → `ls-remote` 比对 SHA 收口（**不看返回码**）。
+
 ## 收口前必查两类脏文件
 1. 已跟踪：`git status --porcelain | grep -v '^??'` 应为空（`h5_v33_render.py` / `SMOKE_v48.py` / `gitee_stub.py` 等**老脚本是跟踪文件**）。
 2. **未跟踪但属源码**：`grep '^??'` **逐条判过** —— `git diff` **只显示已跟踪文件**，只看它会**整块漏掉新增文件**；`??` 列表**常被 `head` 截断**，必须看全量。
