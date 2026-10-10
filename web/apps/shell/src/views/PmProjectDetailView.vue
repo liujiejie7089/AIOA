@@ -1304,7 +1304,9 @@ async function onFilePicked(ev: Event) {
       folderId: selectedFolderId.value,
       name: f.name,
       source: 'UPLOAD',
-      fileId: up.id
+      fileId: up.id,
+      // 后端在缺省时会自行从 sys_file.size 取；这里带上保持两端口径一致。
+      sizeBytes: f.size
     })
     ElMessage.success('已上传')
     await loadDocTree()

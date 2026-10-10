@@ -60,6 +60,20 @@ public interface PmAiRefMapper {
             """)
     String fileOriginalName(@Param("tenantId") Long tenantId, @Param("fileId") Long fileId);
 
+    /**
+     * 单文件的字节数（{@code sys_file.size}）；不存在/已删返回 null。
+     *
+     * <p>用途：{@code pm_document.size_bytes} 的**唯一事实源**。字节的真实大小只有 {@code sys_file} 知道，
+     * 不能依赖调用方（前端）传 {@code sizeBytes} —— 两端各存一份必然漂移
+     * （2026-10-10 实测：前端不传该字段，服务端却把它当必填拆箱 ⇒ 上传文档 100% 500）。
+     * 后端能查到就自己查。</p>
+     */
+    @Select("""
+            SELECT `size` FROM sys_file
+             WHERE tenant_id = #{tenantId} AND id = #{fileId} AND deleted_at IS NULL
+            """)
+    Long fileSize(@Param("tenantId") Long tenantId, @Param("fileId") Long fileId);
+
     /** 政策文档名（{@code kb_document}）；不存在/已删返回 null，兼作存在性校验。 */
     @Select("""
             SELECT doc_name FROM kb_document

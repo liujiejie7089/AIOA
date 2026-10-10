@@ -338,7 +338,19 @@ export function pmDeleteFolder(projectId: number, folderId: number) {
  */
 export function pmCreateDocument(
   projectId: number,
-  body: { folderId: number; name: string; source?: 'UPLOAD' | 'AI'; fileId?: number; contentText?: string; tags?: string }
+  body: {
+    folderId: number
+    name: string
+    source?: 'UPLOAD' | 'AI'
+    fileId?: number
+    contentText?: string
+    /**
+     * 外部上传的文件字节数。**可选**：后端未收到时会自行从 `sys_file.size` 取（单一事实源）。
+     * 这里显式声明并传出，是为了让两端口径一致、便于排障（曾因为没有这个字段 + 后端强行拆箱 ⇒ 上传 100% 500）。
+     */
+    sizeBytes?: number
+    tags?: string
+  }
 ) {
   return http.post(`/pm/projects/${projectId}/docs/documents`, body).then((r) => unwrap<PmDocItem>(r))
 }

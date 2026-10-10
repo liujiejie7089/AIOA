@@ -5,8 +5,10 @@ import cn.aioa.org.support.OrgGuard;
 import cn.aioa.project.entity.PmDocument;
 import cn.aioa.project.entity.PmFolder;
 import cn.aioa.project.entity.PmProject;
+import cn.aioa.project.mapper.PmAiRefMapper;
 import cn.aioa.project.mapper.PmDocumentMapper;
 import cn.aioa.project.mapper.PmFolderMapper;
+import cn.aioa.project.support.PmProjectStatus;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.PermissionCatalog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -58,6 +61,8 @@ public class PmDocService {
     private final PmDocumentMapper documentMapper;
     private final PmProjectService projectService;
     private final OrgGuard guard;
+    /** 只读窄接口：查 {@code sys_file} 的真实字节数（{@code sizeBytes} 的事实源）。 */
+    private final PmAiRefMapper aiRefMapper;
 
     // ======================================================================
     // 根目录
@@ -341,8 +346,30 @@ public class PmDocService {
         if (name.isEmpty()) {
             name = "未命名文档";
         }
+        // pm_document.name 是 VARCHAR(256)：超长会在 INSERT 时炸成 500，这里提前挡成 400。
+        if (name.length() > 200) {
+            throw BizException.badRequest("文档名称过长（最多 200 字，当前 " + name.length() + " 字）");
+        }
 
         int version = nextVersion(folderId, name);
+
+        // sizeBytes 的事实源：AI 创建 = 正文 UTF-8 字节数；外部上传 = sys_file 的真实字节数。
+        //
+        // ⚠ 切勿写成 `cond ? asLong(body.get("sizeBytes")) : (long) ...`：
+        //   三元表达式要做「数值提升」，另一支是基本类型 long，会把这一支的包装类型 Long 一并拆箱；
+        //   而上传路径 contentText 为空、前端也不传 sizeBytes ⇒ asLong(null) 返回 null ⇒
+        //   NullPointerException ⇒ 接口回 500（2026-10-10 实测：管理端「上传文档」100% 失败）。
+        //   改为赋给局部变量 Long，即可保留可空语义、不做拆箱。
+        Long sizeBytes;
+        if (PmDocument.SOURCE_AI.equals(source) && !contentText.isEmpty()) {
+            sizeBytes = (long) contentText.getBytes(StandardCharsets.UTF_8).length;
+        } else {
+            sizeBytes = asLong(body.get("sizeBytes"));
+            if (sizeBytes == null && fileId != null) {
+                // 后端能自己查到就自己查 —— 不依赖调用方是否传 sizeBytes，避免两端各存一份而漂移。
+                sizeBytes = aiRefMapper.fileSize(tenantId, fileId);
+            }
+        }
 
         PmDocument d = new PmDocument();
         d.setTenantId(tenantId);
@@ -352,7 +379,7 @@ public class PmDocService {
         d.setFileId(fileId);
         d.setSource(source);
         d.setContentText(contentText.isEmpty() ? null : contentText);
-        d.setSizeBytes(contentText.isEmpty() ? asLong(body.get("sizeBytes")) : (long) contentText.getBytes().length);
+        d.setSizeBytes(sizeBytes);
         d.setVersion(version);
         d.setTags(str(body.get("tags")));
         d.setUploadedBy(user.getUserId());
@@ -398,9 +425,22 @@ public class PmDocService {
         return projectService.canManage(user, p) || PermissionCatalog.holds(user, PermissionCatalog.PM_DOC_MANAGE);
     }
 
+    /**
+     * 写文档的统一闸门：**先判权限，再判项目状态**。
+     *
+     * <p>本服务的全部写动作（建文件夹 / 删文件夹 / 登记文档 / 删文档）都经此一处，
+     * 故「项目只读终态（已结项 / 已归档）不得再写文档」也放在这里 ——
+     * 逐个入口各写一遍必然漏掉一个。只读判定复用 {@link PmProjectStatus#isReadOnly}
+     * （该类自述是「该判定的唯一决策点」，不允许各 service 自己写状态比较）。</p>
+     */
     private void requireWrite(AuthUser user, PmProject p) {
         if (!canWrite(user, p)) {
             throw BizException.forbidden("仅项目负责人/项目经理、机构管理员及以上，或企业文档管理员可维护文档");
+        }
+        if (PmProjectStatus.isReadOnly(p.getStatus())) {
+            throw BizException.badRequest("项目已"
+                    + (PmProjectStatus.CLOSED.equals(p.getStatus()) ? "结项" : "归档")
+                    + "，不能再维护文档");
         }
     }
 
