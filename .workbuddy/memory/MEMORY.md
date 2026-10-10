@@ -11,7 +11,7 @@
 | **用户端双形态（经典 / OA 协同：构建链 · 断言 · 已知未验项）** | **`docs/39`**（计划）· `user-client/_build_oa.py`（**唯一构建入口，产物 index.html 不可手改**）· `scripts/_e2e_oa.py`（**106 项**，2026-09-30 新增 H 组 + H5d；**H 组需要 agent :8000 在线**，否则 14 项全红且归因文案会明说）· `scripts/_check_dto_fields.py`（DTO 口径哨兵）· **`scripts/_verify_h5_pm_contacts.py`**（11 项：通讯录排除自己 + 项目面板接真 PM + 非成员负向对照；**fixture = T1008 两项目 56/57 + 仓库 165，有意保留**，重建步骤见 `2026-10-08.md` §五）· 本目录 `2026-10-08.md` · `2026-09-30.md` §二/§四 · `2026-09-29.md` §v6 |
 | 接口口径 · 登录 · 角色 · 权限链 | `topics/api-permissions.md` |
 | 知识库 / 检索 / 向量库 | `topics/vector-store-milvus.md` |
-| 仓库联动 Gitee/Gitea | `topics/repo-provider-gitea.md` |
+| 仓库联动 Gitee/Gitea | `topics/repo-provider-gitea.md` · **收口哨兵** `scripts/_check_gitee_platform_config.py`（静态 **12** + `--selftest` 12；**S12 = 客户端对可覆盖字段必须走 `RepoProviderSettings` 端口**）· **铁律：管理端可配字段只允许在端口处判定**；客户端直读原始 `*Properties` ⇒ 页面改的值进不了出站 URL（2026-10-10 实测：空 `client_id` ⇒ Gitee 回 `{"error":"Application does not exist"}`） |
 | 模型管理 / 手动添加模型 / 默认模型 | `topics/model-config.md`（V61，默认=MiniMax） |
 | **生产部署（10.0.0.3）** | `topics/production-deploy.md` + `deploy/生产部署手册.md` |
 | 已知缺口 /「判定不改」的数据 | `topics/known-gaps.md` |
