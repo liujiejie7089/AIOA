@@ -22,6 +22,15 @@ public class ChatConversation {
     private String appCode;
 
     /**
+     * 所属项目 ID（V79）：NULL = 非项目会话（经典形态 / 无项目对话坞）。
+     *
+     * <p>非空表示该会话属于某项目，聊天链路据此：① 校验绑定的数字员工确实分配在该项目
+     * （否则 403）；② 下发该项目的生效上下文（见 {@code RunService.buildScope}）。
+     * 这是用户端「不同项目数据隔离」的服务端锚点。</p>
+     */
+    private Long projectId;
+
+    /**
      * 绑定的数字员工 ID（V21）：非空表示该会话受该数字员工的职责边界约束，
      * Agent 侧会注入职责范围系统提示，只回答职责范围内的问题。
      */

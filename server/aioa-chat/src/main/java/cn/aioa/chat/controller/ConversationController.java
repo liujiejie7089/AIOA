@@ -40,16 +40,18 @@ public class ConversationController {
         String title = request == null ? null : request.getTitle();
         String appCode = request == null ? null : request.getAppCode();
         Long workerId = request == null ? null : request.getWorkerId();
-        return ApiResponse.ok(conversationService.create(title, appCode, workerId));
+        Long projectId = request == null ? null : request.getProjectId();
+        return ApiResponse.ok(conversationService.create(title, appCode, workerId, projectId));
     }
 
-    @Operation(summary = "会话列表（分页/搜索）")
+    @Operation(summary = "会话列表（分页/搜索/按项目过滤）")
     @GetMapping
     public ApiResponse<PageResult<ChatConversation>> list(
             @RequestParam(name = "page", defaultValue = "1") long page,
             @RequestParam(name = "size", defaultValue = "20") long size,
-            @RequestParam(name = "keyword", required = false) String keyword) {
-        return ApiResponse.ok(conversationService.page(page, size, keyword));
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "projectId", required = false) Long projectId) {
+        return ApiResponse.ok(conversationService.page(page, size, keyword, projectId));
     }
 
     @Operation(summary = "会话详情")

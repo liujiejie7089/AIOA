@@ -11,6 +11,7 @@ import cn.aioa.chat.mapper.ChatConversationMapper;
 import cn.aioa.chat.mapper.ChatMessageMapper;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.trace.TraceId;
+import cn.aioa.project.port.PmAiScopePort;
 import cn.aioa.resource.entity.AgentWorker;
 import cn.aioa.resource.entity.TokenLedger;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
@@ -78,6 +79,8 @@ public class RunService {
     private final ActivityLogService activityLogService;
     private final ContentGuardService contentGuard;
     private final AgentWorkerMapper workerMapper;
+    /** 项目域只读窄接口：项目会话下发该项目的生效上下文（跨模块单向依赖 chat → project）。 */
+    private final PmAiScopePort pmAiScopePort;
 
     /** 传给 Agent 的最大历史轮数（FR-C2 多轮会话）。 */
     private static final int HISTORY_TURNS = 10;
@@ -220,8 +223,11 @@ public class RunService {
             request.setModelRef(conversation.getModelRef());
         }
         // V21 会话绑定数字员工：下发职责范围，Agent 侧据此限定回答边界（越界拒答）
+        // V79 项目会话：scope 里并入该项目的生效上下文（项目隔离的「下行」一半；
+        //              准入的「上行」硬校验已在 ConversationService.bindWorker 完成）
         if (conversation != null && conversation.getWorkerId() != null) {
-            request.setScope(buildScope(conversation.getWorkerId()));
+            request.setScope(buildScope(conversation.getWorkerId(),
+                    conversation.getProjectId(), conversation.getTenantId()));
         }
         try {
             subscription[0] = agentWebClient.post()
@@ -466,7 +472,7 @@ public class RunService {
      * 职责边界与所需权限均以 {@link WorkerRole} 为唯一定义源：
      * 自定义职责（description）优先，缺省回落到角色预设职责。
      */
-    private Map<String, Object> buildScope(Long workerId) {
+    private Map<String, Object> buildScope(Long workerId, Long projectId, Long tenantId) {
         AgentWorker worker = workerMapper.selectById(workerId);
         if (worker == null) {
             return null;
@@ -480,6 +486,12 @@ public class RunService {
         scope.put("duty", worker.getDescription() == null || worker.getDescription().isBlank()
                 ? role.duty() : worker.getDescription());
         scope.put("permission", role.requiredPermission());
+        // V79 项目会话：并入「该项目对该数字人生效的上下文来源」，使其只在所属项目的知识范围内作答。
+        // 若查不到来源，effectiveScope 返回空列表（合法的「无项目上下文」），不阻断对话。
+        if (projectId != null && projectId > 0L) {
+            scope.put("project_id", projectId);
+            scope.put("project_scope", pmAiScopePort.effectiveScope(tenantId, projectId, worker.getId()));
+        }
         return scope;
     }
 

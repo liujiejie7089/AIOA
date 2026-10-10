@@ -203,8 +203,50 @@
   border:1px solid var(--border-strong);background:var(--surface);color:var(--text);
 }
 .oa .bub .g-re:hover{background:var(--surface-3)}
-.oa .bub .g-re:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
+  .oa .bub .g-re:focus-visible{outline:2px solid var(--brand-strong);outline-offset:1px}
 @media (prefers-reduced-motion: reduce){
   .oa .bub .g-row{transition:none}
   .oa .bub .g-row:active{transform:none}
 }
+
+/* ---- ⑧ 项目上下文（需求一）：当前项目条 / 面板操作 / 花费表单 ---- */
+.oa .oa-projbar{
+  display:flex;flex-direction:column;gap:8px;
+  margin:0 0 10px;padding:10px 12px;
+  background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:var(--r);
+}
+.oa .oa-projbar .oa-pb-t{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--brand-ink)}
+.oa .oa-projbar .oa-pb-t .ic{width:15px;height:15px}
+.oa .oa-projbar .oa-pb-btns{display:flex;flex-wrap:wrap;gap:8px}
+.oa .mini-btn{
+  display:inline-flex;align-items:center;gap:4px;
+  font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
+  padding:7px 11px;border-radius:var(--r-full);min-height:32px;
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--text);
+  transition:background var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease);
+}
+.oa .mini-btn .ic{width:14px;height:14px}
+.oa .mini-btn:hover{background:var(--surface-2)}
+.oa .mini-btn:active{transform:scale(.98)}
+.oa .mini-btn.ghost{border-color:var(--brand-line);color:var(--brand-ink);background:var(--surface)}
+/* 项目面板：卡片可点 + 当前项目高亮 + 操作区 */
+.oa .proj-card{transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease)}
+.oa .proj-card:hover{background:var(--surface-2)}
+.oa .proj-card:active{background:var(--surface-3)}
+.oa .proj-card.on{border-color:var(--brand-line);background:var(--brand-soft)}
+.oa .proj-enter{margin-top:4px;color:var(--brand-ink);font-weight:600}
+.oa .proj-card.on .proj-enter{color:var(--brand-ink)}
+.oa .proj-active{border-color:var(--brand-line);background:var(--brand-soft)}
+.oa .proj-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+/* 花费表单：与既有 notif-modal 同壳，仅补表单排版 */
+.oa .oa-exp-form{display:flex;flex-direction:column;gap:10px}
+.oa .oa-ef-row{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-2)}
+.oa .oa-ef-row > span{font-weight:600;color:var(--text)}
+.oa .oa-ef-row select,
+.oa .oa-ef-row input,
+.oa .oa-ef-row textarea{
+  font-family:inherit;font-size:13px;color:var(--text);
+  padding:9px 10px;border:1px solid var(--border-strong);border-radius:var(--r-sm);
+  background:var(--surface);width:100%;box-sizing:border-box;
+}
+.oa .oa-ef-row textarea{resize:vertical}

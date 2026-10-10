@@ -6,6 +6,7 @@ import cn.aioa.chat.mapper.ChatConversationMapper;
 import cn.aioa.chat.mapper.ChatMessageMapper;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.PageResult;
+import cn.aioa.project.port.PmAiScopePort;
 import cn.aioa.resource.entity.AgentWorker;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
 import cn.aioa.security.AuthUser;
@@ -31,8 +32,17 @@ public class ConversationService {
     private final ChatConversationMapper conversationMapper;
     private final ChatMessageMapper messageMapper;
     private final AgentWorkerMapper workerMapper;
+    /** 项目域只读窄接口：校验「数字员工是否属于该项目」用（跨模块单向依赖 chat → project）。 */
+    private final PmAiScopePort pmAiScopePort;
 
-    public ChatConversation create(String title, String appCode, Long workerId) {
+    /**
+     * 创建会话。
+     *
+     * @param projectId 所属项目；{@code null} 或 {@code <=0} = 非项目会话（旧行为）。
+     *                  非空且绑定 {@code workerId} 时，会**硬校验**该员工已分配到本项目且启用，
+     *                  否则 403（用户端「数字人只在所属项目可用」的服务端保证）。
+     */
+    public ChatConversation create(String title, String appCode, Long workerId, Long projectId) {
         Long userId = AuthUserContext.requireUserId();
         ChatConversation conversation = new ChatConversation();
         conversation.setTenantId(AuthUserContext.tenantIdOrDefault());
@@ -40,6 +50,7 @@ public class ConversationService {
         conversation.setTitle(StringUtils.hasText(title) ? title : "新会话");
         conversation.setAppCode(appCode);
         conversation.setAgentCode("main");
+        conversation.setProjectId(normalizeProjectId(projectId));
         conversation.setStatus(ChatConversation.STATUS_ACTIVE);
         conversation.setContextTurns(10);
         conversation.setMsgCount(0L);
@@ -50,6 +61,11 @@ public class ConversationService {
         }
         conversationMapper.insert(conversation);
         return conversation;
+    }
+
+    /** 项目 id 归一：{@code null} / {@code <=0} → null（非项目会话），避免与真实项目 id 混淆。 */
+    private static Long normalizeProjectId(Long projectId) {
+        return (projectId == null || projectId <= 0L) ? null : projectId;
     }
 
     /**
@@ -71,15 +87,31 @@ public class ConversationService {
         if (Integer.valueOf(0).equals(worker.getEnabled())) {
             throw BizException.badRequest("该数字员工已停用，无法建立会话");
         }
+        // 项目会话（需求一）：员工必须已分配到本项目且在本项目启用，否则 403。
+        // 与用户端选择卡的候选集同源（都源自 pm_project_worker），杜绝「界面不显示却能直连建成会话」。
+        Long projectId = conversation.getProjectId();
+        if (projectId != null && !pmAiScopePort.isWorkerUsable(worker.getTenantId(), projectId, worker.getId())) {
+            throw BizException.forbidden("该数字员工未分配到本项目或已在本项目停用，无法建立会话");
+        }
         conversation.setWorkerId(worker.getId());
         conversation.setAgentCode("worker:" + worker.getId());
     }
 
     public PageResult<ChatConversation> page(long page, long size, String keyword) {
+        return page(page, size, keyword, null);
+    }
+
+    /**
+     * 会话分页（可按项目过滤）。
+     *
+     * @param projectId {@code null}=不过滤（兼容旧调用）；{@code <=0}=只要「非项目会话」；
+     *                  {@code >0}=只要该项目的会话。用户端按项目分账即依赖此过滤。
+     */
+    public PageResult<ChatConversation> page(long page, long size, String keyword, Long projectId) {
         long p = Math.max(1, page);
         long s = Math.min(Math.max(1, size), 100);
-        long total = conversationMapper.selectCount(ownedWrapper(keyword));
-        LambdaQueryWrapper<ChatConversation> wrapper = ownedWrapper(keyword);
+        long total = conversationMapper.selectCount(ownedWrapper(keyword, projectId));
+        LambdaQueryWrapper<ChatConversation> wrapper = ownedWrapper(keyword, projectId);
         wrapper.orderByDesc(ChatConversation::getLastMsgAt)
                 .orderByDesc(ChatConversation::getId)
                 .last("limit " + s + " offset " + ((p - 1) * s));
@@ -164,12 +196,21 @@ public class ConversationService {
      * {@code deleted_at = now()}，因此这里必须显式过滤已删行；否则「删除会话」后
      * 列表与统计都还把它算进去，删除按钮等于失灵。</p>
      */
-    private LambdaQueryWrapper<ChatConversation> ownedWrapper(String keyword) {
+    private LambdaQueryWrapper<ChatConversation> ownedWrapper(String keyword, Long projectId) {
         LambdaQueryWrapper<ChatConversation> wrapper = new LambdaQueryWrapper<ChatConversation>()
                 .eq(ChatConversation::getUserId, AuthUserContext.requireUserId())
                 .isNull(ChatConversation::getDeletedAt);
         if (StringUtils.hasText(keyword)) {
             wrapper.like(ChatConversation::getTitle, keyword);
+        }
+        // 项目隔离（V79）：projectId 非空时按项目切分会话，项目间互不串扰。
+        // <=0 = 只要「非项目会话」（project_id IS NULL）；>0 = 只要该项目的会话。
+        if (projectId != null) {
+            if (projectId <= 0L) {
+                wrapper.isNull(ChatConversation::getProjectId);
+            } else {
+                wrapper.eq(ChatConversation::getProjectId, projectId);
+            }
         }
         return wrapper;
     }

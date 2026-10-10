@@ -384,7 +384,16 @@ public class PmDigitalWorkerService {
      */
     public Map<String, Object> effectiveScope(AuthUser user, Long projectId, Long workerId) {
         PmProject p = projectService.requireVisible(user, projectId, false);
-        Long tenantId = p.getTenantId();
+        return effectiveScopeInternal(p.getTenantId(), projectId, workerId);
+    }
+
+    /**
+     * 免 {@link AuthUser} 的只读版本：调用方（如 {@code aioa-chat} 的 RunService）已自行完成
+     * 可见性判定，这里只按 {@code (tenantId, projectId, workerId)} 组装生效上下文。
+     * 与 {@link #effectiveScope} **共用同一段组装逻辑**（一处实现、两个入口），
+     * 避免跨模块的 chat 侧另写一份查询而口径漂移。
+     */
+    public Map<String, Object> effectiveScopeInternal(Long tenantId, Long projectId, Long workerId) {
         long wid = workerId == null ? PmContextSource.WORKER_DEFAULT : workerId;
 
         List<Map<String, Object>> projectDefault = new ArrayList<>();
@@ -426,6 +435,27 @@ public class PmDigitalWorkerService {
             list.add(m);
         }
         return list;
+    }
+
+    /**
+     * 数字员工是否**可用**于该项目：分配记录存在、未软删（{@code @TableLogic} 自动排除）、且 {@code enabled=1}。
+     *
+     * <p>这是「会话绑定项目数字人」跨模块硬校验的**唯一判定点**（经
+     * {@link cn.aioa.project.port.PmAiScopePort} 暴露给 {@code aioa-chat}）。
+     * 与 {@link #requireAssignedWorker} 的差别：那个用于「配置上下文来源」时校验分配存在即可
+     * （停用中也能配），本方法用于**会话实际使用**，必须 {@code enabled=1}——
+     * 于是「停用后不得再建会话」与「停用后选择卡不再出现」同源。</p>
+     */
+    public boolean isWorkerUsable(Long tenantId, Long projectId, Long workerId) {
+        if (tenantId == null || projectId == null || workerId == null || workerId <= 0) {
+            return false;
+        }
+        Long n = workerMapper.selectCount(new LambdaQueryWrapper<PmProjectWorker>()
+                .eq(PmProjectWorker::getTenantId, tenantId)
+                .eq(PmProjectWorker::getProjectId, projectId)
+                .eq(PmProjectWorker::getWorkerId, workerId)
+                .eq(PmProjectWorker::getEnabled, 1));
+        return n != null && n > 0;
     }
 
     private void requireAssignedWorker(Long tenantId, Long projectId, long workerId) {

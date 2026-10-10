@@ -43,6 +43,14 @@
             <artifactId>aioa-bridge</artifactId>
             <version>0.1.0-SNAPSHOT</version>
         </dependency>
+        <!-- 项目会话隔离（需求一 / V79）：会话与 run 需要按项目校验数字员工归属并下发项目上下文。
+             只经 aioa-project 暴露的**只读窄接口** cn.aioa.project.port.PmAiScopePort 调用；
+             aioa-project 绝不反向依赖 aioa-chat（其依赖闭包 = common/security/org/gitee，无环）。 -->
+        <dependency>
+            <groupId>cn.aioa</groupId>
+            <artifactId>aioa-project</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>

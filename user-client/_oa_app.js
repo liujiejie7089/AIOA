@@ -31,8 +31,16 @@ var S = {
   docId:null,            // 正在查看的资料（资料详情覆盖层）
   org:null,              // 组织数据缓存（profile / departments / members）
   leave:null,            // 我的请假（日程数据源之一）
-  projects:null          // 我可见的项目（PM 模块，进入任务页时拉取）
+  projects:null,         // 我可见的项目（PM 模块，进入任务页时拉取）
+  currentProject:null,   // 当前进入的项目 {id,name,projectType,status,myRole}（需求一：项目即第一等上下文）
+  projectConvId:{},      // projectId → conversationId（项目会话与「无项目」严格分账，互不串）
+  projectConvWorker:{},  // projectId → 该会话创建时绑定的 workerId（null=未绑）；换人后必须新建会话
+  projectWorkerIds:[]    // 当前项目可用的数字员工 workerId（enabled 且未缺失；渲染数字人卡时按它过滤）
 };
+
+/* 当前项目 id 的唯一读取入口：不在别处散读 S.projects / S.currentProject 推断。
+   无项目时返回 0（与后端「projectId=0 = 只要无项目会话」口径对齐）。 */
+function currentProjectId(){ return S.currentProject ? Number(S.currentProject.id) : 0; }
 var LS_MODE = 'aioa_mode';
 /* 默认形态：全新访客（以及登出之后）进入新版。
    只有用户显式点过「切换布局」并留下记忆时，才尊重那份记忆 ——
@@ -162,7 +170,8 @@ function oaRender(){
     v.classList.toggle('on', v.id === 'v-' + S.view);
   });
   // 顶栏
-  var t = $o('oaTitle'); if(t) t.textContent = meta.t;
+  var t = $o('oaTitle');
+  if(t) t.textContent = (currentProjectId() > 0 && S.currentProject) ? S.currentProject.name : meta.t;
   var left = $o('oaLeft');
   if(left){
     var isHomeTab = (S.view === 'home');
@@ -173,8 +182,17 @@ function oaRender(){
   var right = $o('oaRight');
   if(right){
     var unread = (state.notifs && state.notifs.unread) || 0;
-    right.innerHTML = (S.view === 'home' && unread > 0)
-      ? '<span class="ab-pill" id="oaBell">'+ic('bell',15)+' '+n(unread)+'</span>' : '';
+    var rhtml = '';
+    // 需求一：进入项目后顶栏常驻「退出项目」按钮（项目名已在标题处显示）
+    if(currentProjectId() > 0){
+      rhtml += '<button class="ab-btn" id="oaExitProject" aria-label="退出项目" title="退出项目">'+ic('logout',18)+'</button>';
+    }
+    if(S.view === 'home' && unread > 0){
+      rhtml += '<span class="ab-pill" id="oaBell">'+ic('bell',15)+' '+n(unread)+'</span>';
+    }
+    right.innerHTML = rhtml;
+    var exitBtn = $o('oaExitProject');
+    if(exitBtn) exitBtn.onclick = exitProject;
     var bell = $o('oaBell');
     if(bell) bell.onclick = function(){ oaGo('log'); };
   }
@@ -228,6 +246,27 @@ function renderHome(){
   if(k2) k2.innerHTML = n(has(ms.myApplications) ? ms.myApplications : arr(state.approvals).length) + '<span>项</span>';
   if(k3) k3.innerHTML = n(state.ccUnread) + '<span>条</span>';
   if(k4) k4.innerHTML = n(has(ms.conversations) ? ms.conversations : 0) + '<span>个</span>';
+
+  // 需求一：进入项目后，首页对话坞上方常驻「当前项目」条（上传文档 / 上报花费 / 退出）
+  var projBar = $o('oaProjBar');
+  if(currentProjectId() > 0 && S.currentProject){
+    if(!projBar){
+      projBar = document.createElement('div');
+      projBar.id = 'oaProjBar'; projBar.className = 'oa-projbar';
+      var dock = $o('oaDock');
+      if(dock && dock.parentNode) dock.parentNode.insertBefore(projBar, dock);
+    }
+    projBar.innerHTML =
+      '<div class="oa-pb-t">'+ic('folder',15)+' 当前项目：'+txt(S.currentProject.name)+'</div>'+
+      '<div class="oa-pb-btns">'+
+        '<button class="mini-btn" id="oaProjUpload">'+ic('upload',14)+'上传文档</button>'+
+        '<button class="mini-btn" id="oaProjExpense">'+ic('wallet',14)+'上报花费</button>'+
+        '<button class="mini-btn ghost" id="oaProjExit">'+ic('logout',14)+'退出项目</button>'+
+      '</div>';
+    var up = $o('oaProjUpload');   if(up) up.onclick = function(){ oaUploadProjectDoc(); };
+    var ex = $o('oaProjExpense'); if(ex) ex.onclick = function(){ oaOpenExpenseForm(); };
+    var exb = $o('oaProjExit');   if(exb) exb.onclick = function(){ exitProject(); };
+  } else if(projBar){ projBar.remove(); }
 
   // 「合同待查看」这类提示条：有未读通知才出现，无数据则隐藏（不写死文案）
   var tag = $o('oaTag'); if(!tag) return;
@@ -294,16 +333,211 @@ function renderProjectPanel(){
   if(S.projects === null){ el.innerHTML = empty('项目加载中…'); return; }
   var list = arr(S.projects);
   if(!list.length){ el.innerHTML = empty('暂无可见项目（被加为项目成员、或项目挂到本部门后在此可见）'); return; }
-  el.innerHTML = list.map(function(p){
+  var pid = currentProjectId();
+  var html = '';
+  // 需求一：已进入某项目时，面板顶部常驻「当前项目」操作区（上传文档 / 上报花费）
+  if(pid > 0 && S.currentProject){
+    var cp = S.currentProject;
+    var isDev = cp.projectType === 'DEV';
+    html += '<div class="task-card proj-active">'+
+      '<div class="task-line" style="margin-top:0"><div class="tl-name truncate">'+txt(cp.name)+'</div>'+
+        chip('prog','当前项目')+'</div>'+
+      '<div class="tl-meta">'+ic('task',13)+(isDev ? '开发项目' : '业务项目')+
+        ' · '+txt(PM_STATUS_LABEL[cp.status] || cp.status || '—')+'</div>'+
+      '<div class="proj-actions">'+
+        '<button class="mini-btn" id="oaProjUpload2">'+ic('upload',14)+'上传文档</button>'+
+        '<button class="mini-btn" id="oaProjExpense2">'+ic('wallet',14)+'上报花费</button>'+
+        '<button class="mini-btn ghost" id="oaProjExit2">'+ic('logout',14)+'退出</button>'+
+      '</div></div>';
+  }
+  html += list.map(function(p){
     var isDev = p.projectType === 'DEV';
-    return '<div class="task-card"><div class="task-line" style="margin-top:0">'+
-      '<div class="tl-name truncate">'+txt(p.name)+'</div>'+
-      chip(isDev ? 'prog' : 'wait', isDev ? '开发项目' : '业务项目')+'</div>'+
+    var active = (Number(p.id) === pid);
+    return '<div class="task-card proj-card'+(active ? ' on' : '')+'" data-project="'+txt(p.id)+'">'+
+      '<div class="task-line" style="margin-top:0">'+
+        '<div class="tl-name truncate">'+txt(p.name)+'</div>'+
+        chip(isDev ? 'prog' : 'wait', isDev ? '开发项目' : '业务项目')+'</div>'+
       '<div class="tl-meta">'+ic('task',13)+'任务 '+n(p.taskDoneCount)+'/'+n(p.taskCount)+
         ' · 成员 '+n(p.memberCount)+(isDev ? ' · 仓库 '+n(p.repoCount) : '')+
         ' · '+txt(PM_STATUS_LABEL[p.status] || p.status || '—')+
-        (p.projectNo ? ' · '+txt(p.projectNo) : '')+'</div></div>';
+        (p.projectNo ? ' · '+txt(p.projectNo) : '')+'</div>'+
+      '<div class="tl-meta proj-enter">'+(active ? '· 当前所在项目' : ic('chevron',13)+' 点击进入项目')+'</div></div>';
   }).join('');
+  el.innerHTML = html;
+  // 当前项目操作区按钮
+  var up2 = $o('oaProjUpload2');   if(up2)   up2.onclick   = function(){ oaUploadProjectDoc(); };
+  var ex2 = $o('oaProjExpense2'); if(ex2)   ex2.onclick   = function(){ oaOpenExpenseForm(); };
+  var ex3 = $o('oaProjExit2');    if(ex3)   ex3.onclick   = function(){ exitProject(); };
+  // 卡片点击 → 进入项目（已在则忽略，避免重复切换会话）
+  el.querySelectorAll('[data-project]').forEach(function(r){
+    r.style.cursor = 'pointer';
+    r.onclick = function(){
+      var id = Number(r.dataset.project);
+      if(id === pid) return;
+      var p = list.filter(function(x){ return Number(x.id) === id; })[0];
+      if(p) enterProject(p);
+    };
+  });
+}
+
+/* --------------------------------------------------------- 3.5 项目进入 / 退出（需求一）
+   项目是「第一等上下文」：进入后所有数据（对话 / 数字人 / 文档 / 花费）严格按项目隔离。
+   - 项目名以 GET /v1/pm/projects/{id} 为准（不读列表副本，避免与列表漂移）。
+   - 进入时按项目建一条专属会话并记录到 S.projectConvId，切项目绝不复用上一条会话 id。
+   - 退出时清空当前项目并回到「无项目」形态（会话不带 projectId，旧行为不变）。 */
+async function enterProject(p){
+  if(!p || !p.id) return;
+  var id = Number(p.id);
+  // 进入项目 = 换上下文：清掉进入前的全局对话对象与会话绑定。不清 worker 会有两个后果：
+  // ① 顶栏/气泡显示一个未必属于本项目的数字员工；② 若用户在项目内恰好又选了**同一个 id**，
+  // oaPickWorker 会判定「没换人」而不再重置会话 ⇒ 复用到进入时建的无员工会话，
+  // 绑定被静默跳过（职责范围与后端 403 准入双双失效）。
+  S.worker = null; S.expert = null; S.convId = null;
+  // ① 拉项目详情拿 name（项目名唯一事实源）
+  var det = null;
+  try{ det = await API.req('/v1/pm/projects/' + id); }catch(e){ det = null; }
+  S.currentProject = {
+    id: id,
+    name: det && has(det.name) ? det.name : (p.name || ('项目 #' + id)),
+    projectType: det ? det.projectType : p.projectType,
+    status: det ? det.status : p.status,
+    myRole: null
+  };
+  // ② 拉项目可用数字员工（enabled===true && workerMissing!==true），存入 S.projectWorkerIds
+  try{
+    var wd = await API.req('/v1/pm/projects/' + id + '/workers');
+    var items = arr((wd && wd.items) || []);
+    S.projectWorkerIds = items.filter(function(x){
+      return x.enabled === true && x.workerMissing !== true;
+    }).map(function(x){ return String(x.workerId); });
+  }catch(e){ S.projectWorkerIds = []; }
+  // 数字人卡过滤依赖全局 state.workers；若尚未加载则补一次（不改变经典形态既有加载链路）
+  if(!arr(state.workers).length){
+    try{ state.workers = arr(await API.workers()); }catch(e){ state.workers = state.workers || []; }
+  }
+  // ③ 该项目的专属会话（不存在则建一条并登记；切项目不串到上一条 / 无项目会话）
+  var convId = S.projectConvId[id];
+  if(!convId){
+    try{
+      var c = await oaCreateConversation('项目 · ' + S.currentProject.name, 'aioa-client', null, id);
+      convId = c && (c.id || c.conversationId);
+      if(convId){ S.projectConvId[id] = convId; S.projectConvWorker[id] = null; }
+    }catch(e){ convId = null; }
+  }
+  // ④ 重新渲染（顶栏项目名 + 退出按钮 + 数字人按项目过滤）
+  oaRender();
+  // ⑤ 切到该项目会话，复用既有「续聊」加载路径（会跳到首页对话坞）
+  if(convId){
+    try{ await oaResumeConversation(convId); }
+    catch(e){ toast('已进入项目「' + S.currentProject.name + '」，但会话载入失败，可重试'); }
+  } else {
+    toast('已进入项目「' + S.currentProject.name + '」，但会话初始化失败，可重试');
+  }
+}
+
+async function exitProject(){
+  // 清掉当前项目上下文，回到「无项目」形态：会话、数字人过滤全部复位为旧行为
+  S.currentProject = null;
+  S.projectWorkerIds = [];
+  S.convId = null;            // 切回无项目会话（下次发送不带 projectId 新建，保持旧行为）
+  S.worker = null; S.expert = null;
+  oaAnswerSeq++;              // 作废在途收口
+  var list = dockEl(); if(list) list.innerHTML = '';
+  oaSetChatting(false);
+  oaRender();
+  toast('已退出项目，回到通用工作台');
+}
+
+/* 项目内上传文档：选文件 → POST /v1/files/upload → POST /v1/pm/projects/{id}/docs/documents
+   成功 / 失败都给终态文案，绝不静默。 */
+function oaUploadProjectDoc(){
+  var pid = currentProjectId();
+  if(pid <= 0){ toast('请先进入一个项目'); return; }
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.onchange = async function(){
+    var f = inp.files && inp.files[0];
+    if(!f) return;
+    try{
+      toast('正在上传文件：' + f.name);
+      var up = await API.fileUpload(f);          // → {id,name,url,size}
+      if(!up || !up.id) throw new Error('上传未返回文件标识');
+      var reg = await API.req('/v1/pm/projects/' + pid + '/docs/documents', {
+        method:'POST',
+        body: JSON.stringify({source:'UPLOAD', fileId: up.id, sizeBytes: up.size, name: up.name || f.name})
+      });
+      toast('已上传并登记到项目：' + txt((reg && (reg.name || reg.fileName)) || up.name || f.name));
+    }catch(e){
+      toast('文档上传失败：' + (e.message || '未知错误'));
+    }
+  };
+  inp.click();
+}
+
+/* 项目内上报花费：表单（方向/分类/金额/发生日期/备注）→ POST /v1/pm/projects/{id}/expenses
+   字段名以 PmExpenseService.create 的读取为准：direction(IN/OUT) / category /
+   amount(非负) / occurredAt(YYYY-MM-DD) / remark。提交成功给终态文案。 */
+function oaOpenExpenseForm(){
+  var pid = currentProjectId();
+  if(pid <= 0){ toast('请先进入一个项目'); return; }
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
+      '<div class="notif-head">上报项目花费</div>'+
+      '<div class="notif-body"><div class="oa-exp-form">'+
+        '<label class="oa-ef-row"><span>方向</span>'+
+          '<select id="expDir"><option value="OUT">支出</option><option value="IN">收入</option></select></label>'+
+        '<label class="oa-ef-row"><span>分类</span>'+
+          '<select id="expCat">'+
+            '<option value="CONTRACT">合同款</option>'+
+            '<option value="LABOR">人工（人员费用）</option>'+
+            '<option value="PURCHASE">采购</option>'+
+            '<option value="TRAVEL">差旅</option>'+
+            '<option value="OTHER">其他</option>'+
+          '</select></label>'+
+        '<label class="oa-ef-row"><span>金额（元）</span>'+
+          '<input id="expAmt" type="number" step="0.01" min="0" placeholder="非负数字"></label>'+
+        '<label class="oa-ef-row"><span>发生日期</span>'+
+          '<input id="expDate" type="date"></label>'+
+        '<label class="oa-ef-row"><span>备注</span>'+
+          '<textarea id="expRemark" rows="2" placeholder="可选"></textarea></label>'+
+        '<div class="note-err" id="expErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" data-dlg-ok>提交</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var dateEl = mask.querySelector('#expDate');
+  if(dateEl) dateEl.value = (new Date()).toISOString().slice(0, 10);
+  var done = false;
+  var finish = function(){ if(done) return; done = true; mask.remove(); };
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ finish(); };
+  mask.addEventListener('click', function(ev){ if(ev.target === mask) finish(); });
+  mask.querySelector('[data-dlg-ok]').onclick = async function(){
+    var dir = mask.querySelector('#expDir').value;
+    var cat = mask.querySelector('#expCat').value;
+    var amt = mask.querySelector('#expAmt').value;
+    var date = mask.querySelector('#expDate').value;
+    var remark = (mask.querySelector('#expRemark').value || '').trim();
+    var err = mask.querySelector('#expErr');
+    if(amt === '' || isNaN(Number(amt)) || Number(amt) < 0){
+      if(err){ err.textContent = '金额必须为非负数字'; err.style.display = 'block'; }
+      return;
+    }
+    var ok = mask.querySelector('[data-dlg-ok]'); if(ok) ok.disabled = true;
+    try{
+      var body = {direction: dir, category: cat, amount: Number(amt), occurredAt: date, remark: remark};
+      await API.req('/v1/pm/projects/' + pid + '/expenses', {method:'POST', body: JSON.stringify(body)});
+      finish();
+      toast('花费已上报：' + (dir === 'IN' ? '收入' : '支出') + ' ' + amt + ' 元（' + cat + '）');
+    }catch(e){
+      if(ok) ok.disabled = false;
+      if(err){ err.textContent = '提交失败：' + (e.message || '未知错误'); err.style.display = 'block'; }
+    }
+  };
 }
 
 /* 审批面板：四分段，计数与列表同源 */
@@ -892,7 +1126,16 @@ function renderOaFeedback(){
 function renderWorkers(){
   var el = $o('oaWorkersList'); if(!el) return;
   var ws = arr(state.workers);
-  if(!ws.length){ el.innerHTML = empty('暂无可用数字员工'); return; }
+  // 需求一：进入项目后，数字人卡只列该项目「已启用且未缺失」的分配员工（集合相等，非包含）。
+  // 无项目时保持原有全局员工列表行为。
+  var pid = currentProjectId();
+  if(pid > 0){
+    var ids = S.projectWorkerIds || [];
+    ws = ws.filter(function(w){ return ids.indexOf(String(w.id)) >= 0; });
+    if(!ws.length){ el.innerHTML = empty('该项目暂未分配可用的数字员工'); return; }
+  } else {
+    if(!ws.length){ el.innerHTML = empty('暂无可用数字员工'); return; }
+  }
   el.innerHTML = ws.map(function(w){
     var on = w.on ? chip('prog', w.scheduleTime ? ('定时 ' + w.scheduleTime) : '在线') : chip('done','未启用');
     return '<div class="lrow" data-worker="'+txt(w.id)+'">'+
@@ -1189,10 +1432,37 @@ function oaPickExpert(e){
 async function oaEnsureConv(){
   if(S.convId) return S.convId;
   var title = (S.worker ? (S.worker.name || '数字员工') : (S.expert ? (S.expert.name || '专家') : '协同')) + ' · 对话';
-  var c = await API.createConversation(title, 'aioa-client', S.worker ? S.worker.id : null);
-  S.convId = c && (c.id || c.conversationId);
+  var pid = currentProjectId();
+  var c;
+  if(pid > 0){
+    // 需求一：项目内对话必须挂到「该项目 + 当前选中数字员工」的专属会话，绝不串到
+    // 「无项目」或其它项目。**复用必须有条件**：只有该会话当初就是按同一个 worker 建的
+    // 才能复用。否则「进入项目时建的无员工会话」会被 oaPickWorker 换人后继续复用
+    // ⇒ 界面上选了数字人、实际会话却没绑 workerId ⇒ 职责范围/项目上下文不生效，
+    // 且后端 403 准入（未分配员工不得建会话）被整条绕过。换人即新建（与全局 oaPickWorker 同义）。
+    var wantWorker = S.worker ? S.worker.id : null;
+    var existing = S.projectConvId[pid];
+    if(existing && String(S.projectConvWorker[pid] || '') === String(wantWorker || '')){
+      S.convId = existing; return existing;
+    }
+    c = await oaCreateConversation(title, 'aioa-client', wantWorker, pid);
+    S.convId = c && (c.id || c.conversationId);
+    if(S.convId){ S.projectConvId[pid] = S.convId; S.projectConvWorker[pid] = wantWorker; }
+  } else {
+    // 无项目：保持旧行为（不带 projectId，后端不追加过滤）
+    c = await API.createConversation(title, 'aioa-client', S.worker ? S.worker.id : null);
+    S.convId = c && (c.id || c.conversationId);
+  }
   if(!S.convId) throw new Error('会话创建失败');
   return S.convId;
+}
+
+/* 建会话的统一入口（需求一）：可带 projectId；仅当 projectId>0 才写入 projectId，
+   与后端「projectId 省略 = 不加过滤」口径对齐，确保「无项目」形态完全向后兼容。 */
+async function oaCreateConversation(title, appCode, workerId, projectId){
+  var body = {title: title, appCode: appCode || 'aioa-client', workerId: workerId || null};
+  if(projectId && Number(projectId) > 0) body.projectId = Number(projectId);
+  return API.req('/v1/conversations', {method:'POST', body: JSON.stringify(body)});
 }
 
 async function oaSend(){
@@ -1285,13 +1555,15 @@ async function oaStop(){
 /* 新对话：清空对话坞与会话绑定（不动经典形态的 state.conversationId） */
 function oaNewChat(){
   if(S.busy){ toast('正在生成，请先停止'); return; }
+  var pid = currentProjectId();
   S.convId = null; S.worker = null; S.expert = null;
+  if(pid > 0){ S.projectConvId[pid] = null; S.projectConvWorker[pid] = null; }   // 项目内新对话 = 重新开一条项目专属会话（不串到上一条）
   oaAnswerSeq++;                       // 清空对话坞 ⇒ 作废在途收口（否则它会往空坞里补一条）
   var list = dockEl(); if(list) list.innerHTML = '';
   oaSetChatting(false);
   S.view = 'home'; oaGo('home');
   var i = $o('oaInput'); if(i) i.focus();
-  toast('已开启新对话，点数字人可选择数字员工或专家');
+  toast(pid > 0 ? '已在项目内开启新对话' : '已开启新对话，点数字人可选择数字员工或专家');
 }
 
 /* 新工作任务：workerIntent 识别类型 → 命中在册数字员工则直接对话，否则回到选择卡 */
