@@ -28,7 +28,7 @@ class GiteeCryptoProviderAwareTest {
         gitee.setTokenEncKey(giteeKey);
         GiteaProperties gitea = new GiteaProperties();
         gitea.setTokenEncKey(giteaKey);
-        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, gitea);
+        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, gitea, new cn.aioa.gitee.config.PlatformConfigOverlay());
         ReflectionTestUtils.setField(a, "provider", provider);
         return a;
     }

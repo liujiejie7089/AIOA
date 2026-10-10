@@ -43,6 +43,13 @@ export interface GiteeConfig {
   orgConfigured: boolean
   /** 是否配置了 Webhook 回调基址；否则建仓后无法自动挂 Webhook。 */
   webhookBaseUrlConfigured: boolean
+  /**
+   * OAuth 应用是否配齐（Client ID + Secret）。
+   *
+   * <p>与后端 `/bind/authorize` 的判定**同源**：未配齐时个人「绑定账号」入口会直接报
+   * 「OAuth 应用未配置」。有它，页面就能在进入时提示，而不是等用户点了绑定才发现。</p>
+   */
+  oauthConfigured?: boolean
   /** 定时校准是否开启。 */
   syncEnabled: boolean
   /** 删除项目时是否默认连仓删除（生产默认 false）。 */
@@ -621,6 +628,75 @@ export function giteeClearTenantConfig(tenantId?: number) {
   return http
     .delete('/gitee/tenant-config', { params: tenantId == null ? {} : { tenantId } })
     .then((r) => unwrap<GiteeTenantConfig>(r))
+}
+
+// ============================================================ 平台级参数（平台管理员）
+
+/**
+ * 可被管理端覆盖的字段名。
+ *
+ * <p>与后端 {@code PlatformConfigOverlay.Field} **一一对应**（键名就取实体字段的 camelCase）。
+ * 这里是第二处口径：`_check_gitee_platform_config.py` 会静态比对两侧字段集合，
+ * 少一个就报错——避免「后端加了字段、前端漏渲染」这种只在真机上才发现的缺口。</p>
+ */
+export type GiteePlatformFieldKey =
+  | 'enabled'
+  | 'clientId'
+  | 'clientSecret'
+  | 'redirectUri'
+  | 'oauthAuthorizeBaseUrl'
+  | 'scope'
+  | 'org'
+  | 'webhookBaseUrl'
+  | 'bindReturnUrl'
+
+/** 字段来源：`ADMIN`=管理端填写；`ENV`=环境变量。 */
+export type GiteePlatformSource = 'ADMIN' | 'ENV'
+
+/** 平台参数视图（仅平台管理员可读）。 */
+export interface GiteePlatformConfigView {
+  provider: string
+  providerLabel: string
+  /** 后端配置前缀（`aioa.gitee`），提示文案里指名去哪改环境变量。 */
+  configKey: string
+  /** 管理端是否已保存过一份；false = 9 项全部来自环境变量。 */
+  configured: boolean
+  /** 被管理端覆盖的字段数。 */
+  adminOverridden: number
+  /**
+   * 字段元信息（键 / 标签 / 控件类型 / 提示），**由后端给出**。
+   *
+   * <p>前端只按要求渲染，不自己维护一份字段表——否则「后端加字段、前端漏渲染」
+   * 这种缺口只会在真机上被发现。</p>
+   */
+  fields: Array<{ key: GiteePlatformFieldKey; label: string; type: 'BOOL' | 'TEXT' | 'SECRET'; hint: string }>
+  /** **生效值**；`clientSecret` 恒为空串（见 `clientSecretConfigured`）。 */
+  values: Record<GiteePlatformFieldKey, string | boolean>
+  /** Secret 是否已配置——**唯一**对外暴露的口径，后端不回传值。 */
+  clientSecretConfigured: boolean
+  oauthConfigured: boolean
+  /** 每字段来源，界面据此显示「管理端填写 / 环境变量」。 */
+  sources: Record<GiteePlatformFieldKey, GiteePlatformSource>
+  /** 后端算出的告警（scope 缺项、OAuth 未配齐等），界面原样展示。 */
+  warnings: string[]
+}
+
+/** 保存载荷：**只提交要改的键**；空串=显式清空。 */
+export type GiteePlatformConfigPayload = Partial<Record<GiteePlatformFieldKey, string | boolean>>
+
+/** 读取平台参数（仅平台管理员）。 */
+export function giteePlatformConfig() {
+  return http.get('/gitee/platform-config').then((r) => unwrap<GiteePlatformConfigView>(r))
+}
+
+/** 保存平台参数（逐字段；保存后立即生效，无需重启）。 */
+export function giteeSavePlatformConfig(body: GiteePlatformConfigPayload) {
+  return http.put('/gitee/platform-config', body).then((r) => unwrap<GiteePlatformConfigView>(r))
+}
+
+/** 清除平台参数，9 项全部交还环境变量。 */
+export function giteeClearPlatformConfig() {
+  return http.delete('/gitee/platform-config').then((r) => unwrap<GiteePlatformConfigView>(r))
 }
 
 // ============================================================ 企业级初始化

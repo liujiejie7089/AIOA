@@ -37,3 +37,28 @@
   哨兵 `scripts/_verify_gitee_webhook_hint.py`（**5 项**）：断言「界面提示 ⟺ 后端 flag」，
   两页各自与后端取数比对（本机 false / 配好 true 都有区分力）；已跑负向自检证明判据非恒真。
 
+## 平台参数「管理端动态配置」（V77，2026-10-10 实装）
+
+> 需求原话：「需要配置 gitee 参数的，在仓库配置中进行动态配置，**不要写死代码**」。
+> 目标：平台级 Gitee 参数不再依赖 env/代码，改在**管理端「系统配置 → 仓库配置」**页可改，**保存即生效**。
+
+- **表 `gitee_platform_config`**（迁移 `V77`，按 provider 单例）：9 列全可空，**NULL=回落 env，空串=显式清空**
+  （逐字段覆盖，不用「整行覆盖」——避免首次保存就把 env 里的 secret 静默遮蔽）；`enabled` 刻意可空。
+- **9 个可覆盖字段**：`enabled/clientId/clientSecret/redirectUri/oauthAuthorizeBaseUrl/scope/org/webhookBaseUrl/bindReturnUrl`。
+- **刻意排除**（迁移头注释写明理由）：`token-enc-key`（解密根，改=已存令牌全解不开）、`base-url`/`web-base-url`
+  （部署身份）、`webhook-secret`（每仓随机更安全）、需重启的调参项。
+- **接线**：`config/PlatformConfigOverlay`（**无依赖内存持有者**，打破循环：服务→overlay←适配器）+
+  `RepoProviderSettingsAdapter`（先读覆盖层，NULL 回落 `giteaActive()?gitea:gitee`）+
+  `service/GiteePlatformConfigService`（`bootLoad`+`ApplicationReadyEvent` 载入、`save/clear` 后
+  `reloadAndView` 立即回填、Secret 走 `GiteeCrypto` 加密落库、**任何视图都不回明文**只回 `clientSecretConfigured`）+
+  `GiteeController` 三端点 `GET/PUT/DELETE /gitee/platform-config`（`PermissionCatalog.isPlatformAdmin`）。
+  `/gitee/config` 新增 `oauthConfigured`（横幅判断数据化）。前端卡片只在**平台管理员**可见，
+  且**放在 `moduleEnabled` 守卫之外**（它才是开总开关的地方）；字段标签由后端 `fields` 元数据下发。
+- **收口**：哨兵 `scripts/_check_gitee_platform_config.py`（静态 **10** + `--selftest` + `--api` 往返 **12**）；
+  单测 `PlatformConfigOverlayTest`（5）；已登记 `_run_all_regression.sh`；指南 `deploy/GITEE-两套环境配置指南.md` §3.5。
+  ⚠ 该哨兵 S6 曾用**子串匹配**（`baseUrl` 撞 `webhookBaseUrl`）⇒ 已改词表精确匹配。
+- **本轮实测**：新 jar 重启后启动日志出 `来源=环境变量（管理端覆盖 0 项）`；`--api` 静态 10/10 + 往返 12/12；
+  收尾表无覆盖行、配置回落到 env。
+- **生产边界**：服务器 `10.0.0.3:22`（可出网、外网进不来）→ 隧道机 `219.151.186.24:22`（可出网、可进服务器）；
+  agent 无隧道凭据 ⇒ **不能代部署**，运行期改配置正是生产的正确路径。
+

@@ -48,7 +48,7 @@ class RepoProviderSettingsTest {
         gitea.setTokenEncKey("gitea-enc-key");
         gitea.setRepoNameMaxLength(50);
 
-        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, gitea);
+        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, gitea, new PlatformConfigOverlay());
         ReflectionTestUtils.setField(a, "provider", provider);
         return a;
     }
@@ -131,7 +131,7 @@ class RepoProviderSettingsTest {
         gitee.setTokenEncKey("gitee-enc-key");
         GiteaProperties gitea = new GiteaProperties();
         gitea.setTokenEncKey("   ");
-        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, gitea);
+        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, gitea, new PlatformConfigOverlay());
         ReflectionTestUtils.setField(a, "provider", "gitea");
         assertEquals("gitee-enc-key", a.getTokenEncKey());
     }
@@ -141,7 +141,7 @@ class RepoProviderSettingsTest {
     void oauthConfiguredNeedsBothFields() {
         GiteeProperties gitee = new GiteeProperties();
         gitee.setClientId("id-only");
-        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, new GiteaProperties());
+        RepoProviderSettingsAdapter a = new RepoProviderSettingsAdapter(gitee, new GiteaProperties(), new PlatformConfigOverlay());
         ReflectionTestUtils.setField(a, "provider", "gitee");
         assertFalse(a.oauthConfigured());
     }

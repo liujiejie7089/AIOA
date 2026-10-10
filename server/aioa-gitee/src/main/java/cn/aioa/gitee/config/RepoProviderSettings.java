@@ -44,6 +44,34 @@ public interface RepoProviderSettings {
     /** 用户浏览器的授权页基址。 */
     String getOauthAuthorizeBaseUrl();
 
+    /**
+     * REST 基址（如 {@code https://gitee.com/api/v5}）。
+     *
+     * <p>供启动自检与「仓库配置」页展示，让运维一眼看清当前打的是哪个后端；
+     * 属部署身份，<b>不参与管理端覆盖</b>（改它等于换平台，不是运行期参数）。</p>
+     */
+    String getBaseUrl();
+
+    /**
+     * 授权 scope（必须同时含 {@code projects} 与 {@code hook}）。
+     *
+     * <p>原先只由 {@link RepoProviderSettingsAdapter} 内部读 {@code GiteeProperties}，
+     * 现因 scope 可在管理端配置，必须由端口统一暴露，否则会出现「页面改的是这个值、
+     * 启动自检校验的是另一个值」两套口径。</p>
+     */
+    String getScope();
+
+    /** OAuth 应用 Client ID（非密文，可展示）。 */
+    String getClientId();
+
+    /**
+     * OAuth 应用 Client Secret 是否已配置。
+     *
+     * <p><b>刻意只暴露「有没有」而不暴露值</b>：Secret 是一把「以应用身份换取用户令牌」的钥匙，
+     * 一旦经接口回传就会出现在浏览器内存、日志与抓包里。界面只需知道「已配置 / 未配置」。</p>
+     */
+    boolean clientSecretConfigured();
+
     /** 令牌加密密钥（AES）。**切换 provider 会导致既有令牌不可解密，需重新绑定**。 */
     String getTokenEncKey();
 

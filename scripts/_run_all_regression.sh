@@ -54,6 +54,9 @@ SUITES=(
   _check_kpi_cards.py
   # 部署面：application.yml 引用的环境变量必须被 compose 透传（否则在 .env 里改它是空转）
   _check_compose_env_wiring.py
+  # 仓库联动平台参数动态配置：适配器必须走覆盖层 + 三处字段口径一致 + Secret 不明文回传
+  # （默认只跑静态；加 --api 才验接口往返，需要后端含本次改动）
+  _check_gitee_platform_config.py
 )
 
 for s in "${SUITES[@]}"; do

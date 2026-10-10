@@ -37,9 +37,82 @@
       style="margin-bottom: 12px"
     />
 
+    <!-- (a2) 平台参数：仅平台管理员。全平台共用一份，保存即生效（取代「只能改环境变量 + 重启」）。
+         渲染在 moduleEnabled 守卫**之外**：它就是把开关打开的地方 —— 若跟着「未启用就不取数」
+         被一起跳过，模块一旦关掉（enabled=false）用户就再也打不开它了（2026-10-10 修复该死锁）。 -->
+    <el-card v-if="isPlatformAdmin && !configError" shadow="never" style="margin-bottom: 12px">
+      <template #header>
+        <div class="card-header">
+          <span>{{ `平台参数（${pName} 应用）` }}</span>
+          <div>
+            <el-button text type="primary" size="small" :loading="platLoading" @click="loadPlatformConfig">刷新</el-button>
+            <el-button v-if="platCfg?.configured" size="small" @click="clearPlatformConfig">恢复为环境变量</el-button>
+          </div>
+        </div>
+      </template>
+      <div v-loading="platLoading">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+          :title="platCfg?.configured
+            ? `已由管理端覆盖 ${platCfg.adminOverridden} 项：被覆盖的字段不再读取环境变量`
+            : `尚未在管理端保存过：全部来自环境变量（${cfgKey}.*）`"
+          description="这些参数全平台共用一份。保存后立即生效，无需重启后端；「恢复为环境变量」会删除管理端这份配置。"
+        />
+
+        <!-- 后端算出的告警（scope 缺项 / OAuth 未配齐）：原样展示，不前端另算一遍 -->
+        <el-alert
+          v-for="(w, i) in (platCfg?.warnings || [])"
+          :key="`plat-warn-${i}`"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="w"
+          style="margin-bottom: 8px"
+        />
+
+        <el-form label-width="140px" size="small">
+          <el-form-item v-for="f in (platCfg?.fields || [])" :key="f.key" :label="f.label">
+            <div style="width: 100%">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                <el-switch v-if="f.type === 'BOOL'" v-model="platEnabled" />
+                <el-input
+                  v-else-if="f.type === 'SECRET'"
+                  v-model="platSecret"
+                  type="password"
+                  show-password
+                  style="max-width: 420px"
+                  :placeholder="platCfg?.clientSecretConfigured ? '已配置（留空则保持不变）' : '未配置'"
+                />
+                <el-input v-else v-model="platForm[f.key]" style="max-width: 420px" />
+                <el-tag size="small" :type="platSourceTag(f.key)">{{ platSourceText(f.key) }}</el-tag>
+                <el-button
+                  v-if="f.type === 'SECRET' && platCfg?.clientSecretConfigured"
+                  size="small"
+                  text
+                  type="danger"
+                  @click="clearPlatformSecret"
+                >
+                  清空密钥
+                </el-button>
+              </div>
+              <div class="muted small" style="margin-top: 2px">{{ f.hint }}</div>
+            </div>
+          </el-form-item>
+        </el-form>
+
+        <div style="margin-top: 10px">
+          <el-button type="primary" size="small" :loading="platSaving" @click="savePlatformConfig">保存并立即生效</el-button>
+          <el-button size="small" @click="loadPlatformConfig">放弃修改</el-button>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 注意：下面的数据卡只在 moduleEnabled 为真（即配置已成功取到）时渲染，
          所以其中用到的 pName / cfgKey 一定来自服务端响应，不会是回落值。 -->
-    <template v-else>
+    <template v-if="!configError && moduleEnabled">
 
       <!-- 平台级：Webhook 回调地址未配置 —— 这是「仓库建出来了、项目却停在未就绪」的**唯一**根因。
            放在配置区最上方：管理员配好组织/令牌后仍会踩这个坑（2026-10-09 实测：租户 2 的 10 个项目
@@ -63,6 +136,7 @@
           <code>{base}/api/v1/gitee/webhook/&lt;项目id&gt;</code>；改后重启后端，再对失败项目点「重试建仓」。
         </div>
       </el-alert>
+
 
       <!-- (b) 我的 Gitee 账号 -->
       <el-card shadow="never" style="margin-bottom: 12px">
@@ -472,7 +546,9 @@ import {
   giteeMyBinding, giteeAuthorize, giteeUnbind, giteeErrMsg,
   giteeTenantConfig, giteeSaveTenantConfig, giteeClearTenantConfig,
   giteeInitStatus, giteeInitVerify, giteeInitInitialize, giteeInitRevoke,
-  type GiteeConfig, type GiteeDepartment, type GiteeTaskStats, type GiteeProject, type GiteeBinding, type GiteeTenantConfig, type GiteeInitStatus, type GiteeInitStep
+  giteePlatformConfig, giteeSavePlatformConfig, giteeClearPlatformConfig,
+  type GiteeConfig, type GiteeDepartment, type GiteeTaskStats, type GiteeProject, type GiteeBinding, type GiteeTenantConfig, type GiteeInitStatus, type GiteeInitStep,
+  type GiteePlatformConfigView, type GiteePlatformConfigPayload, type GiteePlatformFieldKey
 } from '@/api/gitee'
 import {
   GITEE_PROJECT_STATUS_LABEL, GITEE_PROJECT_STATUS_TAG, GITEE_VISIBILITY_LABEL,
@@ -564,6 +640,13 @@ const avatarFallback = computed(() => {
 })
 /** 租户管理员：不仅控制「运维与校准」卡片显隐，也控制 giteeTaskStats 的调用（否则成员会 403）。 */
 const isTenantAdmin = computed(() => hasAnyRole(auth.roles, TENANT_SCOPE_ROLES))
+/**
+ * 平台管理员：只有它能读写「平台参数（OAuth 应用 / Webhook 公网基址）」。
+ *
+ * <p>判据取 auth store 的 `isPlatformAdmin`（与后端 {@code PermissionCatalog.isPlatformAdmin}、
+ * 菜单 `v-if` 同源），不在这里再写一遍角色名数组。</p>
+ */
+const isPlatformAdmin = computed(() => auth.isPlatformAdmin)
 
 // ---------------------------------------------------------------- 我的 Gitee 账号
 const bindingLoading = ref(false)
@@ -1078,6 +1161,146 @@ async function submitCreate() {
 }
 
 // ---------------------------------------------------------------- 初始化
+// ============================================================ 平台参数（仅平台管理员）
+//
+// 这些是**全平台共用一份**的参数（OAuth 应用、Webhook 公网基址、授权跳转域…）。
+// 后端把字段元信息（label / type / hint）一并给出，故这里只维护「值」与「提交」，
+// 不自己列字段 —— 避免「后端加了字段而前端漏渲染」这种只在真机上才发现的缺口。
+const platCfg = ref<GiteePlatformConfigView | null>(null)
+const platLoading = ref(false)
+const platSaving = ref(false)
+/** 文本字段的表单值（键 → 值）。 */
+const platForm = ref<Record<string, string>>({})
+/** 布尔字段：当前只有 enabled 一个，单独持有可保留类型，避免动态键把类型擦成 any。 */
+const platEnabled = ref(false)
+/**
+ * Secret 输入框的值。
+ *
+ * <p>后端**从不回传** Secret（只回「是否已配置」），所以这里永远从空串开始；
+ * 空串＝保持不变（保存时不提交该键），要清空必须显式点「清空密钥」。</p>
+ */
+const platSecret = ref('')
+
+/** 字段来源文案：管理端填写 / 环境变量。 */
+function platSourceText(key: string) {
+  return platCfg.value?.sources?.[key as GiteePlatformFieldKey] === 'ADMIN' ? '管理端填写' : '环境变量'
+}
+/** 字段来源标签色。 */
+function platSourceTag(key: string): 'success' | 'info' {
+  return platCfg.value?.sources?.[key as GiteePlatformFieldKey] === 'ADMIN' ? 'success' : 'info'
+}
+
+/** 用后端回的**生效值**回填表单（Secret 除外，见 platSecret 注释）。 */
+function applyPlatformValues(v: GiteePlatformConfigView | null) {
+  const vals = (v?.values || {}) as Record<string, string | boolean>
+  platEnabled.value = vals.enabled === true || vals.enabled === 'true'
+  platSecret.value = ''
+  const next: Record<string, string> = {}
+  for (const f of v?.fields || []) {
+    if (f.type === 'BOOL' || f.type === 'SECRET') continue
+    next[f.key] = String(vals[f.key] ?? '')
+  }
+  platForm.value = next
+}
+
+async function loadPlatformConfig() {
+  if (!isPlatformAdmin.value) return
+  platLoading.value = true
+  try {
+    const v = await giteePlatformConfig()
+    platCfg.value = v
+    applyPlatformValues(v)
+  } catch (e: unknown) {
+    platCfg.value = null
+    ElMessage.error(giteeErrMsg(e, '加载平台参数失败'))
+  } finally {
+    platLoading.value = false
+  }
+}
+
+/**
+ * 保存平台参数。
+ *
+ * <p>文本字段**全量提交**（空串＝显式清空）；Secret 仅在用户真的填了时才提交，
+ * 于是「留空」＝保持原密文，不会被空串悄悄覆盖。</p>
+ */
+async function savePlatformConfig() {
+  if (!isPlatformAdmin.value) return
+  const body: GiteePlatformConfigPayload = { enabled: platEnabled.value }
+  for (const f of platCfg.value?.fields || []) {
+    if (f.type === 'BOOL' || f.type === 'SECRET') continue
+    body[f.key] = platForm.value[f.key] ?? ''
+  }
+  const secret = platSecret.value.trim()
+  if (secret) body.clientSecret = secret
+  platSaving.value = true
+  try {
+    const v = await giteeSavePlatformConfig(body)
+    platCfg.value = v
+    applyPlatformValues(v)
+    // 平台参数会改变页头三条横幅的判据（enabled / oauthConfigured / webhookBaseUrlConfigured）
+    // ⇒ 重新拉一次 /config，避免「保存成功了，页头却还写着旧的」。展示必须与事实同源。
+    await loadConfig()
+    ElMessage.success('平台参数已保存并立即生效')
+  } catch (e: unknown) {
+    ElMessage.error(giteeErrMsg(e, '保存平台参数失败'))
+  } finally {
+    platSaving.value = false
+  }
+}
+
+/** 显式清空 Client Secret（后端只认「提交了空串」这一种清空语义）。 */
+async function clearPlatformSecret() {
+  if (!isPlatformAdmin.value) return
+  try {
+    await ElMessageBox.confirm(
+      '清空后平台将不再持有 Client Secret，个人「绑定账号」入口会不可用，直到重新填写并保存。是否继续？',
+      '清空 Client Secret',
+      { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  platSaving.value = true
+  try {
+    const v = await giteeSavePlatformConfig({ clientSecret: '' })
+    platCfg.value = v
+    applyPlatformValues(v)
+    await loadConfig()
+    ElMessage.success('已清空 Client Secret')
+  } catch (e: unknown) {
+    ElMessage.error(giteeErrMsg(e, '清空 Client Secret 失败'))
+  } finally {
+    platSaving.value = false
+  }
+}
+
+/** 删除管理端那份配置，9 个字段全部交还环境变量。 */
+async function clearPlatformConfig() {
+  if (!isPlatformAdmin.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将删除管理端保存的平台参数，${cfgKey.value}.* 环境变量重新生效。是否继续？`,
+      '恢复为环境变量',
+      { type: 'warning', confirmButtonText: '恢复', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  platLoading.value = true
+  try {
+    const v = await giteeClearPlatformConfig()
+    platCfg.value = v
+    applyPlatformValues(v)
+    await loadConfig()
+    ElMessage.success('已恢复为环境变量')
+  } catch (e: unknown) {
+    ElMessage.error(giteeErrMsg(e, '恢复为环境变量失败'))
+  } finally {
+    platLoading.value = false
+  }
+}
+
 async function loadConfig() {
   cfgLoading.value = true
   configError.value = ''
@@ -1128,6 +1351,9 @@ async function initData() {
 
 onMounted(async () => {
   await loadConfig()
+  // 平台参数与「模块是否启用」无关：它正是把 enabled 打开的地方。
+  // 放在 moduleEnabled 守卫之后的话，模块一旦被关掉，用户就再也进不来把它打开了。
+  if (isPlatformAdmin.value) await loadPlatformConfig()
   if (!moduleEnabled.value) return
   await initData()
 })

@@ -110,6 +110,44 @@ source .env.gitee-real && bash start-all.sh
 
 ---
 
+## 3.5 · 管理端动态配置（推荐；改完即生效，无需重启）
+
+**配在哪**：管理端「系统配置 → 仓库配置」页顶部的「平台参数（xxx 应用）」卡片
+（**仅平台管理员可见**）。它以表 `gitee_platform_config` 逐字段覆盖环境变量，保存后**立即生效**，
+不需要改服务器上的 `deploy/.env`、也不需要重建容器 —— 生产在隧道机之后时这是最省事的路径。
+
+| 可在页面配置（**9 项**） | 仍然只能由环境变量 / yml 提供 |
+|---|---|
+| `enabled` · `client-id` · `client-secret` · `redirect-uri` · `oauth-authorize-base-url` · `scope` · `org` · `webhook-base-url` · `bind-return-url` | `token-enc-key` · `base-url` · `web-base-url` · `webhook-secret` · 以及全部调优项 |
+
+**为什么后者不进页面**（不是遗漏，是刻意）：
+
+- **`token-enc-key`** 是既有密文（`gitee_account` / `gitee_tenant_config`）的**解密根**。
+  放进页面等于给运维一个「一键让所有令牌失效」的按钮；换它必须走部署流程并接受重新授权。
+- **`base-url` / `web-base-url`** 定义「这是哪个托管平台」，是部署身份而非运行期参数。
+- **`webhook-secret`** 留空即「每仓库随机生成」（推荐做法），不需要平台级固定值。
+- **调优项**需重启才生效；放进「保存即生效」的页面会造成「保存了却没生效」的误会。
+
+**覆盖语义（逐字段）**：某字段在页面保存过 ⇒ 以管理端为准（**空串也算值**，表示显式清空）；
+没保存过 ⇒ 回落环境变量。页面每个字段都带「管理端填写 / 环境变量」标签，一眼看清值是谁给的。
+「恢复为环境变量」会删除整条管理端配置，9 项一起交还环境变量。
+
+**与三条横幅的关系**：页头「OAuth 应用未配置 / 集成未启用 / Webhook 回调地址未配置」的判据
+全部来自 `GET /api/v1/gitee/config`（`oauthConfigured` / `enabled` / `webhookBaseUrlConfigured`），
+而这三个布尔正是上面 9 项的函数 ⇒ **在这张卡里配好并保存，横幅立即转绿，无需重启**。
+
+**校验会拦住的错误**：`scope` 缺 `projects` 或 `hook`、非 http(s) 的地址、非法组织名，
+保存时直接拒绝并给出中文原因（scope 缺 `hook` 属「建仓成功但 Webhook 被拒」的静默陷阱，
+本项目已实测两次，故在此硬拦）。
+
+**凭据安全**：`client-secret` 落库前经 AES-GCM 加密（与访问令牌同规格），且**任何接口都不回传明文**，
+只回「是否已配置」；页面留空＝保持不变，要清空须显式点「清空密钥」。
+
+> 相关哨兵：`python scripts/_check_gitee_platform_config.py`（静态 10 项，含 `--selftest` 证明断言会红；
+> 加 `--api` 可验接口往返：保存 → 横幅转绿 → 负向被拒 → 清除回落）。
+
+---
+
 ## 4 · 两套环境的差异，只有这 6 处
 
 | 差异项 | 本地 | 生产 | 为什么必须不同 |
@@ -204,6 +242,12 @@ cp .env .env.bak-$(date +%Y%m%d)                 # 回滚点
 docker compose config | grep AIOA_GITEE          # 核对容器真正会收到的值
 docker compose up -d server agent                # up -d 会重建才重读 .env；restart 不重读
 ```
+
+> **更省事的一条路（推荐）**：第 2 步里那 9 项（`CLIENT_ID` / `CLIENT_SECRET` / `REDIRECT_URI` /
+> `OAUTH_AUTHORIZE_URL` / `SCOPE` / `ORG` / `WEBHOOK_BASE_URL` / `BIND_RETURN_URL` / `ENABLED`）
+> 现在可以直接在管理端「仓库配置 → 平台参数」里填写并保存，**不必动服务器**（见 §3.5）。
+> 仍然只能走 `.env` 的是**部署身份与密钥类**参数：`AIOA_GITEE_TOKEN_ENC_KEY`（必须首次启动前就位，
+> 否则库里已存令牌解不开）、`AIOA_GITEE_BASE_URL` / `AIOA_GITEE_WEB_URL`。
 
 ---
 

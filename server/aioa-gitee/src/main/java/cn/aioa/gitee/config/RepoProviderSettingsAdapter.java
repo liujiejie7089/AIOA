@@ -1,5 +1,6 @@
 package cn.aioa.gitee.config;
 
+import cn.aioa.gitee.config.PlatformConfigOverlay.Field;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,14 @@ public class RepoProviderSettingsAdapter implements RepoProviderSettings {
     private final GiteeProperties gitee;
     private final GiteaProperties gitea;
 
+    /**
+     * 管理端保存的平台级参数覆盖层（表 {@code gitee_platform_config}）。
+     *
+     * <p>本类<b>只读</b>覆盖层，不依赖 {@code GiteePlatformConfigService}——后者要用
+     * {@code GiteeCrypto} 解密，而加密器的密钥又来自本类，反向依赖会形成循环（详见覆盖层类注释）。</p>
+     */
+    private final PlatformConfigOverlay overlay;
+
     @Value("${" + PROPERTY + ":gitee}")
     private String provider;
 
@@ -53,34 +62,82 @@ public class RepoProviderSettingsAdapter implements RepoProviderSettings {
 
     @Override
     public boolean isEnabled() {
+        String admin = adminValue(Field.ENABLED);
+        if (admin != null) {
+            return Boolean.parseBoolean(admin);
+        }
         return giteaActive() ? gitea.isEnabled() : gitee.isEnabled();
     }
 
     @Override
     public String getOrg() {
+        String admin = adminValue(Field.ORG);
+        if (admin != null) {
+            return admin;
+        }
         return giteaActive() ? blankToEmpty(gitea.getOrg()) : blankToEmpty(gitee.getOrg());
     }
 
     @Override
     public String getWebhookBaseUrl() {
+        String admin = adminValue(Field.WEBHOOK_BASE_URL);
+        if (admin != null) {
+            return admin;
+        }
         return giteaActive() ? blankToEmpty(gitea.getWebhookBaseUrl()) : blankToEmpty(gitee.getWebhookBaseUrl());
     }
 
     @Override
     public String getWebhookSecret() {
+        // 刻意不纳入管理端覆盖：留空即「每仓库随机生成」，平台级固定值没有必要（见 V77 头部注释）
         return giteaActive() ? blankToEmpty(gitea.getWebhookSecret()) : blankToEmpty(gitee.getWebhookSecret());
     }
 
     @Override
     public String getRedirectUri() {
+        String admin = adminValue(Field.REDIRECT_URI);
+        if (admin != null) {
+            return admin;
+        }
         return giteaActive() ? blankToEmpty(gitea.getRedirectUri()) : blankToEmpty(gitee.getRedirectUri());
     }
 
     @Override
     public String getOauthAuthorizeBaseUrl() {
+        String admin = adminValue(Field.OAUTH_AUTHORIZE_BASE_URL);
+        if (admin != null) {
+            return admin;
+        }
         return giteaActive()
                 ? blankToEmpty(gitea.getOauthAuthorizeBaseUrl())
                 : blankToEmpty(gitee.getOauthAuthorizeBaseUrl());
+    }
+
+    /** REST 基址：部署身份，不参与管理端覆盖（改它等于换平台，不是运行期参数）。 */
+    @Override
+    public String getBaseUrl() {
+        return giteaActive() ? blankToEmpty(gitea.getBaseUrl()) : blankToEmpty(gitee.getBaseUrl());
+    }
+
+    @Override
+    public String getScope() {
+        String admin = adminValue(Field.SCOPE);
+        if (admin != null) {
+            return admin;
+        }
+        return giteaActive() ? blankToEmpty(gitea.getScope()) : blankToEmpty(gitee.getScope());
+    }
+
+    /** Client ID（非密文，可展示）。 */
+    @Override
+    public String getClientId() {
+        return clientId();
+    }
+
+    /** 只回「是否已配置」，**不回传 Secret 本身**。 */
+    @Override
+    public boolean clientSecretConfigured() {
+        return StringUtils.hasText(clientSecret());
     }
 
     /**
@@ -163,6 +220,10 @@ public class RepoProviderSettingsAdapter implements RepoProviderSettings {
 
     @Override
     public String getBindReturnUrl() {
+        String admin = adminValue(Field.BIND_RETURN_URL);
+        if (admin != null) {
+            return admin;
+        }
         return blankToEmpty(gitee.getBindReturnUrl());
     }
 
@@ -228,11 +289,33 @@ public class RepoProviderSettingsAdapter implements RepoProviderSettings {
     // 内部
     // ======================================================================
 
+    /**
+     * 该字段的管理端覆盖值；<b>无覆盖返回 {@code null}</b>。
+     *
+     * <p>用 {@code null} 而不是空串作为「无覆盖」的哨兵：空串是一个有效配置
+     * （表示「管理端显式清空，不要再回落环境变量」）。把两者混为一谈，
+     * 用户就永远清不掉一个环境变量里存在的值。</p>
+     *
+     * <p>provider 不匹配时也返回 null（覆盖层自带校验），避免「表里存的是 gitee 的值、
+     * 却被当作 gitea 的配置用」。</p>
+     */
+    private String adminValue(Field f) {
+        return overlay.covers(f, providerName()) ? overlay.get(f) : null;
+    }
+
     private String clientId() {
+        String admin = adminValue(Field.CLIENT_ID);
+        if (admin != null) {
+            return admin;
+        }
         return giteaActive() ? gitea.getClientId() : gitee.getClientId();
     }
 
     private String clientSecret() {
+        String admin = adminValue(Field.CLIENT_SECRET);
+        if (admin != null) {
+            return admin;
+        }
         return giteaActive() ? gitea.getClientSecret() : gitee.getClientSecret();
     }
 

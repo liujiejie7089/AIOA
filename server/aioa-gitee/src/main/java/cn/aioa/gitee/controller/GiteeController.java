@@ -1,10 +1,12 @@
 package cn.aioa.gitee.controller;
 
+import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.gitee.config.RepoProviderSettings;
 import cn.aioa.gitee.entity.GiteeProject;
 import cn.aioa.gitee.service.GiteeContentService;
 import cn.aioa.gitee.service.GiteeMemberService;
+import cn.aioa.gitee.service.GiteePlatformConfigService;
 import cn.aioa.gitee.service.GiteeProjectService;
 import cn.aioa.gitee.service.GiteeSyncScheduler;
 import cn.aioa.gitee.service.GiteeTenantConfigService;
@@ -12,11 +14,13 @@ import cn.aioa.gitee.service.GiteeTenantInitService;
 import cn.aioa.gitee.service.GiteeTaskService;
 import cn.aioa.org.support.OrgGuard;
 import cn.aioa.security.AuthUser;
+import cn.aioa.security.PermissionCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -50,6 +54,7 @@ public class GiteeController {
     private final GiteeContentService contentService;
     private final GiteeSyncScheduler syncScheduler;
     private final GiteeTaskService taskService;
+    private final GiteePlatformConfigService platformConfigService;
 
     // ======================================================================
     // 元信息
@@ -84,6 +89,9 @@ public class GiteeController {
         m.put("orgConfigured", tenantConfigService.orgConfigured(tenantId));
         m.put("webhookBaseUrlConfigured",
                 props.getWebhookBaseUrl() != null && !props.getWebhookBaseUrl().isBlank());
+        // OAuth 应用是否配齐：与 /bind/authorize 的实际判定同源（那一步抛的正是「OAuth 应用未配置」）。
+        // 前端据此把「红条」的判据从「点了绑定才知道」提前到「进页面就能看见」。
+        m.put("oauthConfigured", props.oauthConfigured());
         m.put("syncEnabled", props.isSyncEnabled());
         m.put("purgeRepoOnDelete", props.isPurgeRepoOnDelete());
         m.put("roleOptions", List.of(
@@ -91,6 +99,60 @@ public class GiteeController {
                 Map.of("value", "WRITE", "label", "开发者（可推送）"),
                 Map.of("value", "ADMIN", "label", "管理员（可改设置）")));
         return ApiResponse.ok(m);
+    }
+
+    // ======================================================================
+    // 平台级参数（管理端动态配置；取代「只能改环境变量 + 重启」）
+    // ======================================================================
+
+    /**
+     * 平台参数视图（含每字段来源 {@code ADMIN} / {@code ENV}）。
+     *
+     * <p><b>为什么限定平台管理员</b>：这些是<b>全平台共用一份</b>的部署信息
+     * （OAuth 应用凭据、Webhook 公网基址、授权跳转域）。{@link #config()} 刻意
+     * 「只回布尔与枚举，不回组织名 / 回调地址等内部配置」，本接口正是那些部署信息的专用出口，
+     * 因此不能对普通组织成员开放。</p>
+     */
+    @GetMapping("/platform-config")
+    public ApiResponse<Map<String, Object>> platformConfig() {
+        requirePlatformAdmin();
+        return ApiResponse.ok(platformConfigService.view());
+    }
+
+    /**
+     * 保存平台参数。
+     *
+     * <p>逐字段语义：body 里<b>出现</b>的键才写入（空串＝显式清空），未出现的键保持原值——
+     * 于是前端把 Secret 留空且不回传时，原密文不受影响。</p>
+     *
+     * <p>保存后立即重建覆盖层，<b>无需重启</b>。</p>
+     */
+    @PutMapping("/platform-config")
+    public ApiResponse<Map<String, Object>> savePlatformConfig(@RequestBody Map<String, Object> body) {
+        AuthUser u = requirePlatformAdmin();
+        return ApiResponse.ok(platformConfigService.save(body, u.getUserId()));
+    }
+
+    /** 清除平台参数（9 项全部交还环境变量）。 */
+    @DeleteMapping("/platform-config")
+    public ApiResponse<Map<String, Object>> clearPlatformConfig() {
+        requirePlatformAdmin();
+        return ApiResponse.ok(platformConfigService.clear());
+    }
+
+    /**
+     * 平台管理员守卫。
+     *
+     * <p>判据与 {@code TenantController#requirePlatformAdmin} 同源
+     * （{@link PermissionCatalog#isPlatformAdmin}），不另立一套角色名列表——
+     * 两处各写一份，加角色时必漏改一处。</p>
+     */
+    private AuthUser requirePlatformAdmin() {
+        AuthUser u = guard.user();
+        if (!PermissionCatalog.isPlatformAdmin(u)) {
+            throw BizException.forbidden("仓库平台参数仅平台管理员可配置");
+        }
+        return u;
     }
 
     // ======================================================================
