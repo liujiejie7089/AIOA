@@ -92,3 +92,43 @@
 - 该字段的页面提示已改写为「只填基址：后端会自动在其后追加 /api/v1/gitee/webhook/{项目id}…」
   （原提示只说「必须是公网地址」，不回答「填什么」）；指南 §3.5 亦补了同内容的「填什么」小节。
 
+
+### ★ 2026-10-10 空 `client_id` 缺陷：客户端绕过端口（本次修复，勿回退）
+**症状**：用户绑定 Gitee、登录后回 `{"error":"Application does not exist"}`。
+抓到的授权 URL = `https://gitee.com/oauth/authorize?client_id=&redirect_uri=…` —— **`client_id=` 为空**。
+
+**根因**：管理端「仓库配置」页把 client-id 存进了 `gitee_platform_config`（页面 `configured=true`、
+`adminOverridden=9`、来源 `ADMIN`），但 `GiteeClient.authorizeUrl()` **直读原始 `GiteeProperties` bean**
+（只含**环境变量**值，生产 env 又没传进容器 ⇒ 空），**绕过了「管理端覆盖层 → 回落环境变量」的
+`RepoProviderSettings` 端口** ⇒ 页面改的是这个值、真正发出去的是另一个值。同一缺陷也存在于
+`GiteaProviderClient`（其 `props.oauthAuthorizeUrl()` 同样从原始 bean 派生授权域）。
+
+**修复（单一决策点）**：两个客户端对**可覆盖字段**一律改走端口 `settings.*`
+（`getClientId` / `getClientSecret` / `getRedirectUri` / `getOauthAuthorizeBaseUrl` / `getScope`）；
+`GiteaProviderClient` 的授权页改为 `trimSlash(settings.getOauthAuthorizeBaseUrl()) + "/login/oauth/authorize"`。
+**不可覆盖项仍取原始 bean**：`getBaseUrl` / `getWebBaseUrl`（部署身份）、`getHttpTimeoutSeconds`、
+分页/限速、`getRepoNameMaxLength`、TLS。为此给端口**新增 `getClientSecret()`**（此前刻意只暴露
+`clientSecretConfigured()`）；`@PostConstruct` 自检的 `GiteaConfig` 也改读端口（否则日志打印 env 值、与行为不符）。
+调用链：`GiteeOauthController @PostMapping("/authorize")` → `GiteeAccountService`（按接口注入
+`RepoProviderClient`）→ `authorizeUrl()` → 端口。
+
+**收口证据**：
+- 单测 `GiteeAuthorizeUrlTest`（**4 项**）：①管理端配了 client-id ⇒ URL 带上它（且不含 `client_id=&`）；
+  ②**负向对照**：不配就是 `client_id=&`（证明判据有效）；③Gitea 授权域/client-id 亦走端口；
+  ④端口暴露 secret 的**值**。**已做负向验证**：把 `settings.getClientId()` 改回 `props.getClientId()`
+  → 该用例如期变红（不是恒真）。
+- 静态哨兵 `scripts/_check_gitee_platform_config.py` **新增 S12**（客户端可覆盖字段不得直读原始 bean），
+  含退化自检（把一处改回 `props.` → 变红）；静态 **11 → 12/12**。
+- `aioa-gitee` 全模块单测 **174/174 通过**（含更新后的 3 个老测试 + `RepoProviderWiringTest`）。
+
+### 顺带修的两处缺陷
+1. **中立性审计早就是红的**（`RepoProviderNeutralityTest.userFacingCopyMustNotHardcodeProviderName`）：
+   `5e38135` 引入的 `FIELD_META` 提示里 `"真实 Gitee 为…"` / `"Gitee 的 hook…"` 写死了托管方名，
+   本轮的 `afb268e` 又加了一处 `"必须是 Gitee 能访问到的公网地址"`（把原本**刻意中立**的「托管方」改成了「Gitee」）。
+   已按该测试的**本意**改文案（`官方站点填…`；`托管方能访问到…`；`props.providerLabel() + " 的 "`），
+   **没有放宽任何断言**。
+   ⇒ 教训：`5e38135` 提交后**没跑该模块单测**，红着的套件被推了上去；改「用户可见文案」必须重跑此审计。
+2. **哨兵 `--api` 会毁真实 Secret**：原 `A8` 用假值覆盖 `clientSecret`，而 Secret **读不回明文**，
+   复原路径整段**排除**该字段 ⇒ 既可能毁掉生产凭据，也可能把「未配置」伪装成「已配置」。
+   已改为：**原本已配置则只读校验**（不回写）；原本未配置才写假值，且复原时**显式清空**（空串＝显式清空）。
+   ⇒ 结论：**不要对持有真实凭据的在线后端跑 `--api` 的旧版本**。

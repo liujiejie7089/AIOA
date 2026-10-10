@@ -35,11 +35,11 @@ class RepoWebhookVerifyTest {
     private static GiteaProviderClient gitea() {
         GiteaProperties props = new GiteaProperties();
         props.setBaseUrl("http://127.0.0.1:1/api/v1");
-        return new GiteaProviderClient(props, new ObjectMapper());
+        return new GiteaProviderClient(props, TestSettings.gitea(), new ObjectMapper());
     }
 
     private static GiteeClient gitee() {
-        return new GiteeClient(new GiteeProperties(), new ObjectMapper());
+        return new GiteeClient(new GiteeProperties(), TestSettings.gitee(), new ObjectMapper());
     }
 
     private static Map<String, String> headers(String k, String v) {

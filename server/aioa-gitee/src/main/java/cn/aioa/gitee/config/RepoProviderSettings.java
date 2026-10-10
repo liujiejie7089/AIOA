@@ -72,6 +72,21 @@ public interface RepoProviderSettings {
      */
     boolean clientSecretConfigured();
 
+    /**
+     * OAuth 应用 Client Secret 的**值**。
+     *
+     * <p><b>仅限服务端换取/刷新令牌使用</b>（{@code /oauth/token} 的 {@code client_secret} 字段）。
+     * <b>任何控制器、视图、日志都不得把它回传或打印</b> —— 对外只允许用
+     * {@link #clientSecretConfigured()} 回答「有没有」。</p>
+     *
+     * <p><b>为什么端口要暴露它</b>：{@code authorizeUrl()} 与换令牌都要用它；此前
+     * {@code GiteeClient} / {@code GiteaProviderClient} 直接读原始 {@code *Properties} bean，
+     * 于是管理端配的 client-id / secret **不进授权 URL**（2026-10-10 实测：授权 URL 里
+     * {@code client_id=} 为空 ⇒ Gitee 回 {@code {"error":"Application does not exist"}}）。
+     * 走端口是唯一决策点，避免「页面改的是这个值、真正发出去的是另一个值」。</p>
+     */
+    String getClientSecret();
+
     /** 令牌加密密钥（AES）。**切换 provider 会导致既有令牌不可解密，需重新绑定**。 */
     String getTokenEncKey();
 

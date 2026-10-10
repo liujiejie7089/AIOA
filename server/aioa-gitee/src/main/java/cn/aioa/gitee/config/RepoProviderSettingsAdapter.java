@@ -141,6 +141,15 @@ public class RepoProviderSettingsAdapter implements RepoProviderSettings {
     }
 
     /**
+     * Secret 的**值**：仅服务端换令牌用。见 {@link RepoProviderSettings#getClientSecret()} 的告警，
+     * 任何接口/日志都不得回传它。
+     */
+    @Override
+    public String getClientSecret() {
+        return clientSecret();
+    }
+
+    /**
      * 令牌加密密钥。
      *
      * <p><b>切换 provider 会让既有令牌不可解密</b>（两段各有一个不同的默认密钥）。

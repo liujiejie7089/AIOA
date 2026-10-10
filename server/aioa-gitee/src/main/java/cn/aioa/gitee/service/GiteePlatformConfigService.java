@@ -98,14 +98,14 @@ public class GiteePlatformConfigService {
             meta(K_REDIRECT_URI, "OAuth 回调地址", "TEXT",
                     "须与第三方应用登记页逐字符一致；本地用 localhost，不要用 127.0.0.1"),
             meta(K_OAUTH, "授权跳转域", "TEXT",
-                    "用户浏览器打开的授权页基址；真实 Gitee 为 https://gitee.com"),
+                    "用户浏览器打开的授权页基址；官方站点填 https://gitee.com"),
             meta(K_SCOPE, "授权 scope", "TEXT",
                     "必须同时含 projects 与 hook：前者缺则建仓/读写被拒，后者缺则 Webhook 被拒"),
             meta(K_ORG, "平台默认组织", "TEXT",
                     "租户未自配组织时的回落值；留空＝仓库建在授权用户名下"),
             meta(K_WEBHOOK, "Webhook 回调基址", "TEXT",
                     "只填基址：后端会自动在其后追加 /api/v1/gitee/webhook/{项目id}（结尾带不带 / 都行）。"
-                            + "必须是 Gitee 能访问到的公网地址，填 127.0.0.1 或 localhost 必然失败"),
+                            + "必须是托管方能访问到的公网地址，填 127.0.0.1 或 localhost 必然失败"),
             meta(K_BIND, "授权后回跳地址", "TEXT",
                     "绑定完成后前端跳转的页面地址")
     );
@@ -419,7 +419,7 @@ public class GiteePlatformConfigService {
             List<String> parts = List.of(scope.trim().split("\\s+"));
             if (!parts.contains(SCOPE_PROJECTS) || !parts.contains(SCOPE_HOOK)) {
                 throw BizException.badRequest("scope 必须同时包含 " + SCOPE_PROJECTS + " 与 " + SCOPE_HOOK
-                        + "（当前：" + scope + "）。Gitee 的 " + SCOPE_HOOK + " 是独立 scope，"
+                        + "（当前：" + scope + "）。" + props.providerLabel() + " 的 " + SCOPE_HOOK + " 是独立 scope，"
                         + "不会被 " + SCOPE_PROJECTS + " 顺带授予；缺它会导致「建仓成功但 Webhook 配置被拒」。");
             }
         }

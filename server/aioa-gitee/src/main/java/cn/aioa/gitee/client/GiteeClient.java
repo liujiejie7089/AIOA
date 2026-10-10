@@ -1,6 +1,7 @@
 package cn.aioa.gitee.client;
 
 import cn.aioa.gitee.config.GiteeProperties;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,7 +71,17 @@ public class GiteeClient implements RepoProviderClient {
         }
     };
 
+    /**
+     * 仅承载**不可在管理端覆盖**的项：HTTP 超时、分页/限速等调优参数、
+     * {@code web-base-url} / {@code base-url} 这类部署身份。
+     * <p>凡管理端可配的字段（client-id / client-secret / redirect-uri /
+     * oauth-authorize-base-url / scope）**一律走 {@link #settings}**，
+     * 否则会出现「页面改的是这个值、真正发出去的是另一个值」（2026-10-10 实测：
+     * 授权 URL 里 {@code client_id=} 为空 ⇒ Gitee 回 {@code {"error":"Application does not exist"}}）。
+     */
     private final GiteeProperties props;
+    /** 可覆盖字段的**唯一决策点**（管理端覆盖层 → 回落环境变量）。 */
+    private final RepoProviderSettings settings;
     private final ObjectMapper objectMapper;
 
     private final HttpClient http = HttpClient.newBuilder()
@@ -111,12 +122,14 @@ public class GiteeClient implements RepoProviderClient {
      * 与假账号」这类静默假成功。</p>
      */
     public String authorizeUrl(String state) {
-        return trimSlash(props.getOauthAuthorizeBaseUrl()) + "/oauth/authorize"
-                + "?client_id=" + enc(props.getClientId())
-                + "&redirect_uri=" + enc(props.getRedirectUri())
+        // 一律走端口：管理端「仓库配置」页配的 client-id / redirect-uri / scope / 授权域
+        // 必须进入这条 URL，否则用户拿到的是空的 client_id（Gitee 回 {"error":"Application does not exist"}）。
+        return trimSlash(settings.getOauthAuthorizeBaseUrl()) + "/oauth/authorize"
+                + "?client_id=" + enc(settings.getClientId())
+                + "&redirect_uri=" + enc(settings.getRedirectUri())
                 + "&response_type=code"
                 + "&state=" + enc(state)
-                + "&scope=" + enc(props.getScope());
+                + "&scope=" + enc(settings.getScope());
     }
 
     private static String trimSlash(String s) {
@@ -129,7 +142,7 @@ public class GiteeClient implements RepoProviderClient {
 
     /** 授权跳转的落地域名（用于界面提示与排障）。 */
     public String authorizeHost() {
-        return hostOf(props.getOauthAuthorizeBaseUrl());
+        return hostOf(settings.getOauthAuthorizeBaseUrl());
     }
 
     /**
@@ -165,9 +178,12 @@ public class GiteeClient implements RepoProviderClient {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "authorization_code");
         form.put("code", code);
-        form.put("client_id", props.getClientId());
-        form.put("client_secret", props.getClientSecret());
-        form.put("redirect_uri", props.getRedirectUri());
+        // client_id / secret / redirect_uri 走端口：必须与授权 URL 同源，否则换令牌会因
+        // 应用不匹配而失败（换取用的 secret 与授权用的 client_id 必须成对）。
+        form.put("client_id", settings.getClientId());
+        form.put("client_secret", settings.getClientSecret());
+        form.put("redirect_uri", settings.getRedirectUri());
+        // web-base-url 是部署身份（服务端域），不参与管理端覆盖，仍取原始 bean。
         return formPost(props.getWebBaseUrl() + "/oauth/token", form);
     }
 
@@ -176,9 +192,9 @@ public class GiteeClient implements RepoProviderClient {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "refresh_token");
         form.put("refresh_token", refreshToken);
-        form.put("client_id", props.getClientId());
-        form.put("client_secret", props.getClientSecret());
-        form.put("redirect_uri", props.getRedirectUri());
+        form.put("client_id", settings.getClientId());
+        form.put("client_secret", settings.getClientSecret());
+        form.put("redirect_uri", settings.getRedirectUri());
         return formPost(props.getWebBaseUrl() + "/oauth/token", form);
     }
 

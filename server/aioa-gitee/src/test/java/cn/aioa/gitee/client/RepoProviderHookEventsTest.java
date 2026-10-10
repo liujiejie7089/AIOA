@@ -27,11 +27,11 @@ class RepoProviderHookEventsTest {
     private static final List<String> GITEA_ONLY = List.of("pull_request", "issue_comment");
 
     private static RepoProviderClient gitee() {
-        return new GiteeClient(new GiteeProperties(), new ObjectMapper());
+        return new GiteeClient(new GiteeProperties(), TestSettings.gitee(), new ObjectMapper());
     }
 
     private static RepoProviderClient gitea() {
-        return new GiteaProviderClient(new GiteaProperties(), new ObjectMapper());
+        return new GiteaProviderClient(new GiteaProperties(), TestSettings.gitea(), new ObjectMapper());
     }
 
     @Test

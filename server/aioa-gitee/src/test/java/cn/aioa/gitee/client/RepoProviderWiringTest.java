@@ -2,6 +2,8 @@ package cn.aioa.gitee.client;
 
 import cn.aioa.gitee.config.GiteaConfig;
 import cn.aioa.gitee.config.GiteeConfig;
+import cn.aioa.gitee.config.PlatformConfigOverlay;
+import cn.aioa.gitee.config.RepoProviderSettingsAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -59,14 +61,23 @@ class RepoProviderWiringTest {
         }
     }
 
-    /** 构造一个只含两个客户端 + 两个配置类的上下文；provider 为 null 表示不设置该属性。 */
+    /**
+     * 构造一个只含两个客户端 + 两个配置类 + **设置端口**的上下文；provider 为 null 表示不设置该属性。
+     *
+     * <p>为什么要连 {@link RepoProviderSettingsAdapter} / {@link PlatformConfigOverlay} 一起注册：
+     * 客户端与 {@code GiteaConfig} 现在都从端口读可覆盖字段（值走管理端覆盖层 → 回落环境变量），
+     * 端口已是装配图的真实组成部分。不注册它，本就该失败的上下文反而会因「缺 Bean」而失败 ——
+     * 那是把「接线测试」测成了「缺少依赖」，不再反映真实装配关系。</p>
+     */
     private AnnotationConfigApplicationContext contextWith(String provider) {
         AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
         ctx.register(ObjectMapper.class);   // 无参构造，直接交给容器实例化
         if (provider != null) {
             TestPropertyValues.of("aioa.repo.provider=" + provider).applyTo(ctx);
         }
-        ctx.register(GiteeConfig.class, GiteaConfig.class, GiteeClient.class, GiteaProviderClient.class);
+        ctx.register(GiteeConfig.class, GiteaConfig.class,
+                PlatformConfigOverlay.class, RepoProviderSettingsAdapter.class,
+                GiteeClient.class, GiteaProviderClient.class);
         ctx.refresh();
         return ctx;
     }

@@ -17,6 +17,12 @@ import java.util.Arrays;
  * 只表现为功能静默失效（授权成功但权限不足、Webhook 建好但不回调）。
  * 把这类问题在启动日志里一次说清，比等它以「Webhook 怎么不触发」的形式出现要好得多。</p>
  *
+ * <p><b>为什么读的是 {@link RepoProviderSettings} 端口而不是原始 {@link GiteaProperties}</b>
+ * （2026-10-10 改）：enabled / scope / oauth-authorize-base-url / org 现在可在管理端
+ * 「仓库配置」页覆盖。直接读原始 bean 会打印<b>环境变量值</b>，而实际生效的是覆盖值 ——
+ * 「日志说 A、行为是 B」比不打日志更误导。走端口（唯一决策点）保证展示与事实同源，
+ * 与 {@code GiteeConfig} 的处理一致；不可覆盖项（base-url / TLS / 超时）仍取原始 bean。</p>
+ *
  * <p>刻意只告警、不中断：配置缺项的后果是「部分能力不可用」，不是「服务不可用」。</p>
  */
 @Slf4j
@@ -29,6 +35,8 @@ public class GiteaConfig {
     private static final String SCOPE_REPO = "repo";
 
     private final GiteaProperties props;
+    /** 可覆盖字段的唯一决策点（管理端覆盖层 → 回落环境变量）。 */
+    private final RepoProviderSettings settings;
 
     /** 当前选中的托管方（{@code aioa.repo.provider}），用于判断本配置是否真正生效。 */
     @Value("${aioa.repo.provider:gitee}")
@@ -36,11 +44,11 @@ public class GiteaConfig {
 
     @PostConstruct
     public void selfCheck() {
-        if (!props.isEnabled()) {
+        if (!settings.isEnabled()) {
             // 未启用时不刷屏；但仍然提示一下「provider 选了 gitea 却没开开关」这种矛盾配置
             if (isGiteaSelected()) {
                 log.warn("[gitea] provider 已选为 gitea，但 aioa.gitea.enabled=false："
-                        + "所有 Gitea 接口都会返回明确错误。请检查 AIOA_GITEA_ENABLED。");
+                        + "所有 Gitea 接口都会返回明确错误。请检查 AIOA_GITEA_ENABLED 或「仓库配置」页。");
             }
             return;
         }
@@ -48,10 +56,10 @@ public class GiteaConfig {
         log.info("[gitea] 接线：provider={} api={} 授权跳转={}{} scope=\"{}\" org=\"{}\" TLS={}",
                 isGiteaSelected() ? "gitea(生效)" : "gitee(默认，本配置未生效)",
                 props.getBaseUrl(),
-                props.getOauthAuthorizeBaseUrl(),
+                settings.getOauthAuthorizeBaseUrl(),
                 props.isInsecureSkipVerify() ? "  ⚠ TLS 校验已关闭" : "",
-                props.getScope(),
-                StringUtils.hasText(props.getOrg()) ? props.getOrg() : "(空 → 建在用户名下)",
+                settings.getScope(),
+                StringUtils.hasText(settings.getOrg()) ? settings.getOrg() : "(空 → 建在用户名下)",
                 tlsSummary());
 
         checkScope(SCOPE_REPO, "建仓与读写文件将被拒");
@@ -60,7 +68,7 @@ public class GiteaConfig {
 
     /** 校验 scope 含 repo；缺失时告警（不中断启动）。 */
     private void checkScope(String required, String impact) {
-        String scope = props.getScope() == null ? "" : props.getScope().trim();
+        String scope = settings.getScope() == null ? "" : settings.getScope().trim();
         if (!Arrays.asList(scope.split("\\s+")).contains(required)) {
             log.warn("[gitea] ⚠ scope 缺少「{}」：{}。Gitea 的 scope 词表与 Gitee 完全不同"
                             + "（Gitee 用 projects/hook），照抄 Gitee 的 scope 不会报错、"

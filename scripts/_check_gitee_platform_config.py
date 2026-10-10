@@ -32,6 +32,11 @@
 `--api` 需要：
   * 后端 :8080 在跑，且**已包含本次改动**（否则 /gitee/platform-config 404 → 记 SKIP）；
   * 平台管理员账号（默认 admin / Admin@123，可用 --user/--password 覆盖）。
+
+**安全约定（2026-10-10 修）**：Secret 子项写入后**读不回明文**，故一旦覆盖即不可还原。
+若平台参数里**已配置真实 Secret**（生产常态），本脚本改为**只读校验**（不回写）；
+仅在原本未配置时才写入测试假值，并在复原时**显式清空**（空串＝显式清空），
+避免把「未配置」伪装成「已配置」、或把真实凭据覆盖成假值。
 """
 import argparse
 import json
@@ -62,6 +67,15 @@ CONTROLLER = "server/aioa-gitee/src/main/java/cn/aioa/gitee/controller/GiteeCont
 MIGRATION = "server/aioa-boot/src/main/resources/db/migration/V77__gitee_platform_config.sql"
 TS_API = "web/apps/shell/src/api/gitee.ts"
 VUE = "web/apps/shell/src/views/GiteeProjectsView.vue"
+GITEE_CLIENT = "server/aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteeClient.java"
+GITEA_CLIENT = "server/aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteaProviderClient.java"
+
+# 可覆盖字段的 getter：客户端**必须经 RepoProviderSettings 端口**取这些值，
+# 不得直接读原始 *Properties bean（原始 bean 只含环境变量值，绕过管理端覆盖层）。
+OVERRIDABLE_GETTERS = [
+    "getClientId", "getClientSecret", "getRedirectUri",
+    "getOauthAuthorizeBaseUrl", "getScope",
+]
 
 
 def read(rel: str) -> str:
@@ -186,6 +200,37 @@ def s11_card_outside_module_guard(vue_src: str):
     return (card_at < first_guard, f"卡片@ {card_at} 早于 moduleEnabled 守卫@ {first_guard}")
 
 
+def s12_clients_route_overridable_fields_through_port(gitee_src: str):
+    """
+    两个 Provider 客户端对**可覆盖字段**必须走端口（`settings.*`），不得读原始 `*Properties`。
+
+    缺陷背景（2026-10-10 生产实测）：用户绑定 Gitee 时登录后被回
+    `{"error":"Application does not exist"}`；抓到的授权 URL 是
+    `https://gitee.com/oauth/authorize?client_id=&redirect_uri=...` —— `client_id` 为空。
+    根因：`GiteeClient.authorizeUrl()` 当时直接读 `props.getClientId()`（原始 bean 只有**环境变量**值），
+    绕过了「管理端覆盖层 → 回落环境变量」的 `RepoProviderSettings` 端口 ⇒
+    **页面改的是这个值、真正发出去的是另一个值**（页面显示 client-id 已配置，URL 里却是空）。
+
+    这类缺陷**不报错**、单测 happy-path 也测不出（除非专门断言「生效值进了 URL」），
+    只在真机上表现为「配了却没用」。故此处静态钉死：凡可覆盖字段的 getter，客户端里
+    只允许出现 `settings.` 前缀；不可覆盖项（`getBaseUrl` / `getWebBaseUrl` / 超时 / 分页 /
+    `getRepoNameMaxLength`）不在此列，仍取原始 bean（那是部署身份与调优参数）。
+    """
+    bad = []
+    pairs = ((GITEE_CLIENT, gitee_src),)
+    # 第二个文件自行读取：断言契约是「一文件一函数」，而本约束跨两个文件
+    pairs += ((GITEA_CLIENT, read(GITEA_CLIENT)),)
+    for rel, src in pairs:
+        short = Path(rel).name
+        for g in OVERRIDABLE_GETTERS:
+            if f"props.{g}(" in src:
+                bad.append(f"{short}:props.{g}(")
+        # Gitea 的授权域经 oauthAuthorizeUrl() 从原始 bean 派生，同属绕过端口
+        if "props.oauthAuthorizeUrl(" in src:
+            bad.append(f"{short}:props.oauthAuthorizeUrl(")
+    return (not bad, f"客户端直读原始 bean 的可覆盖字段：{bad or '无'}")
+
+
 STATIC_CHECKS = [
     ("S1 适配器全部字段走覆盖层", ADAPTER, s1_adapter_covers_all),
     ("S2 覆盖层 FIELD_NAMES 与词表一致", OVERLAY, s2_overlay_field_names),
@@ -198,6 +243,8 @@ STATIC_CHECKS = [
     ("S9 三端点齐备且过平台管理员守卫", CONTROLLER, s9_controller_endpoints),
     ("S10 视图不回传 Secret", SERVICE, s10_secret_not_returned),
     ("S11 平台参数卡在 moduleEnabled 守卫之外", VUE, s11_card_outside_module_guard),
+    ("S12 客户端可覆盖字段走端口（非原始 bean）", GITEE_CLIENT,
+     s12_clients_route_overridable_fields_through_port),
 ]
 
 
@@ -264,6 +311,9 @@ def selftest():
     expect_red("S11", s11_card_outside_module_guard,
                vue.replace('<el-card v-if="isPlatformAdmin && !configError"',
                            '<el-card v-if="isPlatformAdmin && !configError && moduleEnabled"'))
+    # 退化形态 = 客户端重新直读原始 bean（即 2026-10-10 修掉的空 client_id 缺陷）
+    expect_red("S12", s12_clients_route_overridable_fields_through_port,
+               read(GITEE_CLIENT).replace("settings.getClientId()", "props.getClientId()"))
 
     print(f"\n自检结果：{'全部断言均会随退化变红' if not fails else '存在无效断言'}")
     for f in fails:
@@ -352,6 +402,7 @@ def run_api(base, user, pwd):
         st2, r2 = api.call("GET", "/api/v1/gitee/config")
         return (r2.get("data") or {}) if isinstance(r2, dict) else {}
 
+    secret_written = False
     try:
         # --- 正向：改平台默认组织，应立即生效且来源为 ADMIN ---
         st, r = api.call("PUT", "/api/v1/gitee/platform-config", {"org": "__check_tmp_org__"})
@@ -374,28 +425,40 @@ def run_api(base, user, pwd):
         chk("A7 负向·非 http(s) 地址被拒", ok, f"code={(r or {}).get('code')} msg={str((r or {}).get('message'))[:60]}")
 
         # --- Secret：写入后不得回传明文 ---
-        st, r = api.call("PUT", "/api/v1/gitee/platform-config", {"clientSecret": "__check_secret_value__"})
-        ok = st == 200 and isinstance(r, dict) and r.get("code") == 0
-        chk("A8 保存 Client Secret", ok, f"HTTP {st} {str(r)[:100]}")
-        if ok:
-            chk("A9 Secret 不回传明文", "__check_secret_value__" not in json.dumps(r, ensure_ascii=False),
-                "响应体中未出现明文")
-            chk("A10 只回「已配置」", bool((r.get("data") or {}).get("clientSecretConfigured")) is True,
-                f"clientSecretConfigured={(r.get('data') or {}).get('clientSecretConfigured')}")
+        # ★ 不可逆风险（2026-10-10 修）：Secret 写入后**读不回明文**（设计如此），因此一旦覆盖就无法还原。
+        #   若原本已配置（生产常态），此处写入会**静默毁掉真实凭据** ⇒ 改为「复用现有配置做只读校验」。
+        if orig_secret_configured:
+            view_secret = (data.get("values") or {}).get("clientSecret")
+            chk("A9 Secret 不回传明文（复用现有配置，只读）", view_secret == "",
+                f"视图 clientSecret={view_secret!r}")
+            chk("A10 只回「已配置」", data.get("clientSecretConfigured") is True,
+                f"clientSecretConfigured={data.get('clientSecretConfigured')}")
+            print("  [NOTE] 原本已配置真实 Secret，未做写入（写入后无法还原，会毁凭据）——只做只读校验。")
+        else:
+            st, r = api.call("PUT", "/api/v1/gitee/platform-config", {"clientSecret": "__check_secret_value__"})
+            ok = st == 200 and isinstance(r, dict) and r.get("code") == 0
+            chk("A8 保存 Client Secret", ok, f"HTTP {st} {str(r)[:100]}")
+            if ok:
+                secret_written = True
+                chk("A9 Secret 不回传明文", "__check_secret_value__" not in json.dumps(r, ensure_ascii=False),
+                    "响应体中未出现明文")
+                chk("A10 只回「已配置」", bool((r.get("data") or {}).get("clientSecretConfigured")) is True,
+                    f"clientSecretConfigured={(r.get('data') or {}).get('clientSecretConfigured')}")
     finally:
         # --- 复原：有原配置就写回原值（含 Secret 状态），否则删除整行 ---
         if orig_configured:
             body = {k: v for k, v in orig_values.items() if k != "clientSecret"}
-            # 原 Secret 已配置但我们无法读回明文 ⇒ 只能保留当前这份；此处如实标注
-            if orig_secret_configured:
-                pass
+            if secret_written:
+                # 原本**没有** Secret，我们写进去过一份假值 ⇒ 必须显式清空（空串＝显式清空）。
+                # 不这么做就会在库里留下一份假密钥，把「未配置」伪装成「已配置」。
+                body["clientSecret"] = ""
             api.call("PUT", "/api/v1/gitee/platform-config", body)
             st, r = api.call("GET", "/api/v1/gitee/platform-config")
             now = ((r or {}).get("data") or {}).get("values") or {}
             chk("A11 已复原原配置", now.get("org") == orig_values.get("org"),
                 f"org={now.get('org')}（原 {orig_values.get('org')}）")
-            if orig_secret_configured:
-                print("  [NOTE] 原 Secret 无法读回明文，已保留当前密文；如需精确复原请在页面上重新填写。")
+            if secret_written and (r or {}).get("data", {}).get("clientSecretConfigured"):
+                chk("A11b 假 Secret 已清空", False, "复原后仍显示已配置 ⇒ 留下了假密钥")
         else:
             st, r = api.call("DELETE", "/api/v1/gitee/platform-config")
             ok = st == 200 and isinstance(r, dict) and r.get("code") == 0

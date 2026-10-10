@@ -29,8 +29,8 @@ class RepoProviderNeutralityTest {
     @Test
     @DisplayName("默认分支名必须随托管方：Gitee=master、Gitea=main（写错会让读写文件全部 404）")
     void defaultBranchIsProviderSpecific() {
-        RepoProviderClient gitee = new GiteeClient(new GiteeProperties(), new ObjectMapper());
-        RepoProviderClient gitea = new GiteaProviderClient(new GiteaProperties(), new ObjectMapper());
+        RepoProviderClient gitee = new GiteeClient(new GiteeProperties(), TestSettings.gitee(), new ObjectMapper());
+        RepoProviderClient gitea = new GiteaProviderClient(new GiteaProperties(), TestSettings.gitea(), new ObjectMapper());
         assertEquals("master", gitee.defaultBranch());
         assertEquals("main", gitea.defaultBranch(), "Gitea 1.26 实例实测默认分支为 main");
     }

@@ -1,6 +1,7 @@
 package cn.aioa.gitee.client;
 
 import cn.aioa.gitee.config.GiteaProperties;
+import cn.aioa.gitee.config.RepoProviderSettings;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -75,15 +76,26 @@ public class GiteaProviderClient implements RepoProviderClient {
         }
     };
 
+    /**
+     * 仅承载**不可在管理端覆盖**的项：HTTP 超时、TLS、分页/限速、仓库名来源，
+     * 以及 {@code web-base-url} / {@code base-url} 这类部署身份（{@code oauthTokenUrl()} 由此而来）。
+     * <p>凡管理端可配的字段（client-id / client-secret / redirect-uri /
+     * oauth-authorize-base-url / scope）**一律走 {@link #settings}**，
+     * 否则会出现「页面改的是这个值、真正发出去的是另一个值」——
+     * 与 {@link GiteeClient} 2026-10-10 实测的空 {@code client_id} 属同一类缺陷。
+     */
     private final GiteaProperties props;
+    /** 可覆盖字段的**唯一决策点**（管理端覆盖层 → 回落环境变量）。 */
+    private final RepoProviderSettings settings;
     private final ObjectMapper objectMapper;
     private final HttpClient http;
 
     private final Object throttleLock = new Object();
     private long lastRequestAt = 0L;
 
-    public GiteaProviderClient(GiteaProperties props, ObjectMapper objectMapper) {
+    public GiteaProviderClient(GiteaProperties props, RepoProviderSettings settings, ObjectMapper objectMapper) {
         this.props = props;
+        this.settings = settings;
         this.objectMapper = objectMapper;
         this.http = buildHttpClient(props);
     }
@@ -109,17 +121,18 @@ public class GiteaProviderClient implements RepoProviderClient {
 
     @Override
     public String authorizeUrl(String state) {
-        return props.oauthAuthorizeUrl()
-                + "?client_id=" + enc(props.getClientId())
-                + "&redirect_uri=" + enc(props.getRedirectUri())
+        // 授权域 / client-id / redirect-uri / scope 一律走端口：管理端覆盖层必须进入这条 URL。
+        return trimSlash(settings.getOauthAuthorizeBaseUrl()) + "/login/oauth/authorize"
+                + "?client_id=" + enc(settings.getClientId())
+                + "&redirect_uri=" + enc(settings.getRedirectUri())
                 + "&response_type=code"
                 + "&state=" + enc(state)
-                + "&scope=" + enc(props.getScope());
+                + "&scope=" + enc(settings.getScope());
     }
 
     @Override
     public String authorizeHost() {
-        return hostOf(props.getOauthAuthorizeBaseUrl());
+        return hostOf(settings.getOauthAuthorizeBaseUrl());
     }
 
     /**
@@ -145,9 +158,11 @@ public class GiteaProviderClient implements RepoProviderClient {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "authorization_code");
         form.put("code", code);
-        form.put("client_id", props.getClientId());
-        form.put("client_secret", props.getClientSecret());
-        form.put("redirect_uri", props.getRedirectUri());
+        // client_id / secret / redirect_uri 走端口：必须与授权 URL 同源。
+        form.put("client_id", settings.getClientId());
+        form.put("client_secret", settings.getClientSecret());
+        form.put("redirect_uri", settings.getRedirectUri());
+        // oauthTokenUrl 由 web-base-url（部署身份，不可覆盖）派生，仍取原始 bean。
         return formPost(props.oauthTokenUrl(), form);
     }
 
@@ -156,8 +171,8 @@ public class GiteaProviderClient implements RepoProviderClient {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "refresh_token");
         form.put("refresh_token", refreshToken);
-        form.put("client_id", props.getClientId());
-        form.put("client_secret", props.getClientSecret());
+        form.put("client_id", settings.getClientId());
+        form.put("client_secret", settings.getClientSecret());
         return formPost(props.oauthTokenUrl(), form);
     }
 
