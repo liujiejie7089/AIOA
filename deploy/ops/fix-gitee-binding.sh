@@ -137,10 +137,14 @@ PY
 if [ "$RESTART" = 1 ]; then
   echo "== 重建 server 容器"
   ( cd deploy && docker compose up -d server )
-  echo "== 等待 /actuator/health"
+  # 注意：AioaPathPrefixFilter 只把 {prefix}/api/** 剥成 /api/**，**不动 actuator**
+  # ⇒ actuator 在根路径 /actuator/health；此处两个形态都试，避免误报。
+  echo "== 等待 actuator 就绪"
   for _ in $(seq 1 40); do
-    code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/aioa/actuator/health || true)"
-    [ "$code" != "000" ] && { echo "   health HTTP $code"; break; }
+    for p in /actuator/health /aioa/actuator/health; do
+      code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080${p}" || true)"
+      [ "$code" != "000" ] && { echo "   ${p} -> HTTP ${code}"; break 2; }
+    done
     sleep 3
   done
 fi
