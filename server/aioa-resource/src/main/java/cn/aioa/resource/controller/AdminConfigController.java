@@ -55,6 +55,9 @@ public class AdminConfigController {
         put(SysConfig.GROUP_QUOTA, "额度与计费");
         put(SysConfig.GROUP_KNOWLEDGE, "知识库");
         put(SysConfig.GROUP_SECURITY, "安全合规");
+        // V34 的 approval.tenant.content 用 AUDIT 分组。此前未登记 ⇒ 它落在「库里有、
+        // grouped 里没有、界面看不见」的盲区（前端分组下拉亦由此清单驱动）。
+        put(SysConfig.GROUP_AUDIT, "审核");
         put(SysConfig.GROUP_COMMON, "通用");
     }};
 
@@ -267,56 +270,110 @@ public class AdminConfigController {
     }
 
     /**
-     * 读取本租户参数；若为空则从平台默认（tenant_id=0）克隆，仍为空则用内置默认表初始化。
+     * 读取本租户参数。缺失的键按「**键级并集**」从平台模板（tenant_id=0）自愈补行。
+     *
+     * <p><b>为什么不再是「有行就返回」</b>（旧实现的反模式，2026-10-10 生产实测 total=3）：</p>
+     * <pre>
+     * if (!rows.isEmpty()) return rows;                 // ① 已有几行 ⇒ 永不补齐缺失基座
+     * if (templates.isEmpty()) templates = BUILTIN_DEFAULTS;  // ② 只有模板为空才走代码兜底
+     * </pre>
+     * 而 V33/V34 早已把平台模板写成「非空但只有 3 条」⇒ ② 永不触发，① 又把残缺模板
+     * 当成权威模板逐个租户传播 ⇒ <b>任何 tenant_id≠1 的租户只能看到 3 条且永远停在 3 条</b>
+     * （本地演示租户恰好是 1，所以「本地齐全」）。详见 docs/44 §4。
+     *
+     * <p>现改为按 config_key 的并集判定：模板有、本租户缺 ⇒ 补一行，值取模板的出厂默认
+     * （{@code default_value} 优先），<b>不动</b>本租户已有的值。这样将来任何迁移再往
+     * 模板加键，所有租户下次读取即自动补齐，不必再为每个新键写一条 backfill 迁移 ——
+     * 这正是本缺陷会复发的地方。</p>
      */
     private List<SysConfig> loadTenantConfigs(Long tenantId) {
-        List<SysConfig> rows = mapper.selectList(new LambdaQueryWrapper<SysConfig>()
-                .eq(SysConfig::getTenantId, tenantId)
-                .orderByAsc(SysConfig::getGroupCode)
-                .orderByAsc(SysConfig::getSortNo));
-        if (!rows.isEmpty()) {
-            return rows;
-        }
-        // 首次访问：克隆平台默认 → 内置默认
-        List<SysConfig> templates = mapper.selectList(new LambdaQueryWrapper<SysConfig>()
-                .eq(SysConfig::getTenantId, 0L)
-                .orderByAsc(SysConfig::getGroupCode)
-                .orderByAsc(SysConfig::getSortNo));
-        if (templates.isEmpty()) {
-            templates = BUILTIN_DEFAULTS;
-        }
-        List<SysConfig> cloned = new ArrayList<>();
-        for (SysConfig t : templates) {
-            SysConfig row = new SysConfig();
-            row.setTenantId(tenantId);
-            row.setConfigKey(t.getConfigKey());
-            row.setConfigValue(t.getDefaultValue() != null ? t.getDefaultValue() : t.getConfigValue());
-            row.setValueType(t.getValueType());
-            row.setGroupCode(t.getGroupCode());
-            row.setConfigName(t.getConfigName());
-            row.setDescription(t.getDescription());
-            row.setUnit(t.getUnit());
-            row.setDefaultValue(t.getDefaultValue());
-            row.setMinValue(t.getMinValue());
-            row.setMaxValue(t.getMaxValue());
-            row.setEditable(t.getEditable() == null ? Boolean.TRUE : t.getEditable());
-            row.setSortNo(t.getSortNo() == null ? 0 : t.getSortNo());
-            row.setCreatedAt(LocalDateTime.now());
+        // ① 先保证「平台模板」自身完整（tenant_id=0 是唯一权威模板），否则残缺会继续传播
+        healTemplate();
+
+        Set<String> have = selectByTenant(tenantId).stream()
+                .map(SysConfig::getConfigKey)
+                .filter(k -> k != null && !k.isBlank())
+                .collect(Collectors.toSet());
+
+        // ② 把模板里本租户缺的键补上（tenantId=0 时 have 已含全部键 ⇒ 天然 no-op）
+        int healed = 0;
+        for (SysConfig t : selectByTenant(0L)) {
+            String key = t.getConfigKey();
+            if (key == null || key.isBlank() || have.contains(key)) {
+                continue;
+            }
             try {
-                mapper.insert(row);
-                cloned.add(row);
+                mapper.insert(cloneFrom(t, tenantId));
+                have.add(key);
+                healed++;
             } catch (Exception e) {
-                // 并发克隆冲突（唯一键）→ 忽略，回读已有
-                log.debug("clone sys_config skipped: {}", e.getMessage());
+                // 并发克隆 / 唯一键冲突 → 忽略，回读已有
+                log.debug("sys_config self-heal skipped {}: {}", key, e.getMessage());
             }
         }
-        if (!cloned.isEmpty()) {
-            return cloned;
+        if (healed > 0) {
+            log.info("sys_config 自愈：租户 {} 补齐 {} 个缺失参数键", tenantId, healed);
         }
+        return selectByTenant(tenantId);
+    }
+
+    /**
+     * 平台模板自愈：把 {@link #BUILTIN_DEFAULTS} 里有、{@code tenant_id=0} 里没有的键补进模板。
+     *
+     * <p>历史教训：V33/V34 把模板写成了「非空但残缺」，而旧代码「模板非空就不用兜底」，
+     * 于是残缺模板被当成权威模板向所有租户传播。这里把内建基座**幂等地**并回模板，
+     * 使「模板残缺」不再能传播（即便将来又出现同类迁移）。</p>
+     *
+     * <p>只补代码内建的键；像 {@code billing.package.scenes} 这类内容型键有意不内建，
+     * 由 V78 迁移负责补齐（见 {@link #builtinDefaults()} 末尾注释）。</p>
+     */
+    private void healTemplate() {
+        Set<String> keys = selectByTenant(0L).stream()
+                .map(SysConfig::getConfigKey)
+                .filter(k -> k != null && !k.isBlank())
+                .collect(Collectors.toSet());
+        int healed = 0;
+        for (SysConfig b : BUILTIN_DEFAULTS) {
+            if (b.getConfigKey() == null || keys.contains(b.getConfigKey())) {
+                continue;
+            }
+            try {
+                mapper.insert(cloneFrom(b, 0L));
+                healed++;
+            } catch (Exception e) {
+                log.debug("sys_config template heal skipped {}: {}", b.getConfigKey(), e.getMessage());
+            }
+        }
+        if (healed > 0) {
+            log.info("sys_config 自愈：平台模板补齐 {} 个内建参数键", healed);
+        }
+    }
+
+    private List<SysConfig> selectByTenant(Long tenantId) {
         return mapper.selectList(new LambdaQueryWrapper<SysConfig>()
                 .eq(SysConfig::getTenantId, tenantId)
                 .orderByAsc(SysConfig::getGroupCode)
                 .orderByAsc(SysConfig::getSortNo));
+    }
+
+    /** 按模板行造一行租户参数；值取 default_value 优先（与克隆口径一致，不覆盖调用方已有的值）。 */
+    private SysConfig cloneFrom(SysConfig t, Long tenantId) {
+        SysConfig row = new SysConfig();
+        row.setTenantId(tenantId);
+        row.setConfigKey(t.getConfigKey());
+        row.setConfigValue(t.getDefaultValue() != null ? t.getDefaultValue() : t.getConfigValue());
+        row.setValueType(t.getValueType());
+        row.setGroupCode(t.getGroupCode());
+        row.setConfigName(t.getConfigName());
+        row.setDescription(t.getDescription());
+        row.setUnit(t.getUnit());
+        row.setDefaultValue(t.getDefaultValue());
+        row.setMinValue(t.getMinValue());
+        row.setMaxValue(t.getMaxValue());
+        row.setEditable(t.getEditable() == null ? Boolean.TRUE : t.getEditable());
+        row.setSortNo(t.getSortNo() == null ? 0 : t.getSortNo());
+        row.setCreatedAt(LocalDateTime.now());
+        return row;
     }
 
     private static boolean contains(String s, String kw) {
@@ -358,6 +415,14 @@ public class AdminConfigController {
                 "留痕保存年限", "台账与操作留痕最少保存年限（P0 4.2）", "年", "3", "1", "30", 20));
         list.add(d("security.realname_required", "true", SysConfig.TYPE_BOOL, SysConfig.GROUP_SECURITY,
                 "强制实名认证", "开启后未实名用户不可发起会话（P0 FR-A）", "", "true", null, null, 30));
+        // V34 平台开关：租户管理员创建的内容需上一级审核（只从 tenant_id = 0 读取）。
+        // 内建它是为了「平台模板被删空也不丢能力」；键名引用常量，避免字符串漂移。
+        list.add(d(SysConfig.KEY_APPROVAL_TENANT_CONTENT, "true", SysConfig.TYPE_BOOL, SysConfig.GROUP_AUDIT,
+                "租户内容需上级审核",
+                "开启后，租户管理员创建的数字员工 / 专家进入待审核，需平台管理员通过后生效；关闭则创建即生效。",
+                "", "true", null, null, 50));
+        // 注：billing.package.scenes（V33）是**内容型**键（富文本 JSON，属业务内容而非阈值），
+        // 有意**不**内建 —— 在代码里再存一份必然与其内容漂移；它由 V78 迁移补齐模板并随模板传播。
         return list;
     }
 

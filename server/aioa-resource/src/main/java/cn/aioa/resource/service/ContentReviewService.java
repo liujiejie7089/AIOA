@@ -26,8 +26,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ContentReviewService {
 
-    /** 平台开关键：开启后租户管理员创建的内容进入待审。 */
-    public static final String KEY_APPROVAL_TENANT_CONTENT = "approval.tenant.content";
+    /** 平台开关键：开启后租户管理员创建的内容进入待审（键名以 {@link SysConfig} 为单一事实源）。 */
+    public static final String KEY_APPROVAL_TENANT_CONTENT = SysConfig.KEY_APPROVAL_TENANT_CONTENT;
 
     public static final String PENDING = "PENDING";
     public static final String APPROVED = "APPROVED";
