@@ -62,3 +62,19 @@
 - **生产边界**：服务器 `10.0.0.3:22`（可出网、外网进不来）→ 隧道机 `219.151.186.24:22`（可出网、可进服务器）；
   agent 无隧道凭据 ⇒ **不能代部署**，运行期改配置正是生产的正确路径。
 
+### ★ 2026-10-10 死锁修复（务必别回退）
+「平台参数」卡曾**被渲染在 `moduleEnabled` 守卫之内**（`<template v-else>` 那支），而注释与 `onMounted`
+都声称它在守卫之外 —— 结构自相矛盾。后果：模块 `enabled=false`（生产默认）时横幅显示、**这张「开总开关」的卡
+不渲染** ⇒ 管理端永远开不了它。已改为独立分支 `v-if="isPlatformAdmin && !configError"`，
+原那支改为 `<template v-if="!configError && moduleEnabled">`。
+**由哨兵 S11 钉死**（`_check_gitee_platform_config.py`，静态 11 项；退化自检会变红）。
+编译期判据：渲染函数里卡片条件是 `(_ctx.isPlatformAdmin && !_ctx.configError) ? …`，**不含 moduleEnabled**。
+
+### ⚠ 「已经部署了」的证伪法（本轮实证）
+生产 `mall.egoaicloud.com` **从本机可达**（`/aioa/api/v1/*` 未认证 401 = 链路通）。
+**直达生产取三样证据**即可判定部署物是否含某改动：①管理端入口 hash → 拉其懒加载块 grep 该特性**独有中文串**；
+②**新端点是否 404**；③**既有端点是否出现本轮新加的字段**。
+本轮三者全为「旧」（入口 `index-CvJ9IgLI.js`、`/gitee/platform-config` 404、`/gitee/config` 无 `oauthConfigured`）
+⇒ 生产前后端都不含该特性；而该特性当时**全未提交**，本地 HEAD 与 `github/main` 同为 `772a2a9` ⇒ git 式部署不可能带上。
+**别用后端下发的文案做前端探针**：「平台总开关」是 `FIELD_META` 里的**后端**标签，前端包 grep 不到（第一版即因此误判）。
+
