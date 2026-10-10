@@ -78,3 +78,17 @@
 ⇒ 生产前后端都不含该特性；而该特性当时**全未提交**，本地 HEAD 与 `github/main` 同为 `772a2a9` ⇒ git 式部署不可能带上。
 **别用后端下发的文案做前端探针**：「平台总开关」是 `FIELD_META` 里的**后端**标签，前端包 grep 不到（第一版即因此误判）。
 
+### `webhook-base-url` 到底填什么（反复被问，2026-10-10 定案）
+- **只填基址**，不要自己带 `/api/...`：`GiteeRepoTaskHandler.callbackUrl()` =
+  `去尾斜杠(base) + "/api/v1/gitee/webhook/" + 项目id`；`isPlatformHook()` 也按同一前缀识别自家钩子。
+- **生产（单端口入口）= `https://mall.egoaicloud.com/aioa`** —— 与 `deploy/.env.production:155` 的
+  `AIOA_GITEE_WEBHOOK_BASE_URL` **同值**；结尾带不带 `/` 都行（代码会剥掉一个）。
+- 本地**留空**即可（Gitee 回调不到 `127.0.0.1`，Webhook 这步必然失败，属预期、非 bug）。
+- 该路径已在免认证白名单：`SecurityConfig.PUBLIC_ENDPOINTS` 含 `/api/v1/gitee/webhook/**`（`permitAll`）
+  ⇒ Gitee 不带令牌也能回调进来，这条不需要额外配。
+- ★ 存量 `.env.production` 里**本来就填对了**，但生产 `GET /gitee/config` 实测四个 flag
+  （`enabled`/`orgConfigured`/`webhookBaseUrlConfigured`/`oauthConfigured`）**全为 false**
+  ⇒ **生产的 env 并没有把 Gitee 段真正传进容器**；改用管理端页面配（保存即生效）可绕开这个环境问题。
+- 该字段的页面提示已改写为「只填基址：后端会自动在其后追加 /api/v1/gitee/webhook/{项目id}…」
+  （原提示只说「必须是公网地址」，不回答「填什么」）；指南 §3.5 亦补了同内容的「填什么」小节。
+

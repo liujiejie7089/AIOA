@@ -104,7 +104,8 @@ public class GiteePlatformConfigService {
             meta(K_ORG, "平台默认组织", "TEXT",
                     "租户未自配组织时的回落值；留空＝仓库建在授权用户名下"),
             meta(K_WEBHOOK, "Webhook 回调基址", "TEXT",
-                    "必须是托管方能访问到的公网地址；填 127.0.0.1/localhost 必然配置失败"),
+                    "只填基址：后端会自动在其后追加 /api/v1/gitee/webhook/{项目id}（结尾带不带 / 都行）。"
+                            + "必须是 Gitee 能访问到的公网地址，填 127.0.0.1 或 localhost 必然失败"),
             meta(K_BIND, "授权后回跳地址", "TEXT",
                     "绑定完成后前端跳转的页面地址")
     );

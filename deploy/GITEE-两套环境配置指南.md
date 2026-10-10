@@ -132,6 +132,17 @@ source .env.gitee-real && bash start-all.sh
 没保存过 ⇒ 回落环境变量。页面每个字段都带「管理端填写 / 环境变量」标签，一眼看清值是谁给的。
 「恢复为环境变量」会删除整条管理端配置，9 项一起交还环境变量。
 
+**`webhook-base-url` 到底填什么**（问得最多的一项）：
+填**基址**即可，**不要**自己带 `/api/...` —— 后端会自动追加 `/api/v1/gitee/webhook/{项目id}`
+（见 `GiteeRepoTaskHandler.callbackUrl()`：`去尾斜杠(base) + "/api/v1/gitee/webhook/" + 项目id`）。
+
+- 生产（单端口入口）⇒ **`https://mall.egoaicloud.com/aioa`**
+  （与 `deploy/.env.production` 的 `AIOA_GITEE_WEBHOOK_BASE_URL` 同值；结尾带不带 `/` 都行）。
+- 本地 ⇒ 留空即可（Gitee 回调不到 `127.0.0.1`，Webhook 这步必然失败，属预期）。
+- 填 `127.0.0.1` / `localhost` **必然失败**：那是给 Gitee 的服务器去访问的地址，不是给你本机用的。
+- 该路径已列入后端免认证白名单（`SecurityConfig.PUBLIC_ENDPOINTS` 含 `/api/v1/gitee/webhook/**`），
+  所以 Gitee 不带令牌也能回调进来 —— 这条不用额外配。
+
 **与三条横幅的关系**：页头「OAuth 应用未配置 / 集成未启用 / Webhook 回调地址未配置」的判据
 全部来自 `GET /api/v1/gitee/config`（`oauthConfigured` / `enabled` / `webhookBaseUrlConfigured`），
 而这三个布尔正是上面 9 项的函数 ⇒ **在这张卡里配好并保存，横幅立即转绿，无需重启**。
