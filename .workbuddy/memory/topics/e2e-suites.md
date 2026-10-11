@@ -500,3 +500,17 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   不读界面文案；文件夹契约看 `#upFolder` 的 `options>=1` 且选中 `value` 非空）。
   I3 是负向对照：「请简单介绍一下你能做什么」全程不得出现任何 `.notif-mask`。
   无可见项目 / 分类器离线 ⇒ **SKIP + 非 0**，不伪装 PASS。
+
+- **`scripts/_run_all_regression.sh` 两处收口（2026-10-11）**：
+  1. **除名 5 条「幽灵条目」**：`SMOKE_v48.py` · `check_org_structure_render.py` · `h5_v33_render.py` ·
+     `admin_v39_todo_badge.py` · `admin_v34_review_render.py`。它们早在 **2026-09-20** 的
+     `f370fdd chore(repo): 仓库清理` 里就作为「一次性诊断/渲染校验脚本」被删（备份在项目外
+     `%TEMP%/aioa-cleanup-backup-20260920/scripts/`），**但当时没同步改本清单** ⇒ 此后每次矩阵
+     都为这 5 条凭空产出 `exit=2 can't open file`。**清单 46 → 41**；
+     非零 28 → 23（5 条纯噪声消失）。⚠️ 它们依赖早已移除的 **tenant 9** 与 `:5173` 管理端 shell
+     ⇒ 即便还原也只会再加 5 条假红，故选择「除名」而非「还原」。
+  2. **新增 preflight 闸门**：清单里列了、`scripts/` 下没有 ⇒ **跑前 `exit 2` 大声报错**，
+     不再让幽灵条目静默制造假红（负向对照已验：注入一个不存在的套件 → exit=2 且在任何套件开跑前中止）。
+  3. 顺带更正 `_check_kpi_cards.py` 上方的**过期注释**：原写「四张浮动卡的三角必须指向数字人」，
+     而脚本实际断言的是「**卡内不得有任何尾巴**」（2026-09-29 口径变更）—— 注释与断言相反（铁律 1）。
+  判据：`_run_all_regression.sh` 现在 **41 套件、全部在磁盘上**。
