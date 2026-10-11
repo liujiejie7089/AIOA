@@ -5,7 +5,7 @@ import cn.aioa.resource.entity.AiSkill;
 import cn.aioa.resource.entity.SysConfig;
 import cn.aioa.resource.mapper.AiExpertMapper;
 import cn.aioa.resource.mapper.AiSkillMapper;
-import cn.aioa.resource.mapper.SysConfigMapper;
+import cn.aioa.resource.service.SysConfigResolver;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.PermissionCatalog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -37,7 +37,7 @@ public class CatalogService {
 
     private final AiExpertMapper expertMapper;
     private final AiSkillMapper skillMapper;
-    private final SysConfigMapper sysConfigMapper;
+    private final SysConfigResolver sysConfigResolver;
     private final ExpertConfigService configService;
 
     /**
@@ -66,7 +66,7 @@ public class CatalogService {
             rows = availableExperts(user, 0L);
         }
 
-        String defaultKey = defaultExpertKey(tid);
+        String defaultKey = defaultExpertKeyValue(tid, institutionOf(user));
         if (defaultKey == null || defaultKey.isBlank()) {
             return rows;
         }
@@ -165,39 +165,30 @@ public class CatalogService {
     }
 
     /**
-     * 解析默认 AI 的专家标识：本租户参数 → 平台默认参数 → 出厂内置。
+     * 解析默认 AI 的专家标识：本机构覆盖 → 本租户参数 → 平台默认参数 → 出厂内置。
      *
      * <p><b>public</b>：删除专家时要拦「默认 AI 不可删」，必须用同一判据 ——
      * 否则会出现「目录按 A 判默认、删除按 B 判默认」的两处口径（铁律 #1）。</p>
      *
-     * <p>注意「有行但留空」与「没有这一行」是**两种不同含义**，不能都当没配：
-     * 前者是管理员明确要求「不做兜底」，必须尊重（返回 null ⇒ 不标记）；
-     * 后者只说明参数还没物化，才继续往平台默认、出厂内置回落。</p>
+     * <p>取值来源统一走 {@link SysConfigResolver#effectiveValue}（机构覆盖值 → 租户值 → 平台默认 → 空串），
+     * 与用户端目录判定同源，不另写一份回落链。最后一档（出厂内置）必要的理由同下：
+     * 参数行是懒克隆的（租户首次访问管理端才拷一份），而用户端首屏就会调本接口 ——
+     * 若没有这一档，全新环境在管理员打开配置页之前拿不到默认 AI。</p>
      *
-     * <p>最后一档（出厂内置）是必要的：参数行是懒克隆的（租户首次访问管理端才拷一份），
-     * 而用户端首屏就会调本接口 —— 若没有这一档，全新环境在管理员打开配置页之前拿不到默认 AI。</p>
+     * <p>「该判定只在这一处完成」不变：判定点仍是本方法，只是取值来源换成了统一解析器；
+     * 机构管理员在「机构参数」里改 {@code chat.default_expert_key} 后，用户端默认专家会随之生效。</p>
      */
     public String defaultExpertKey(Long tenantId) {
+        return defaultExpertKeyValue(tenantId, null);
+    }
+
+    /**
+     * 含机构覆盖的默认 AI 解析（用户端目录用，带登录态机构）。
+     */
+    private String defaultExpertKeyValue(Long tenantId, Long institutionId) {
         long tid = tenantId == null ? 0L : tenantId;
-        SysConfig own = configRow(tid, SysConfig.KEY_DEFAULT_EXPERT);
-        if (own != null) {
-            return blankToNull(own.getConfigValue());
-        }
-        SysConfig platform = configRow(0L, SysConfig.KEY_DEFAULT_EXPERT);
-        if (platform != null) {
-            return blankToNull(platform.getConfigValue());
-        }
-        return SysConfig.DEFAULT_EXPERT_KEY;
-    }
-
-    private SysConfig configRow(long tenantId, String key) {
-        return sysConfigMapper.selectOne(new LambdaQueryWrapper<SysConfig>()
-                .eq(SysConfig::getTenantId, tenantId)
-                .eq(SysConfig::getConfigKey, key)
-                .last("limit 1"));
-    }
-
-    private static String blankToNull(String s) {
-        return (s == null || s.isBlank()) ? null : s.trim();
+        String v = sysConfigResolver.effectiveValue(tid, institutionId, SysConfig.KEY_DEFAULT_EXPERT);
+        // 与改造前一致：租户 + 平台都无行时回落到出厂内置（保证全新环境也有兜底 AI）
+        return (v == null || v.isBlank()) ? SysConfig.DEFAULT_EXPERT_KEY : v.trim();
     }
 }

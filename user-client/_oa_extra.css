@@ -27,12 +27,20 @@
 .oa #v-home.chatting .kpi-float,
 .oa #v-home.chatting .robot-tag,
 .oa #v-home.chatting .assist-hint{display:none}
-.oa #v-home.chatting .assist h1{font-size:22px}
+.oa #v-home.chatting .assist{padding-top:2px}
+.oa #v-home.chatting .assist h1{font-size:22px;margin-top:0}
 .oa #v-home.chatting .assist .sub{display:none}
-.oa #v-home.chatting .stage{flex:0 0 auto;min-height:0;margin:6px 0 0}
+/* 会话态（含「进入项目后」）：数字人收成紧凑锚点，把正文高度让给对话。
+   2026-10-11 修（用户报「进入项目时数字人占半屏、AI 回答只在下半部分」）：
+   ① 原写法 `.robot-wrap{margin:0 auto}` 对 <button>（即 inline-block）**不生效** ⇒
+      机器人在左、标题居中，两者错位（实测机器人 left=11px，而容器中心在 195px）。
+      改为由父容器 flex 居中：与子元素 display 无关，稳。
+   ② 机器人 104px→72px，并收紧 assist/stage 的上下留白 ⇒ 首条回答整体上移（见配套哨兵
+      scripts/_check_oa_project_layout.py 的量测断言）。 */
+.oa #v-home.chatting .stage{flex:0 0 auto;min-height:0;margin:2px 0 0;display:flex;justify-content:center}
 .oa #v-home.chatting .robot-wrap{
-  position:static;transform:none;margin:0 auto;width:104px;
-  filter:drop-shadow(0 12px 18px rgba(18,179,154,.22));
+  position:static;transform:none;margin:0;width:72px;
+  filter:drop-shadow(0 10px 16px rgba(18,179,154,.20));
 }
 .oa #v-home.chatting .robot-wrap:hover{transform:translateY(-3px)}
 .oa #v-home.chatting .robot-wrap:active{transform:scale(.98)}
@@ -50,7 +58,9 @@
 }
 .oa .bub.ai{align-self:flex-start}
 .oa .bub.me{align-self:flex-end;background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand-ink)}
-/* 三角：SVG 三角形（顶点朝上为基准），落位与旋转由 oaLayoutTails() 写入 --tail-* */
+/* 三角：SVG 三角形（顶点朝上为基准），落位与旋转由 oaLayoutTails() 写入 --tail-*。
+   ⚠️ 2026-10-11 起**气泡不再生成该节点**（用户口径「去掉对话框的三角」），
+   故下面两条规则当前无匹配元素；保留以便复用（恢复时须同步 _e2e_oa.py 的 E 组断言）。 */
 .oa .bub .tail{
   position:absolute;width:13px;height:13px;
   left:var(--tail-x,50%);top:var(--tail-y,0);
@@ -209,15 +219,30 @@
   .oa .bub .g-row:active{transform:none}
 }
 
-/* ---- ⑧ 项目上下文（需求一）：当前项目条 / 面板操作 / 花费表单 ---- */
-.oa .oa-projbar{
-  display:flex;flex-direction:column;gap:8px;
-  margin:0 0 10px;padding:10px 12px;
-  background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:var(--r);
+/* ---- ⑧ 项目上下文（需求一 + 本轮改版）：正文内项目标记 / 进入项目卡片 / 花费表单 ----
+   本轮：独立「当前项目条」与上传/上报按钮已移除（改为对话意图驱动），
+   项目名以 chip 形式落在「工作助手」标题下的正文里。 */
+.oa .oa-proj-slot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:9px 0 2px}
+.oa .oa-proj-chip{
+  display:inline-flex;align-items:center;gap:6px;max-width:100%;
+  padding:5px 11px 5px 9px;border-radius:var(--r-full);
+  background:var(--brand-soft);border:1px solid var(--brand-line);color:var(--brand-ink);
+  font-size:12.5px;font-weight:600;
 }
-.oa .oa-projbar .oa-pb-t{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--brand-ink)}
-.oa .oa-projbar .oa-pb-t .ic{width:15px;height:15px}
-.oa .oa-projbar .oa-pb-btns{display:flex;flex-wrap:wrap;gap:8px}
+.oa .oa-proj-chip .ic{width:14px;height:14px;flex-shrink:0}
+.oa .oa-proj-chip b{font-weight:700;max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oa .oa-proj-chip em{
+  font-style:normal;font-size:10.5px;font-weight:600;color:var(--brand-ink);opacity:.85;
+  background:rgba(255,255,255,.62);border-radius:var(--r-full);padding:1px 7px;flex-shrink:0;
+}
+.oa .oa-proj-hint{font-size:11px;color:var(--text-3);line-height:1.5}
+.oa #v-home.chatting .oa-proj-hint{display:none}
+/* 进入项目的上下文卡（作为数字人的一条发言落在对话坞里，自动获得指向数字人的三角） */
+.oa .bub .oa-intro{display:flex;flex-direction:column;gap:5px}
+.oa .bub .oa-intro-t{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--brand-ink)}
+.oa .bub .oa-intro-t .ic{width:15px;height:15px}
+.oa .bub .oa-intro-m{font-size:11px;color:var(--text-3)}
+.oa .bub .oa-intro-a{font-size:12px;color:var(--text-2);line-height:1.6}
 .oa .mini-btn{
   display:inline-flex;align-items:center;gap:4px;
   font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
@@ -250,3 +275,11 @@
   background:var(--surface);width:100%;box-sizing:border-box;
 }
 .oa .oa-ef-row textarea{resize:vertical}
+/* 文件控件：原生「选择文件」按钮与上面几个控件的观感不一致（2026-10-11 上传窗口实测），
+   这里只把它调成同一套品牌配色/圆角，不改结构也不换自绘控件。 */
+.oa .oa-ef-row input[type=file]{padding:7px 10px;color:var(--text-2)}
+.oa .oa-ef-row input[type=file]::file-selector-button{
+  font-family:inherit;font-size:12.5px;font-weight:600;margin-right:10px;cursor:pointer;
+  color:var(--brand-ink);background:var(--brand-soft);
+  border:1px solid var(--brand-line);border-radius:var(--r-sm);padding:6px 12px;
+}

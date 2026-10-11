@@ -48,6 +48,56 @@ def test_classify_empty_text_is_general():
     assert out["confidence"] == 0.0
 
 
+# ------------------------------------------------------------------- 动作意图（与角色正交）
+
+@pytest.mark.parametrize("text,expected_action", [
+    ("帮我上传一下这个文件", "UPLOAD_FILE"),
+    ("把项目合同传上去", "UPLOAD_FILE"),
+    ("我要上报一笔差旅花费", "REPORT_EXPENSE"),
+    ("这个月报销 500 元", "REPORT_EXPENSE"),
+])
+def test_action_intent(text, expected_action):
+    out = classify(text)
+    assert out["action"] == expected_action
+    # actionName 与 action 必须同源（映射恒存在），actionMatched 非空
+    assert out["actionName"] == {
+        "UPLOAD_FILE": "上传文件", "REPORT_EXPENSE": "上报花费",
+    }[expected_action]
+    assert out["actionMatched"]
+
+
+@pytest.mark.parametrize("text", [
+    # 公文类诉求不应触发上传/上报动作
+    "帮我起草一份通知",
+    # 审批类诉求不应触发动作
+    "帮我处理员工的请假审批",
+    # 制度/问答类诉求：含动作相关词但属提问，绝不能误判成 REPORT_EXPENSE
+    "公司费用报销制度是怎么规定的",
+    # 知识库检索诉求不应触发动作
+    "帮我查一下知识库里的制度文件",
+    # 宾语在前的「发送给别人」类诉求，绝不能误判成「上传到项目」
+    "帮我生成这个月的销售报表发给客户",
+    "把文件发给同事",
+    "给客户发一份合同",
+    # 上传能力的疑问（限制/大小），属提问而非要上传
+    "可以上传多大的文件",
+    "上传有大小限制吗",
+])
+def test_action_intent_not_triggered_for_questions(text):
+    out = classify(text)
+    assert out["action"] is None, (text, out["action"])
+    assert out["actionName"] is None
+    assert out["actionMatched"] == []
+
+
+def test_action_keys_present_on_every_path():
+    """action 三键在三条出口（空文本 / 低分 / 正常）都必须存在，schema 恒定。"""
+    for text in ("", "随便聊聊", "帮我上传一下合同"):
+        out = classify(text)
+        for key in ("action", "actionName", "actionMatched"):
+            assert key in out, (text, key)
+
+
 # --------------------------------------------------------------------------- 回答结构
 
 def test_rules_cover_six_sections_in_order():

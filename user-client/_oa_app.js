@@ -171,7 +171,7 @@ function oaRender(){
   });
   // 顶栏
   var t = $o('oaTitle');
-  if(t) t.textContent = (currentProjectId() > 0 && S.currentProject) ? S.currentProject.name : meta.t;
+  if(t) t.textContent = meta.t;
   var left = $o('oaLeft');
   if(left){
     var isHomeTab = (S.view === 'home');
@@ -247,26 +247,19 @@ function renderHome(){
   if(k3) k3.innerHTML = n(state.ccUnread) + '<span>条</span>';
   if(k4) k4.innerHTML = n(has(ms.conversations) ? ms.conversations : 0) + '<span>个</span>';
 
-  // 需求一：进入项目后，首页对话坞上方常驻「当前项目」条（上传文档 / 上报花费 / 退出）
-  var projBar = $o('oaProjBar');
-  if(currentProjectId() > 0 && S.currentProject){
-    if(!projBar){
-      projBar = document.createElement('div');
-      projBar.id = 'oaProjBar'; projBar.className = 'oa-projbar';
-      var dock = $o('oaDock');
-      if(dock && dock.parentNode) dock.parentNode.insertBefore(projBar, dock);
-    }
-    projBar.innerHTML =
-      '<div class="oa-pb-t">'+ic('folder',15)+' 当前项目：'+txt(S.currentProject.name)+'</div>'+
-      '<div class="oa-pb-btns">'+
-        '<button class="mini-btn" id="oaProjUpload">'+ic('upload',14)+'上传文档</button>'+
-        '<button class="mini-btn" id="oaProjExpense">'+ic('wallet',14)+'上报花费</button>'+
-        '<button class="mini-btn ghost" id="oaProjExit">'+ic('logout',14)+'退出项目</button>'+
-      '</div>';
-    var up = $o('oaProjUpload');   if(up) up.onclick = function(){ oaUploadProjectDoc(); };
-    var ex = $o('oaProjExpense'); if(ex) ex.onclick = function(){ oaOpenExpenseForm(); };
-    var exb = $o('oaProjExit');   if(exb) exb.onclick = function(){ exitProject(); };
-  } else if(projBar){ projBar.remove(); }
+  // 需求（本轮）：项目名以「正文内的项目标记」呈现（落在「工作助手」标题下），不再用独立项目条；
+  // 上传/上报也不再是按钮 —— 改由对话意图驱动（见 oaMaybeProjectAction）。
+  var pb = $o('oaProjBar'); if(pb) pb.remove();   // 清掉旧版项目条残留
+  var slot = $o('oaProjSlot');
+  if(slot){
+    if(currentProjectId() > 0 && S.currentProject){
+      slot.innerHTML =
+        '<span class="oa-proj-chip">'+ic('folder',14)+'<b>'+txt(S.currentProject.name)+'</b>'+
+        '<em>'+(S.currentProject.projectType === 'DEV' ? '开发项目' : '业务项目')+'</em></span>'+
+        '<span class="oa-proj-hint">在对话里说「上传文件」或「上报花费」，我会为你打开对应窗口</span>';
+      slot.style.display = '';
+    }else{ slot.innerHTML = ''; slot.style.display = 'none'; }
+  }
 
   // 「合同待查看」这类提示条：有未读通知才出现，无数据则隐藏（不写死文案）
   var tag = $o('oaTag'); if(!tag) return;
@@ -344,10 +337,9 @@ function renderProjectPanel(){
         chip('prog','当前项目')+'</div>'+
       '<div class="tl-meta">'+ic('task',13)+(isDev ? '开发项目' : '业务项目')+
         ' · '+txt(PM_STATUS_LABEL[cp.status] || cp.status || '—')+'</div>'+
+      '<div class="tl-meta">'+ic('info',13)+' 该项目数据与其它业务相互隔离；上传文档 / 上报花费请在对话中直接告知 AI</div>'+
       '<div class="proj-actions">'+
-        '<button class="mini-btn" id="oaProjUpload2">'+ic('upload',14)+'上传文档</button>'+
-        '<button class="mini-btn" id="oaProjExpense2">'+ic('wallet',14)+'上报花费</button>'+
-        '<button class="mini-btn ghost" id="oaProjExit2">'+ic('logout',14)+'退出</button>'+
+        '<button class="mini-btn ghost" id="oaProjExit2">'+ic('logout',14)+'退出项目</button>'+
       '</div></div>';
   }
   html += list.map(function(p){
@@ -364,9 +356,7 @@ function renderProjectPanel(){
       '<div class="tl-meta proj-enter">'+(active ? '· 当前所在项目' : ic('chevron',13)+' 点击进入项目')+'</div></div>';
   }).join('');
   el.innerHTML = html;
-  // 当前项目操作区按钮
-  var up2 = $o('oaProjUpload2');   if(up2)   up2.onclick   = function(){ oaUploadProjectDoc(); };
-  var ex2 = $o('oaProjExpense2'); if(ex2)   ex2.onclick   = function(){ oaOpenExpenseForm(); };
+  // 当前项目操作区按钮（仅退出；上传/上报改由对话意图驱动，见 oaMaybeProjectAction）
   var ex3 = $o('oaProjExit2');    if(ex3)   ex3.onclick   = function(){ exitProject(); };
   // 卡片点击 → 进入项目（已在则忽略，避免重复切换会话）
   el.querySelectorAll('[data-project]').forEach(function(r){
@@ -433,6 +423,9 @@ async function enterProject(p){
   } else {
     toast('已进入项目「' + S.currentProject.name + '」，但会话初始化失败，可重试');
   }
+  // 进入项目后在对话正文里明确当前上下文（项目名 / 隔离口径 / 对话式操作入口）
+  oaPushBub('ai', oaProjectIntroHtml());
+  oaScrollDock();
 }
 
 async function exitProject(){
@@ -448,30 +441,106 @@ async function exitProject(){
   toast('已退出项目，回到通用工作台');
 }
 
-/* 项目内上传文档：选文件 → POST /v1/files/upload → POST /v1/pm/projects/{id}/docs/documents
-   成功 / 失败都给终态文案，绝不静默。 */
-function oaUploadProjectDoc(){
+/* 项目内上传文档：**先弹一个可见窗口**，再由用户在窗口里点「选择文件」唤起系统选择器，
+   选好即上传 → POST /v1/files/upload → POST /v1/pm/projects/{id}/docs/documents。
+   成功 / 失败都给终态文案，绝不静默。
+
+   ★为什么必须是「先弹窗口」而不是直接 `input.click()`（2026-10-11 用户实测：
+     「输入『上传文档』对话窗口也没有打开」）：
+     旧实现是「动态造一个 <input type=file> 立刻 click()」，而它由 oaAfterOaAnswer 在
+     `await 整段回答流式生成` + `await /v1/workers/intent` **之后**才调用 ——
+     此时距用户点「发送」已过数秒乃至数十秒，**浏览器要求的「用户手势瞬时激活」早已失效**，
+     click() 被**静默忽略**：不报错、不弹窗，用户只看到一句「正在打开文件上传窗口」。
+     改为弹可见窗口后，窗口内的「选择文件」是**用户直接点击**，手势成立 ⇒ 选择器必然唤起。
+     这与「上报花费」同形（共用 .notif-mask / .notif-modal 组件），两条路径体验一致。 */
+function oaOpenUploadForm(){
   var pid = currentProjectId();
   if(pid <= 0){ toast('请先进入一个项目'); return; }
-  var inp = document.createElement('input');
-  inp.type = 'file';
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
+      '<div class="notif-head">上传项目文档</div>'+
+      '<div class="notif-body"><div class="oa-exp-form">'+
+        '<label class="oa-ef-row"><span>存放位置</span>'+
+          '<select id="upFolder"><option value="">正在读取项目文件夹…</option></select></label>'+
+        '<label class="oa-ef-row"><span>文件</span>'+
+          '<input id="upFile" type="file" disabled></label>'+
+        '<div class="hint" id="upHint" style="margin-top:6px">选择文件后会立即上传，并登记到当前项目的文档里。</div>'+
+        '<div class="note-err" id="upErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var sel = mask.querySelector('#upFolder');
+  var inp = mask.querySelector('#upFile');
+  var hint = mask.querySelector('#upHint');
+  var err = mask.querySelector('#upErr');
+  var done = false;
+  var finish = function(){ if(done) return; done = true; mask.remove(); };
+  var showErr = function(msg){ if(err){ err.textContent = msg; err.style.display = 'block'; } };
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ finish(); };
+  mask.addEventListener('click', function(ev){ if(ev.target === mask) finish(); });
+
+  /* 文件夹必须先取到：后端 createDocument 对 source=UPLOAD **强制要求 folderId**
+     （不传是 400「必须指定 folderId」，且 _verify_pm_doc_upload.py 的 VN2 钉着这条契约）。
+     故这里先拉项目文档树（后端 tree 会顺带 ensureProjectRoot，空树不该出现），
+     拿到根文件夹后再放开文件控件 —— 顺序颠倒会让用户选完文件才发现传不上去。 */
+  API.req('/v1/pm/projects/' + pid + '/docs/tree').then(function(t){
+    if(done) return;
+    var flat = [];
+    (function walk(ns, depth){
+      arr(ns).forEach(function(n){
+        flat.push({id: n.id, name: n.name, depth: depth});
+        walk(n.children, depth + 1);
+      });
+    })(arr(t && t.project), 0);
+    if(!flat.length){
+      sel.innerHTML = '<option value="">（无）</option>';
+      showErr('该项目还没有可写入的文件夹，请先在「任务 → 项目 → 文档」里新建一个。');
+      return;
+    }
+    sel.innerHTML = flat.map(function(f){
+      return '<option value="'+txt(f.id)+'">'+
+        new Array(f.depth + 1).join('　') + txt(f.name) + '</option>';
+    }).join('');
+    inp.disabled = false;
+  }).catch(function(e){
+    if(done) return;
+    sel.innerHTML = '<option value="">（读取失败）</option>';
+    showErr('读取项目文件夹失败：' + (e.message || '未知错误'));
+  });
+
   inp.onchange = async function(){
     var f = inp.files && inp.files[0];
     if(!f) return;
+    var folderId = Number(sel.value);
+    if(!folderId){ showErr('请先选择存放位置'); return; }
+    if(err){ err.textContent = ''; err.style.display = 'none'; }
+    if(hint){ hint.textContent = '正在上传：' + f.name; }
+    inp.disabled = true;
     try{
-      toast('正在上传文件：' + f.name);
       var up = await API.fileUpload(f);          // → {id,name,url,size}
       if(!up || !up.id) throw new Error('上传未返回文件标识');
       var reg = await API.req('/v1/pm/projects/' + pid + '/docs/documents', {
         method:'POST',
-        body: JSON.stringify({source:'UPLOAD', fileId: up.id, sizeBytes: up.size, name: up.name || f.name})
+        body: JSON.stringify({source:'UPLOAD', folderId: folderId,
+          fileId: up.id, sizeBytes: up.size, name: up.name || f.name})
       });
-      toast('已上传并登记到项目：' + txt((reg && (reg.name || reg.fileName)) || up.name || f.name));
+      var label = txt((reg && (reg.name || reg.fileName)) || up.name || f.name);
+      finish();
+      toast('已上传并登记到项目：' + label);
+      oaPushBub('ai', '已上传并登记到当前项目「' + txt(S.currentProject.name) + '」的文档：' + label);
+      oaScrollDock();
     }catch(e){
+      inp.disabled = false;
+      if(hint){ hint.textContent = '选择文件后会立即上传，并登记到当前项目的文档里。'; }
+      showErr('文档上传失败：' + (e.message || '未知错误'));
       toast('文档上传失败：' + (e.message || '未知错误'));
     }
   };
-  inp.click();
 }
 
 /* 项目内上报花费：表单（方向/分类/金额/发生日期/备注）→ POST /v1/pm/projects/{id}/expenses
@@ -1316,7 +1385,10 @@ function oaPushBub(role, html, opts){
   opts = opts || {};
   var el = document.createElement('div');
   el.className = 'bub ' + (role === 'user' ? 'me' : 'ai') + (opts.ans ? ' ans' : '');
-  el.innerHTML = html + '<svg class="tail" viewBox="0 0 13 13" aria-hidden="true"><path d="M6.5 0.5 12.5 12.5 0.5 12.5z"/></svg>';
+  /* 气泡**不再有三角尾巴**（用户 2026-10-11 口径：「去掉对话框的三角」）。
+     生产者只此一处；`.bub .tail` 的样式与 oaLayoutTails 的落位分支均保留，
+     以便将来若要复用不必重写几何（若恢复，须同步 scripts/_e2e_oa.py 的 E 组断言）。 */
+  el.innerHTML = html;
   list.appendChild(el);
   oaSetChatting(true);
   oaNodRobot();
@@ -1753,6 +1825,48 @@ function oaMaybeLeaveForm(){
   return true;
 }
 
+/* 进入项目后在对话正文里落一条上下文卡：项目名 + 隔离口径 + 对话式操作入口。
+   项目名唯一事实源仍是 S.currentProject（由 enterProject 用 GET /v1/pm/projects/{id} 拿到）。 */
+function oaProjectIntroHtml(){
+  var cp = S.currentProject; if(!cp) return '';
+  var nW = arr(S.projectWorkerIds).length;
+  return '<div class="oa-intro">'+
+    '<div class="oa-intro-t">'+ic('folder',15)+' 已进入项目 · <b>'+txt(cp.name)+'</b></div>'+
+    '<div class="oa-intro-m">'+(cp.projectType === 'DEV' ? '开发项目' : '业务项目')+
+      ' · 可用数字人 '+nW+' 位 · 数据与其它业务严格隔离</div>'+
+    '<div class="oa-intro-a">需要上传文件或上报花费？直接在对话里说一声，我会为你打开窗口。</div>'+
+  '</div>';
+}
+
+/* 需求（本轮）：把「上传文件 / 上报花费」从按钮改成对话意图驱动。
+   判定点唯一：后端 /v1/workers/intent 的 action 字段（与角色识别同一个入口，不在 H5 另写词表）。
+   仅当处于项目内才弹窗（两种动作都写进项目）；不在项目内只提示，不静默、也不造半成品。 */
+function oaMaybeProjectAction(intent){
+  var act = intent && intent.action;
+  if(!act) return false;
+  if(currentProjectId() <= 0){
+    oaPushBub('ai', '识别到你想' + (act === 'UPLOAD_FILE' ? '上传文件' : '上报花费') +
+      '，但这个操作要归属到某个项目：请先在「任务 → 项目」里进入一个项目，再对我说一次。');
+    oaScrollDock(); oaLayoutTails();
+    return false;
+  }
+  if(act === 'UPLOAD_FILE'){
+    oaPushBub('ai', '好的，正在打开文件上传窗口 —— 选好文件后会登记到当前项目「'+
+      txt(S.currentProject.name)+'」的文档里。');
+    oaScrollDock(); oaLayoutTails();
+    oaOpenUploadForm();
+    return true;
+  }
+  if(act === 'REPORT_EXPENSE'){
+    oaPushBub('ai', '好的，正在打开花费上报窗口 —— 填写后会记入当前项目「'+
+      txt(S.currentProject.name)+'」。');
+    oaScrollDock(); oaLayoutTails();
+    oaOpenExpenseForm();
+    return true;
+  }
+  return false;
+}
+
 /* 两形态共用一个文档，而请假表单的 id 是固定的（lfType/lfStart…，经典 helper 全靠它们取值）。
    故**同一时刻只允许存在一份**：
      · 新版要发新表单前，先清掉经典形态遗留的那份（那个页面此刻整体隐藏，已无法操作），
@@ -1794,6 +1908,7 @@ async function oaAfterOaAnswer(){
   var items = oaSuggestList(q, intent);
   if(items.length) oaPushGuide(items);
   oaMaybeLeaveForm();
+  oaMaybeProjectAction(intent);
 }
 
 /* ------------------------------------------------------------- 10. 抽屉 / 弹层 */
@@ -2011,6 +2126,17 @@ window.oaBoot = oaBoot;
 window.oaSetMode = setMode;
 window.oaLayoutTails = oaLayoutTails;
 window.oaState = S;
+/* 自检暴露（与上面 4 个同一定位：只给离线验证脚本用，产品路径不经过它）。
+   「识别到上传/上报意图 ⇒ 自动弹窗」是本轮唯一不由点击直接触发的交互，
+   不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；
+   暴露后可由 scripts/_verify_oa_action_popup.py 直接驱动判定函数并断言真的弹了窗。 */
+window.oaMaybeProjectAction = oaMaybeProjectAction;
+/* 同一定位：把「进入项目」也暴露给离线自检脚本。
+   进入项目会同时改动三件事（项目上下文 / 项目专属会话 / 对话坞历史），
+   而用户明确要求「上一次会话记忆不能丢失」—— 这是唯一能离线证伪该点的入口：
+   scripts/_check_oa_project_layout.py 用它驱动真实 enterProject（API 由 page.route 打桩），
+   断言「复用了同一条项目会话（未新建）」「历史消息仍在坞里」「再进入不清空」。 */
+window.oaEnterProject = enterProject;
 
 /* 不修改既有脚本一行：靠观察 body.auth 联动登录 / 登出 */
 new MutationObserver(function(){

@@ -49,6 +49,18 @@ public class FileController {
     @Value("${aioa.upload.dir:./uploads}")
     private String uploadDir;
 
+    /**
+     * 上传体积上限（MB）—— 唯一数字来自配置 <b>aioa.file.max-size-mb</b>，
+     * 与 {@code spring.servlet.multipart.max-file-size} 是同一个键的引用
+     * （见 application.yml 里 multipart 的占位符）。
+     *
+     * <p>历史缺陷（docs/44 §3.3-5）：这两个上限曾各写一份字面量 50MB，
+     * 只改其中一处就会出现「容器已放行、应用层仍按旧值 400」的口径漂移。
+     * 现在应用层不再持有数字，只负责给出可读文案。</p>
+     */
+    @Value("${aioa.file.max-size-mb:50}")
+    private long maxSizeMb;
+
     private Path root;
 
     @PostConstruct
@@ -71,8 +83,8 @@ public class FileController {
         if (original == null || original.isBlank()) {
             throw BizException.badRequest("文件名无效");
         }
-        if (file.getSize() > 50L * 1024 * 1024) {
-            throw BizException.badRequest("文件超过 50MB 上限");
+        if (file.getSize() > maxSizeMb * 1024 * 1024) {
+            throw BizException.badRequest("文件超过 " + maxSizeMb + "MB 上限");
         }
         String ext = "";
         int dot = original.lastIndexOf('.');

@@ -100,6 +100,9 @@ public class WorkerIntakeService {
         List<String> formFields;
         String nextStep;
         String source;
+        // 动作意图（上传文件 / 上报花费）与角色正交，仅由 Python 侧判定；Java 侧只负责透传。
+        String action;
+        String actionName;
 
         JsonNode node = callPython(text);
         if (node != null && node.hasNonNull("role")) {
@@ -110,6 +113,9 @@ public class WorkerIntakeService {
             formFields = toStringList(node.path("formFields"));
             nextStep = node.path("nextStep").asText("");
             source = "agent";
+            // action 由 Python 一处判定，这里原样透传（node.path("action") 可能为 JSON null）
+            action = (node != null && node.hasNonNull("action")) ? node.get("action").asText() : null;
+            actionName = (node != null && node.hasNonNull("actionName")) ? node.get("actionName").asText() : null;
         } else {
             WorkerRole inferred = WorkerRole.infer(text, null);
             roleCode = inferred.code();
@@ -119,6 +125,9 @@ public class WorkerIntakeService {
             formFields = List.of();
             nextStep = "补充职责描述，或直接开始对话";
             source = "local-fallback";
+            // 关键词表只允许有一份真相（在 Python）；降级分支不得复制动作词表，一律置 null
+            action = null;
+            actionName = null;
         }
 
         WorkerRole role = WorkerRole.of(roleCode);
@@ -133,6 +142,9 @@ public class WorkerIntakeService {
         out.put("formFields", formFields);
         out.put("nextStep", nextStep);
         out.put("source", source);
+        // 与角色正交的动作意图：透传 Python 判定结果（local-fallback 时为 null）
+        out.put("action", action);
+        out.put("actionName", actionName);
         // 权限映射：类型 → 权限码 → 允许角色，全部取自 PermissionCatalog，不在此处另写一份
         out.put("requiredPermission", permission);
         out.put("permissionName", PermissionCatalog.nameOf(permission));

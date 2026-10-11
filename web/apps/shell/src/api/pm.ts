@@ -571,41 +571,6 @@ export interface PmWorkerList {
   candidates: PmWorkerCandidate[]
 }
 
-export interface PmContextSourceItem {
-  id: number
-  /** UPLOAD 后台上传 / WEB_SEARCH 网上搜索 / POLICY 政策。 */
-  sourceType: string
-  typeLabel?: string
-  name: string
-  /** 0 = 项目级默认（对全体已分配数字人生效）。 */
-  workerId: number
-  workerName?: string
-  folderId?: number | null
-  fileId?: number | null
-  kbDocumentId?: number | null
-  /** WEB_SEARCH：JSON 字符串 {"keywords":[],"domains":[],"maxResults":N}。 */
-  config?: string | null
-  enabled: boolean
-  createdBy?: number
-  createdAt?: string
-}
-
-export interface PmContextSourceList {
-  canManage: boolean
-  items: PmContextSourceItem[]
-  workers: Array<{ workerId: number; name: string; enabled: boolean }>
-  types: Array<{ value: string; label: string }>
-}
-
-export interface PmAiScope {
-  projectId: number
-  workerId: number
-  projectDefault: PmContextSourceItem[]
-  workerSpecific: PmContextSourceItem[]
-  effective: PmContextSourceItem[]
-  effectiveCount: number
-}
-
 export function pmWorkers(projectId: number) {
   return http.get(`/pm/projects/${projectId}/workers`).then((r) => unwrap<PmWorkerList>(r))
 }
@@ -623,40 +588,6 @@ export function pmUnassignWorker(projectId: number, workerRowId: number) {
   return http
     .delete(`/pm/projects/${projectId}/workers/${workerRowId}`)
     .then((r) => unwrap<{ workerId: number; removedContextSources: number }>(r))
-}
-
-export function pmContextSources(projectId: number) {
-  return http.get(`/pm/projects/${projectId}/context-sources`).then((r) => unwrap<PmContextSourceList>(r))
-}
-
-export interface PmContextSourceBody {
-  sourceType: 'UPLOAD' | 'WEB_SEARCH' | 'POLICY'
-  name?: string
-  workerId?: number
-  folderId?: number
-  fileId?: number
-  kbDocumentId?: number
-  /** WEB_SEARCH：{keywords, domains?, maxResults?}（对象或 JSON 字符串均可）。 */
-  config?: { keywords: string[]; domains?: string[]; maxResults?: number } | string
-}
-
-export function pmCreateContextSource(projectId: number, body: PmContextSourceBody) {
-  return http.post(`/pm/projects/${projectId}/context-sources`, body).then((r) => unwrap<PmContextSourceItem>(r))
-}
-
-export function pmUpdateContextSource(projectId: number, sourceId: number, body: Partial<PmContextSourceBody> & { enabled?: boolean }) {
-  return http.put(`/pm/projects/${projectId}/context-sources/${sourceId}`, body).then((r) => unwrap<PmContextSourceItem>(r))
-}
-
-export function pmDeleteContextSource(projectId: number, sourceId: number) {
-  return http.delete(`/pm/projects/${projectId}/context-sources/${sourceId}`).then((r) => unwrap<void>(r))
-}
-
-/** 某数字员工在本项目实际生效的上下文（项目级默认 + 员工专属，仅 enabled=1）。 */
-export function pmAiScope(projectId: number, workerId?: number) {
-  return http
-    .get(`/pm/projects/${projectId}/ai-scope`, { params: workerId ? { workerId } : {} })
-    .then((r) => unwrap<PmAiScope>(r))
 }
 
 // ============================================================ 错误文案

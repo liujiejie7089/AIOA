@@ -5,11 +5,16 @@ import cn.aioa.resource.entity.SysConfig;
 import cn.aioa.resource.mapper.AiExpertMapper;
 import cn.aioa.resource.mapper.AiSkillMapper;
 import cn.aioa.resource.mapper.SysConfigMapper;
+import cn.aioa.resource.mapper.SysOrgConfigMapper;
+import cn.aioa.resource.model.ExpertSettings;
+import cn.aioa.resource.service.ExpertConfigService;
+import cn.aioa.resource.service.SysConfigResolver;
 import cn.aioa.security.AuthUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -42,13 +47,37 @@ class CatalogServiceTest {
     private final AiExpertMapper expertMapper = mock(AiExpertMapper.class);
     private final AiSkillMapper skillMapper = mock(AiSkillMapper.class);
     private final SysConfigMapper sysConfigMapper = mock(SysConfigMapper.class);
+    private final SysOrgConfigMapper sysOrgConfigMapper = mock(SysOrgConfigMapper.class);
+    // 用真实解析器 + 假 Mapper 注入，验证「机构覆盖 → 租户值 → 平台默认 → 出厂内置」链路仍是同一处口径
+    private final SysConfigResolver sysConfigResolver =
+            new SysConfigResolver(sysConfigMapper, sysOrgConfigMapper);
     private final ExpertConfigService configService = mock(ExpertConfigService.class);
     private final CatalogService service =
-            new CatalogService(expertMapper, skillMapper, sysConfigMapper, configService);
+            new CatalogService(expertMapper, skillMapper, sysConfigResolver, configService);
+
+    // 默认「启用 + 全员可见」的解析结果；availableExperts 内部走 configService.resolve().settings()。
+    // 注意：HEAD 上的 CatalogServiceTest 只桩了 isEnabled 却没桩 resolve，
+    // 而生产代码 availableExperts 用的是 resolve().settings().getEnabled() ⇒ Map.entry(e, null) 抛 NPE。
+    // 这里把 resolve 一并桩掉，与生产口径对齐（isEnabled 只是 resolve 的便捷封装）。
+    private static ExpertConfigService.ResolvedConfig enabled() {
+        return resolveWith(true, "ALL");
+    }
+
+    private static ExpertConfigService.ResolvedConfig disabled() {
+        return resolveWith(false, "ALL");
+    }
+
+    private static ExpertConfigService.ResolvedConfig resolveWith(boolean enabled, String scope) {
+        ExpertSettings s = new ExpertSettings();
+        s.setEnabled(enabled);
+        s.setVisibleScope(scope);
+        return new ExpertConfigService.ResolvedConfig(null, s, Map.of(), List.of());
+    }
 
     /** 默认：配置层认为「都启用」；个别用例再按 key 覆盖成停用。 */
     private void assumeAllEnabled() {
         when(configService.isEnabled(any(), any(), any(), any(), any())).thenReturn(true);
+        when(configService.resolve(any(), any(), any(), any(), any())).thenReturn(enabled());
     }
 
     private static AuthUser user(Long tenantId) {
@@ -197,6 +226,7 @@ class CatalogServiceTest {
     void disabledExpertIsHiddenFromUserEnd() {
         assumeAllEnabled();
         when(configService.isEnabled(any(), any(), any(), any(), eq("t1"))).thenReturn(false);
+        when(configService.resolve(any(), any(), any(), any(), eq("t1"))).thenReturn(disabled());
         when(expertMapper.selectList(any()))
                 .thenReturn(List.of(expert(5, "t1", 10), expert(5, "t2", 20)));
         when(sysConfigMapper.selectOne(any())).thenReturn(cfg(5, ""));
@@ -211,6 +241,7 @@ class CatalogServiceTest {
     void allDisabledFallsBackToGlobalAndNeverResurrectsDisabled() {
         assumeAllEnabled();
         when(configService.isEnabled(any(), any(), any(), any(), eq("t1"))).thenReturn(false);
+        when(configService.resolve(any(), any(), any(), any(), eq("t1"))).thenReturn(disabled());
         when(expertMapper.selectList(any()))
                 .thenReturn(List.of(expert(5, "t1", 10)))
                 .thenReturn(List.of(expert(0, "general", 0)));
@@ -226,6 +257,7 @@ class CatalogServiceTest {
     void disabledDefaultExpertIsNotForceAppended() {
         assumeAllEnabled();
         when(configService.isEnabled(any(), any(), any(), any(), eq("general"))).thenReturn(false);
+        when(configService.resolve(any(), any(), any(), any(), eq("general"))).thenReturn(disabled());
         when(expertMapper.selectList(any()))
                 .thenReturn(List.of(expert(5, "own", 10)))
                 .thenReturn(List.of(expert(0, "general", 0)));

@@ -5,6 +5,7 @@ import cn.aioa.common.resp.ApiResponse;
 import cn.aioa.resource.entity.SysConfig;
 import cn.aioa.resource.mapper.SysConfigMapper;
 import cn.aioa.resource.service.ActivityLogService;
+import cn.aioa.resource.support.SysConfigGroups;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -49,18 +50,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminConfigController {
 
-    /** 分组中文名 */
-    private static final Map<String, String> GROUP_NAMES = new LinkedHashMap<>() {{
-        put(SysConfig.GROUP_CONVERSATION, "会话与模型");
-        put(SysConfig.GROUP_QUOTA, "额度与计费");
-        put(SysConfig.GROUP_KNOWLEDGE, "知识库");
-        put(SysConfig.GROUP_SECURITY, "安全合规");
-        // V34 的 approval.tenant.content 用 AUDIT 分组。此前未登记 ⇒ 它落在「库里有、
-        // grouped 里没有、界面看不见」的盲区（前端分组下拉亦由此清单驱动）。
-        put(SysConfig.GROUP_AUDIT, "审核");
-        put(SysConfig.GROUP_COMMON, "通用");
-    }};
-
     /** 代码内置兜底默认（平台默认表缺失时使用，保证开箱可用） */
     private static final List<SysConfig> BUILTIN_DEFAULTS = builtinDefaults();
 
@@ -97,7 +86,7 @@ public class AdminConfigController {
 
         // 按分组聚合，方便前端直接渲染
         Map<String, List<SysConfig>> grouped = new LinkedHashMap<>();
-        for (Map.Entry<String, String> e : GROUP_NAMES.entrySet()) {
+        for (Map.Entry<String, String> e : SysConfigGroups.NAMES.entrySet()) {
             List<SysConfig> items = filtered.stream()
                     .filter(c -> e.getKey().equals(c.getGroupCode()))
                     .collect(Collectors.toList());
@@ -107,7 +96,7 @@ public class AdminConfigController {
         }
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("groups", GROUP_NAMES);
+        data.put("groups", SysConfigGroups.NAMES);
         data.put("items", filtered);
         data.put("grouped", grouped);
         data.put("total", filtered.size());

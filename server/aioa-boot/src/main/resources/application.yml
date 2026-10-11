@@ -33,9 +33,11 @@ spring:
     time-zone: Asia/Shanghai
   servlet:
     multipart:
-      # 知识库上传上限 50MB（FR-F1）
-      max-file-size: 50MB
-      max-request-size: 50MB
+      # 上传体积上限的**引用**，不写数字：唯一数字在 aioa.file.max-size-mb。
+      # 历史缺陷（docs/44 §3.3-5）：这里写 50MB、FileController 里又硬编码 50MB，
+      # 两处各一份 ⇒ 将来只改一处就会出现「容器放行、应用层仍按旧值 400」的口径漂移。
+      max-file-size: ${aioa.file.max-size-mb:50}MB
+      max-request-size: ${aioa.file.max-size-mb:50}MB
   mvc:
     async:
       # SSE 长连接，超时由心跳保活（SseEmitter(0) 不超时）
@@ -77,6 +79,13 @@ aioa:
     secret: ${AIOA_SERVICE_JWT_SECRET:aioa-dev-service-jwt-secret-please-change}
   agent:
     base-url: ${AIOA_AGENT_BASE_URL:http://localhost:8000}
+  # 上传体积上限的**唯一定义处**（单位 MB）。两类消费者都取它，不各写一份数字：
+  #   ① spring.servlet.multipart.max-file-size / max-request-size（容器级硬闸，占位符引用）；
+  #   ② FileController 的友好 400「文件超过 N MB 上限」（应用级校验）。
+  # 起因是 docs/44 §3.3-5：同一上限曾同时硬编码在 yml 与 FileController，
+  # 只改一处就会漂移（表现为容器放行、应用层仍按旧值拒绝）。
+  file:
+    max-size-mb: ${AIOA_FILE_MAX_SIZE_MB:50}
   # ─── 非遗四川 2023（scfy）只读接入 ──────────────────────────────────────────
   # 默认关闭：这段配置不开 = 不注册任何工具、不出现在模型能力清单里（可插拔）。
   # 开启后提供 55 个只读查询工具（传承人 9 / 项目 8 / 工坊 13 / 保护区 11 / 旅游 14），

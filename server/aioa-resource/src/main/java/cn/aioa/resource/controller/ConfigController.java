@@ -2,11 +2,9 @@ package cn.aioa.resource.controller;
 
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.resp.ApiResponse;
-import cn.aioa.resource.entity.SysConfig;
-import cn.aioa.resource.mapper.SysConfigMapper;
+import cn.aioa.resource.service.SysConfigResolver;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -26,6 +23,10 @@ import java.util.Set;
  *
  * <p><b>安全口径</b>：白名单只登记「展示型」配置（文案、场景清单等）。
  * 额度阈值、安全策略等运营参数一律不对外 —— 它们会暴露风控口径。</p>
+ *
+ * <p><b>机构覆盖值的回落口径</b>：本控制器不再持有任何解析逻辑，统一委托
+ * {@link SysConfigResolver#effectiveValue}（机构覆盖值 → 租户值 → 平台默认 → 空串）。
+ * 唯一解析入口在那一处，本类只是调用方，避免「再复制一份回落链」。</p>
  */
 @RestController
 @RequestMapping("/api/v1/configs")
@@ -41,7 +42,7 @@ public class ConfigController {
             // 词元包购买页「适用场景」（V33）
             "billing.package.scenes");
 
-    private final SysConfigMapper configMapper;
+    private final SysConfigResolver sysConfigResolver;
 
     /**
      * 批量读取公开配置。
@@ -53,6 +54,7 @@ public class ConfigController {
     public ApiResponse<Map<String, String>> read(@RequestParam(name = "keys") String keys) {
         AuthUser user = AuthUserContext.require();
         Long tenantId = user.getTenantId() == null ? 0L : user.getTenantId();
+        Long institutionId = user.getInstitutionId();
         Map<String, String> out = new LinkedHashMap<>();
         for (String raw : keys.split(",")) {
             String key = raw.trim();
@@ -62,37 +64,8 @@ public class ConfigController {
             if (!USER_VISIBLE_KEYS.contains(key)) {
                 throw BizException.forbidden("配置项不对外开放：" + key);
             }
-            out.put(key, resolve(tenantId, key));
+            out.put(key, sysConfigResolver.effectiveValue(tenantId, institutionId, key));
         }
         return ApiResponse.ok(out);
-    }
-
-    /**
-     * 配置解析：租户值 → 平台默认（tenant_id=0）→ 空串。
-     *
-     * <p>必须带回落：`sys_config` 只在租户**首次访问**管理端时才克隆平台默认，
-     * 因此新增的键在老租户里根本没有行；不回落到 tenant_id=0 就会「管理端配了、用户端看不到」。</p>
-     */
-    private String resolve(Long tenantId, String key) {
-        Set<Long> scopes = new LinkedHashSet<>();
-        scopes.add(tenantId);
-        scopes.add(0L);
-        for (Long scope : scopes) {
-            SysConfig row = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>()
-                    .eq(SysConfig::getTenantId, scope)
-                    .eq(SysConfig::getConfigKey, key)
-                    .last("LIMIT 1"));
-            if (row == null) {
-                continue;
-            }
-            String value = row.getConfigValue();
-            if (value == null || value.isBlank()) {
-                value = row.getDefaultValue();
-            }
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return "";
     }
 }

@@ -27,6 +27,8 @@ from playwright.async_api import async_playwright
 BASE = 'http://127.0.0.1:5181/'
 USER, PWD = 'wjj_xu', 'User@123'          # 普通成员（科员）：覆盖 ROLE_MEMBER 视角
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_shot_oa')
+# 构建产物（单次拼装后的零构建单文件 H5）；E3 的静态口径直接读它。
+INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'user-client', 'index.html')
 
 errors, fails, notes, shots = [], [], [], []
 
@@ -72,33 +74,33 @@ async def shot(page, name):
     return p
 
 
-async def tail_geometry(page):
-    """逐气泡比对三角方向角。计算口径与页面内 oaLayoutTails 完全独立，避免自证。"""
+async def tail_count(page):
+    """数出对话坞气泡里「尾巴」的所有可能形态：子节点 .tail，以及用 ::after/::before
+    画出来的三角。读真实 DOM + 计算样式，不依赖任何内联变量，避免自证。
+    新口径：气泡不得有尾巴，这里只负责「数出来」，判据交给各 chk 断言。"""
     return await page.evaluate("""() => {
       const home = document.getElementById('v-home');
       if(!home || !home.classList.contains('chatting')) return {skip:'未进入对话态'};
-      const anchor = home.querySelector('.robot-wrap');
-      if(!anchor) return {skip:'未找到数字人锚点'};
-      const r = anchor.getBoundingClientRect();
-      const A = {x: r.left + r.width/2, y: r.top + r.height/2};
-      const out = [];
+      const bubbles = home.querySelectorAll('.bub').length;
+      const tails = home.querySelectorAll('.bub .tail').length;
+      // 任何人把三角加回成 ::after/::before（哪怕忘了走 .tail 子节点），这里也要能抓住。
+      // 仅当伪元素真的渲染出可见形状（有背景/有边框/有非零尺寸）才计入，避免把
+      // content:'' 的 clearfix 之类误判为三角。
+      let pseudo = 0;
       home.querySelectorAll('.bub').forEach(b => {
-        const t = b.querySelector('.tail');
-        if(!t) return;                       // 三角缺失本身由 E2 断言兜底，这里不制造假阴性
-        const br = b.getBoundingClientRect();
-        const cx = br.left + br.width/2, cy = br.top + br.height/2;
-        const theta = Math.atan2(A.y - cy, A.x - cx);
-        let expect = (theta + Math.PI/2) * 180 / Math.PI;
-        /* 取**计算值**而非内联值：内联值把「JS 把变量写在哪个节点」这个实现细节焊进了断言，
-           变量一旦改写到宿主（.bub）上，内联读法就恒得 0、误报「三角没落位」。
-           计算值带继承，写在宿主还是三角节点都读得到真实渲染结果。 */
-        let got = parseFloat(getComputedStyle(t).getPropertyValue('--tail-angle')) || 0;
-        let d = Math.abs(expect - got) % 360;
-        if (d > 180) d = 360 - d;
-        out.push({err: +d.toFixed(3), expect: +expect.toFixed(2), got: +got.toFixed(2)});
+        [':after', ':before'].forEach(p => {
+          const cs = getComputedStyle(b, p);
+          const c = cs.content;
+          if (!c || c === 'none' || c === 'normal') return;
+          const bg = cs.backgroundColor;
+          const bgOpaque = !!bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+          const bw = ['borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth']
+                       .reduce((s,k) => s + (parseFloat(cs[k]) || 0), 0);
+          const w = parseFloat(cs.width) || 0, h = parseFloat(cs.height) || 0;
+          if (bgOpaque || bw > 0 || (w > 0 && h > 0)) pseudo++;
+        });
       });
-      const total = home.querySelectorAll('.bub').length;
-      return {items: out, bubbles: total, tails: home.querySelectorAll('.bub .tail').length};
+      return {bubbles, tails, pseudo};
     }""")
 
 
@@ -291,65 +293,104 @@ async def main():
             await page.wait_for_timeout(2500)
             await shot(page, '06-oa-dock-sending')
 
-            geo = await tail_geometry(page)
-            if geo.get('skip'):
-                chk('E1 三角几何可测', False, geo['skip'])
+            # —— 新口径：气泡不得有尾巴（三角）。这条存在的唯一理由就是抓「有人把三角加回来」：
+            #    无论是 <svg class="tail"> 子节点，还是 ::after/::before 画出来的三角，都必红。
+            tc = await tail_count(page)
+            if tc.get('skip'):
+                chk('E1 气泡尾巴判据可测', False, tc['skip'])
             else:
-                items = geo['items']
-                worst = max((i['err'] for i in items), default=0)
-                chk('E1 气泡三角朝向数字人（误差 < 1°，共 %d 个气泡）' % len(items),
-                    bool(items) and worst < 1.0, '最大误差 %s°' % worst)
-                chk('E3 每个气泡都有三角节点（流式写入不得抹掉它）',
-                    geo.get('tails') == geo.get('bubbles'),
-                    'bubbles=%s tails=%s' % (geo.get('bubbles'), geo.get('tails')))
-                # 三角落位必须在气泡边框上（不在内部漂移）
-                on_edge = await page.evaluate("""() => {
-                  const out = [];
-                  document.querySelectorAll('.bub').forEach(b => {
-                    const br = b.getBoundingClientRect();
-                    const tcs = getComputedStyle(b.querySelector('.tail'));
-                    const x = parseFloat(tcs.getPropertyValue('--tail-x'));
-                    const y = parseFloat(tcs.getPropertyValue('--tail-y'));
-                    const eps = 1.5;
-                    const okX = Math.abs(x) <= eps || Math.abs(x - br.width) <= eps;
-                    const okY = Math.abs(y) <= eps || Math.abs(y - br.height) <= eps;
-                    out.push(okX || okY);
-                  });
-                  return out;
-                }""")
-                chk('E2 三角落位在气泡边框上', all(on_edge), on_edge)
+                chk('E1 坞内所有气泡均无尾巴（.bub .tail=0 且无 ::after/::before 三角，共 %d 个气泡）'
+                    % tc['bubbles'],
+                    tc['bubbles'] > 0 and tc['tails'] == 0 and tc['pseudo'] == 0,
+                    'bubbles=%s tails=%s pseudo=%s' % (tc['bubbles'], tc['tails'], tc['pseudo']))
 
-            # E4 切走再切回首页：气泡若是在别的视图里追加的（首页当时 display:none，
-            #    量到零矩形），回到首页必须重新落位 —— 否则那批三角停在初始态 0deg。
+            # E2 固化自检（就地注入 → 断言 → 撤净）：把「数出来必须是 0」这类最容易恒真的判据，
+            # 每次运行都实跑一次反例，确保 tail_count 真在数、且撤净后能回到 0。谁把 .tail 打成
+            # .taill、或把 #v-home.chatting 判断写坏，这里会立刻红，而不是静默恒真绿。
+            # 注入/撤净都放在 E1 之后、切视图之前，避免污染后续截图。
+            probe = await page.evaluate("""() => {
+              const home = document.getElementById('v-home');
+              if(!home || !home.classList.contains('chatting')) return {err:'未进入对话态'};
+              const b = home.querySelector('#oaDockList .bub') || home.querySelector('.bub');
+              if(!b) return {err:'无可见气泡可注入'};
+              // 1) 子节点三角（模拟「有人把 <svg class="tail"> 加回气泡」）
+              const s = document.createElementNS('http://www.w3.org/2000/svg','svg');
+              s.setAttribute('class','tail'); s.setAttribute('viewBox','0 0 13 13');
+              s.innerHTML = '<path d="M0 13 L6.5 0 L13 13 Z"/>';
+              b.appendChild(s);
+              // 2) ::after 伪元素三角（绕过子节点路径，验证 pseudo 分支）
+              b.classList.add('__probeTail');
+              const st = document.createElement('style');
+              st.id = '__probeTailStyle';
+              st.textContent = '#oaDockList .bub.__probeTail::after,'
+                + '.oa .bub.__probeTail::after{content:"";position:absolute;'
+                + 'width:0;height:0;border:6px solid transparent;border-right-color:#f00;}';
+              document.head.appendChild(st);
+              return {ok:true};
+            }""")
+            if probe.get('err'):
+                chk('E2 尾巴判据自检（注入子节点+伪元素三角，应被抓、撤净后回 0）', False, probe)
+            else:
+                inj = await tail_count(page)
+                # 3) 撤净：移除子节点 / 类 / 样式
+                await page.evaluate("""() => {
+                  const home = document.getElementById('v-home');
+                  home.querySelectorAll('.bub.__probeTail .tail').forEach(s => s.remove());
+                  home.querySelectorAll('.bub.__probeTail').forEach(b => b.classList.remove('__probeTail'));
+                  const st = document.getElementById('__probeTailStyle');
+                  if(st) st.remove();
+                }""")
+                clean = await tail_count(page)
+                ok = (inj['tails'] >= 1 and inj['pseudo'] >= 1
+                      and clean['tails'] == 0 and clean['pseudo'] == 0)
+                chk('E2 尾巴判据自检（注入子节点+伪元素三角，应被抓、撤净后回 0）',
+                    ok,
+                    {'基线': {'tails': 0, 'pseudo': 0},
+                     '注入': {'tails': inj['tails'], 'pseudo': inj['pseudo']},
+                     '撤净': {'tails': clean['tails'], 'pseudo': clean['pseudo']}})
+
+            # E3 产物静态口径（不需浏览器）：构建产物 index.html 不得再生成 <svg class="tail">。
+            # 只钉「生成串」—— .bub .tail 的 CSS 与 oaLayoutTails() 有意保留复用，不能一并禁。
+            # 这条防「源码删了尾巴、却忘了重建 / 构建回退把尾巴又写回产物」。
+            idx_text = ''
+            try:
+                idx_text = open(INDEX, encoding='utf-8').read()
+            except Exception as e:
+                chk('E3 构建产物 index.html 不再生成 <svg class="tail">', False, '读不到产物: ' + str(e)[:80])
+            else:
+                has_gen = '<svg class="tail"' in idx_text
+                chk('E3 构建产物 index.html 不再生成 <svg class="tail">'
+                    '（仅钉生成串；CSS 与 oaLayoutTails 保留）',
+                    not has_gen, 'hit=%s' % has_gen)
+
+            # E4 切走再切回首页：场景保留（当初为「几何落位」补的边界用例）。
+            # 期望从「三角仍指向数字人」改为「仍然没有尾巴」——若有人把尾巴加回且
+            # 忘记在切回时重新落位，这里仍会红。
             await page.click('#oaTabs .tab[data-view="kb"]')
             await page.wait_for_timeout(700)
             await page.click('#oaTabs .tab[data-view="home"]')
             await page.wait_for_timeout(900)
-            geo2 = await tail_geometry(page)
-            if geo2.get('skip'):
-                chk('E4 切回首页后三角几何可测', False, geo2['skip'])
+            tc2 = await tail_count(page)
+            if tc2.get('skip'):
+                chk('E4 切回首页后尾巴判据可测', False, tc2['skip'])
             else:
-                items2 = geo2['items']
-                worst2 = max((i['err'] for i in items2), default=999)
-                chk('E4 切走再切回首页后三角仍指向数字人（误差 < 1°，共 %d 个）' % len(items2),
-                    bool(items2) and worst2 < 1.0,
-                    '最大误差 %s°' % worst2)
+                chk('E4 切走再切回首页后气泡仍无尾巴（共 %d 个）' % tc2['bubbles'],
+                    tc2['bubbles'] > 0 and tc2['tails'] == 0 and tc2['pseudo'] == 0,
+                    'bubbles=%s tails=%s pseudo=%s' % (tc2['bubbles'], tc2['tails'], tc2['pseudo']))
 
-            # E5 窄视口 320px：原实现在 <360px 时退化成「恒朝正上方」，
-            #    那就不再指向数字人了 —— 这里正是为「指向」这一条补的边界断言。
+            # E5 窄视口 320px：场景保留（原实现 <360px 退化，正是为「指向」补的边界）。
+            # 期望从「三角仍指向数字人」改为「仍然没有尾巴」。
             await page.set_viewport_size({'width': 320, 'height': 844})
             await page.wait_for_timeout(700)
             await page.evaluate("() => window.oaLayoutTails()")
             await page.wait_for_timeout(250)
-            geo3 = await tail_geometry(page)
-            if geo3.get('skip'):
-                chk('E5 窄视口下三角几何可测', False, geo3['skip'])
+            tc3 = await tail_count(page)
+            if tc3.get('skip'):
+                chk('E5 窄视口下尾巴判据可测', False, tc3['skip'])
             else:
-                items3 = geo3['items']
-                worst3 = max((i['err'] for i in items3), default=999)
-                chk('E5 窄视口 320px 下三角仍指向数字人（误差 < 1°，共 %d 个）' % len(items3),
-                    bool(items3) and worst3 < 1.0,
-                    '最大误差 %s°' % worst3)
+                chk('E5 窄视口 320px 下气泡仍无尾巴（共 %d 个）' % tc3['bubbles'],
+                    tc3['bubbles'] > 0 and tc3['tails'] == 0 and tc3['pseudo'] == 0,
+                    'bubbles=%s tails=%s pseudo=%s' % (tc3['bubbles'], tc3['tails'], tc3['pseudo']))
             await shot(page, '06b-oa-narrow-320')
             await page.set_viewport_size({'width': 390, 'height': 844})
             await page.wait_for_timeout(700)
@@ -769,7 +810,7 @@ async def main():
         chk_answered('H2 回答已收口（有正文）', h2)
         g1 = await guide_state()
         chk('H2a 回答后出现「转给更专业的同事」推荐块', g1['found'] is True, g1)
-        chk('H2b 推荐块带三角（与其它气泡同形，指向数字人）', g1.get('hasTail') is True, g1)
+        chk('H2b 推荐块无尾巴（与其它气泡同形，去掉了三角）', g1.get('hasTail') is False, g1)
         rows_txt = ' | '.join(r['label'] + '/' + r['why'] for r in g1.get('rows', []))
         hit = [r for r in g1.get('rows', []) if '请假' in r['label']]
         chk('H2c 推荐里含职责对口的请假类数字员工', len(hit) > 0, rows_txt)
@@ -843,12 +884,14 @@ async def main():
              '对照_更早块命中': pre_hit, '本轮命中': new_hit, 'new_rows': new_blocks})
         await shot(page, '19-oa-leave-form')
 
-        # H6 表单气泡与其它气泡同形：三角仍指向数字人
-        geo_h = await tail_geometry(page)
-        chk('H6 表单在坞里时三角几何仍成立（气泡数 %s）' % geo_h.get('bubbles'),
-            not geo_h.get('skip') and len(geo_h.get('items', [])) > 0
-            and max(i['err'] for i in geo_h['items']) < 1.0,
-            geo_h.get('skip') or [i for i in geo_h.get('items', []) if i['err'] >= 1.0])
+        # H6 表单气泡与其它气泡同形：同样不得有尾巴（新口径）
+        tc_h = await tail_count(page)
+        chk('H6 表单在坞里时气泡仍无尾巴（.bub .tail=0，气泡数 %s）' % tc_h.get('bubbles'),
+            not tc_h.get('skip') and tc_h['bubbles'] > 0
+            and tc_h['tails'] == 0 and tc_h['pseudo'] == 0,
+            tc_h.get('skip') or {'bubbles': tc_h.get('bubbles'),
+                                 'tails': tc_h.get('tails'),
+                                 'pseudo': tc_h.get('pseudo')})
 
         # H7 离开新版 ⇒ 新版注入的表单必须撤掉，否则经典的「文档里已有表单就不再发」判据会被挡住。
         # 多等一会儿是刻意的：若「在途收口」漏过代次判据，它会正好在这段时间里补一份表单出来。

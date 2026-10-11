@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { TOKEN_KEY } from '@/api'
-import { EXPERT_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, PM_VIEW_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
+import { EXPERT_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_CONFIG_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, PM_VIEW_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -173,6 +173,9 @@ const routes: RouteRecordRaw[] = [
       // 三层同源：菜单(MainLayout) → 路由 meta.allowRoles → 后端 PermissionCatalog 共用 GITEE_VIEW_ROLES。
       { path: 'gitee/projects', name: 'gitee-projects', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '仓库总览', allowRoles: GITEE_VIEW_ROLES } },
       { path: 'settings/repo-config', name: 'repo-config', component: () => import('@/views/GiteeProjectsView.vue'), meta: { title: '仓库配置', allowRoles: GITEE_VIEW_ROLES, configOnly: true } },
+      // 需求二（docs/44 §2.4）：机构参数配置。平台/租户/机构管理员三档都能进，页内按档位收窄（机构管理员只能改本机构）。
+      // 三层同源：菜单(MainLayout.showOrgConfigMenu) → 路由 meta.allowRoles → 后端 PermissionCatalog.ORG_CONFIG_MANAGE（org:config:manage）共用 ORG_CONFIG_ROLES。
+      { path: 'settings/org-config', name: 'org-config', component: () => import('@/views/OrgConfigView.vue'), meta: { title: '机构参数', allowRoles: ORG_CONFIG_ROLES } },
       { path: 'gitee/projects/:id', name: 'gitee-project-detail', component: () => import('@/views/GiteeProjectDetailView.vue'), meta: { title: '项目详情', allowRoles: GITEE_VIEW_ROLES } },
       // 项目管理（PM，V71 / docs/40）：菜单 / 路由 meta.allowRoles / 后端 PermissionCatalog 三处共用 PM_VIEW_ROLES。
       { path: 'pm/projects', name: 'pm-projects', component: () => import('@/views/PmProjectsView.vue'), meta: { title: '项目管理', allowRoles: PM_VIEW_ROLES } },

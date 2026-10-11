@@ -814,3 +814,57 @@
     `application.yml` 开着 `validate-on-migrate: true`。
     判据：**别拿健康检查当「启动链路健康」的证据；`Get-CimInstance Win32_Process` 看命令行，
     再拿脚本原样跑一遍临时端口**（本次即用 18083 复验，见 `docs/42` 第一节「补充」）。
+
+119. ★**禁止用 `-Dspring-boot.repackage.skip=true` 构建 `aioa-boot`**（2026-10-11 实际踩到，且**铁律早有记载仍复发**）：
+   该开关产出 **170KB 的瘦 jar**（无 `BOOT-INF/lib`）。若此时**已有更早启动的进程在跑**，
+   JVM 按需加载 ⇒ 启动时已加载的类照常，**未加载的类再也读不到**：
+   `/v1/conversations/{id}/runs` → 500 `NoClassDefFoundError: cn/aioa/chat/dto/RunCreatedResponse`，
+   `/admin/org-configs` → 500 `NoClassDefFoundError: …mvc.LastModified`。
+   **与业务代码无关、日志里是 CNFE、`mvn test` 全绿**（测试读 `target/classes`，不读 jar）⇒
+   **只有查产物才看得见**：`scripts/_check_boot_jar_fat.py`（已进 `_run_all_regression.sh`）。
+   修法：**先停 :8080**（运行中进程锁着 jar，repackage 的 rename 必失败，`-Djar.finalName` 也无效），
+   再 `./mvnw -o -pl aioa-boot -am -DskipTests package`。
+120. **新写的 api 模块路径不得自带 `/v1`**：`api/index.ts` 的 `http` 已带 `baseURL=/api/v1`，
+   写成 `http.get('/v1/admin/org-configs')` 会打到 **`/api/v1/v1/...`**（404）。
+   `typecheck` / `vite build` **都查不出这种运行时路径错** ⇒ 新页面必须**真点一次**。
+   判据：对同一路径分别请求 `/api/v1/<p>`（应 200）与 `/api/v1/v1/<p>`（应 404）。
+
+121. ★**不要从「异步续段」里触发需要用户手势的浏览器能力**（文件选择器 / 全屏 / 剪贴板 / 弹窗）：
+   2026-10-11 用户实测「项目内输入『上传文档』，对话窗口没有打开」。
+   旧实现是「动态造 `<input type=file>` 再立刻 `click()`」，而它由 `oaAfterOaAnswer()` 在
+   `await 整段回答流式生成` + `await /v1/workers/intent` **之后**才调用 ——
+   此时距用户点「发送」已过数秒乃至数十秒，**用户手势的瞬时激活（transient activation）早已失效**，
+   `click()` 被**静默忽略**：不抛异常、不弹窗、控制台无报错，用户只看到一句「正在打开…」。
+   ⇒ **判据**：凡「先说话再打开系统级控件」的交互，一律改成**先弹一个可见窗口**，
+   让用户在窗口内**直接点击**那个控件（手势在点击那一刻成立，必然唤起）。
+   本仓已按此改：`oaOpenUploadForm()`（与「上报花费」的 `oaOpenExpenseForm()` 同形）。
+   定点回归 = `scripts/_verify_oa_action_popup.py` 的 G9a/G9b/G9c
+   （G9b 断言「弹窗那一刻**不**自动唤起选择器」——旧实现在这条上必红，故有区分力）。
+   ⚠️ 自动化浏览器（Playwright/CDP）**不校验**该手势要求，`filechooser` 照样触发 ⇒
+   **这类缺陷自动化测不出来**，必须在真机/真浏览器里试；写断言时要显式钉住「由谁触发」。
+122. **用户端气泡已无「三角」（尾巴）**：2026-10-11 用户口径「去掉对话框的三角」。
+   生产者只有 `_oa_app.js` 的 `oaPushBub()` 一处（原来在 `innerHTML` 末尾拼 `<svg class="tail">`）。
+   `.bub .tail` 的样式与 `oaLayoutTails()` 的落位分支**保留**（将来复用不必重写几何），
+   故**不能只看「样式还在」就以为尾巴还在** —— 判据是 DOM 里 `.bub .tail` 计数为 0
+   （`scripts/_e2e_oa.py` 的 E 组已按此改口径）。
+   ⚠️ 配套两条必须一起在：产物静态口径 **E3** 只钉**生成串** `<svg class="tail"`（**不能**断言全文无 tail，
+   因为 `.bub .tail` 的 CSS 是有意保留的）；判据自检 **E2**（见 #124）。
+   `docs/39` 原写「✅ 气泡三角都对着数字人」并在 §5.3 详述角度算法，已就地作废/划撤（8 处）。
+
+123. ★**用户端 `API` 是顶层 `const`，不挂在 `window` 上**（2026-10-11 实测）：
+   要写脚本时**裸用 `API`**（`API.req.bind(API)`、`API.req = …`），写成 `window.API` 会得到 `undefined`
+   （报 `Cannot read properties of undefined (reading 'req')`）。
+   对照：`window.oaState` / `window.oaMaybeProjectAction` 等**是**显式挂 `window` 的（自检暴露），
+   所以「哪些是 window 上的」不能凭感觉，要看源码里是 `const API = {…}` 还是 `window.X = …`。
+   应用实例：`scripts/_verify_oa_action_popup.py` 在 `file://` 无后端环境下**桩掉 `/docs/tree`**
+   （`#upFile` 初始 `disabled`，只在 tree 的 `.then()` 里解锁；无后端必进 `.catch()` ⇒ 永远 disabled，
+   「等 `#upFolder` 非空」等不到，**必须打桩**），桩形如
+   `API.req = function(p,o){ return String(p).indexOf('/docs/tree')>=0 ? Promise.resolve({project:[{id:1,name:'项目文档',children:[]}]}) : window.__oaOrigReq(p,o); }`
+   —— 注意 `API.req` 已做 `body.data` 解包，**桩要 resolve 已解包的数据**。
+
+124. ★**「数出来必须是 0 / 不得存在」这类断言，必须把负向自检固化进套件**（2026-10-11 定式）：
+   这类断言最容易**恒真** —— 选择器打错一个字符（`.bub .tail` → `.bub .taill`）照样返回 0，永远绿。
+   **一次性**的仓库外证明（跑一次「塞回一个必须变红」）只覆盖当天，**下次运行不会重验**。
+   ⇒ 定式（`scripts/_e2e_oa.py` 的 **E2** 即此实现）：在套件内**就地注入 → 断言判据被抓到 → 撤净 → 断言回到 0**，
+   三合一成一条 `chk`。判别力证明（实测）：把 `tail_count` 的选择器改坏后，**E1/E3/E4/E5/H6 全假绿、只有 E2 变红**
+   —— 这就是「E2 不可省」的实证。凡新写「=0」断言，照此配一条 in-suite 自检，别只留一次性证明。

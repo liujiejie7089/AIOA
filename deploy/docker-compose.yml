@@ -158,6 +158,12 @@ services:
       # 必须挂卷，否则容器重建一次上传的文件全丢，而 sys_file 记录还在 ⇒ 下载 404。
       AIOA_UPLOAD_DIR: /app/uploads
 
+      # ---- 上传文件大小上限（application.yml 读 ${AIOA_FILE_MAX_SIZE_MB:50}）----
+      # 与 AIOA_UPLOAD_DIR 同属「上传」语义，放一起。
+      # ⚠️ 必须透传：不透传时 .env 里写 AIOA_FILE_MAX_SIZE_MB **是空转** ——
+      #    配置看着能改、实际改不动（`_check_compose_env_wiring.py` 正是钉这个）。
+      AIOA_FILE_MAX_SIZE_MB: ${AIOA_FILE_MAX_SIZE_MB:-50}
+
       # ---- 单端口入口（docs/33）：H5 与管理端由本进程自己发，不需要边缘 nginx ----
       # 这两份静态已随构建打进镜像（见 deploy/Dockerfile.server 的前端构建段）：
       #   /app/h5/index.html  用户端（单文件）

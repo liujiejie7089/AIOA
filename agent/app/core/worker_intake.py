@@ -37,6 +37,33 @@ _DOC_WORDS = [
     (r"写一份", 1.8), (r"写个", 1.6), (r"拟稿", 2.6), (r"发文", 2.2),
 ]
 
+# 「动作意图」：与「角色类型」正交 —— 用户说「上传文件 / 上报花费」时要的是**打开一个操作窗口**，
+# 不是换一个数字员工。判定点与角色分类同在 classify() 一处，H5 只消费 action，不另写词表。
+_ACTION_RULES = [
+    ("UPLOAD_FILE", [
+        (r"上传", 3.0),
+        (r"(传|交|发)(一?下|个)?(文件|文档|资料|附件|材料|合同|报表|表)", 2.8),
+        (r"附件", 1.8),
+        (r"导入.{0,4}(文件|文档|资料|表|数据)", 2.4),
+        # 兼容「把项目合同传上去」这类「宾语在前、动词在后」的语序；
+        # 只允许上传语义的补语（传上去/传上/传一下/交上去/上传），不要裸「发」，
+        # 否则「把文件发给同事」「报表发给客户」会被误判成上传。
+        (r"(文件|文档|资料|附件|材料|合同|报表).{0,4}(传上去|传上|传一下|交上去|上传)", 2.8),
+    ]),
+    ("REPORT_EXPENSE", [
+        (r"(上报|报|记|录入|登记|补录|添加).{0,6}(花费|费用|支出|开销|成本|报销)", 3.0),
+        (r"(花费|费用|支出|开销|成本).{0,6}(上报|报一笔|记一笔|录入|登记)", 3.0),
+        (r"报销(单|一下|一笔|申请|\s*\d)", 2.8),
+        (r"报账", 2.8),
+        (r"记一笔", 2.4),
+    ]),
+]
+
+_ACTION_META = {"UPLOAD_FILE": "上传文件", "REPORT_EXPENSE": "上报花费"}
+# 疑问 / 制度类语句优先按「问答」处理：命中这些词且动作得分不强时，不判为动作意图，
+# 否则「公司费用报销制度是怎么规定的」会被误判成「要上报花费」。
+_ACTION_QUESTION = re.compile(r"(制度|规定|政策|流程|办法|标准|指南|手册|怎么|如何|为什么|是什么|哪些|可以吗|能不能|多大|上限|限制|大小|最大)")
+
 # 组合否定：出现这些词时，「报告/通知」更可能是数据分析产出而非公文
 _DATA_HINT = re.compile(r"(销量|销售额|营收|业绩|订单|客户|库存|环比|同比|统计|占比|排行|top\s*\d*)", re.I)
 
@@ -112,14 +139,52 @@ def _confidence(top: float, second: float) -> float:
     return round(min(1.0, 0.45 * base + 0.55 * (0.5 + 0.5 * gap) * base + 0.1), 3)
 
 
+def _detect_action(text: str) -> tuple[str | None, list[str]]:
+    """检测与角色正交的「动作意图」（上传文件 / 上报花费）。
+
+    返回 (动作码, 命中词列表)；无动作时返回 (None, [])。
+    """
+    best, best_score, best_hits = None, 0.0, []
+    for code, words in _ACTION_RULES:
+        s, hits = _score(text, words)
+        if s > best_score:
+            best, best_score, best_hits = code, s, hits
+    if best is None:
+        return None, []
+    # 疑问/制度类语境需要更强的证据：光有裸动词「上传/上报」(单条 3.0) 不够，
+    # 必须带宾语的组合命中（如「上传文件」=5.8）才判动作意图；否则「可以上传多大的文件」
+    # 会因裸「上传」(3.0) 被误判成要上传。普通语境阈值仍为 2.0。
+    if _ACTION_QUESTION.search(text):
+        if best_score <= 3.0:
+            return None, []
+    elif best_score < 2.0:
+        return None, []
+    return best, sorted(set(best_hits))
+
+
+def _with_action(d: dict, action: str | None, hits: list[str]) -> dict:
+    """在返回的 dict 上补 action 三键，保证三条出口 schema 恒定。
+
+    action 为 None 时三个键照样存在（H5 据此区分「要开窗口」还是「正常对话」）。
+    """
+    d["action"] = action
+    d["actionName"] = _ACTION_META.get(action)
+    d["actionMatched"] = hits
+    return d
+
+
 def classify(text: str) -> dict:
     """把自然语言诉求归类到数字员工类型。
 
-    返回 {@link WorkerIntent.to_dict} 的结构；无任何命中时归为 GENERAL 且 confidence=0。
+    返回 {@link WorkerIntent.to_dict} 的结构，并附带与角色正交的 action 维度；
+    无任何命中时归为 GENERAL 且 confidence=0。
     """
     raw = (text or "").strip()
+    action, action_hits = _detect_action(raw)
     if not raw:
-        return WorkerIntent(role="GENERAL", confidence=0.0).to_dict()
+        return _with_action(
+            WorkerIntent(role="GENERAL", confidence=0.0).to_dict(),
+            action, action_hits)
 
     leave, leave_hits = _score(raw, _LEAVE_WORDS)
     kb, kb_hits = _score(raw, _KB_WORDS)
@@ -142,15 +207,19 @@ def classify(text: str) -> dict:
 
     # 阈值：得分过低不下结论，避免把随便一句话都推荐成专用类型
     if top_score < 2.0:
-        return WorkerIntent(role="GENERAL", confidence=0.0, matched=[]).to_dict()
+        return _with_action(
+            WorkerIntent(role="GENERAL", confidence=0.0, matched=[]).to_dict(),
+            action, action_hits)
 
     alternatives = [
         {"role": role, "roleName": _ROLES[role]["roleName"], "score": round(score, 2)}
         for role, score, _ in ranked if score > 0 and role != top_role
     ]
-    return WorkerIntent(
-        role=top_role,
-        confidence=_confidence(top_score, second_score),
-        matched=sorted(set(top_hits)),
-        alternatives=alternatives[:2],
-    ).to_dict()
+    return _with_action(
+        WorkerIntent(
+            role=top_role,
+            confidence=_confidence(top_score, second_score),
+            matched=sorted(set(top_hits)),
+            alternatives=alternatives[:2],
+        ).to_dict(),
+        action, action_hits)

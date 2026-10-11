@@ -302,14 +302,22 @@
             不属于「成果与项目」；代码仓库的日常使用入口在「项目管理 → 开发项目」里。
             本项条件写 showGiteeMenu 是为了与路由 meta.allowRoles 共用同一常量
             （GITEE_VIEW_ROLES ⊇ TENANT_SCOPE_ROLES，故在本组内恒真，不改变可见集合）。
+
+            2026-10-11（需求二 / docs/44 §2.4）：新增「机构参数（本机构）」——机构管理员
+            此前整组被 showTenantMenu 挡住（TENANT_SCOPE_ROLES 不含 ROLE_ORG_ADMIN），看不到「系统配置」。
+            现在组可见性放宽为「本组任一子项可见」（showTenantMenu || showOrgConfigMenu），
+            「机构参数」单独用 showOrgConfigMenu 控制；机构管理员因此能进本组、但只看到「机构参数」
+            一项（系统参数/仓库配置/功能管理/模型管理仍按各自守卫屏蔽），符合「不涉及对方权限的功能不得分配」。
           -->
-          <el-sub-menu v-if="showTenantMenu" index="syscfg">
+          <el-sub-menu v-if="showTenantMenu || showOrgConfigMenu" index="syscfg">
             <template #title>
               <el-icon><Tools /></el-icon>
               <span>系统配置</span>
             </template>
-            <el-menu-item index="/settings">系统参数</el-menu-item>
+            <el-menu-item v-if="showTenantMenu" index="/settings">系统参数</el-menu-item>
             <el-menu-item v-if="showGiteeMenu" index="/settings/repo-config">仓库配置</el-menu-item>
+            <!-- 需求二：机构管理员仅此入口；页内与后端按调用者档位收窄（机构管理员只能改本机构）。 -->
+            <el-menu-item v-if="showOrgConfigMenu" index="/settings/org-config">机构参数（本机构）</el-menu-item>
             <el-menu-item v-if="isPlatformAdmin" index="/sys-apps">功能管理</el-menu-item>
             <el-menu-item v-if="isPlatformAdmin" index="/sys-models">模型管理</el-menu-item>
           </el-sub-menu>
@@ -387,6 +395,7 @@ import {
   REVIEW_RECORD_ROLES,
   ROLE,
   TENANT_SCOPE_ROLES,
+  ORG_CONFIG_ROLES,
   WORKER_MANAGER_ROLES,
   hasAnyRole
 } from '@/constants/permissions'
@@ -476,6 +485,8 @@ const showReviewRecordMenu = computed(() => hasAnyRole(roles.value, REVIEW_RECOR
 const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
 /** 项目管理（PM，V71）：与路由 meta.allowRoles、后端 PermissionCatalog 共用 PM_VIEW_ROLES。 */
 const showPmMenu = computed(() => hasAnyRole(roles.value, PM_VIEW_ROLES))
+/** 机构参数配置（需求二 / docs/44 §2.4）：平台/租户/机构管理员三档都能进；页内与接口按档位收窄（机构管理员只能改本机构，后端 scopeLocked 钉死）。与路由 meta.allowRoles、后端 PermissionCatalog.ORG_CONFIG_MANAGE 共用 ORG_CONFIG_ROLES。 */
+const showOrgConfigMenu = computed(() => hasAnyRole(roles.value, ORG_CONFIG_ROLES))
 
 /**
  * 侧边菜单的高亮项。

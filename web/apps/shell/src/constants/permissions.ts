@@ -28,6 +28,21 @@ export const EXPERT_MANAGER_ROLES: readonly string[] = [
 /** 租户端（机构/配额/授权/分摊）—— 仅系统管理员与租户管理员。 */
 export const TENANT_SCOPE_ROLES: readonly string[] = [ROLE.ADMIN, ROLE.TENANT_ADMIN]
 
+/**
+ * 机构参数配置（需求二 / docs/44 §2.4 / §2.6）。
+ *
+ * <p>平台管理员、租户管理员、机构管理员<b>三档都能进</b>本页面；但<b>页内与接口按档位收窄</b>：
+ * 机构管理员（{@code ROLE.ORG_ADMIN}）只能看 / 改<b>本机构</b>（后端 {@code scopeLocked=true} 钉死），
+ * 平台 / 租户管理员可切换机构。这正是把 {@code ROLE.ORG_ADMIN} 放进本常量、却不放进
+ * {@code TENANT_SCOPE_ROLES} 的原因 —— 菜单入口要给它，但「系统参数」等纯租户级入口仍屏蔽它。</p>
+ *
+ * <p>⚠ <b>三处同源铁律</b>：本常量（前端唯一入口）必须与 ——
+ * ① 路由 {@code router/index.ts} 中本页的 {@code meta.allowRoles}；
+ * ② 后端 {@code PermissionCatalog.ORG_CONFIG_MANAGE}（权限码 {@code org:config:manage}，角色集 {@code ORG_ADMINS}）
+ * —— 严格同值。历史上三处各写一套就出过「菜单能进但接口 403」与「接口放开但菜单藏起来」两类镜像缺陷。</p>
+ */
+export const ORG_CONFIG_ROLES: readonly string[] = [ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN]
+
 /** 组织与员工可见范围。 */
 export const ORG_VIEW_ROLES: readonly string[] = [
   ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN, ROLE.DEPT_LEADER, ROLE.MEMBER

@@ -328,6 +328,23 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   （原本就有级联前置校验，缺的是审核闸门）。注意断言要看 **404 或 405 都算通过**：
   部门路径上还挂着 `PUT`（编辑），Spring 会回 **405 而非 404**；只认 404 会把正确实现判红。
 
+## 2026-10-11 更新：`_e2e_oa.py` **仍 106 项**（E 组改口径「无尾巴」）+ `_verify_oa_action_popup.py` **15 项**
+
+- **口径反转**（用户口径「去掉对话框的三角」）：`_oa_app.js` 的 `oaPushBub()` 不再拼 `<svg class="tail">`。
+  E 组原 5 条「三角存在 / 指向数字人」→ 改为 5 条「无尾巴」，**条目数不变**：
+  - **E1** 坞内所有气泡无尾巴：`tail_count()` 返回 `.bub .tail` 子节点数 = 0 **且** `.bub` 的 `::after/::before` 无「可见形状」伪元素 = 0（同时抓「子节点三角」与「伪元素三角」两类回归）；
+  - **E2** ★**判据自检（in-suite、每次运行都跑）**：就地给某个 `.bub` 注入 `<svg class="tail">` + `::after` 三角样式 → 断言两项都 ≥1 → **撤净** → 断言回到 0。判别力实测：把选择器改坏成 `.bub .taill` 后 **E1/E3/E4/E5/H6 全假绿、只有 E2 变红**（见 pitfalls **124**）。
+  - **E3** ★产物静态口径：`index.html` 不含生成串 `<svg class="tail"`（**不能**断言全文无 tail —— `.bub .tail` 的 CSS 是有意保留的）。
+  - **E4/E5** 场景不变（切视图往返 / 320px 窄屏），期望改为「仍无尾巴」；**H2b / H6** 同步改「无尾巴」。
+- **区分力证明（lead 复验）**：临时把 `oaPushBub` 改回追加三角 ⇒ **E1 + E3 变红**；改坏选择器 ⇒ **E2 变红**；两次均字节级还原（`index.html` md5 复原为 `17b30f5d83a1ae85fb4ef02c5a6bd747`）。
+- **`_verify_oa_action_popup.py`：14 → 15 项**。G9 原断言「`UPLOAD_FILE` 一调就唤起选择器」在旧实现下**其实恒假**（老实现从异步续段里 `input.click()`，手势已失效被静默忽略）⇒ 新口径拆为：
+  - **G9a** 弹出**可见**上传窗（`.notif-mask` 新增恰 1 层、含 `#upFile`、标题「上传项目文档」）；
+  - **G9b** ★弹窗那一刻**不**自动唤起选择器（旧延迟 `click()` 才会立刻触发 ⇒ 定点抓回退）；
+  - **G9c** 点击窗口内 `#upFile` 才唤起；**G9d** 桩生效：`#upFolder` 已载入文件夹（证明控件真被解锁，非空壳）。
+  - ⚠️ 该脚本走 `file://` **无后端**，而 `#upFile` 初始 `disabled`、只在 `/docs/tree` 的 `.then()` 里解锁 ⇒ **必须桩掉 `API.req`**（**裸 `API`**，不是 `window.API`，见 pitfalls **123**）。
+- **上传链路另有一个更严重的真缺陷（顺带挖出）**：H5 **从来没传 `folderId`**，而 `source=UPLOAD` 强制要求它（`_verify_pm_doc_upload.py` **VN2** 钉着）⇒ 该链路在本次修复前**从未真正走通**。现已先拉 `docs/tree` 填「存放位置」下拉、再放开文件控件。接口侧 `_verify_pm_doc_upload.py` **21/21** 仍绿。
+- 运行前置：E 组需后端 **:8080**；**H 组需 agent :8000 在线**（不在线则 H 组 14 项红，且归因文案会**明说是环境**）。
+
 ## 2026-09-30 更新：OA 套件 **106 项**（H 组「职责推荐 / 换人 / 表单直出」共 19 项）
 
 - 现基线：**`scripts/_e2e_oa.py` 连跑两次 106 通过 / 0 失败**（改的是可见性与表单发放口径，
@@ -448,3 +465,15 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   `_smoke_pm` 15/15(+M7 SKIP) · `_e2e_pm_ui` 18/18 ·
   `_e2e_pm_simulated_project --clean` 33 PASS/0 FAIL/1 KNOWN-BUG(B1)。
   跨套件互证：`_e2e_pm_ui` 的侧栏清单里已无「项目与仓库」、有「仓库配置」。
+
+**用真实浏览器驱动 H5（2026-10-11 实操补充）**：把后端当静态宿主即可 —— **无需另起静态服务**：
+  `http://127.0.0.1:8080/aioa/h5/`（管理端 `/aioa/web/`，同一端口三块，见 `runtime-env.md §2`）。
+  登录可**跳过 UI**：先 `POST /api/v1/auth/login` 拿 token，再
+  `localStorage.setItem('aioa_session', JSON.stringify({token, user}))` 后 `reload()`，
+  然后 `document.body.classList.add('auth'); oaState.mode='oa'; oaBoot();`。
+  ⚠️ **`oaSend` / `oaGo` / `renderWorkers` 没有挂到 `window`**（只有 `oaBoot` `oaSetMode` `oaLayoutTails`
+  `oaState` `oaMaybeProjectAction` `oaEnterProject`），所以必须用**真实交互**：
+  发消息 = `fill('#oaInput', ...)` + `click('#oaSendBtn')`；
+  进数字员工视图 = `click('#oaRobot')` → `click('.sheet-opt[data-target="workers"]')`。
+  用 `window.oaSend()` 会被 `try/catch` 静默吞掉，现象是「脚本没报错但什么都没发生」（我因此白跑一轮）。
+  判据取 `#oaDockList .bub` 的 `innerText`；隐藏视图的 `innerText` 为空串，**要读卡片就先把视图切过去**。

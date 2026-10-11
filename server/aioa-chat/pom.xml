@@ -63,5 +63,12 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
+        <!-- 测试基建：本模块此前没有 src/test。2026-10 新增「动作意图透传」定点验收，
+             需要 JUnit5 + AssertJ 断言（与 aioa-gitee 同款依赖，只在此声明 test 作用域）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

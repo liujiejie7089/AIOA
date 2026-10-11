@@ -151,6 +151,22 @@ public final class PermissionCatalog {
      */
     public static final String PM_AI_MANAGE = "pm:ai:manage";
 
+    // ---- 机构作用域系统参数（需求二 · docs/44 §2.5 B 案）----
+    /**
+     * 机构作用域参数配置：机构管理员为本机构覆盖系统参数。
+     *
+     * <p><b>作用域</b>：持有者角色集 = {@code ORG_ADMINS}（系统/租户/机构管理员）。
+     * 但数据范围由调用端点按档位双重收紧 ——</p>
+     * <ul>
+     *   <li>机构管理员（{@code ROLE_ORG_ADMIN} 且非平台/租户管理员）：{@code institution_id}
+     *       被后端从登录态钉死为本机构，请求别的机构直接 403（不静默降级）；</li>
+     *   <li>平台/租户管理员：{@code institution_id} 必须属本租户，否则 404/403。</li>
+     * </ul>
+     * <p>权限点只做粗闸；真正的越权防护在端点（{@code OrgConfigController} /
+     * {@code OrgConfigService.resolveScopeInstitution}），二者缺一不可。</p>
+     */
+    public static final String ORG_CONFIG_MANAGE = "org:config:manage";
+
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
     public static final String ROLE_USER = "ROLE_USER";
@@ -216,7 +232,9 @@ public final class PermissionCatalog {
             // 经费 / 合同：粗闸机构管理员级；项目内 OWNER/PM 由服务层另行放行
             Map.entry(PM_BUDGET_MANAGE, ORG_ADMINS),
             Map.entry(PM_CONTRACT_MANAGE, ORG_ADMINS),
-            Map.entry(PM_AI_MANAGE, ORG_ADMINS));
+            Map.entry(PM_AI_MANAGE, ORG_ADMINS),
+            // 机构作用域参数（需求二 B 案）：机构管理员可覆盖本机构参数，平台/租户管理员可配本租户任意机构
+            Map.entry(ORG_CONFIG_MANAGE, ORG_ADMINS));
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
     private static final Map<String, String> ROLE_NAMES = Map.of(
@@ -253,7 +271,8 @@ public final class PermissionCatalog {
             Map.entry(PM_DOC_MANAGE, "项目管理（文档维护）"),
             Map.entry(PM_BUDGET_MANAGE, "项目管理（经费流水维护）"),
             Map.entry(PM_CONTRACT_MANAGE, "项目管理（合同与收付款）"),
-            Map.entry(PM_AI_MANAGE, "项目管理（数字人与上下文）"));
+            Map.entry(PM_AI_MANAGE, "项目管理（数字人与上下文）"),
+            Map.entry(ORG_CONFIG_MANAGE, "机构参数配置"));
 
     /**
      * 权限码 → 对应数字员工类型（申请单「目的」展示用）。
