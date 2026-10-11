@@ -40,7 +40,14 @@ import sys
 from playwright.async_api import async_playwright
 
 BASE = 'http://127.0.0.1:5181/'
-USER, PWD = 'wjj_xu', 'User@123'          # 普通成员（科员）：与 _e2e_oa.py 同一账号
+# 账号必须**同时**满足两点，否则 I1/I2 永远走不到（会诚实地 SKIP，但覆盖缺口仍在）：
+#   ① 是「普通成员」而非管理员（走真实成员路径）；
+#   ② 至少可见 1 个项目 —— UPLOAD_FILE / REPORT_EXPENSE 都要求先进入项目。
+# 2026-10-11 实测：`wjj_xu`（_e2e_oa.py 的账号）当前**可见项目数 = 0**
+#   ⇒ 本哨兵上线后在真实环境**只能 SKIP**，覆盖缺口事实上没被堵住。
+# 改用 fixture 成员 `fagai_li`（T1008 两项目成员，fixture 与 _verify_h5_pm_contacts.py 同源；
+#   预检口径见该脚本 preflight()：缺 T1008 两项目 / 缺成员身份时应大声退出而非静默换账号）。
+USER, PWD = 'fagai_li', 'User@123'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_shot_oa_intent')
 
 PASS, FAIL, SKIP = [], [], []
