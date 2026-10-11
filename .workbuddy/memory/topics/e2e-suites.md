@@ -477,3 +477,26 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   进数字员工视图 = `click('#oaRobot')` → `click('.sheet-opt[data-target="workers"]')`。
   用 `window.oaSend()` 会被 `try/catch` 静默吞掉，现象是「脚本没报错但什么都没发生」（我因此白跑一轮）。
   判据取 `#oaDockList .bub` 的 `innerText`；隐藏视图的 `innerText` 为空串，**要读卡片就先把视图切过去**。
+
+## 2026-10-11 增补：两个新哨兵入 `_run_all_regression.sh`
+
+- **`scripts/_check_boot_jar_fat.py`（12 项）** —— 可执行产物哨兵：`aioa-boot` 必须是**胖 jar**。
+  起因是本轮真踩到「可执行 jar 被换成瘦 jar ⇒ 运行中的实例一律 500」（§八）。
+  J1 合法 zip · J2 `BOOT-INF/lib` 内嵌 jar ≥ 50 · J3/J3b MANIFEST 可执行 · J4 入口类进包 ·
+  J5 五个模块内嵌且非空（含**定点回归** J6：故障类 `RunCreatedResponse` 能在内嵌 `aioa-chat` jar 里解析）·
+  **N1/N2 负向对照**（合成瘦 jar / `repackage` 前的 `.original` 必须被判「不是胖 jar」）。
+  跑前判据：`python scripts/_check_boot_jar_fat.py`，期望 **12 通过 / 0 失败**。
+
+- **`scripts/_verify_oa_intent_e2e.py`（11 项）** —— **用户真打一句话 → 分类器 → 真窗口** 的端到端哨兵，
+  堵的是一条**真实覆盖缺口**：`_verify_oa_action_popup.py` 只用 `page.evaluate(...)` **手工构造 intent**、
+  且跑在 `file://` + 打桩 `API.req` 上，证明不了「真语句 → `await API.workerIntent(q)`（POST `/v1/workers/intent`，
+  agent `:8000` 真分类器）→ `oaMaybeProjectAction` → 真窗口 → 真拉 `GET /v1/pm/projects/{id}/docs/tree`」这条链。
+  **前置**：本地静态 `:5181` + 后端 `:8080` + agent `:8000` 都要在线；
+  账号**必须可见至少 1 个项目**（`UPLOAD_FILE`/`REPORT_EXPENSE` 都要求先进入项目）。
+  ⚠️ **账号坑（已实测）**：首版用 `wjj_xu`（`_e2e_oa.py` 同款）当时**可见项目数=0**
+  ⇒ 脚本会**诚实地 SKIP + 非 0**（不伪装 PASS），但「覆盖缺口已堵」是**假的**。
+  已改用 fixture 成员 **`fagai_li`**（T1008 两项目成员，fixture 与 `_verify_h5_pm_contacts.py` 同源）
+  ⇒ 实测 **11 通过 / 0 失败 / 0 SKIP**。断言全部回到事实源头（`window.oaState.currentProject` 为真值源，
+  不读界面文案；文件夹契约看 `#upFolder` 的 `options>=1` 且选中 `value` 非空）。
+  I3 是负向对照：「请简单介绍一下你能做什么」全程不得出现任何 `.notif-mask`。
+  无可见项目 / 分类器离线 ⇒ **SKIP + 非 0**，不伪装 PASS。

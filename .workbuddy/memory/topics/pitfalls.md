@@ -868,3 +868,38 @@
    ⇒ 定式（`scripts/_e2e_oa.py` 的 **E2** 即此实现）：在套件内**就地注入 → 断言判据被抓到 → 撤净 → 断言回到 0**，
    三合一成一条 `chk`。判别力证明（实测）：把 `tail_count` 的选择器改坏后，**E1/E3/E4/E5/H6 全假绿、只有 E2 变红**
    —— 这就是「E2 不可省」的实证。凡新写「=0」断言，照此配一条 in-suite 自检，别只留一次性证明。
+
+125. ★**本地 git 对象库被破坏的识别与恢复配方**（2026-10-11 实测踩到并修回）。
+   症状：`git log` 报 `your current branch 'main' does not have any commits yet`；`refs/heads/` 为空；
+   `git status` 把**全部文件**列成 `A `（相对「未出生」的 HEAD）；`git count-objects` 出现
+   `warning: no corresponding .pack: …idx`；某些历史提交 `git cat-file -t <sha>` 报 `Not a valid object name`。
+   **判据**：`.git/objects/pack/` 里只剩 `.idx`/`.rev`/`multi-pack-index` 而**没有同名 `.pack`** ⇒ 对象已丢。
+   **恢复配方（本次实测可用，工作树完好时）**：
+   1. 先**冻结工作树**（它此时是唯一副本）——把关键文件 `cp` 到仓库外（本次 `_aioa_rescue_20261011/`）。
+   2. 找**可达的镜像远端**：本仓库有第二个远端 `github = ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git`
+      （`origin 172.16.8.249:3000` 当时 502）。`git ls-remote github` 通 ⇒ `git fetch github main`，
+      新 pack 落盘（21 MB）后历史恢复可用。
+   3. **捞 reflog 留证**：`cat .git/logs/HEAD` 仍记着丢失提交的 sha/消息/时间
+      （本次捞出 9 个 Oct-11 提交 `eff5fd64…6ad8b32`，对象已不可寻回，但清单即证据）。
+      拷到仓库外后**可移走 `.git/logs`**，否则 `git fsck` 会因「reflog 指向缺失对象」刷屏。
+   4. **移走幻影 pack 的 `.idx/.rev` 与 `multi-pack-index`**（没有 `.pack` 的索引只会让 git 一直警告）。
+   5. `git update-ref refs/heads/main <镜像 tip>` 重建分支引用。
+   6. ★**必须删掉 `.git/index` 再 `git add -A`** —— 见下一条（**126**）。
+   7. `git fsck --connectivity-only` 应无 error。
+   ⚠️ **不要**因为「日志正常、文件都在」就以为没坏；工作树完好**不代表**历史完好，两者要分别验。
+
+126. ★**索引的 stat 缓存命中时 `git add` 不重算哈希 ⇒ 会报 `invalid object <sha> for '<path>'`**（2026-10-11 实测）。
+   场景：对象库被破坏（见 125）后，`.git/index` 里仍留着旧条目的 `(mtime,size,blob-sha)`。
+   `git commit` 报 `error: invalid object 100644 <sha> for '…'` / `Error building trees`
+   —— 因为 `git add` 认为「stat 没变 ⇒ 内容没变 ⇒ 不必重算」，于是那个**已被删掉的** blob sha 继续被引用。
+   **修法**：`mv .git/index .git/index.bak-<日期>` 后再 `git add -A`（**强制**按工作树内容重算全部 blob）。
+   判据：重算后 `git commit` 不再报 `invalid object`。**只 `git add` 不删索引是修不好的。**
+
+127. ★**端到端哨兵的账号必须有「业务可见面」，否则断言会退化成 SKIP**（2026-10-11 实测）。
+   `scripts/_verify_oa_intent_e2e.py` 首版用 `wjj_xu`（`_e2e_oa.py` 同款账号），
+   而 `UPLOAD_FILE/REPORT_EXPENSE` 都**要求先进入项目** ⇒ 该账号当时**可见项目数 = 0**
+   ⇒ 哨兵上线后在真实环境**只能 SKIP**，「覆盖缺口已堵」是**假的**（诚实但覆盖为 0）。
+   改法：换 fixture 成员 `fagai_li`（T1008 两项目成员，与 `_verify_h5_pm_contacts.py` 同源），
+   实测 11 通过 / 0 失败 / 0 SKIP。
+   **定式**：写「进入某个业务对象再断言」的哨兵时，账号选择要**先验可见面**（`GET /pm/projects` 非空），
+   并把「缺 fixture 时大声退出」写进脚本（铁律 15），**不要**让缺数据静默降级成 SKIP 还宣称已覆盖。
