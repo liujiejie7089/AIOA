@@ -36,6 +36,9 @@ venv/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+# 语音识别（ASR）离线模型：几百 MB，绝不能入库；由部署时预下载到该目录
+# （或用 AIOA_ASR_MODEL / AIOA_ASR_MODEL_DIR 指到别处）
+agent/.models/
 
 # ---- Env / Secrets（密钥一律不入库）----
 .env
