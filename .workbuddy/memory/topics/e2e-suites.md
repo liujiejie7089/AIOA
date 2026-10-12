@@ -344,6 +344,12 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   - ⚠️ 该脚本走 `file://` **无后端**，而 `#upFile` 初始 `disabled`、只在 `/docs/tree` 的 `.then()` 里解锁 ⇒ **必须桩掉 `API.req`**（**裸 `API`**，不是 `window.API`，见 pitfalls **123**）。
 - **上传链路另有一个更严重的真缺陷（顺带挖出）**：H5 **从来没传 `folderId`**，而 `source=UPLOAD` 强制要求它（`_verify_pm_doc_upload.py` **VN2** 钉着）⇒ 该链路在本次修复前**从未真正走通**。现已先拉 `docs/tree` 填「存放位置」下拉、再放开文件控件。接口侧 `_verify_pm_doc_upload.py` **21/21** 仍绿。
 - 运行前置：E 组需后端 **:8080**；**H 组需 agent :8000 在线**（不在线则 H 组 14 项红，且归因文案会**明说是环境**）。
+- **2026-10-12 补：`_e2e_oa.py` 与 `_check_oa_visual.py` 的真实前置**（曾被人**误记成需要「KB 上传 / 项目夹具」而整段 SKIP**，实跑后全绿）：
+  - 两者都**只需要**：静态服务 **:5181**（`user-client/serve.py`）+ 登录账号 **`wjj_xu / User@123`**。与 KB、与项目夹具**无关**。
+  - `_e2e_oa.py` 的 **H 组**另需 agent **:8000** 在线（本次在线）。
+  - 实测：`_check_oa_visual.py` **失败 0 项**（A–F 全 OK；`.task-card` 本页未出现 → 记「未验」，不算红）；`_e2e_oa.py` **失败 0 项**（A–H 全绿，31 图）。
+  - ★**跑之前必须先核「:5181 供的就是磁盘上那份产物」**：`curl -s -o C:/tmp/x.html http://127.0.0.1:5181/` 后比 md5 与 `user-client/index.html`（Windows `curl.exe` **不认** `/c/...` Git-Bash 路径，要用 `C:/...`，否则报 `No such file or directory` 而 HTTP 码仍是 200）。本次 md5 `004d6f42…` 一致才算数。
+  - ★**纪律**：SKIP 行必须写出**可复核的具体前置项**（端口 / 夹具 / 账号）；**「我以为它跑不动」不是 SKIP 的理由** —— 先读脚本头部 docstring 的前置声明，或实跑一次看它报什么。否则报告写着「如实 SKIP」，实际是把上百项回归证据**无声丢掉**。
 
 ## 2026-09-30 更新：OA 套件 **106 项**（H 组「职责推荐 / 换人 / 表单直出」共 19 项）
 
