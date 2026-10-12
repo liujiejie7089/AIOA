@@ -2011,6 +2011,8 @@ function bind(){
 
   var send = $o('oaSendBtn'); if(send) send.onclick = oaSend;
   var stop = $o('oaStop'); if(stop) stop.onclick = oaStop;
+  /* 语音输入：长按说话 → 后端转文字 → 复用 oaSend 发出（录音模块与经典形态共用 bindVoice） */
+  var mic = $o('oaMicBtn'); if(mic && typeof bindVoice === 'function') bindVoice(mic, $o('oaInput'), oaSend);
   var input = $o('oaInput');
   if(input) input.addEventListener('keydown', function(e){
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); oaSend(); }

@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.asr import engine as asr_engine
+from app.asr.router import router as asr_router
 from app.core import multi_task, runtime
 from app.core.events import to_frame
 from app.core.guards import GuardError
@@ -17,6 +20,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("aioa.agent")
 
 app = FastAPI(title="AIOA Agent", version="0.1.0", description="AIOA Python agent service (M1, echo mode)")
+app.include_router(asr_router)
+
+
+@app.on_event("startup")
+def _warm_asr() -> None:
+    """后台预热 ASR 模型：不阻塞启动；加载失败只记日志，真正不可用时接口回 503。"""
+    threading.Thread(target=asr_engine.warmup, name="asr-warmup", daemon=True).start()
+
 
 
 @app.get("/health")
