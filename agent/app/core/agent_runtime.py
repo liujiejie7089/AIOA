@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 
 import httpx
@@ -52,6 +53,98 @@ def _citations_from_tool(name: str, outcome) -> list[dict]:
             out.append({"docId": doc["id"], "title": str(doc.get("docName") or ""),
                         "source": "knowledge_base"})
     return out
+
+
+# 指令覆盖（prompt injection）黑名单：命中即视为尝试越权注入系统提示。
+# 仅中和（剥离）并记 warn，不拒绝请求（保持产品行为）。
+_OVERRIDE_PATTERNS = (
+    "ignore previous instructions", "ignore the above", "ignore all previous",
+    "disregard previous", "disregard the above", "forget your instructions",
+    "forget previous", "new instructions", "system:", "system prompt",
+    "忽略以上指令", "忽略上述指令", "忽略之前的指令", "无视以上指令", "忘记你的指令",
+    "忽略前面的指令", "覆盖指令", "新的指令", "系统提示：", "假装你是", "你现在是",
+)
+_INJECTION_MASK = "[已屏蔽的指令覆盖尝试]"
+
+
+def _strip_control_chars(value: str) -> str:
+    """剥掉控制字符与换行（保留可读文本）：防止通过换行/制表符伪造或截断提示结构。"""
+    if not value:
+        return ""
+    # 仅保留 0x20 及以上的可见/空白字符（CJK、标点、空格等），剔除 0x00-0x1F、0x7F。
+    return "".join(ch for ch in value if ord(ch) >= 0x20 and ord(ch) != 0x7F)
+
+
+def _wrap_field(prefix: str, value: str | int | None) -> str:
+    """把用户可控数据包裹成「硬括号 + 固定前缀」，让模型明确区分『这是数据』而非指令。
+
+    例：[user.name=张三] / [ctx.appCode=ticket]。同时剥掉控制字符与换行。
+    非字符串值（如 user_id 整数）先转 str；值为空时返回空串（调用方已做真值判断）。
+    """
+    if value is None:
+        return ""
+    cleaned = _strip_control_chars(str(value))
+    if not cleaned:
+        return ""
+    return f"[{prefix}={cleaned}]"
+
+
+def _neutralize_injection(text: str | None) -> str:
+    """对用户输入 / 历史正文做指令覆盖中和：命中 token-override 黑名单时剔除并记 warn，
+    同时剥掉控制字符。不拒绝请求（保持产品行为），仅做降噪与越权防护。
+    """
+    if text is None:
+        return ""
+    cleaned = _strip_control_chars(str(text))
+    hit = False
+    for pat in _OVERRIDE_PATTERNS:
+        if re.search(re.escape(pat), cleaned, flags=re.IGNORECASE):
+            hit = True
+            cleaned = re.sub(re.escape(pat), _INJECTION_MASK, cleaned, flags=re.IGNORECASE)
+    if hit:
+        logger.warning("检测到疑似指令覆盖注入并已中和：%r", text[:120])
+    return cleaned
+
+
+# 对话内参考文档正文合计上限（字符）：超出后按顺序截断，避免单次请求上下文被长文档撑爆。
+_MAX_ATTACHMENT_CHARS = 40000
+
+
+def _build_attachment_block(docs: list) -> str:
+    """把对话内上传的参考文档拼成一段「独立」的上下文块。
+
+    每块用「【参考文档】《名字》」开头、「【以上为参考文档】」结尾，作为不可信输入
+    **同样经过** ``_neutralize_injection``（文档内容可能夹带指令覆盖尝试，与 history/text
+    同等待遇，不得原样裸拼）。放在 system 提示的末尾、作为独立段落，而非混入 ``scope``
+    的职责提示：职责提示是「身份 / 边界」，参考文档是「本次待参考的资料」，语义不同，
+    混在职责段里会污染职责边界；独立成段 + 硬边界包裹，方便模型区分「这是用户上传的资料」
+    与「这是系统给你的指令」。
+
+    - ``truncated`` 为真（单篇已被后端节选）：块尾注明「（文档较长，以上为节选）」。
+    - 所有文档正文合计超 ``_MAX_ATTACHMENT_CHARS``：按序截断剩余，并在被截断块尾注明
+      「（参考文档总长度超出上限，以上为截断内容）」。
+    """
+    blocks: list[str] = []
+    total = 0
+    for doc in docs:
+        name = doc.name or "未命名文档"
+        text = _neutralize_injection(doc.text or "")
+        note = ""
+        if doc.truncated:
+            note += "\n（文档较长，以上为节选）"
+        # 总长保护：本篇会让累计正文超上限时，截断本篇、并清空后续预算
+        if total + len(text) > _MAX_ATTACHMENT_CHARS:
+            remaining = _MAX_ATTACHMENT_CHARS - total
+            text = text[:remaining] if remaining > 0 else ""
+            note += "\n（参考文档总长度超出上限，以上为截断内容）"
+            total = _MAX_ATTACHMENT_CHARS  # 后续文档均无剩余预算
+        else:
+            total += len(text)
+        piece = f"【参考文档】《{name}》\n{text}\n【以上为参考文档】"
+        if note:
+            piece += note
+        blocks.append(piece)
+    return "\n\n".join(blocks)
 
 
 def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
@@ -96,22 +189,28 @@ def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
     uc = req.user_context
     if uc.username or uc.roles:
         role_desc = "、".join(uc.roles) if uc.roles else "普通用户"
-        sys_parts.append(f"当前用户：{uc.username or uc.user_id}（角色：{role_desc}）。")
+        sys_parts.append(
+            f"当前用户：{_wrap_field('user.name', uc.username or uc.user_id)}"
+            f"（角色：{_wrap_field('user.role', role_desc)}）。")
     ctx = req.context
     if ctx is not None:
         bits: list[str] = []
         if ctx.appCode:
-            bits.append(f"所在应用={ctx.appCode}")
+            bits.append(f"所在应用={_wrap_field('ctx.appCode', ctx.appCode)}")
         if ctx.page:
-            bits.append(f"页面={ctx.page}")
+            bits.append(f"页面={_wrap_field('ctx.page', ctx.page)}")
         if ctx.pageTitle:
-            bits.append(f"页面标题={ctx.pageTitle}")
+            bits.append(f"页面标题={_wrap_field('ctx.pageTitle', ctx.pageTitle)}")
         if ctx.entityType:
-            bits.append(f"实体类型={ctx.entityType}")
+            bits.append(f"实体类型={_wrap_field('ctx.entityType', ctx.entityType)}")
         if ctx.entityId:
-            bits.append(f"实体ID={ctx.entityId}")
+            bits.append(f"实体ID={_wrap_field('ctx.entityId', ctx.entityId)}")
         if bits:
             sys_parts.append("页面上下文：" + "，".join(bits) + "。")
+    # 对话内上传的参考文档：作为独立上下文块追加到 system 提示末尾（详见 _build_attachment_block）。
+    # 无附件时不追加任何内容，保证与改动前逐字一致。
+    if req.attachment_docs:
+        sys_parts.append(_build_attachment_block(req.attachment_docs))
     system = "\n".join(sys_parts)
 
     system_message = {"role": "system", "content": system}
@@ -120,7 +219,7 @@ def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
         role = turn.get("role")
         content = turn.get("content")
         if role in ("user", "assistant", "system") and content:
-            history.append({"role": role, "content": str(content)})
+            history.append({"role": role, "content": str(_neutralize_injection(content))})
 
     if max_context and max_context > 0:
         # token -> 字符的粗换算（中英混合经验值 1 token ≈ 2 字符），只用来做上限保护；
@@ -141,7 +240,7 @@ def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
 
     messages: list[dict] = [system_message]
     messages.extend(history)
-    messages.append({"role": "user", "content": req.text})
+    messages.append({"role": "user", "content": _neutralize_injection(req.text)})
     return messages
 
 

@@ -37,6 +37,13 @@ public class ChatMessage {
     private List<Object> citations;
     @TableField(typeHandler = JsonListTypeHandler.class)
     private List<Object> toolCalls;
+    /**
+     * 对话内上传文档（不进知识库）解析结果快照：[{file_id,name,text,truncated,(error)}]。
+     * 与本轮 user 消息同一次 insert 落库，供 AI 参考与历史回填（重新打开会话后 AI 仍看得到文档）。
+     * 与 citations / toolCalls 同族：JSON 经 JsonListTypeHandler 持久化与回读。
+     */
+    @TableField(typeHandler = JsonListTypeHandler.class)
+    private List<Object> attachments;
     private String status;
     private Long seq;
     private LocalDateTime createdAt;

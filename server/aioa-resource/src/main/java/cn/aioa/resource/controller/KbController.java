@@ -82,7 +82,9 @@ public class KbController {
     }
 
     /** 「点开查看」时正文的展示上限（字符）。 */
-    private static final int VIEW_MAX_CHARS = 20000;
+    // 注意：本常量被 aioa-chat 的 RunService#resolveAttachments 复用（同源，避免第二份数字），
+    //       故改为 public；仅可见性变化，详情查看链路行为不变。
+    public static final int VIEW_MAX_CHARS = 20000;
 
     /**
      * 诊断：当前知识库档位（存储实现 / 嵌入 provider / 维度）。

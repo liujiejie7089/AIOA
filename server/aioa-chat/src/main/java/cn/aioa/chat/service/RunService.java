@@ -12,11 +12,15 @@ import cn.aioa.chat.mapper.ChatMessageMapper;
 import cn.aioa.common.exception.BizException;
 import cn.aioa.common.trace.TraceId;
 import cn.aioa.project.port.PmAiScopePort;
+import cn.aioa.resource.controller.KbController;
 import cn.aioa.resource.entity.AgentWorker;
+import cn.aioa.resource.entity.SysFile;
 import cn.aioa.resource.entity.TokenLedger;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
+import cn.aioa.resource.mapper.SysFileMapper;
 import cn.aioa.resource.service.ActivityLogService;
 import cn.aioa.resource.service.BillingService;
+import cn.aioa.resource.service.KbFileParser;
 import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
@@ -25,6 +29,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -34,10 +39,15 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 
-import java.time.Duration;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -81,6 +91,16 @@ public class RunService {
     private final AgentWorkerMapper workerMapper;
     /** 项目域只读窄接口：项目会话下发该项目的生效上下文（跨模块单向依赖 chat → project）。 */
     private final PmAiScopePort pmAiScopePort;
+
+    /** 通用上传文件元数据（按 id 查存储名）。 */
+    private final SysFileMapper fileMapper;
+
+    /** 纯解析、零持久化（与知识库共用，但不进知识库）。 */
+    private final KbFileParser kbFileParser;
+
+    /** 上传落盘根目录：与 FileController 同源（aioa.upload.dir，默认 ./uploads），读取字节时复用同一路径规则。 */
+    @Value("${aioa.upload.dir:./uploads}")
+    private String uploadDir;
 
     /** 传给 Agent 的最大历史轮数（FR-C2 多轮会话）。 */
     private static final int HISTORY_TURNS = 10;
@@ -139,6 +159,8 @@ public class RunService {
         userMessage.setSeq(seq);
         userMessage.setCreatedAt(LocalDateTime.now());
         userMessage.setCreatedBy(user.getUserId());
+        // 对话内上传文档（不进知识库）：解析为参考快照，与本轮 user 消息同一次 insert 落库。
+        userMessage.setAttachments(toObjectList(resolveAttachments(attachments)));
         messageMapper.insert(userMessage);
 
         AgentRun run = new AgentRun();
@@ -217,6 +239,11 @@ public class RunService {
         AgentRunRequest request = buildRequest(run, user, text, context);
         request.setUserToken(stripBearer(authorization));
         request.setHistory(loadHistory(run.getConversationId(), userMessage));
+        // 本轮上传文档：把已落库的参考正文结构化下发 Agent（不进 content，结构体现在 attachment_docs）。
+        List<Map<String, Object>> attachmentDocs = toMapList(userMessage == null ? null : userMessage.getAttachments());
+        if (attachmentDocs != null && !attachmentDocs.isEmpty()) {
+            request.setAttachmentDocs(attachmentDocs);
+        }
         // 会话级模型路由：Agent 按 model_ref 选择 provider（默认走 MODEL_DEFAULT）
         ChatConversation conversation = conversationMapper.selectById(run.getConversationId());
         if (conversation != null && conversation.getModelRef() != null && !conversation.getModelRef().isBlank()) {
@@ -442,12 +469,133 @@ public class RunService {
                     .last("limit " + HISTORY_TURNS));
             java.util.Collections.reverse(recent);
             return recent.stream()
-                    .map(m -> new AgentRunRequest.ChatTurn(m.getRole(), m.getContent()))
+                    .map(m -> {
+                        String content = m.getContent();
+                        List<Object> atts = m.getAttachments();
+                        // 历史轮次只能回填文本：把该轮 user 消息已落库的文档正文前置到 content，
+                        // 否则「重新打开会话后 AI 看不到文档」不成立。解析/截断已完成于 resolveAttachments，
+                        // 这里只做格式化（单一来源，不复制第二份逻辑）。
+                        if (atts != null && !atts.isEmpty()) {
+                            content = formatAttachmentDocs(atts) + (content == null ? "" : content);
+                        }
+                        return new AgentRunRequest.ChatTurn(m.getRole(), content);
+                    })
                     .toList();
         } catch (Exception e) {
             log.warn("load history failed for conversation {}: {}", conversationId, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 把前端传入的文件 id 列表解析为「文档参考」快照（不进知识库）：
+     *   按 id 查 SysFile → 用与 FileController 同源的落盘路径读字节 → KbFileParser.parse 抽取正文
+     *   → 每份截断到 {@link KbController#VIEW_MAX_CHARS}（同源，不另写数字）→ 产出
+     *   {file_id, name, text, truncated}。失败（文件不存在 / 解析异常）产出 text:"" + error，记 warn，
+     *   且不得让整轮对话 500（铁律 2：不得静默，但也不上抛）。
+     */
+    private List<Map<String, Object>> resolveAttachments(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        // 与 FileController.init() 同源：Paths.get(uploadDir).toAbsolutePath().normalize()
+        Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
+        List<Map<String, Object>> out = new ArrayList<>(ids.size());
+        for (Long id : ids) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("file_id", id);
+            try {
+                SysFile rec = fileMapper.selectById(id);
+                if (rec == null || rec.getStoredName() == null) {
+                    log.warn("resolve attachment: file not found id={}", id);
+                    entry.put("name", "");
+                    entry.put("text", "");
+                    entry.put("truncated", false);
+                    entry.put("error", "文件不存在");
+                    out.add(entry);
+                    continue;
+                }
+                entry.put("name", rec.getOriginalName() == null ? "" : rec.getOriginalName());
+                Path target = root.resolve(rec.getStoredName());
+                if (!Files.exists(target) || !Files.isRegularFile(target)) {
+                    log.warn("resolve attachment: file missing on disk id={} path={}", id, target);
+                    entry.put("text", "");
+                    entry.put("truncated", false);
+                    entry.put("error", "文件已不存在");
+                    out.add(entry);
+                    continue;
+                }
+                byte[] bytes = Files.readAllBytes(target);
+                String text = kbFileParser.parse(rec.getOriginalName(), bytes);
+                boolean truncated = text.length() > KbController.VIEW_MAX_CHARS;
+                if (truncated) {
+                    text = text.substring(0, KbController.VIEW_MAX_CHARS);
+                }
+                entry.put("text", text);
+                entry.put("truncated", truncated);
+            } catch (Exception e) {
+                // 铁律 2：单份失败不得拖垮整轮对话；记录原因供排查，产出 error 项而非静默丢弃。
+                log.warn("resolve attachment failed id={} reason={}", id, e.getMessage());
+                entry.put("name", entry.getOrDefault("name", ""));
+                entry.put("text", "");
+                entry.put("truncated", false);
+                entry.put("error", e.getMessage() == null ? "解析失败" : e.getMessage());
+            }
+            out.add(entry);
+        }
+        return out;
+    }
+
+    /**
+     * 把已落库的附件快照格式化为拼进历史轮次 content 的前缀（与当前轮走 attachment_docs 结构化下发不同，
+     * 历史轮次只能回填文本，故把文档正文前置到该轮 user content）。
+     * 解析/截断逻辑已在 {@link #resolveAttachments} 完成，这里只做格式化，单一来源、不复制第二份。
+     */
+    private static String formatAttachmentDocs(List<?> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Object o : attachments) {
+            if (!(o instanceof Map<?, ?> doc)) {
+                continue;
+            }
+            Object name = doc.get("name");
+            Object text = doc.get("text");
+            Object error = doc.get("error");
+            String docName = name == null ? "" : String.valueOf(name);
+            sb.append("【参考文档】《").append(docName).append("》\n");
+            if (error != null) {
+                sb.append("（解析失败：").append(error).append("）\n");
+            } else {
+                sb.append(text == null ? "" : String.valueOf(text)).append("\n");
+            }
+            sb.append("【以上为参考文档】\n\n");
+        }
+        return sb.toString();
+    }
+
+    /** List<Map> → List<Object>（ChatMessage.attachments 的声明类型），避免泛型不变性编译错误。 */
+    private static List<Object> toObjectList(List<Map<String, Object>> src) {
+        if (src == null) {
+            return null;
+        }
+        List<Object> out = new ArrayList<>(src.size());
+        out.addAll(src);
+        return out;
+    }
+
+    /** List<Object>（JSON 回读为 LinkedHashMap）→ List<Map<String,Object>>，供 AgentRunRequest 下发。 */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> toMapList(List<Object> src) {
+        if (src == null) {
+            return null;
+        }
+        List<Map<String, Object>> out = new ArrayList<>(src.size());
+        for (Object o : src) {
+            out.add((Map<String, Object>) o);
+        }
+        return out;
     }
 
     private AgentRunRequest buildRequest(AgentRun run, AuthUser user, String text, Map<String, Object> context) {

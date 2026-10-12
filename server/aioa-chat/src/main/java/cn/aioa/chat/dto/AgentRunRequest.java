@@ -22,6 +22,14 @@ public class AgentRunRequest {
 
     private List<Long> attachments;
 
+    /**
+     * 对话内上传文档（不进知识库）的参考正文，下发 Agent 侧供本轮回答参考。
+     * 与 {@code attachments}（仅 id）不同，这里携带已解析的 {file_id,name,text,truncated}，
+     * 键名 {@code attachment_docs} 必须与此处 @JsonProperty 一致（agent 侧 RunRequest.attachment_docs 契约）。
+     */
+    @JsonProperty("attachment_docs")
+    private List<Map<String, Object>> attachmentDocs;
+
     private Map<String, Object> context;
 
     @JsonProperty("agent_code")

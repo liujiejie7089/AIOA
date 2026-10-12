@@ -28,6 +28,19 @@ class UserContext(BaseModel):
     trace_id: str | None = None
 
 
+class AttachmentDoc(BaseModel):
+    """用户在对话内上传、仅供 AI 参考的文档（不进知识库）。
+
+    由后端（Java）在会话里随请求下发，键名 ``attachment_docs`` 照抄后端契约，
+    agent 侧只做「参考上下文」注入，不参与知识库检索、不持久化。
+    """
+
+    file_id: int | None = None
+    name: str | None = None
+    text: str = ""
+    truncated: bool = False
+
+
 class RunRequest(BaseModel):
     """POST /internal/v1/runs 请求体。"""
 
@@ -35,6 +48,8 @@ class RunRequest(BaseModel):
     conversation_id: int
     text: str
     attachments: list[int] | None = None
+    # 对话内上传的参考文档（后端经 ExpertConfig / 会话上下文下发，键名照抄契约）
+    attachment_docs: list[AttachmentDoc] | None = None
     context: PageContext | None = None
     agent_code: str | None = None
     model_ref: str | None = None
