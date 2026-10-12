@@ -23,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -93,8 +94,8 @@ public class FileController {
         }
         String stored = UUID.randomUUID() + ext;
         Path target = root.resolve(stored);
-        try {
-            Files.copy(file.getInputStream(), target);
+        try (InputStream in = file.getInputStream()) {
+            Files.copy(in, target);
         } catch (IOException e) {
             throw BizException.badRequest("文件保存失败：" + e.getMessage());
         }
