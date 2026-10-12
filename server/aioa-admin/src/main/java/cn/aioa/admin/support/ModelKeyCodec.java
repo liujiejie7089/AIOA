@@ -1,5 +1,6 @@
 package cn.aioa.admin.support;
 
+import cn.aioa.common.security.DevSecretPlaceholders;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -39,17 +40,15 @@ public class ModelKeyCodec {
     private static final int IV_BYTES = 12;
     private static final int TAG_BITS = 128;
 
-    private static final String FALLBACK_SECRET = "aioa-model-key-dev-only";
+    private static final String FALLBACK_SECRET = DevSecretPlaceholders.MODEL_KEY_FALLBACK;
 
     private final SecretKey secretKey;
     private final boolean usingFallback;
 
     public ModelKeyCodec(Environment env) {
-        String secret = firstNonBlank(
-                env.getProperty("AIOA_MODEL_KEY_ENC_KEY"),
-                env.getProperty("aioa.model.key.enc.key"),
-                env.getProperty("AIOA_GITEE_TOKEN_ENC_KEY"),
-                env.getProperty("aioa.gitee.token-enc-key"));
+        String secret = firstNonBlank(DevSecretPlaceholders.MODEL_KEY_ENV_CANDIDATES.stream()
+                .map(env::getProperty)
+                .toArray(String[]::new));
         this.usingFallback = secret == null;
         this.secretKey = buildKey(usingFallback ? FALLBACK_SECRET : secret);
         if (usingFallback) {

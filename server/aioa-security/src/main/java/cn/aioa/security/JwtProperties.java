@@ -1,5 +1,6 @@
 package cn.aioa.security;
 
+import cn.aioa.common.security.DevSecretPlaceholders;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -11,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class JwtProperties {
 
     /** HS256 密钥，生产环境必须覆盖（>= 32 字节）。 */
-    private String secret = "aioa-dev-jwt-secret-please-change-in-production";
+    private String secret = DevSecretPlaceholders.JWT;
 
     /** access token 有效期（秒），默认 2h。 */
     private long accessTtlSeconds = 7200L;

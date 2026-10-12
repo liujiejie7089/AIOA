@@ -1,5 +1,6 @@
 package cn.aioa.gitee.config;
 
+import cn.aioa.common.security.DevSecretPlaceholders;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -94,7 +95,7 @@ public class GiteeProperties {
     private String webhookSecret = "";
 
     /** 令牌加密密钥（AES-256 需要 32 字节；不足则用 SHA-256 派生）。生产必须覆盖。 */
-    private String tokenEncKey = "aioa-dev-gitee-token-key-please-change";
+    private String tokenEncKey = DevSecretPlaceholders.GITEE_TOKEN_ENC;
 
     /**
      * 授权完成后的前端回跳地址（管理端 SPA）。

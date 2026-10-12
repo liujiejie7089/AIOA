@@ -27,5 +27,11 @@
       <groupId>org.mybatis</groupId>
       <artifactId>mybatis</artifactId>
     </dependency>
+    <!-- 单元测试（仅 test 作用域，不传递给依赖方） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

@@ -1,5 +1,6 @@
 package cn.aioa.security;
 
+import cn.aioa.common.security.DevSecretPlaceholders;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -11,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class ServiceJwtProperties {
 
     /** HS256 密钥（M2 起替换为 RS256）。 */
-    private String secret = "aioa-dev-service-jwt-secret-please-change";
+    private String secret = DevSecretPlaceholders.SERVICE_JWT;
 
     /** 服务令牌有效期（秒），默认 5 分钟。 */
     private long ttlSeconds = 300L;
