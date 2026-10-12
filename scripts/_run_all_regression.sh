@@ -69,6 +69,10 @@ SUITES=(
   # 用户端「进入项目」后的布局与记忆：机器人居中且紧凑、回答区不在下半部分、
   # 项目会话被复用且历史消息不被清空（本地静态服务 + page.route 打桩，无需后端）
   _check_oa_project_layout.py
+  # H5 语音输入「手势状态机」：长按/免提/取消/拒绝授权四种手势的起停，
+  # 含缺陷本体「松手早于 getUserMedia 返回 ⇒ 录音永久停不下来」的负向对照。
+  # 纯状态机（Node 桩，无需 HTTPS/麦克风，故本环境可复跑）；--selftest 用 HEAD 版本证明判别力。
+  _check_voice_gesture.py
   # 部署面：application.yml 引用的环境变量必须被 compose 透传（否则在 .env 里改它是空转）
   _check_compose_env_wiring.py
   # 可执行产物：aioa-boot 的 jar 必须是胖 jar（含 BOOT-INF/lib）。
