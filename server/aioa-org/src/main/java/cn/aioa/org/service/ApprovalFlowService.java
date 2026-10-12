@@ -1245,7 +1245,16 @@ public class ApprovalFlowService {
         task.setNote(note);
         task.setDecidedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
-        taskMapper.updateById(task);
+        // 行级守卫：上面 1217 行的内存态 if (!PENDING) 是 TOCTOU（两个并发事务都能通过）。
+        // 这里把 WHERE 条件带 status='PENDING'，按受影响行数判断 —— 受影响 0 行即「已被他人
+        // 处理」，抛 409 而非静默覆盖（last-writer-wins）。不加 @Version 列，避免 Flyway 迁移。
+        int updated = taskMapper.update(task,
+                new LambdaUpdateWrapper<ApprovalTask>()
+                        .eq(ApprovalTask::getId, taskId)
+                        .eq(ApprovalTask::getStatus, ApprovalTask.PENDING));
+        if (updated == 0) {
+            throw new BizException(409, "该审批节点已被他人处理（并发冲突），请刷新后重试");
+        }
 
         String approverName = AuditRecorder.displayName(actor);
         Long institutionId = task.getInstitutionId();
