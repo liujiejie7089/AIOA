@@ -100,18 +100,38 @@ def test_action_keys_present_on_every_path():
 
 # --------------------------------------------------------------------------- 回答结构
 
-def test_rules_cover_six_sections_in_order():
-    rules = answer_shape.rules({"duty": "受理请假申请"})
-    joined = "\n".join(rules)
-    pos = [joined.index(name) for _, name, _ in answer_shape.SECTIONS]
-    assert pos == sorted(pos), "六段顺序必须稳定：位置本身就是结构的一部分"
-    assert "受理请假申请" in joined, "第 3 段（能力边界）必须绑定本条职责"
+def test_rules_do_not_mandate_sections():
+    """2026-10-12 契约变更：六段**不再是每次回答的必给模板**。
+
+    回归背景：旧实现把六段逐条下发、并明令「不要整段省略」，于是用户上传文件问
+    「这里面有什么」也会被撑成五段（结论／状态卡／能力边界／唯一下一步／管理员话术），
+    其中后三段与提问无关（用户反馈：回答太多，只需要回答用户提问相关的）。
+    故这里**反向**断言：提示词不得再逐段下发、不得再出现强制齐备的口径，
+    且必须显式要求「只答所问」。
+    """
+    joined = "\n".join(answer_shape.rules({"duty": "受理请假申请"}))
+    assert "必须齐备" not in joined, f"不得再强制逐段齐备：{joined}"
+    assert "按顺序组织" not in joined, f"不得再要求按顺序组织六段：{joined}"
+    for _, name, _ in answer_shape.SECTIONS:
+        assert f"{name}：" not in joined, f"不得再把「{name}」当作必填段落下发：{joined}"
+    assert "只回答用户问到的内容" in joined
+    assert "最多 3-5 条" in joined
 
 
-def test_rules_apply_without_scope():
-    """未绑定数字员工的通用对话同样要受结构约束。"""
-    rules = answer_shape.rules(None)
-    assert any("唯一下一步" in r for r in rules)
+def test_rules_keep_next_step_only_when_blocked():
+    """原意图里真正有用的部分必须保留，但只能是**条件**触发，不能无条件必给。"""
+    joined = "\n".join(answer_shape.rules(None))
+    assert "做不了" in joined, "「做不了才补下一步」的触发条件必须写明"
+    assert "仅当" in joined, "必须是条件句，不能退化成无条件要求"
+    assert "下一步" in joined and "转述" in joined, "该补的两项仍要在场"
+
+
+def test_rules_scope_adds_only_one_boundary_line():
+    """绑定了数字员工时只多一条「越界一句话拒答」，不要求展开——这是本次变更的一部分。"""
+    plain = answer_shape.rules(None)
+    scoped = answer_shape.rules({"duty": "受理请假申请"})
+    assert len(scoped) == len(plain) + 1, (plain, scoped)
+    assert "一句话说明" in scoped[-1], scoped[-1]
 
 
 def test_card_is_deterministic_and_matches_role_meta():
