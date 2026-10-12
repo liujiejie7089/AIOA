@@ -37,10 +37,11 @@ public class DbTokenRevocationChecker implements TokenRevocationChecker {
                     Long.class, jti);
             return n != null && n > 0;
         } catch (Exception e) {
-            // 失败方向：DB 异常时视为「未吊销」。此时业务查询本身已全部失败，
-            // 若再返回 401，会把「数据库故障」伪装成「认证故障」。
-            log.warn("吊销校验失败（按未吊销处理）：jti={} err={}", jti, e.getMessage());
-            return false;
+            // fail-closed：DB 异常时视为「已吊销」。吊销是安全动作，宁可误伤一次
+            // 登录/访问（用户重新登录即可恢复），也不能让一个本应失效的 token 因 DB
+            // 抖动而复活。把异常记录出来，便于定位底层故障。
+            log.error("吊销检查失败，按已吊销处理（fail-closed）：jti={}", jti, e);
+            return true;
         }
     }
 
