@@ -460,14 +460,29 @@ function oaOpenUploadForm(){
   var mask = document.createElement('div');
   mask.className = 'notif-mask show';
   mask.innerHTML =
-    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
-      '<div class="notif-head">上传项目文档</div>'+
+    '<div class="notif-modal perm-modal oa-dlg oa-upload-dlg" role="dialog" aria-modal="true" aria-label="上传项目文档">'+
+      /* 图标砖与标题分行：`.notif-head` 的文本必须**恰好**是「上传项目文档」——
+         两个哨兵都按 `.notif-head` 的 textContent 断言；图标放在它外面，避免污染文本。 */
+      '<div class="oa-up-hd">'+
+        '<span class="oa-up-ico" aria-hidden="true"><svg class="ic"><use href="#i-upload"/></svg></span>'+
+        '<div class="notif-head">上传项目文档</div>'+
+      '</div>'+
       '<div class="notif-body"><div class="oa-exp-form">'+
         '<label class="oa-ef-row"><span>存放位置</span>'+
-          '<select id="upFolder"><option value="">正在读取项目文件夹…</option></select></label>'+
-        '<label class="oa-ef-row"><span>文件</span>'+
-          '<input id="upFile" type="file" disabled></label>'+
-        '<div class="hint" id="upHint" style="margin-top:6px">选择文件后会立即上传，并登记到当前项目的文档里。</div>'+
+          '<span class="oa-sel">'+
+            '<select id="upFolder"><option value="">正在读取项目文件夹…</option></select>'+
+          '</span></label>'+
+        '<div class="oa-ef-row"><span>文件</span>'+
+          '<div class="oa-drop off" id="upDrop">'+
+            '<span class="dp-ico" aria-hidden="true"><svg class="ic"><use href="#i-upload"/></svg></span>'+
+            '<span class="dp-t" id="upDropT">正在读取项目文件夹…</span>'+
+            '<span class="dp-s" id="upDropS">读取完成后即可选择文件</span>'+
+            /* 真控件：不隐藏成 display:none，而是透明铺满整块投放区 —— 既让整块可点，
+               又保证「点击 #upFile 能唤起系统选择器」这条判据（哨兵 G9c）永远成立。 */
+            '<input id="upFile" type="file" disabled aria-label="选择要上传到本项目的文件">'+
+          '</div>'+
+        '</div>'+
+        '<div class="hint" id="upHint">选择文件后会立即上传，并登记到当前项目的文档里。</div>'+
         '<div class="note-err" id="upErr" style="display:none"></div>'+
       '</div></div>'+
       '<div class="notif-foot">'+
@@ -479,6 +494,20 @@ function oaOpenUploadForm(){
   var inp = mask.querySelector('#upFile');
   var hint = mask.querySelector('#upHint');
   var err = mask.querySelector('#upErr');
+  /* 投放区三态（off 未就绪/上传中 · on 可点 · file 已选）集中在一处改：
+     状态与文案若分两处维护，最容易出现「控件已解锁、文案还写着正在读取」。 */
+  var drop = mask.querySelector('#upDrop');
+  var dropT = mask.querySelector('#upDropT');
+  var dropS = mask.querySelector('#upDropS');
+  var DROP_TIP = '支持 PDF / Word / Excel / 图片等格式';
+  var setDrop = function(mode, t, s){
+    if(drop){
+      drop.classList.toggle('off', mode === 'off');
+      drop.classList.toggle('has-file', mode === 'file');
+    }
+    if(t != null && dropT){ dropT.textContent = t; }
+    if(s != null && dropS){ dropS.textContent = s; }
+  };
   var done = false;
   var finish = function(){ if(done) return; done = true; mask.remove(); };
   var showErr = function(msg){ if(err){ err.textContent = msg; err.style.display = 'block'; } };
@@ -501,6 +530,7 @@ function oaOpenUploadForm(){
     if(!flat.length){
       sel.innerHTML = '<option value="">（无）</option>';
       showErr('该项目还没有可写入的文件夹，请先在「任务 → 项目 → 文档」里新建一个。');
+      setDrop('off', '暂无可写入的文件夹', '请先在「任务 → 项目 → 文档」里新建一个');
       return;
     }
     sel.innerHTML = flat.map(function(f){
@@ -508,10 +538,12 @@ function oaOpenUploadForm(){
         new Array(f.depth + 1).join('　') + txt(f.name) + '</option>';
     }).join('');
     inp.disabled = false;
+    setDrop('on', '点击选择文件', DROP_TIP);
   }).catch(function(e){
     if(done) return;
     sel.innerHTML = '<option value="">（读取失败）</option>';
     showErr('读取项目文件夹失败：' + (e.message || '未知错误'));
+    setDrop('off', '读取项目文件夹失败', '请关闭窗口后重试');
   });
 
   inp.onchange = async function(){
@@ -522,6 +554,7 @@ function oaOpenUploadForm(){
     if(err){ err.textContent = ''; err.style.display = 'none'; }
     if(hint){ hint.textContent = '正在上传：' + f.name; }
     inp.disabled = true;
+    setDrop('off', '正在上传：' + f.name, '请稍候，不要关闭窗口');
     try{
       var up = await API.fileUpload(f);          // → {id,name,url,size}
       if(!up || !up.id) throw new Error('上传未返回文件标识');
@@ -538,6 +571,7 @@ function oaOpenUploadForm(){
     }catch(e){
       inp.disabled = false;
       if(hint){ hint.textContent = '选择文件后会立即上传，并登记到当前项目的文档里。'; }
+      setDrop('on', '点击选择文件', DROP_TIP);
       showErr('文档上传失败：' + (e.message || '未知错误'));
       toast('文档上传失败：' + (e.message || '未知错误'));
     }
@@ -553,7 +587,7 @@ function oaOpenExpenseForm(){
   var mask = document.createElement('div');
   mask.className = 'notif-mask show';
   mask.innerHTML =
-    '<div class="notif-modal perm-modal" role="dialog" aria-modal="true">'+
+    '<div class="notif-modal perm-modal oa-dlg" role="dialog" aria-modal="true">'+
       '<div class="notif-head">上报项目花费</div>'+
       '<div class="notif-body"><div class="oa-exp-form">'+
         '<label class="oa-ef-row"><span>方向</span>'+

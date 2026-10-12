@@ -263,25 +263,89 @@
 .oa .proj-card.on .proj-enter{color:var(--brand-ink)}
 .oa .proj-active{border-color:var(--brand-line);background:var(--brand-soft)}
 .oa .proj-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-/* 花费表单：与既有 notif-modal 同壳，仅补表单排版 */
-.oa .oa-exp-form{display:flex;flex-direction:column;gap:10px}
-.oa .oa-ef-row{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-2)}
-.oa .oa-ef-row > span{font-weight:600;color:var(--text)}
-.oa .oa-ef-row select,
-.oa .oa-ef-row input,
-.oa .oa-ef-row textarea{
-  font-family:inherit;font-size:13px;color:var(--text);
-  padding:9px 10px;border:1px solid var(--border-strong);border-radius:var(--r-sm);
-  background:var(--surface);width:100%;box-sizing:border-box;
+/* ---------------------------------------------------------------------------
+   项目内弹层（「上传项目文档」/「上报项目花费」）
+   ★ 为什么规则**不能**带 `.oa ` 前缀（2026-10-12 实测，正是「上传对话框很丑」的根因）：
+     两个弹层都由 `document.createElement('div')` 造好后 `document.body.appendChild(mask)`，
+     挂在 body 上，**不在 `.oa`（#oaRoot）之内**。原规则写成 `.oa .oa-ef-row…` ⇒ 选择器永不
+     匹配，表单等于没有样式（浏览器原生控件直出）；雪上加霜的是 `--brand-*` 令牌定义在 `.oa`
+     上 ⇒ 连 `::file-selector-button` 的品牌色也解析成无效值，退化成一枚系统灰按钮。
+   ★ 为什么又**不能**直接用裸 `.notif-modal`：`.notif-modal` / `.note-err` / `.notif-foot .btn`
+     被经典形态的「资料详情 / 我的申请 / 通过审批 / 驳回审批 / 新消息提醒」等 10 处弹层共用，
+     裸写会把它们的按钮、报错条一并改掉（越界）。故给这两个弹层加标记类 **`.oa-dlg`**，
+     所有规则一律 `.notif-modal.oa-dlg …`，改动面恰好等于这两个弹层。
+   --------------------------------------------------------------------------- */
+.notif-modal.oa-dlg{
+  /* 品牌令牌补挂在弹层自己身上（取值同 .oa 的 7 个新令牌）—— 弹层不在 .oa 内，取不到它那份 */
+  --brand:#12b39a; --brand-dark:#0d9480; --brand-soft:#e6f7f3;
+  --brand-line:#b7e7de; --brand-ink:#0a6d5e;
+  padding:20px; width:min(364px,88vw);
 }
-.oa .oa-ef-row textarea{resize:vertical}
-/* 文件控件：原生「选择文件」按钮与上面几个控件的观感不一致（2026-10-11 上传窗口实测），
-   这里只把它调成同一套品牌配色/圆角，不改结构也不换自绘控件。 */
-.oa .oa-ef-row input[type=file]{padding:7px 10px;color:var(--text-2)}
-.oa .oa-ef-row input[type=file]::file-selector-button{
-  font-family:inherit;font-size:12.5px;font-weight:600;margin-right:10px;cursor:pointer;
-  color:var(--brand-ink);background:var(--brand-soft);
-  border:1px solid var(--brand-line);border-radius:var(--r-sm);padding:6px 12px;
+.notif-modal.oa-dlg .oa-exp-form{display:flex;flex-direction:column;gap:13px}
+.notif-modal.oa-dlg .oa-ef-row{display:flex;flex-direction:column;gap:6px}
+.notif-modal.oa-dlg .oa-ef-row > span{font-size:11.5px;font-weight:600;color:var(--text-2)}
+.notif-modal.oa-dlg .oa-ef-row select,
+.notif-modal.oa-dlg .oa-ef-row input:not([type=file]),
+.notif-modal.oa-dlg .oa-ef-row textarea{
+  font-family:inherit;font-size:13px;color:var(--text);
+  padding:10px 12px;border:1px solid var(--border-strong);border-radius:10px;
+  background:var(--surface);width:100%;box-sizing:border-box;
+  transition:border-color var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease);
+}
+.notif-modal.oa-dlg .oa-ef-row textarea{resize:vertical}
+.notif-modal.oa-dlg .oa-ef-row select:focus,
+.notif-modal.oa-dlg .oa-ef-row input:not([type=file]):focus,
+.notif-modal.oa-dlg .oa-ef-row textarea:focus{
+  outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);
+}
+/* 下拉：自绘箭头（原生箭头在 10px 圆角控件里贴右边框、基线不齐） */
+.notif-modal.oa-dlg .oa-sel{position:relative;display:block}
+.notif-modal.oa-dlg .oa-sel select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:pointer}
+.notif-modal.oa-dlg .oa-sel::after{
+  content:"";position:absolute;right:14px;top:50%;width:7px;height:7px;
+  border-right:1.8px solid var(--text-3);border-bottom:1.8px solid var(--text-3);
+  transform:translateY(-70%) rotate(45deg);pointer-events:none;
+}
+/* 文件选择：虚线投放区；真 `<input type=file>` 透明铺满整块（控件一直在 DOM 里、
+   点击即唤起系统选择器 —— 哨兵 G9c 靠真实 .click() 证明它不是空壳）。 */
+.notif-modal.oa-dlg .oa-drop{
+  position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:18px 14px;border:1.5px dashed var(--border-strong);border-radius:12px;
+  background:var(--surface-2);text-align:center;cursor:pointer;
+  transition:border-color var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease);
+}
+.notif-modal.oa-dlg .oa-drop:not(.off):hover{border-color:var(--brand);background:var(--brand-soft)}
+.notif-modal.oa-dlg .oa-drop .dp-ico{
+  width:34px;height:34px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--brand-soft);color:var(--brand-ink);font-size:18px;
+}
+.notif-modal.oa-dlg .oa-drop .dp-t{font-size:13px;font-weight:600;color:var(--text);word-break:break-all}
+.notif-modal.oa-dlg .oa-drop .dp-s{font-size:11px;color:var(--text-3);line-height:1.5}
+.notif-modal.oa-dlg .oa-drop input[type=file]{
+  position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;
+}
+.notif-modal.oa-dlg .oa-drop.off{border-color:var(--border);background:var(--surface-3);cursor:progress}
+.notif-modal.oa-dlg .oa-drop.off .dp-ico{background:var(--surface);color:var(--text-3)}
+.notif-modal.oa-dlg .oa-drop.off .dp-t{color:var(--text-2);font-weight:500}
+.notif-modal.oa-dlg .oa-drop.has-file{border-style:solid;border-color:var(--brand-line);background:var(--brand-soft)}
+/* 说明与报错 */
+.notif-modal.oa-dlg .hint{font-size:11.5px;color:var(--text-2);line-height:1.6}
+.notif-modal.oa-dlg .note-err{
+  margin-top:0;padding:9px 11px;border-radius:10px;font-size:11.5px;line-height:1.6;
+  color:var(--red);background:var(--red-soft);
+}
+/* 底部动作：统一胶囊与高度，避免 28px 小按钮在 364px 宽的弹窗里显得局促 */
+.notif-modal.oa-dlg .notif-foot .btn{
+  min-height:38px;padding:0 20px;border-radius:var(--r-full);font-size:13px;font-weight:600;
+}
+.notif-modal.oa-dlg .notif-foot .btn.ghost{color:var(--brand-ink);border-color:var(--brand-line);background:var(--surface)}
+.notif-modal.oa-dlg .notif-foot .btn.ghost:hover{background:var(--brand-soft)}
+.notif-modal.oa-dlg .notif-foot .btn:not(.ghost){background:var(--brand);border-color:var(--brand);color:#fff}
+/* 「上传项目文档」专用：标题带图标砖 */
+.notif-modal.oa-upload-dlg .oa-up-hd{display:flex;align-items:center;gap:10px}
+.notif-modal.oa-upload-dlg .oa-up-ico{
+  width:32px;height:32px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--brand-soft);color:var(--brand-ink);font-size:17px;flex-shrink:0;
 }
 /* 语音 / 上传 / 停止 / 发送按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来 */
 #oaMicBtn, #oaAttachBtn, #oaStop, #oaSendBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
