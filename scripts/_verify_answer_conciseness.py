@@ -2,9 +2,16 @@
 """独立验证：answer_shape 修复（「回答太多，只要答所问」）是否**真的生效**。
 
 要证的链路：agent/app/core/answer_shape.py 的 rules() 已从「每次必给六段、禁止省略」
-改为「默认只答所问、能一句答清就一句；仅当用户想做的事做不了时才补『下一步+找谁办』」，
+改为「默认只答所问、能一句答清就一句；**仅当用户提问涉及权限**时才补『下一步+找谁办』」，
 并由 agent_runtime 注入系统提示。本脚本跑活体对话 + 活体提示词口径 + 判别力证明，
 证明修复**不是只看代码改了**。
+
+口径收窄过两次（2026-10-12，均用户反馈驱动）：
+  ① 「每次必给六段」→「默认只答所问」；
+  ② 「做不了就补下一步」→「**仅限权限话题**」——答不了／超出职责／查不到数据一律不出现
+     办理指引、管理员话术或下一步建议。
+故本脚本在**两侧**都要立断言：权限场景**必须**有下一步/找谁办；非权限的「做不了」
+**不得**有（只验正面会漏掉「口径没收窄」这一半，等于判据残缺）。
 
 断言（逐条 PASS/FAIL/SKIP + 实测值）：
   1. 复现用户场景：上传含唯一地标的小 txt，问「这里面有什么？」
@@ -13,13 +20,18 @@
        c) 回答切题（出现地标「9417」）
        d) 不罗列用户没问的信息（不得出现 ROLE_ 或「令牌」）
   2. 简单事实问「1+1 等于几？」：≤200 字且不含分节词（贴原文）。
-  3. 保留的原意图：构造「用户想做的事做不了」一轮 → 回答有「下一步/找谁办」之意
-       （出现 请联系/下一步/管理员/权限申请 之一）。若该分支无法稳定触发 → 如实 SKIP。
+  3. 权限场景（**正面**）：构造「涉及权限」的一轮 → 回答须有「下一步/找谁办」之意
+       （出现 管理员/权限申请/转述/放行 之一）。
+     3b. 非权限「做不了」（**负向对照，本次新增**）：构造一个明显与权限无关、AI 也办不到的
+       请求 → 回答**不得**出现任何办理指引/管理员话术，含「主动推销权限」的写法
+       （管理员/权限申请/转述/放行/权限码/开通权限/申请权限/审批权限/办理权限）。
+       若该轮并未表现为「答不了」，如实 SKIP（不硬凑），并贴出真实回答。
   4. 判别力证明（防「判据恒真」）：
        a) 检查函数对**故意含五段标题**的合成文本判 FAIL；
        b) 对真实回答判 PASS。两条都贴出来。
   5. 活体提示词口径：POST :8000/internal/v1/answer-shape → rules 无旧口径
-       （必须齐备/按顺序组织）、有新口径（只回答用户问到的内容）。
+       （必须齐备/按顺序组织/「做不了」），有新口径（只回答用户问到的内容 +
+       「涉及权限」+「除权限问题外」）。
   6. 回归（不得被改动弄坏）：
        a) python scripts/_verify_chat_attachment_e2e.py → 9/9 PASS、退出码 0；
        b) cd agent && ./.venv/Scripts/python.exe -m pytest tests/ -q → 全绿（基线 106 passed）。
@@ -52,8 +64,15 @@ FORBIDDEN_SECTIONS = ["结论先行", "状态卡", "能力边界", "唯一下一
                       "管理员话术", "通过后续接"]
 # 用户没问却旧版会罗列的信息
 FORBIDDEN_NOASK = ["ROLE_", "令牌"]
-# 做不了时「下一步/找谁办」的命中词
-NEXT_STEP_HINTS = ["请联系", "下一步", "管理员", "权限申请"]
+# 权限场景「找谁办」的命中词：只有涉及权限时才该出现
+HANDOFF_HINTS = ["管理员", "权限申请", "转述", "放行"]
+# 非权限场景的禁止词：出现任一即说明办理指引/权限推销被滥用（本次口径收窄的核心判据）。
+# 后五项专门拦「用户没问权限、模型却主动提议帮申请/开通权限」这一**实测出现过的残余**——
+# 首版只拦 HANDOFF_HINTS，实测有 1/2 轮出现过「如果您需要开通系统审批权限…我可以为您申请」，漏网。
+FORBIDDEN_HANDOFF_WHEN_NO_PERM = HANDOFF_HINTS + [
+    "权限码", "开通权限", "申请权限", "审批权限", "办理权限"]
+# 「答不了」的自述标记：负向对照只在确实答不了时才判定，避免判据退化成恒真
+REFUSAL_HINTS = ["无法", "不能", "不支持", "办不到", "没办法", "不提供", "无权", "做不到"]
 
 PASS, FAIL, SKIP = [], [], []
 RES = []
@@ -188,11 +207,14 @@ def check_live_prompt():
     rules = body.get("rules") or []
     rules_text = "\n".join(rules)
     print("    rules 原文:\n" + "\n".join("      " + ln for ln in rules))
-    old_absent = ("必须齐备" not in rules_text) and ("按顺序组织" not in rules_text)
+    old_hits = [w for w in ("必须齐备", "按顺序组织", "做不了") if w in rules_text]
     new_present = "只回答用户问到的内容" in rules_text
-    chk("5a 旧口径缺失（无『必须齐备』/『按顺序组织』）", old_absent,
-        "命中旧口径=%s" % ([w for w in ("必须齐备", "按顺序组织") if w in rules_text] or "无"))
+    perm_scoped = ("涉及权限" in rules_text) and ("除权限问题外" in rules_text)
+    chk("5a 旧口径缺失（无『必须齐备』/『按顺序组织』/『做不了』）", not old_hits,
+        "命中旧口径=%s" % (old_hits or "无"))
     chk("5b 新口径存在（含『只回答用户问到的内容』）", new_present)
+    chk("5c 触发条件已收窄到权限（含『涉及权限』『除权限问题外』）", perm_scoped,
+        "涉及权限=%s 除权限问题外=%s" % ("涉及权限" in rules_text, "除权限问题外" in rules_text))
 
 
 # ---- 第 4 条：判别力证明 ----
@@ -264,22 +286,39 @@ def check_live_conversation(token):
         else:
             skip("2 简单事实问", "run 未收口")
 
-        # ---- 第 3 条：保留原意图（做不了才补下一步） ----
+        # ---- 第 3 条（正面）：权限场景应补「下一步 / 找谁办」 ----
         run3 = start_run(token, conv1, "帮我给张三开通系统审批权限", None)
         st3, ans3 = consume_sse(token, run3)
-        print("    ③ 回答（原文，共 %d 字符）：%s" % (len(ans3 or ""), repr(ans3)))
+        print("    ③ 权限场景回答（原文，共 %d 字符）：%s" % (len(ans3 or ""), repr(ans3)))
         chk("3-pre run 收口（SUCCEEDED）", st3 == "SUCCEEDED", "status=%s" % st3)
         if st3 == "SUCCEEDED":
-            has_hint = any(w in (ans3 or "") for w in NEXT_STEP_HINTS)
-            if has_hint:
-                chk("3 做不了分支：回答含『下一步/找谁办』之意",
-                    True, "命中=%s" % ([w for w in NEXT_STEP_HINTS if w in (ans3 or "")]))
-            else:
-                # 如实 SKIP，不硬凑 PASS；贴出观察到的真实回答
-                skip("3 做不了分支", "未稳定命中 请联系/下一步/管理员/权限申请；"
-                     "真实回答=%s" % (repr(ans3)[:300]))
+            hit3 = [w for w in HANDOFF_HINTS if w in (ans3 or "")]
+            chk("3 权限场景：回答含『找谁办』之意（管理员/权限申请/转述/放行）", bool(hit3),
+                "命中=%s" % (hit3 or "无；真实回答=%s" % (repr(ans3)[:300])))
         else:
-            skip("3 做不了分支", "run 未收口")
+            skip("3 权限场景", "run 未收口")
+
+        # ---- 第 3b 条（负向对照，本次新增）：非权限「做不了」不得出现办理指引 ----
+        # 说明：禁止词只取「办理/放行」类词（管理员/权限申请/转述/放行），不取宽泛的「请联系」
+        # —— 后者可能是对提问的**直接回答**（如「请联系物业」），拿来判 FAIL 会误伤正常回答。
+        # 断言前提：该轮确实表现为「答不了」；若模型没答不了，则如实 SKIP，不硬凑。
+        run3b = start_run(token, conv1, "帮我把这栋楼的水电费交了", None)
+        st3b, ans3b = consume_sse(token, run3b)
+        print("    ③b 非权限场景回答（原文，共 %d 字符）：%s" % (len(ans3b or ""), repr(ans3b)))
+        chk("3b-pre run 收口（SUCCEEDED）", st3b == "SUCCEEDED", "status=%s" % st3b)
+        if st3b == "SUCCEEDED":
+            refused = [w for w in REFUSAL_HINTS if w in (ans3b or "")]
+            bad_handoff = [w for w in FORBIDDEN_HANDOFF_WHEN_NO_PERM if w in (ans3b or "")]
+            if not refused:
+                # 该轮并未表现为「答不了」→ 断言前提不成立，如实 SKIP（不硬凑）
+                skip("3b 非权限不做指引", "该轮未表现为答不了，无法判定；真实回答=%s"
+                     % (repr(ans3b)[:300]))
+            else:
+                chk("3b 非权限『做不了』不得出现办理指引/管理员话术（命中禁止词即 FAIL）",
+                    not bad_handoff,
+                    "命中禁止词=%s；真实回答=%s" % (bad_handoff or "无", repr(ans3b)[:300]))
+        else:
+            skip("3b 非权限不做指引", "run 未收口")
 
         return ans1  # 供判别力证明使用
     finally:

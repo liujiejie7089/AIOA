@@ -186,7 +186,9 @@ def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
     # 回答风格：只划「不能答什么」不够，还要管「答多长、答什么」。
     # 2026-10-12 起**不再**要求每次回答都按六段输出 —— 那会让「这个文件里有什么」这类
     # 简单提问也被撑成六段（用户反馈：回答太多，只答与提问相关的）。现改为「默认只答所问」，
-    # 仅在「用户想做的事做不了」时才补「下一步 / 找谁放行」。规则唯一出处见 answer_shape.rules。
+    # 且仅在「用户提问**涉及权限**」时才补「下一步 / 找谁放行」——答不了、超出职责、查不到
+    # 数据等其余情况一律不出现此类办理指引（用户进一步要求：口径只限权限话题）。
+    # 规则唯一出处见 answer_shape.rules。
     sys_parts.extend(answer_shape.rules(scope))
     uc = req.user_context
     if uc.username or uc.roles:

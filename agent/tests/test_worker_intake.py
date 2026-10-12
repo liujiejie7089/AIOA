@@ -118,12 +118,20 @@ def test_rules_do_not_mandate_sections():
     assert "最多 3-5 条" in joined
 
 
-def test_rules_keep_next_step_only_when_blocked():
-    """原意图里真正有用的部分必须保留，但只能是**条件**触发，不能无条件必给。"""
+def test_rules_keep_next_step_only_on_permission_questions():
+    """原意图里真正有用的部分必须保留，但**只在权限话题**上条件触发。
+
+    口径收窄过两次：最早是「无条件必给」，后改为「用户想做的事做不了才补」，
+    用户最终明确要求**只限权限话题** —— 答不了、超出职责、查不到数据都不该出现
+    「下一步 / 找谁放行」。故这里把触发条件锁死在「权限」二字上，并反向断言
+    「做不了」这类更宽的口径已不在场（否则又会把非权限场景带进来）。
+    """
     joined = "\n".join(answer_shape.rules(None))
-    assert "做不了" in joined, "「做不了才补下一步」的触发条件必须写明"
+    assert "涉及权限" in joined, "触发条件必须写明是「涉及权限」，而不是更宽的「做不了」"
     assert "仅当" in joined, "必须是条件句，不能退化成无条件要求"
-    assert "下一步" in joined and "转述" in joined, "该补的两项仍要在场"
+    assert "除权限问题外" in joined, "必须显式排除非权限场景，否则易被放宽解读"
+    assert "做不了" not in joined, "旧的「做不了就补」口径已被收窄，不得残留"
+    assert "下一步" in joined and "转述" in joined, "权限场景下该补的两项仍要在场"
 
 
 def test_rules_scope_adds_only_one_boundary_line():
