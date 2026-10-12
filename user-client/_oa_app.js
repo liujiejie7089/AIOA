@@ -23,6 +23,7 @@ var S = {
   worker:null,           // 数字员工
   expert:null,           // 专家
   busy:false,
+  pendingFiles:[],      // 会话内上传的参考文档（不进知识库），随 createRun 的 attachments 下发
   lastQuery:'',          // 上一轮问句（推荐相关职责同事、换人重答都以它为唯一依据）
   controller:null,
   apprDetail:null,       // 正在看的审批单 {id, scope}
@@ -1537,14 +1538,55 @@ async function oaCreateConversation(title, appCode, workerId, projectId){
   return API.req('/v1/conversations', {method:'POST', body: JSON.stringify(body)});
 }
 
+/* 会话内文档上传（OA 形态）：复用经典形态同名 .attach-strip / .attach-chip 视觉，
+   状态挂在 S.pendingFiles（与经典 pendingFiles 分账），逻辑与经典 onAttachFiles 一致。 */
+function oaRenderAttachStrip(){
+  var strip = $o('oaAttachStrip'); if(!strip) return;
+  strip.innerHTML = (S.pendingFiles||[]).map(function(f){
+    var name = f.pending ? ('⏳ ' + f.name) : f.name;
+    return '<span class="attach-chip" data-id="'+esc(f.id)+'">'
+      + '<span class="ac-name">'+esc(name)+'</span>'
+      + '<button type="button" class="ac-x" aria-label="移除" onclick="oaRemoveAttach(\''+esc(f.id)+'\')">×</button>'
+      + '</span>';
+  }).join('');
+  strip.style.display = strip.children.length ? 'flex' : 'none';
+}
+function oaRemoveAttach(id){
+  S.pendingFiles = (S.pendingFiles||[]).filter(function(f){ return f.id !== id; });
+  oaRenderAttachStrip();
+}
+function onOaAttachFiles(input){
+  var files = input.files ? Array.prototype.slice.call(input.files) : [];
+  S.pendingFiles = S.pendingFiles || [];
+  files.forEach(function(file){
+    var ph = {id:'__up_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name:file.name, pending:true};
+    S.pendingFiles.push(ph); oaRenderAttachStrip();
+    API.fileUpload(file).then(function(d){
+      var i = S.pendingFiles.findIndex(function(f){ return f.id === ph.id; });
+      if(i >= 0) S.pendingFiles[i] = {id:String(d.id), name:d.name || file.name};
+      oaRenderAttachStrip();
+    }).catch(function(e){
+      var i = S.pendingFiles.findIndex(function(f){ return f.id === ph.id; });
+      if(i >= 0) S.pendingFiles.splice(i,1);
+      oaRenderAttachStrip();
+      toast('上传失败：' + (e.message||'未知错误'));
+    });
+  });
+  input.value = '';   /* 复位，允许同名文件二次选择 */
+}
+
 async function oaSend(){
   var input = $o('oaInput'); if(!input) return;
   var q = String(input.value || '').trim();
-  if(!q || S.busy) return;
+  if((!q && !(S.pendingFiles && S.pendingFiles.length)) || S.busy) return;
+  var effectiveQ = q || '请解析我上传的文档';
   input.value = '';
   // 上一轮问句只在这一处落定：推荐相关职责同事、换人重答都以它为准，不会串到上一条
-  S.lastQuery = q;
-  oaPushBub('user', txt(q));
+  S.lastQuery = effectiveQ;
+  // 用户气泡：文本 + （若有附件）一行 📎 文件名回执；attachMetaLine 为两形态共用全局函数
+  var userHtml = txt(effectiveQ);
+  if(S.pendingFiles && S.pendingFiles.length) userHtml += attachMetaLine(S.pendingFiles);
+  oaPushBub('user', userHtml);
 
   var bubble = oaPushBub('ai', '<span class="tx"><span class="typing"><i></i><i></i><i></i></span></span>');
   if(!bubble) return;
@@ -1557,14 +1599,15 @@ async function oaSend(){
 
   try{
     var convId = await oaEnsureConv();
-    var run = await API.createRun(convId, q, {
+    var run = await API.createRun(convId, effectiveQ, {
       kb_on: (state.kbOn !== false),
       expert: S.expert ? (S.expert.name || S.expert.key) : undefined
-    });
+    }, (S.pendingFiles||[]).map(function(f){ return f.id; }));
     var runId = run && (run.id || run.runId);
     // 与经典形态共用 state.runId：停止生成按钮只有一个真值来源
     state.runId = runId;
     S.controller = null;
+    S.pendingFiles = []; oaRenderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(runId, {
       onStarted: function(p){
         if(!p || !p.model) return;
@@ -1954,7 +1997,9 @@ async function oaResumeConversation(id){
     if(!msgs.length) oaPushBub('ai', '这条会话还没有消息，直接输入即可继续。');
     msgs.forEach(function(m){
       var isUser = m.role === 'user';
-      oaPushBub(isUser ? 'user' : 'ai', isUser ? txt(m.content || m.text || '') : (txt(m.content || m.text || '')), {ans:!isUser});
+      var histHtml = txt(m.content || m.text || '');
+      if(isUser && m.attachments && m.attachments.length) histHtml += attachMetaLine(m.attachments);
+      oaPushBub(isUser ? 'user' : 'ai', histHtml, {ans:!isUser});
     });
     S.view = 'home'; oaGo('home');
     if(list && !list.querySelector('.oa-who')){
@@ -2011,7 +2056,12 @@ function bind(){
 
   var send = $o('oaSendBtn'); if(send) send.onclick = oaSend;
   var stop = $o('oaStop'); if(stop) stop.onclick = oaStop;
-  /* 语音输入：长按说话 → 后端转文字 → 复用 oaSend 发出（录音模块与经典形态共用 bindVoice） */
+  /* 会话内文档上传（不进知识库）：点「＋」开文件框，选完逐份上传，渲染到 #oaAttachStrip */
+  var attach = $o('oaAttachBtn');
+  if(attach) attach.onclick = function(){ var f = $o('oaAttachFile'); if(f) f.click(); };
+  var attachFile = $o('oaAttachFile');
+  if(attachFile) attachFile.onchange = function(){ onOaAttachFiles(attachFile); };
+  /* 语音输入：按住说话 → 后端转文字 → 复用 oaSend 发出（录音模块与经典形态共用 bindVoice） */
   var mic = $o('oaMicBtn'); if(mic && typeof bindVoice === 'function') bindVoice(mic, $o('oaInput'), oaSend);
   var input = $o('oaInput');
   if(input) input.addEventListener('keydown', function(e){

@@ -283,3 +283,15 @@
   color:var(--brand-ink);background:var(--brand-soft);
   border:1px solid var(--brand-line);border-radius:var(--r-sm);padding:6px 12px;
 }
+/* 语音 / 上传按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来（缺陷修复一半） */
+#oaMicBtn, #oaAttachBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+/* 「＋」上传按钮：全角加号居中（与经典侧视觉一致） */
+#oaAttachBtn{ font-size:18px; line-height:1; }
+/* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见（与经典侧共用类名） */
+.oa .attach-strip{ display:none; flex-wrap:wrap; gap:6px; padding:8px 10px 0; }
+.oa .attach-chip{ display:inline-flex; align-items:center; gap:4px; max-width:220px;
+  background:var(--blue-soft); color:var(--blue); border:1px solid var(--blue-line);
+  border-radius:var(--r-full); padding:3px 8px; font-size:11px; }
+.oa .attach-chip .ac-name{ max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.oa .attach-chip .ac-x{ border:0; background:transparent; color:inherit; cursor:pointer;
+  font-size:13px; line-height:1; padding:0 0 0 2px; }

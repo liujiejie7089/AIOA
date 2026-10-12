@@ -518,6 +518,19 @@
   }
   .kb-chip .ic{width:13px;height:13px}
   .kb-chip.off{color:var(--text-2);background:var(--surface-3);border-color:var(--border)}
+  /* 语音按钮 / 上传按钮：关掉浏览器手势接管，否则触屏上 pointercancel 会抢走手势，
+     导致录音既停不下来也发不出去（缺陷修复的一半） */
+  #voiceBtn, #attachBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  /* 「＋」上传按钮：全角加号居中 */
+  #attachBtn{ font-size:18px; line-height:1; }
+  /* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见 */
+  .attach-strip{ display:none; flex-wrap:wrap; gap:6px; padding:8px 10px 0; }
+  .attach-chip{ display:inline-flex; align-items:center; gap:4px; max-width:220px;
+    background:var(--blue-soft); color:var(--blue); border:1px solid var(--blue-line);
+    border-radius:var(--r-full); padding:3px 8px; font-size:11px; }
+  .attach-chip .ac-name{ max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .attach-chip .ac-x{ border:0; background:transparent; color:inherit; cursor:pointer;
+    font-size:13px; line-height:1; padding:0 0 0 2px; }
 
   /* ---------- 9. 数字员工 ---------- */
   .agent-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:10px;box-shadow:var(--sh-1)}
@@ -963,18 +976,23 @@
               <span class="scope-badge" id="scopeBadge" style="display:none" data-page-node-id="Scp1Badge7Vq2Mx4Ka9Lp"></span>
             </div>
           </div>
+          <span class="kb-chip" id="kbChip" onclick="toggleKB()" data-page-node-id="BE9AzSQDjgyTeCSeLOlQAP">
+            <svg class="ic" data-page-node-id="opboK2nKjY7TBidzHSnE0o"><use href="#i-db" data-page-node-id="Sqr8hyYudM2KHgyPdCQmZR"/></svg><span id="kbChipText" data-page-node-id="AW4lZf1Ib7SGGrkdlWtTPU">知识库 开</span>
+          </span>
           <button class="btn ghost small" id="historyBtn" onclick="openHistory()" data-page-node-id="Hist0ryBtn3Zq8Wm5Yb1Nc">会话记录</button>
         </div>
         <div class="msgs" id="msgs" data-page-node-id="uTYgHddWf7NGIh9eUdI7ui"></div>
         <div class="quota-warn" id="quotaWarn" data-page-node-id="EQfkitJvjSdoUd4se2J58P">
           <svg class="ic" data-page-node-id="xiMR5kdm8dKEHq7gtETjpC"><use href="#i-warn" data-page-node-id="IOQ5V245HPiHepuf3Ra4du"/></svg><span id="quotaWarnText" data-page-node-id="HmmjNh1wQlzlFqVe9Y3y4g"></span>
         </div>
+        <div class="attach-strip" id="attachStrip"></div>
+        <input type="file" id="attachFile" multiple hidden
+               accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.log"
+               onchange="onAttachFiles(this)">
         <div class="input-bar" data-page-node-id="78BkWv8E8oxzDemZfUi0cu">
-          <span class="kb-chip" id="kbChip" onclick="toggleKB()" data-page-node-id="BE9AzSQDjgyTeCSeLOlQAP">
-            <svg class="ic" data-page-node-id="opboK2nKjY7TBidzHSnE0o"><use href="#i-db" data-page-node-id="Sqr8hyYudM2KHgyPdCQmZR"/></svg><span id="kbChipText" data-page-node-id="AW4lZf1Ib7SGGrkdlWtTPU">知识库 开</span>
-          </span>
-          <input id="chatInput" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()" data-page-node-id="IDLgYeFEQ65I1hQ5nTVD06">
-          <button class="btn small" id="voiceBtn" aria-label="长按说话" title="长按说话"><svg class="ic" style="width:15px;height:15px"><use href="#i-mic"/></svg></button>
+          <button class="btn small" id="voiceBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:15px;height:15px"><use href="#i-mic"/></svg></button>
+          <input id="chatInput" placeholder="发消息或按住说话…" onkeydown="if(event.key==='Enter')send()" data-page-node-id="IDLgYeFEQ65I1hQ5nTVD06">
+          <button class="btn small" id="attachBtn" aria-label="上传文档" title="上传文档供 AI 参考（不进知识库）" onclick="document.getElementById('attachFile').click()">＋</button>
           <button class="btn small" onclick="send()" id="sendBtn" data-page-node-id="TXtd61UeEQoyoqvmNYREs6">发送</button>
         </div>
       </div>
@@ -1376,7 +1394,11 @@ const API = {
 
   /* 会话与运行 */
   createConversation(title,appCode,workerId){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode,workerId:workerId||null})}); },
-  createRun(convId,text,context){ return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify({text,context,model_ref:state.model})}); },
+  createRun(convId,text,context,attachments){
+    var body = {text, context, model_ref: state.model};
+    if(attachments && attachments.length) body.attachments = attachments;
+    return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify(body)});
+  },
   listConversations(){ return this.req('/v1/conversations'); },
   renameConversation(id,title){ return this.req('/v1/conversations/'+id,{method:'PUT',body:JSON.stringify({title})}); },
   listMessages(convId){ return this.req('/v1/conversations/'+convId+'/messages'); },
@@ -4316,10 +4338,12 @@ function modelTier(model){
    纪律：getUserMedia 必须在事件回调的【同步段】发起，前面不许有 await。 */
 var VoiceInput = (function(){
   var stream = null, rec = null, chunks = [], t0 = 0, tick = null;
-  var hooks = null, cancelled = false, stopping = false;
+  var hooks = null, cancelled = false, stopping = false, why = null;
   /* 兜底上限：后端 AIOA_ASR_MAX_SECONDS=60，这里留 5s 余量，
      避免「录满 60s 反被后端按超长拒掉」。任何情况下录音都不会超过它。 */
   var MAX_MS = 55000;
+  /* 最短有效录音：小于此值视为误触，不发送（对标微信长按说话） */
+  var MIN_MS = 300;
 
   function supported(){
     return !!(window.isSecureContext && navigator.mediaDevices &&
@@ -4336,26 +4360,28 @@ var VoiceInput = (function(){
     if(tick){ clearInterval(tick); tick = null; }
     if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
   }
-  function reset(){ hooks = null; stopping = false; }
+  function reset(){ hooks = null; stopping = false; why = null; }
 
   /* 由「按下」事件在【同步段】调用：media 必须是这一刻已经发出的 getUserMedia Promise。
      ★ 关键：必须容忍「getUserMedia 还没回来、用户就已经松手/取消」——
        否则会出现「点一下录音，手早就松开了，它却在那之后才开始录，从此停不下来」。
        这就是「点击录音按钮后无法正常结束录音」的根因。 */
   function begin(media, h){
-    hooks = h; cancelled = false; stopping = false; chunks = [];
+    hooks = h; cancelled = false; stopping = false; why = null; chunks = [];
     media.then(function(s){
       stream = s;
       if(stopping || !hooks){          /* 还没开录就已经要求停：直接收摊，绝不启动录音 */
-        stopTracks(); reset(); h.phase(false); h.done(null); return;
+        var w0 = why;                   /* reset() 会清掉 why，先取出 */
+        stopTracks(); reset(); h.phase(false); h.done(null, w0 || 'no-media'); return;
       }
       var mime = pickMime();
       rec = new MediaRecorder(s, mime ? {mimeType:mime, audioBitsPerSecond:32000} : undefined);
       rec.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
       rec.onstop = function(){
         var blob = cancelled ? null : new Blob(chunks, {type: (rec && rec.mimeType) || 'audio/webm'});
+        var w = why;                    /* reset() 会清掉 why，先取出再传给 done */
         rec = null; stopTracks(); reset();
-        h.done(blob);
+        h.done(blob, w);
       };
       rec.start();
       t0 = Date.now();
@@ -4375,20 +4401,26 @@ var VoiceInput = (function(){
   function end(){
     if(!hooks) return;
     stopping = true;
-    if(rec && rec.state === 'recording') rec.stop();
+    if(rec && rec.state === 'recording'){
+      if(Date.now() - t0 < MIN_MS){ cancelled = true; why = 'too-short'; }   /* 误触：不发送 */
+      rec.stop();
+    }
   }
   /* 丢弃这一段（手势被浏览器接管 / 用户取消） */
-  function abort(){ if(!hooks) return; cancelled = true; end(); }
+  function abort(){ if(!hooks) return; why = 'cancelled'; cancelled = true; end(); }
   /* 是否正在录（含「已按下、getUserMedia 尚在途中」这段窗口） */
   function isLive(){ return !!hooks; }
   return {supported:supported, begin:begin, end:end, abort:abort, isLive:isLive};
 })();
 
-/* 把麦克风按钮绑成「按住说话 / 点一下免提」。三种手势都能正常开始与停止：
-     · 按住 ≥300ms → 松手即结束并发送（对标微信「按住说话」）
-     · 点一下 <300ms → 进入免提录音（按钮变红），再点一下结束并发送
-     · 手势被浏览器接管（pointercancel）→ 丢弃这一段，不发请求
-   onText 由各形态传入（复用它自己的发送链路，不新开对话通路）。 */
+/* 把麦克风按钮绑成「按住说话，松手即发送」（对标微信长按说话，回归 docs/47 §4.1 设计）：
+     · 按住 → 开始录音，松手即结束并发送；
+     · 录音中再按一下 = 立即结束并发送（绝不被 state.busy 拦掉）；
+     · 短按 <MIN_MS 视为误触，不发送（提示「按住说话，松开即可发送」）；
+     · 手势被浏览器接管（pointercancel）→ 丢弃这一段，不发请求。
+   设计文档明确：短按（<300ms）不录音，提示「长按说话」。旧的「短按进免提」实现偏离文档，
+   且配合按钮缺 touch-action:none 会在触屏上既停不下来也发不出去，本次一并回归。
+   onText 由各形态传入（复用它自己的发送链路，不新开对话通路）。两形态共用这一个 bindVoice。 */
 function bindVoice(btn, inputEl, onText){
   if(!btn || !inputEl) return;
   if(!VoiceInput.supported()){
@@ -4396,26 +4428,29 @@ function bindVoice(btn, inputEl, onText){
     btn.title = '当前访问方式不支持麦克风（需 https 或 localhost 打开）';
     return;
   }
-  var ph = inputEl.placeholder, pressAt = 0, handsFree = false;
+  var ph = inputEl.placeholder;
   function hint(t){ inputEl.placeholder = t; }
-  function idle(){ handsFree = false; btn.classList.remove('rec'); hint(ph); }
+  function idle(){ btn.classList.remove('rec'); hint(ph); }
 
   var hooks = {
     phase:function(on){
       btn.classList.toggle('rec', !!on);
       if(!on){ idle(); return; }
-      hint(handsFree ? '录音中 · 点击结束' : '录音中… 松开发送');
+      hint('录音中… 松开发送');
     },
     tick:function(ms){
-      hint('录音中 ' + (ms/1000).toFixed(1) + 's · ' + (handsFree ? '点击结束' : '松开发送'));
+      hint('录音中 ' + (ms/1000).toFixed(1) + 's · 松开发送');
     },
     error:function(kind){
       idle();
       toast(kind === 'DENIED' ? '未获得麦克风权限，请在浏览器设置里允许后重试' : '麦克风不可用');
     },
-    done:function(blob){
+    done:function(blob, why){
       idle();
-      if(!blob) return;                                  /* 取消/未开录：不发请求 */
+      if(!blob){
+        if(why === 'too-short') toast('按住说话，松开即可发送');
+        return;                                          /* 取消/未开录/误触：不发请求 */
+      }
       hint('识别中…');
       API.asrTranscribe(blob).then(function(d){
         hint(ph);
@@ -4431,10 +4466,9 @@ function bindVoice(btn, inputEl, onText){
   };
 
   btn.addEventListener('pointerdown', function(ev){
-    if(state.busy) return;
     ev.preventDefault();
-    if(VoiceInput.isLive()){ VoiceInput.end(); return; }  /* 免提中：再点一次 = 结束并发送 */
-    handsFree = false; pressAt = Date.now();
+    if(VoiceInput.isLive()){ VoiceInput.end(); return; }   /* 录音中再按 = 结束并发送；绝不被 busy 拦 */
+    if(state.busy) return;
     /* ★ 同步段发起 getUserMedia，前面不许有 await（pitfalls #121） */
     var p = navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
@@ -4446,7 +4480,6 @@ function bindVoice(btn, inputEl, onText){
 
   btn.addEventListener('pointerup', function(){
     if(!VoiceInput.isLive()) return;
-    if(Date.now() - pressAt < 300){ handsFree = true; hint('录音中 · 点击结束'); return; }
     VoiceInput.end();
   });
 
@@ -4460,20 +4493,73 @@ function bindVoice(btn, inputEl, onText){
 })();
 bindVoice(document.getElementById('voiceBtn'), document.getElementById('chatInput'), send);
 
+/* ================= 会话内文档上传：仅作本轮会话的 AI 参考，不进知识库 =================
+   后端把附件正文解析后作为该会话的参考文档下发给 agent（RunService.resolveAttachments）；
+   不进知识库、其它会话不可见，重开本会话仍可用。附件 id 数组随 createRun 的 attachments 下发。 */
+var pendingFiles = [];
+/* 由「附件对象数组」渲染一行 📎 文件名回执（兼容 message.attachments 与 pendingFiles 两种来源）。
+   attachments 元素形如 {file_id,name,text,truncated}，也可能带 error；这里只取展示名。 */
+function attachMetaLine(atts){
+  if(!atts || !atts.length) return '';
+  var names = [];
+  for(var i=0;i<atts.length;i++){
+    var nm = atts[i] && (atts[i].name || atts[i].originalName);
+    if(nm) names.push(nm);
+  }
+  if(!names.length) return '';
+  return '<div class="meta-line">📎 ' + names.map(esc).join('、') + '</div>';
+}
+function renderAttachStrip(){
+  var strip = $('attachStrip'); if(!strip) return;
+  strip.innerHTML = pendingFiles.map(function(f){
+    var name = f.pending ? ('⏳ ' + f.name) : f.name;
+    return '<span class="attach-chip" data-id="'+esc(f.id)+'">'
+      + '<span class="ac-name">'+esc(name)+'</span>'
+      + '<button type="button" class="ac-x" aria-label="移除" onclick="removeAttach(\''+esc(f.id)+'\')">×</button>'
+      + '</span>';
+  }).join('');
+  strip.style.display = strip.children.length ? 'flex' : 'none';
+}
+function removeAttach(id){
+  pendingFiles = pendingFiles.filter(function(f){ return f.id !== id; });
+  renderAttachStrip();
+}
+function onAttachFiles(input){
+  var files = input.files ? Array.prototype.slice.call(input.files) : [];
+  files.forEach(function(file){
+    var ph = {id:'__up_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name:file.name, pending:true};
+    pendingFiles.push(ph); renderAttachStrip();
+    API.fileUpload(file).then(function(d){
+      var i = pendingFiles.findIndex(function(f){ return f.id === ph.id; });
+      if(i >= 0) pendingFiles[i] = {id:String(d.id), name:d.name || file.name};
+      renderAttachStrip();
+    }).catch(function(e){
+      var i = pendingFiles.findIndex(function(f){ return f.id === ph.id; });
+      if(i >= 0) pendingFiles.splice(i,1);
+      renderAttachStrip();
+      toast('上传失败：' + (e.message||'未知错误'));
+    });
+  });
+  input.value = '';   /* 复位，允许同名文件二次选择（否则 change 不触发） */
+}
+
 async function send(){
   if(state.busy) return;
   const input = $('chatInput');
   const q = input.value.trim();
-  if(!q){ toast('请输入问题'); return; }
+  if(!q && !pendingFiles.length){ toast('请输入问题或上传文档'); return; }
+  const effectiveQ = q || '请解析我上传的文档';
   // 未选任何功能时不再拦人：直接落到默认 AI（内置通用助手）承接本轮对话，
   // 因此这里没有「请先选择一位专家」这条断头路。
   if(!state.chatExpert) ensureDefaultChatTarget();
   ensureChatPage();
   input.value = '';
-  state.lastQuery = q;
+  state.lastQuery = effectiveQ;
   const m = $('msgs');
+  var userBubble = esc(effectiveQ);
+  if(pendingFiles.length) userBubble += attachMetaLine(pendingFiles);
   m.insertAdjacentHTML('beforeend',
-    '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+esc(q)+'</div></div>');
+    '<div class="msg me"><div class="avatar">'+icon('user')+'</div><div class="bubble">'+userBubble+'</div></div>');
   m.scrollTop = m.scrollHeight;
 
   /* 额度准入（FR-G6 三分支）。以服务端 /quota 的 exhausted 为唯一判据：
@@ -4498,8 +4584,10 @@ async function send(){
   let text = '';
   try{
     const convId = await API.ensureConversation();
-    const run = await API.createRun(convId, q, {kb_on:state.kbOn, expert:state.chatExpert.name});
+    const run = await API.createRun(convId, effectiveQ, {kb_on:state.kbOn, expert:state.chatExpert.name},
+                                    pendingFiles.map(function(f){ return f.id; }));
     state.runId = run.id || run.runId;
+    pendingFiles = []; renderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(state.runId, {
       onStarted: p => { $('chatModel').textContent = '模型：' + modelTier(p.model); },
       onDelta: t => { text += t; bubble.textContent = text; m.scrollTop = m.scrollHeight; },
@@ -4553,8 +4641,10 @@ function historyBubble(m){
   // AI 侧同样走 formatAnswer：回看历史时读到的是同一种版式，不出现「当场看是富文本、
   // 翻记录变一坨纯文本」的不一致。
   const body = mine ? esc(m.content||'') : formatAnswer(m.content||'');
+  // 用户消息若带附件（会话内上传的参考文档，不进知识库），补一行 📎 文件名
+  const att = mine ? attachMetaLine(m.attachments) : '';
   return '<div class="msg'+(mine?' me':'')+'"><div class="avatar">'+icon(ico)+'</div>'+
-         '<div class="bubble'+(mine?'':' ans')+'">'+body+'</div></div>';
+         '<div class="bubble'+(mine?'':' ans')+'">'+body+att+'</div></div>';
 }
 async function openHistory(){
   const mask = document.createElement('div');
@@ -4596,7 +4686,7 @@ async function toggleHistoryDetail(id, el){
     box.innerHTML = (msgs.length
         ? msgs.map(m=>'<div class="hist-msg'+(m.role==='user'?' me':'')+'">'+
             '<span class="who">'+(m.role==='user'?'我':'AI')+'</span>'+
-            '<div class="txt">'+esc(m.content||'')+'</div></div>').join('')
+            '<div class="txt">'+esc(m.content||'')+'</div>'+ attachMetaLine(m.attachments) +'</div>').join('')
         : '<div class="perm-tip">该会话暂无消息</div>')
       + '<div style="margin-top:6px"><button class="btn ghost small" '
       + 'onclick="event.stopPropagation();resumeConversation('+id+')">继续此会话</button></div>';

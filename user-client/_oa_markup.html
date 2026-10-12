@@ -43,12 +43,15 @@
         <svg class="ic" style="width:13px;height:13px"><use href="#i-info"/></svg>点击数字人，选择「数字员工」或「专家」
       </div>
 
+      <div class="attach-strip" id="oaAttachStrip"></div>
+      <input type="file" id="oaAttachFile" multiple hidden accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.log">
       <div class="composer">
-        <button class="cbtn" id="oaMicBtn" aria-label="长按说话" title="长按说话"><svg class="ic" style="width:17px;height:17px"><use href="#i-mic"/></svg></button>
+        <button class="cbtn" id="oaMicBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:17px;height:17px"><use href="#i-mic"/></svg></button>
         <div class="box">
-          <input id="oaInput" placeholder="描述你的办公需求" aria-label="描述你的办公需求">
+          <input id="oaInput" placeholder="发消息或按住说话…" aria-label="发消息或按住说话">
           <button class="cbtn" id="oaStop" aria-label="停止生成" style="display:none"><svg class="ic" style="width:17px;height:17px"><use href="#i-lock"/></svg></button>
         </div>
+        <button class="cbtn" id="oaAttachBtn" aria-label="上传文档" title="上传文档供 AI 参考（不进知识库）">＋</button>
         <button class="cbtn send" id="oaSendBtn" aria-label="发送"><svg class="ic" style="width:19px;height:19px"><use href="#i-send"/></svg></button>
       </div>
     </section>
