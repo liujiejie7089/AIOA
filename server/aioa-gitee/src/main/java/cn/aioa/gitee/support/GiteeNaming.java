@@ -66,6 +66,9 @@ public final class GiteeNaming {
             }
         }
         String out = sb.toString();
+        // L1：折叠相邻连字符为单个（如中文段坍塌后产生的 "sim--1002" → "sim-1002"）。
+        // 必须在首尾清理之前做，因为折叠可能把 "a--" 变成 "a-"，尾清理再裁掉多余的 "-"。
+        out = out.replaceAll("-{2,}", "-");
         while (out.startsWith("-") || out.startsWith(".")) {
             out = out.substring(1);
         }
