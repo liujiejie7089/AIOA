@@ -50,8 +50,12 @@ public class AuthController {
 
     @PostMapping("/auth/refresh")
     public ApiResponse<Map<String, Object>> refresh(@RequestBody RefreshRequest body) {
-        String access = authService.refresh(body.refreshToken());
-        return ApiResponse.ok(Map.of("accessToken", access));
+        AuthService.RefreshData data = authService.refresh(body.refreshToken());
+        // H-7：一并返回新 refresh token（已轮换），客户端须持久化它用于下一次刷新。
+        return ApiResponse.ok(Map.of(
+                "accessToken", data.accessToken(),
+                "refreshToken", data.refreshToken(),
+                "expiresIn", data.expiresIn()));
     }
 
     /**

@@ -75,6 +75,12 @@ public class AuthService {
     }
 
     /**
+     * 刷新结果（H-7）：同时返回新 access 与新 refresh（refresh 已轮换，旧 refresh 立即失效）。
+     */
+    public record RefreshData(String accessToken, String refreshToken, long expiresIn) {
+    }
+
+    /**
      * 登录返回的用户摘要。
      *
      * <p>tenantId / institutionId 是前端的数据锚点：没有它，前端无法判断当前账号属于哪个租户/机构，
@@ -232,7 +238,18 @@ public class AuthService {
         return sb.toString();
     }
 
-    public String refresh(String refreshToken) {
+    /**
+     * 刷新：签发新 access，并<b>轮换 refresh</b>（H-7）。
+     *
+     * <p><b>轮换语义</b>：旧 refresh 的 jti 在成功刷新后立即写入 {@code revoked_token}
+     * （复用既有的 {@link DbTokenRevocationChecker} 吊销存储，不新增表）。于是被截获的旧
+     * refresh 只能用一次——第二次使用会因 jti 已吊销而失败，逼迫重新登录。刷新接口必须
+     * 一并返回<b>新</b> refresh token，客户端须持久化它用于下一次刷新。</p>
+     *
+     * <p>登出（logout）同样会吊销 refresh jti，因此「已登出再用旧 refresh」与「已刷新再用旧
+     * refresh」走同一条吊销检查，统一拒绝。</p>
+     */
+    public RefreshData refresh(String refreshToken) {
         Claims claims;
         try {
             claims = jwtTokenProvider.parse(refreshToken);
@@ -242,9 +259,17 @@ public class AuthService {
         if (!JwtTokenProvider.TYPE_REFRESH.equals(claims.get(JwtTokenProvider.CLAIM_TYPE, String.class))) {
             throw new BizException(1003, "令牌类型错误");
         }
-        // D-1：登出同时吊销 refresh token —— 否则登出后用 refresh 换一张新 access 即可绕过。
-        if (revocationChecker.isRevoked(claims.getId())) {
-            throw new BizException(1003, "refreshToken 已失效（账号已登出），请重新登录");
+        String oldJti = claims.getId();
+        // 先行吊销检查：旧 refresh 若已被登出 / 前次刷新吊销，直接拒绝（D-1）。
+        if (oldJti != null && !oldJti.isBlank() && revocationChecker.isRevoked(oldJti)) {
+            throw new BizException(1003, "refreshToken 已失效（已被刷新或账号已登出），请重新登录");
+        }
+        // H-7：旧 refresh 用一次即废——刷新成功后立刻吊销其 jti。
+        if (oldJti != null && !oldJti.isBlank()) {
+            Object rawUid = claims.get(JwtTokenProvider.CLAIM_UID);
+            Long uid = rawUid instanceof Number n ? n.longValue() : null;
+            revocationChecker.revoke(oldJti, uid, JwtTokenProvider.TYPE_REFRESH,
+                    JwtTokenProvider.expiryOf(claims), "REFRESH_ROTATE");
         }
         SysUser user = userMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, claims.getSubject()));
@@ -252,7 +277,10 @@ public class AuthService {
             throw new BizException(1003, "用户不存在");
         }
         List<String> roles = roleCodesOf(user.getId());
-        return jwtTokenProvider.generateAccessToken(toAuthUser(user, roles));
+        AuthUser auth = toAuthUser(user, roles);
+        String access = jwtTokenProvider.generateAccessToken(auth);
+        String newRefresh = jwtTokenProvider.generateRefreshToken(auth);
+        return new RefreshData(access, newRefresh, jwtTokenProvider.accessTtlSeconds());
     }
 
     public record MeData(long id, String username, String nickname, List<String> roles,
