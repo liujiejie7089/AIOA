@@ -31,10 +31,26 @@ BLOCKED_MODULES = {"os", "sys", "subprocess", "socket", "shutil", "pathlib",
                    "requests", "urllib", "http", "ftplib", "pickle", "importlib",
                    "ctypes", "multiprocessing", "threading", "builtins"}
 
-# 禁止的调用名（避免用 __builtins__ 绕过）
+# 禁止的调用名 / 属性名（避免用 __builtins__ 绕过）。
+# 同时覆盖「作为函数名调用」与「作为对象属性访问」两种形态：
+# 原仅 Name 形调用（如 eval(...)）被拦，属性形（如 pandas.read_pickle /
+# os.popen / obj.__subclasses__）漏拦，存在 RCE 越权缺口，这里一并补齐。
 BLOCKED_NAMES = {"open", "eval", "exec", "compile", "__import__", "globals", "locals",
                  "vars", "setattr", "delattr", "input", "memoryview",
-                 "breakpoint", "exit", "quit", "help"}
+                 "breakpoint", "exit", "quit", "help",
+                 # 补齐：对象方法 / 属性形态的危险名
+                 "read_pickle", "to_pickle", "pickle", "popen", "system", "spawn",
+                 "importlib", "os", "sys", "subprocess", "socket", "ctypes"}
+
+# 明确禁止的 dunder 属性（防 __subclasses__ / __globals__ / __builtins__ 等 RCE 链）。
+# 不按「所有 dunder」一刀切，以免误伤合法脚本里的 __init__ / __len__ 等；
+# 仅封锁已知可用于逃逸沙箱的敏感 dunder。
+BLOCKED_DUNDERS = {
+    "__globals__", "__subclasses__", "__builtins__", "__bases__", "__mro__",
+    "__class__", "__code__", "__closure__", "__func__", "__self__",
+    "__dict__", "__getattribute__", "__reduce__", "__reduce_ex__",
+    "__subclasshook__", "__wrapped__", "__base__", "__basicsize__",
+}
 
 # 允许的 AST 节点类型（保守白名单）
 ALLOWED_NODES = {
@@ -81,6 +97,12 @@ def _validate_ast(source: str) -> str | None:
                 return f"禁止导入模块：{name}"
             if name not in ALLOWED_IMPORTS:
                 return f"仅允许导入：{', '.join(sorted(ALLOWED_IMPORTS))}（收到 {name}）"
+        if isinstance(node, ast.Attribute):
+            attr = node.attr
+            if attr in BLOCKED_DUNDERS:
+                return f"禁止访问危险属性：{attr}"
+            if attr in BLOCKED_NAMES:
+                return f"禁止访问危险属性：{attr}"
         if isinstance(node, ast.Call):
             func = node.func
             if isinstance(func, ast.Name) and func.id in BLOCKED_NAMES:
