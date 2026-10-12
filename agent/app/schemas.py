@@ -60,6 +60,8 @@ class RunRequest(BaseModel):
     # 职责范围（V21）：会话绑定数字员工时下发，用于限定回答边界（越界拒答）
     # 键：worker_id / name / role / role_name / duty / permission
     scope: dict[str, Any] | None = None
+    # 当前项目（有项目会话时由后端下发，键名照抄后端契约）：{id,name,type,status}
+    project: dict[str, Any] | None = None
     # 专家生效配置（方案 P4 / B5）：由后端 ExpertConfigService.resolve 下发，
     # 键：enabled/visibleScope/kbScope/model/temperature/topK/threshold/retrievalMode/tools/sort/chunkSize/chunkOverlap
     # agent 据此真实驱动推理与检索，并把最终值回传 message.completed.effective_params。

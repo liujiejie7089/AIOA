@@ -62,6 +62,15 @@ public class AgentRunRequest {
      */
     private Map<String, Object> scope;
 
+    /**
+     * 当前项目简报（下发 Agent 侧供本轮回答参考）：由后端在「项目会话」里下发，
+     * 键名照抄后端契约 {@code PmAiScopePort.projectBrief}：{@code id / name / type / status}。
+     * 不绑定数字员工的项目会话同样会携带，避免 Agent 反问「上传到哪个系统或平台」；
+     * 项目名以库为准，不由前端传入。
+     */
+    @JsonProperty("project")
+    private Map<String, Object> project;
+
     /** 一条历史消息（role ∈ user/assistant）。 */
     public record ChatTurn(String role, String content) {
     }

@@ -256,6 +256,14 @@ public class RunService {
             request.setScope(buildScope(conversation.getWorkerId(),
                     conversation.getProjectId(), conversation.getTenantId()));
         }
+        // 项目维度与「是否绑定数字员工」解耦：未绑数字人的项目会话同样要告诉 agent 当前项目，
+        // 否则 agent 会反问「上传到哪个系统或平台」（实测缺陷）。项目名以库为准，不由前端传入。
+        if (conversation != null && conversation.getProjectId() != null && conversation.getProjectId() > 0L) {
+            Map<String, Object> brief = pmAiScopePort.projectBrief(conversation.getTenantId(), conversation.getProjectId());
+            if (brief != null) {
+                request.setProject(brief);
+            }
+        }
         try {
             subscription[0] = agentWebClient.post()
                     .uri("/internal/v1/runs")

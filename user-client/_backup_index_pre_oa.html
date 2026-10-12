@@ -984,7 +984,7 @@
           <div class="ch-main">
             <span class="cname" id="chatName" data-page-node-id="4E4MaIkN53EepafxMezGtF">会话</span>
             <div class="ch-sub">
-              <span class="cmodel" id="chatModel" data-page-node-id="WwOf4Y5EjqaAAMC6cC7LOD">模型：智能路由</span>
+              <span class="cmodel" id="chatModel" data-page-node-id="WwOf4Y5EjqaAAMC6cC7LOD"></span>
               <span class="scope-badge" id="scopeBadge" style="display:none" data-page-node-id="Scp1Badge7Vq2Mx4Ka9Lp"></span>
             </div>
           </div>
@@ -1577,7 +1577,7 @@ const API = {
           const t = pickText(ev.data); if(t) h.onDelta(t);
         }else if(ev.event === 'message.completed'){
           const p = safeJson(ev.data);
-          h.onUsage(pickUsage(p));
+          if(h.onUsage) h.onUsage(pickUsage(p));
           if(h.onCompleted) h.onCompleted(p);
         }else if(ev.event === 'approval.required'){
           const p = safeJson(ev.data); if(p && h.onApproval) h.onApproval(p);
@@ -3183,7 +3183,7 @@ function useAgent(i){
   $('chatName').textContent = w.name;
   // G-4：角色名已在「#chatName」与「职责限定」徽标各出现一次，这里不再重复；
   // 该行只承载模型档位（首 token 到达后由 modelTier 更新）
-  $('chatModel').textContent = '模型：智能路由';
+  $('chatModel').textContent = '';
   go('page-chat'); activateChatTab();
   $('pageTitle').innerHTML = '与数字员工对话<span class="ver">V1.2</span>';
   const chips = (isLeaveCapable()
@@ -4108,7 +4108,7 @@ function startDefaultChat(){
   state.conversationId = null;
   setChatWorker(null);
   $('chatName').textContent = state.chatExpert.name;
-  $('chatModel').textContent = '模型：智能路由';
+  $('chatModel').textContent = '';
   go('page-chat'); activateChatTab(); setTitle('page-chat');
   const e = state.chatExpert;
   const recs = (e.recs||[]).map(q =>
@@ -4126,7 +4126,7 @@ function ensureDefaultChatTarget(){
   state.conversationId = null;
   setChatWorker(null);
   $('chatName').textContent = state.chatExpert.name;
-  $('chatModel').textContent = '模型：智能路由';
+  $('chatModel').textContent = '';
 }
 /* 保证会话页是激活的：send() 也会被首页推荐问句等入口调用，
    此时若会话页未激活，回答会被写进隐藏容器 —— 用户看到的现象是「点了没反应」。 */
@@ -4321,7 +4321,7 @@ function startChat(i){
   state.conversationId = null;
   setChatWorker(null);
   $('chatName').textContent = e.name;
-  $('chatModel').textContent = '模型：智能路由';
+  $('chatModel').textContent = '';
   go('page-chat'); activateChatTab(); setTitle('page-chat');
   const m = $('msgs');
   const recs = (e.recs||[]).map(q=>'<span class="chip" onclick="quickAsk(this,\''+esc(q).replace(/'/g,"\\'")+'\')">'+esc(q)+'</span>').join('');
@@ -4631,15 +4631,10 @@ async function send(){
     state.runId = run.id || run.runId;
     pendingFiles = []; renderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(state.runId, {
-      onStarted: p => { $('chatModel').textContent = '模型：' + modelTier(p.model); },
       onDelta: t => { text += t; bubble.textContent = text; m.scrollTop = m.scrollHeight; },
       onUsage: u => {
         if(!u) return;
         state.lastUsage = u;
-        const extra = document.createElement('div');
-        extra.className = 'meta-line';
-        extra.textContent = '本次消耗 ' + fmt(u.total) + ' 词元（输入 '+fmt(u.prompt)+' / 输出 '+fmt(u.completion)+'）· 已入账本并留痕';
-        bubble.parentNode.appendChild(extra);
       },
       onCompleted: p => {
         const cites = (p && (p.citations || (p.data && p.data.citations))) || [];

@@ -1646,22 +1646,7 @@ async function oaSend(){
     S.controller = null;
     S.pendingFiles = []; oaRenderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(runId, {
-      onStarted: function(p){
-        if(!p || !p.model) return;
-        var m = document.createElement('div');
-        m.className = 'bub-meta';
-        m.textContent = '模型：' + (typeof modelTier === 'function' ? modelTier(p.model) : p.model);
-        bubble.appendChild(m);
-      },
       onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
-      onUsage: function(u){
-        if(!u) return;
-        var m = document.createElement('div');
-        m.className = 'bub-meta';
-        m.textContent = '本次消耗 ' + fmt(u.total) + ' 词元（输入 ' + fmt(u.prompt) + ' / 输出 ' + fmt(u.completion) + '）';
-        bubble.appendChild(m);
-        oaLayoutTails();
-      },
       onCompleted: function(p){
         var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
         cites.slice(0, 3).forEach(function(c){

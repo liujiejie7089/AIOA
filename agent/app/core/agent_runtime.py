@@ -25,6 +25,7 @@ import httpx
 
 from app.config import settings
 from app.core import answer_shape
+from app.core import worker_intake
 from app.core.guards import GuardError, WallClock, check_text_len
 from app.core.orchestrator import SubTask, stream_run
 from app.model_gateway import gateway
@@ -211,6 +212,52 @@ def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
             bits.append(f"实体ID={_wrap_field('ctx.entityId', ctx.entityId)}")
         if bits:
             sys_parts.append("页面上下文：" + "，".join(bits) + "。")
+    # 当前项目上下文（后端在有项目会话时下发，键名照抄后端契约 {id,name,type,status}）。
+    # 目的：让模型明确「用户在本项目会话中提问默认针对该项目」，不再反问上传到哪个系统/平台。
+    # 项目名/类型为库里数据，用 _wrap_field 包裹防注入；缺失时不追加任何内容，保持与改动前逐字一致。
+    if req.project and req.project.get("id") is not None:
+        pid = req.project.get("id")
+        pname = _wrap_field("project.name", req.project.get("name"))
+        ptype = _wrap_field("project.type", req.project.get("type"))
+        sys_parts.append(
+            f"当前项目：《{pname}》（id={pid}，类型={ptype}）。"
+            "用户在本项目会话中提问时默认针对该项目；不要反问用户在哪个系统或平台。")
+    # 动作提示：把「本轮回应的正确姿态」显式告诉模型，修两类已核实缺陷——
+    # ① H5 已自行打开上传/上报窗口，模型却答「我无法直接处理文件上传」（来源矛盾）；
+    # ② 用户要「新建数字人」，模型却说要申请 worker:manage（真实是 worker:create 默认开放）。
+    # 只在有对应动作时追加，无动作时保持与改动前逐字一致。
+    action = worker_intake.detect_action(req.text)
+    if action == "UPLOAD_FILE":
+        if req.project and req.project.get("id") is not None:
+            sys_parts.append(
+                "本轮用户诉求已被识别为「上传文件」。用户端会为当前项目直接打开上传窗口 —— "
+                "你只需一句话确认（例如「正在为你打开上传窗口，请选择文件。」），不要重复描述窗口细节，"
+                "更不要回复「我无法直接操作」「请使用系统/平台提供的上传功能」「请确认你要上传到哪个平台」这类话。")
+        else:
+            sys_parts.append(
+                "本轮用户诉求已被识别为「上传文件」。用户端会提示用户先进入一个项目再上传 —— "
+                "你只需一句话说明，不要给通用上传教程。")
+    elif action == "REPORT_EXPENSE":
+        if req.project and req.project.get("id") is not None:
+            sys_parts.append(
+                "本轮用户诉求已被识别为「上报花费」。用户端会为当前项目直接打开花费上报窗口 —— "
+                "你只需一句话确认（例如「正在为你打开花费上报窗口，请填写金额。」），不要重复描述窗口细节，"
+                "更不要回复「我无法直接操作」「请使用系统/平台提供的相关功能」这类话。")
+        else:
+            sys_parts.append(
+                "本轮用户诉求已被识别为「上报花费」。用户端会提示用户先进入一个项目再上报 —— "
+                "你只需一句话说明，不要给通用上报教程。")
+    elif action == "CREATE_WORKER":
+        sys_parts.append(
+            "本轮用户诉求已被识别为「创建数字员工」。创建是界面能力：用户端「专家与员工」页有"
+            "「＋ 创建数字员工」入口（管理端亦可），所需权限 worker:create 对全体登录用户默认开放。"
+            "不要说需要申请 worker:manage，不要调用权限申请工具，不要回复无法操作；用一句话把入口告诉用户即可。")
+    # 全局硬规则：无论有无动作都生效，杜绝能力否认话术（例如「我无法直接处理文件上传」），
+    # 改让用户要求执行某动作时说明具体入口或界面提供的入口。
+    sys_parts.append(
+        "禁止输出「我无法直接操作系统或平台」「我无法直接处理文件上传」"
+        "「我无法直接打开上传窗口」这类能力否认话术；用户要求你执行某个动作时，"
+        "说明具体入口或由界面提供的入口，不要给泛泛的通用教程。")
     # 对话内上传的参考文档：作为独立上下文块追加到 system 提示末尾（详见 _build_attachment_block）。
     # 无附件时不追加任何内容，保证与改动前逐字一致。
     if req.attachment_docs:

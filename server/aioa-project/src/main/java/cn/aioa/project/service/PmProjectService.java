@@ -262,6 +262,33 @@ public class PmProjectService {
         return v;
     }
 
+    /**
+     * 当前项目简报（只读，供 Agent 会话上下文下发）。
+     *
+     * <p>不调 {@link #requireVisible}（它会要 AuthUser 且对非成员抛异常）；这里只按
+     * tenantId 一致 + 未软删做最小校验 —— 调用方（{@code RunService}）已完成可见性判定。</p>
+     *
+     * @return {@code {id, name, type, status}}（type=projectType），任一不匹配返回 null
+     */
+    public Map<String, Object> briefForAgent(Long tenantId, Long projectId) {
+        if (projectId == null || projectId <= 0L) {
+            return null;
+        }
+        PmProject p = projectMapper.selectById(projectId);
+        if (p == null || p.getDeletedAt() != null) {
+            return null;
+        }
+        if (!Objects.equals(p.getTenantId(), tenantId)) {
+            return null;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", p.getId());
+        m.put("name", p.getName());
+        m.put("type", p.getProjectType());
+        m.put("status", p.getStatus());
+        return m;
+    }
+
     private Map<String, Object> toView(AuthUser user, PmProject p, long[] taskStat, long memberCount) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", p.getId());

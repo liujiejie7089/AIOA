@@ -32,4 +32,17 @@ public interface PmAiScopePort {
      * 供 {@code RunService} 组装数字人 scope 下发。
      */
     Map<String, Object> effectiveScope(Long tenantId, Long projectId, Long workerId);
+
+    /**
+     * 当前项目简报（只读）：供 {@code RunService} 在「未绑定数字员工」的项目会话里也把项目上下文
+     * 下发到 Agent，避免 Agent 反问「上传到哪个系统或平台」。
+     *
+     * <p>返回结构固定为 {@code {id, name, type, status}}（{@code type}=projectType）。</p>
+     *
+     * <p><b>不做鉴权、不抛 403</b>：调用方（{@code RunService}）已完成「该会话属于该租户的项目」
+     * 这类可见性判定，本方法只负责把库里的项目名等字段原样取出。
+     * 以下情形返回 {@code null}：{@code projectId} 为空 / 查不到 / 已软删（{@code deletedAt != null}）
+     * / 租户不符。</p>
+     */
+    Map<String, Object> projectBrief(Long tenantId, Long projectId);
 }
