@@ -8,11 +8,13 @@
 
 ## 1. 它现在是什么状态
 
-不是骨架：四端可跑、60 个 Flyway 迁移、30 个端到端套件全绿。
+不是骨架：四端可跑、81 个 Flyway 迁移（最新 V81）、47 个端到端套件全绿。
+
+> 数字口径 last-verified: 2026-10-12（迁移 81 = `find server -path '*/src/main/resources/db/migration/V*.sql' | wc -l`（**必须限定 `src/main/resources`**：`server/aioa-boot/target/classes/db/migration/` 里有构建复制件，去掉该限定会数出 162）× 版本号去重后 81、最新 V81；模块 12 = `grep -c '<module>' server/pom.xml`（parent pom 不计）；e2e 套件 47 = `ls scripts/e2e_*.py | wc -l`（磁盘计数，该目录被 gitignore 故不数 git）。
 
 - **统一工作台（Vue3 + wujie 微前端）**：业务系统作为子应用嵌入，全局 AI 助手感知
   「用户在哪一页、选中了哪个实体」，在哪问就答哪。
-- **Java 业务后端（Spring Boot 3.3 / JDK 21，10 个 Maven 模块）**：认证 / RBAC /
+- **Java 业务后端（Spring Boot 3.3 / JDK 21，12 个 Maven 模块）**：认证 / RBAC /
   多租户组织域 / 审批引擎 / 会话 / 计费 / 审计。
 - **Python Agent 服务（FastAPI）**：模型网关（多 provider）、真实流式推理、工具调用
   循环、**多任务协同编排器**（依赖分层 + 同层并发 + 依赖失败跳过）。
@@ -42,11 +44,11 @@ aioa/
 │   ├── aioa-bridge/          # ★ 工具注册表 + 定义驱动调用网关
 │   ├── aioa-tool-sdk/        # ★ 注解式工具 SDK（@AioaTool / @AioaToolParam）
 │   ├── aioa-gitee/           # 代码托管联动（Gitee / Gitea 双实现）
-│   └── aioa-boot/            # 启动模块 + Flyway 迁移（V1..V60）
+│   └── aioa-boot/            # 启动模块 + Flyway 迁移（V1..V81）
 ├── agent/                # Python（FastAPI）
 │   └── app/core/             # runtime 门面 / agent_runtime / orchestrator / multi_task
 ├── user-client/          # 用户端单文件 H5
-├── scripts/              # 端到端验收套件（30 个，见第 5 节）
+├── scripts/              # 端到端验收套件（47 个，见第 5 节）
 └── start-all.sh          # 一键起全部服务（幂等，按端口探测）
 ```
 
@@ -105,7 +107,7 @@ Kubernetes 清单见 `deploy/k8s/`（未经真机集群验证，按自身环境�
 ## 5. 测试
 
 **判据是端到端套件，不是单测覆盖率。** Java 侧几乎没有单测，Python 侧有 pytest，
-真正拦回归的是 `scripts/` 下 30 个套件：
+真正拦回归的是 `scripts/` 下 47 个套件：
 
 ```bash
 # Python agent 单测（79 条）
