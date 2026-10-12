@@ -158,6 +158,23 @@ async def probe(page):
     return await page.evaluate(PROBE)
 
 
+async def ensure_send_visible(page):
+    """把输入栏右侧的「＋/发送」同槽互斥位切到**发送**态，让 .cbtn.send 参与判定。
+
+    本轮改造（单胶囊 + 加号变发送）后，发送按钮在**空输入时按设计 display:none**；
+    而 pick() 只认可见元素、挑不到即记 missing，agg 的收集循环又会跳过 missing ⇒
+    .cbtn.send 会从 C（品牌填充）/E（命中区）里**静默消失**：报告依旧「失败 0 项」，
+    但这两条不再守着发送按钮。旧全量日志 logs/regression_all.log:1839/1855 可证它们原本在跑
+    （C .cbtn.send 5.04 / E .cbtn.send 44x44）。故探针前显式给它一个「有文字」的真实展示态。
+    """
+    await page.evaluate("""() => {
+        const i = document.getElementById('oaInput');
+        if (!i) return;
+        i.value = '探针';
+        if (window.oaSyncInput) window.oaSyncInput();
+    }""")
+
+
 async def main():
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(channel='msedge', headless=True)
@@ -184,6 +201,7 @@ async def main():
         stages = [('首页', 'home'), ('我的', 'me'), ('知识库', 'kb')]
         for label, view in stages:
             await goto_view(page, view)
+            await ensure_send_visible(page)
             r = await probe(page)
             for k, v in r.items():
                 agg.setdefault(k, {})
@@ -211,6 +229,15 @@ async def main():
         # 这不是恒真断言 —— 作用域一旦被改回裸选择器，就会捞进经典节点，这里立刻变红。
         outside = sorted({s for d in agg.values() for s, e in d.items() if not e.get('inOA')})
         chk('探针口径：参与判定的元素全部在 #oaRoot 内', not outside, outside)
+
+        # 覆盖自检（防「静默缩水」）：下列元素**本该**被判定到，缺任一个就是覆盖丢了。
+        # 这不是恒真断言 —— 一旦发送按钮又变回默认隐藏、或选择器被改动，它立刻变红。
+        # 起因：单胶囊改造把 #oaSendBtn 改成空输入时 display:none，pick() 判 missing 后
+        # agg 的收集循环直接跳过，C（品牌填充）/E（命中区）两条**无声地不再跑**
+        # —— 报告仍写「失败 0 项」，实际已不再守着发送按钮（旧日志 regression_all.log 里它在跑）。
+        _miss_fill = [s for s in ['.cbtn.send'] if s not in agg.get('fill', {})]
+        chk('覆盖自检：.cbtn.send 参与判定（不得因隐藏而静默缺失）',
+            not _miss_fill, '缺失=%s' % _miss_fill)
 
         # ---- A. 阴影梯级 ----
         print('\n--- A. 阴影梯级（按层角色逐层验） ---')

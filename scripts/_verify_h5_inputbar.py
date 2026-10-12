@@ -14,6 +14,7 @@ h5-inputbar-verify —— 独立验证「语音停录修复 + 输入栏重排 + 
 用法： python scripts/_verify_h5_inputbar.py
 """
 import functools
+import hashlib
 import http.server
 import json
 import os
@@ -297,6 +298,9 @@ def main():
             reset_probe(page)
             page.evaluate("go('page-chat')")
             page.wait_for_timeout(300)
+            # 新交互：空输入时才显示 #attachBtn，有文字时显示 #sendBtn
+            page.evaluate("document.getElementById('chatInput').value=''; syncClassicInput();")
+            page.wait_for_timeout(100)
             with page.expect_file_chooser() as fc:
                 page.click("#attachBtn")
             fc.value.set_files(A_TXT)
@@ -320,15 +324,41 @@ def main():
             if strip["chips"] >= 1:
                 page.evaluate("document.querySelector('#attachStrip .ac-x').click()")
                 page.wait_for_timeout(200)
+                # 移除文档(空输入又无附件) ⇒ 同槽位切回「＋」(#sendBtn 隐藏 / #attachBtn 可见)
+                vis_after_remove = page.evaluate(r"""() => {
+                  const a = document.getElementById('attachBtn');
+                  const s = document.getElementById('sendBtn');
+                  return {
+                    attachShown: a ? getComputedStyle(a).display !== 'none' : null,
+                    sendHidden: s ? getComputedStyle(s).display === 'none' : null
+                  };
+                }""")
+                rec("3. 移除文档(空输入)后: #attachBtn 可见且 #sendBtn 隐藏(槽位切回「＋」)",
+                    "PASS" if vis_after_remove.get("attachShown") is True and vis_after_remove.get("sendHidden") is True else "FAIL",
+                    "#attachBtn 可见 / #sendBtn 隐藏", vis_after_remove)
             strip2 = page.evaluate("document.getElementById('attachStrip').querySelectorAll('.attach-chip').length")
             rec("3. 点 × 后芯片消失", "PASS" if strip2 == 0 else "FAIL", 0, strip2)
             # 重新上传并发送(只传文档不写字)
             reset_probe(page)
+            page.evaluate("state.busy=false; document.getElementById('chatInput').value = ''; syncClassicInput();")
             with page.expect_file_chooser() as fc:
                 page.click("#attachBtn")
             fc.value.set_files(A_TXT)
             page.wait_for_timeout(500)
-            page.evaluate("state.busy=false; document.getElementById('chatInput').value = ''")
+            # 回归关键点：空输入 + 1 附件 ⇒ 右侧「发送」可见、「＋」隐藏
+            # （旧实现只按 hasText 切换，会把发送藏起来，使「只传文档」在 UI 上点不到）
+            vis_before_send = page.evaluate(r"""() => {
+              const a = document.getElementById('attachBtn');
+              const s = document.getElementById('sendBtn');
+              return {
+                sendShown: s ? getComputedStyle(s).display !== 'none' : null,
+                attachHidden: a ? getComputedStyle(a).display === 'none' : null
+              };
+            }""")
+            rec("3. 空输入 + 1 文档: #sendBtn 可见且 #attachBtn 隐藏(只传文档在 UI 上可达)",
+                "PASS" if vis_before_send["sendShown"] is True and vis_before_send["attachHidden"] is True else "FAIL",
+                "#sendBtn 可见 / #attachBtn 隐藏", vis_before_send)
+            # 点真按钮 #sendBtn（onclick 调 send()），不再绕过 UI 直接 evaluate
             page.click("#sendBtn")
             page.wait_for_timeout(500)
             cr = page.evaluate("window.__probe.createRunArgs")
@@ -340,13 +370,14 @@ def main():
             rec("3. 经典: 只传文档不写字 → 默认话术「请解析我上传的文档」",
                 "PASS" if txt_ok else "FAIL", "请解析我上传的文档", cr[1] if cr else None)
 
-            # ---------- 4. 回归：#sendBtn 普通发送 + 历史渲染不报错 ----------
+            # ---------- 4. 回归：空输入时禁止发送 + 历史渲染不报错 ----------
             reset_probe(page)
-            page.evaluate("state.busy=false; pendingFiles=[]; document.getElementById('chatInput').value=''; document.getElementById('attachStrip').innerHTML='';")
-            page.click("#sendBtn")
+            page.evaluate("state.busy=false; pendingFiles=[]; document.getElementById('chatInput').value=''; document.getElementById('attachStrip').innerHTML=''; syncClassicInput();")
+            # 空输入时 #sendBtn 隐藏，直接调用 send() 验证空输入不得发送
+            page.evaluate("send()")
             page.wait_for_timeout(300)
             toasts4 = page.evaluate("window.__probe.toasts.slice()")
-            rec("4. 空输入点 #sendBtn → 提示且不崩溃(无 pageerror)",
+            rec("4. 空输入 send() → 提示且不崩溃(无 pageerror)",
                 "PASS" if any("请输入" in t for t in toasts4) and not page_errors else "FAIL",
                 "出现「请输入…」且无JS异常", f"toasts={toasts4}; pageerrors={page_errors[-1:] if page_errors else []}")
             # historyBubble / attachMetaLine 纯函数：无附件不得出 📎、不得抛异常
@@ -399,6 +430,12 @@ def main():
             if oa_wired["attachExists"]:
                 reset_probe(page)
                 try:
+                    # 空输入时 #oaAttachBtn 才可见
+                    page.evaluate("""() => {
+                      var i = document.getElementById('oaInput'); if(i) i.value = '';
+                      if(window.oaSyncInput) window.oaSyncInput();
+                    }""")
+                    page.wait_for_timeout(100)
                     with page.expect_file_chooser() as fc:
                         page.click("#oaAttachBtn")
                     fc.value.set_files(A_TXT)
@@ -411,14 +448,43 @@ def main():
                     rec("3(OA). 点 #oaAttachBtn → 文件选入 #oaAttachFile → #oaAttachStrip 出芯片",
                         "PASS" if oastrip["chips"] >= 1 and "a.txt" in oastrip["name"] else "FAIL",
                         ">=1 芯片且含 a.txt", oastrip)
-                    # 发送(只传文档不写字)
+                    # 回归关键点（OA）：空输入 + 1 附件 ⇒ 右侧「发送」可见、「＋」隐藏
+                    oa_vis = page.evaluate(r"""() => {
+                      const a = document.getElementById('oaAttachBtn');
+                      const s = document.getElementById('oaSendBtn');
+                      return {
+                        sendShown: s ? getComputedStyle(s).display !== 'none' : null,
+                        attachHidden: a ? getComputedStyle(a).display === 'none' : null
+                      };
+                    }""")
+                    rec("3(OA). 空输入 + 1 文档: #oaSendBtn 可见且 #oaAttachBtn 隐藏(只传文档在 UI 上可达)",
+                        "PASS" if oa_vis["sendShown"] is True and oa_vis["attachHidden"] is True else "FAIL",
+                        "#oaSendBtn 可见 / #oaAttachBtn 隐藏", oa_vis)
+                    # 移除文档 ⇒ 同槽位切回「＋」
+                    page.evaluate("document.querySelector('#oaAttachStrip .ac-x').click()")
+                    page.wait_for_timeout(200)
+                    oa_vis2 = page.evaluate(r"""() => {
+                      const a = document.getElementById('oaAttachBtn');
+                      const s = document.getElementById('oaSendBtn');
+                      return {
+                        attachShown: a ? getComputedStyle(a).display !== 'none' : null,
+                        sendHidden: s ? getComputedStyle(s).display === 'none' : null
+                      };
+                    }""")
+                    rec("3(OA). 移除文档(空输入)后: #oaAttachBtn 可见且 #oaSendBtn 隐藏(槽位切回「＋」)",
+                        "PASS" if oa_vis2["attachShown"] is True and oa_vis2["sendHidden"] is True else "FAIL",
+                        "#oaAttachBtn 可见 / #oaSendBtn 隐藏", oa_vis2)
+                    # 重新上传并点真按钮 #oaSendBtn 发送（不再绕过 UI 直接 evaluate oaSend()）
                     reset_probe(page)
-                    page.evaluate("var i=document.getElementById('oaInput'); if(i) i.value='';")
+                    with page.expect_file_chooser() as fc:
+                        page.click("#oaAttachBtn")
+                    fc.value.set_files(A_TXT)
+                    page.wait_for_timeout(500)
                     page.click("#oaSendBtn")
                     page.wait_for_timeout(500)
                     oacr = page.evaluate("window.__probe.createRunArgs")
                     oa_att = bool(oacr) and len(oacr) >= 4 and oacr[3] == ["123"]
-                    rec("3(OA). oaSend: createRun 第4参 === ['123'](读桩实参)",
+                    rec("3(OA). oaSendBtn: createRun 第4参 === ['123'](读桩实参)",
                         "PASS" if oa_att else "FAIL", "['123']", oacr[3] if oacr else None,
                         f"full={oacr}")
                 except Exception as e:
@@ -444,7 +510,11 @@ def main():
     na = sum(1 for r in results if r["status"] == "NA")
     md = []
     md.append("# H5 输入栏改动 · 独立验证举证\n")
-    md.append(f"产品 md5（user-client/index.html）：`0da22adb551a1a9246ed7ef8a35e85cc`\n")
+    # 产品 md5 **从文件现算**，不写死常量：写死的值会在每次重建产物后失真。
+    # （旧版把 0da22adb… 写死在报告里，与实际产物 21409486… 不符 —— 违反「展示与事实同源」。）
+    _idx = os.path.join(USER_CLIENT, "index.html")
+    _md5 = hashlib.md5(open(_idx, "rb").read()).hexdigest() if os.path.exists(_idx) else "（index.html 不存在）"
+    md.append(f"产品 md5（user-client/index.html）：`{_md5}`\n")
     md.append(f"结论：PASS {passed} / FAIL {failed} / 无法验 {na}\n")
     md.append("| 项 | 状态 | 期望 | 实际 | 说明 |")
     md.append("|---|---|---|---|---|")

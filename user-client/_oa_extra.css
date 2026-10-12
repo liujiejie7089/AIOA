@@ -283,10 +283,8 @@
   color:var(--brand-ink);background:var(--brand-soft);
   border:1px solid var(--brand-line);border-radius:var(--r-sm);padding:6px 12px;
 }
-/* 语音 / 上传按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来（缺陷修复一半） */
-#oaMicBtn, #oaAttachBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-/* 「＋」上传按钮：全角加号居中（与经典侧视觉一致） */
-#oaAttachBtn{ font-size:18px; line-height:1; }
+/* 语音 / 上传 / 停止 / 发送按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来 */
+#oaMicBtn, #oaAttachBtn, #oaStop, #oaSendBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 /* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见（与经典侧共用类名） */
 .oa .attach-strip{ display:none; flex-wrap:wrap; gap:6px; padding:8px 10px 0; }
 .oa .attach-chip{ display:inline-flex; align-items:center; gap:4px; max-width:220px;
@@ -295,3 +293,13 @@
 .oa .attach-chip .ac-name{ max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .oa .attach-chip .ac-x{ border:0; background:transparent; color:inherit; cursor:pointer;
   font-size:13px; line-height:1; padding:0 0 0 2px; }
+
+/* ---- 输入栏胶囊改造：单胶囊内 mic | input | action，图标按钮无背景 ---- */
+.oa .composer{ background:transparent; }
+.oa .composer .box{ padding:0 8px 0 12px; }
+.oa .composer .box .cbtn{ background:transparent; color:var(--text-2); box-shadow:none; }
+.oa .composer .box .cbtn:hover{ background:var(--surface-3); }
+.oa .composer .box .input-action{ position:relative; width:44px; height:44px; flex-shrink:0; }
+.oa .composer .box .input-action .cbtn{ position:absolute; top:0; left:0; }
+.oa .composer .box .cbtn.send,
+.oa .composer .box .cbtn.stop{ background:transparent; color:var(--text-2); width:44px; height:44px; border-radius:50%; box-shadow:none; }

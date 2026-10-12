@@ -1550,6 +1550,7 @@ function oaRenderAttachStrip(){
       + '</span>';
   }).join('');
   strip.style.display = strip.children.length ? 'flex' : 'none';
+  oaSyncInput();   /* 附件条是 .box 的兄弟节点、不在 wrap 内，靠状态驱动右侧「＋⇄发送」 */
 }
 function oaRemoveAttach(id){
   S.pendingFiles = (S.pendingFiles||[]).filter(function(f){ return f.id !== id; });
@@ -1593,6 +1594,8 @@ async function oaSend(){
   // 流式文本必须写进 .tx —— 直接写 bubble.textContent 会把三角节点一起抹掉（三角会凭空消失）
   var tx = bubble.querySelector('.tx');
   S.busy = true;
+  var action = $o('oaAttachBtn') && $o('oaAttachBtn').parentElement;
+  if(action) action.style.display = 'none';
   var stop = $o('oaStop'); if(stop) stop.style.display = '';
   var text = '';
   var answered = false;
@@ -1651,6 +1654,8 @@ async function oaSend(){
   }finally{
     S.busy = false;
     if(stop) stop.style.display = 'none';
+    if(action) action.style.display = '';
+    oaSyncInput();
     oaScrollDock();
     oaLayoutTails();
     refreshShared();
@@ -1665,6 +1670,11 @@ async function oaStop(){
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }
+}
+
+/* 根据 OA 输入框内容 / 附着文档切换「＋」与「发送」图标（文档状态由 S.pendingFiles 注入） */
+function oaSyncInput(){
+  syncInputAction($o('oaInput'), S.pendingFiles && S.pendingFiles.length > 0);
 }
 
 /* 新对话：清空对话坞与会话绑定（不动经典形态的 state.conversationId） */
@@ -1698,7 +1708,7 @@ async function oaNewTask(){
       if(hit){
         toast('已识别为「' + (intent.roleName || code) + '」，交给 ' + (hit.name || '数字员工'));
         oaPickWorker(hit);
-        var i = $o('oaInput'); if(i){ i.value = text; oaSend(); }
+        var i = $o('oaInput'); if(i){ i.value = text; oaSyncInput(); oaSend(); }
       }else{
         toast(intent && intent.roleName
           ? ('识别为「' + intent.roleName + '」，当前无匹配的在册数字员工，请手动选择')
@@ -1851,7 +1861,7 @@ function oaTakeSuggestion(it, redo){
   if(!redo) return;
   var q = S.lastQuery;
   if(!q){ toast('还没有可重答的问题'); return; }
-  var i = $o('oaInput'); if(i) i.value = q;
+  var i = $o('oaInput'); if(i){ i.value = q; oaSyncInput(); }
   oaSend();
 }
 
@@ -2064,9 +2074,12 @@ function bind(){
   /* 语音输入：按住说话 → 后端转文字 → 复用 oaSend 发出（录音模块与经典形态共用 bindVoice） */
   var mic = $o('oaMicBtn'); if(mic && typeof bindVoice === 'function') bindVoice(mic, $o('oaInput'), oaSend);
   var input = $o('oaInput');
-  if(input) input.addEventListener('keydown', function(e){
-    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); oaSend(); }
-  });
+  if(input){
+    input.addEventListener('input', oaSyncInput);
+    input.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); oaSend(); }
+    });
+  }
   var dockList = dockEl();
   if(dockList) dockList.addEventListener('scroll', function(){ oaLayoutTails(); });
   /* 气泡的入场动画 bub-in 会在「首页从 display:none 恢复显示」时整体重放（浏览器行为）。
@@ -2176,6 +2189,7 @@ function oaBoot(){
 }
 window.oaBoot = oaBoot;
 window.oaSetMode = setMode;
+window.oaRemoveAttach = oaRemoveAttach;   /* 附件条 × 用内联 onclick 触发，需暴露到全局作用域 */
 window.oaLayoutTails = oaLayoutTails;
 window.oaState = S;
 /* 自检暴露（与上面 4 个同一定位：只给离线验证脚本用，产品路径不经过它）。
@@ -2183,6 +2197,11 @@ window.oaState = S;
    不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；
    暴露后可由 scripts/_verify_oa_action_popup.py 直接驱动判定函数并断言真的弹了窗。 */
 window.oaMaybeProjectAction = oaMaybeProjectAction;
+/* 把发送与输入栏同步函数暴露给 H5 输入栏离线验证脚本：
+   新交互下空输入时发送按钮隐藏，脚本需要直接调用函数完成空输入/只传文档等场景断言。 */
+window.oaSend = oaSend;
+window.oaSyncInput = oaSyncInput;
+
 /* 同一定位：把「进入项目」也暴露给离线自检脚本。
    进入项目会同时改动三件事（项目上下文 / 项目专属会话 / 对话坞历史），
    而用户明确要求「上一次会话记忆不能丢失」—— 这是唯一能离线证伪该点的入口：

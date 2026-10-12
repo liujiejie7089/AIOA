@@ -503,14 +503,28 @@
   }
   .quota-warn .ic{width:13px;height:13px}
   .input-bar{
-    background:var(--surface);border-top:1px solid var(--border);padding:8px 10px;
-    display:flex;gap:8px;align-items:center;flex-shrink:0;
+    background:transparent;border-top:none;padding:8px 14px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .input-bar .pill{
+    flex:1;max-width:680px;display:flex;gap:6px;align-items:center;min-height:40px;
+    border:1px solid var(--border);border-radius:999px;padding:8px 14px;background:var(--surface);
   }
   .input-bar input{
-    flex:1;border:1px solid var(--border);border-radius:var(--r-full);padding:8px 14px;
-    font-size:12.5px;outline:none;background:var(--surface-2);font-family:inherit;min-width:0;color:var(--text);
+    flex:1;border:0;outline:none;background:transparent;border-radius:0;padding:0;
+    font-size:13px;font-family:inherit;min-width:0;color:var(--text);
   }
-  .input-bar input:focus{border-color:var(--blue);background:var(--surface)}
+  .input-bar input:focus{background:transparent}
+  .ic-btn{
+    width:36px;height:36px;border:0;background:transparent;color:var(--text-2);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
+    padding:0;border-radius:50%;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  }
+  .ic-btn:hover{background:var(--surface-3)}
+  .ic-btn:active{transform:scale(.95)}
+  .ic-btn .ic{width:18px;height:18px}
+  .input-action{position:relative;width:36px;height:36px;flex-shrink:0}
+  .input-action .ic-btn{position:absolute;top:0;left:0}
   .kb-chip{
     font-size:11px;color:var(--blue);background:var(--blue-soft);border:1px solid var(--blue-line);
     border-radius:var(--r-full);padding:5px 10px;cursor:pointer;white-space:nowrap;
@@ -518,11 +532,9 @@
   }
   .kb-chip .ic{width:13px;height:13px}
   .kb-chip.off{color:var(--text-2);background:var(--surface-3);border-color:var(--border)}
-  /* 语音按钮 / 上传按钮：关掉浏览器手势接管，否则触屏上 pointercancel 会抢走手势，
+  /* 语音按钮 / 上传按钮 / 发送按钮：关掉浏览器手势接管，否则触屏上 pointercancel 会抢走手势，
      导致录音既停不下来也发不出去（缺陷修复的一半） */
-  #voiceBtn, #attachBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-  /* 「＋」上传按钮：全角加号居中 */
-  #attachBtn{ font-size:18px; line-height:1; }
+  #voiceBtn, #attachBtn, #sendBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   /* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见 */
   .attach-strip{ display:none; flex-wrap:wrap; gap:6px; padding:8px 10px 0; }
   .attach-chip{ display:inline-flex; align-items:center; gap:4px; max-width:220px;
@@ -1450,10 +1462,8 @@
   color:var(--brand-ink);background:var(--brand-soft);
   border:1px solid var(--brand-line);border-radius:var(--r-sm);padding:6px 12px;
 }
-/* 语音 / 上传按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来（缺陷修复一半） */
-#oaMicBtn, #oaAttachBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-/* 「＋」上传按钮：全角加号居中（与经典侧视觉一致） */
-#oaAttachBtn{ font-size:18px; line-height:1; }
+/* 语音 / 上传 / 停止 / 发送按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来 */
+#oaMicBtn, #oaAttachBtn, #oaStop, #oaSendBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 /* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见（与经典侧共用类名） */
 .oa .attach-strip{ display:none; flex-wrap:wrap; gap:6px; padding:8px 10px 0; }
 .oa .attach-chip{ display:inline-flex; align-items:center; gap:4px; max-width:220px;
@@ -1462,6 +1472,16 @@
 .oa .attach-chip .ac-name{ max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .oa .attach-chip .ac-x{ border:0; background:transparent; color:inherit; cursor:pointer;
   font-size:13px; line-height:1; padding:0 0 0 2px; }
+
+/* ---- 输入栏胶囊改造：单胶囊内 mic | input | action，图标按钮无背景 ---- */
+.oa .composer{ background:transparent; }
+.oa .composer .box{ padding:0 8px 0 12px; }
+.oa .composer .box .cbtn{ background:transparent; color:var(--text-2); box-shadow:none; }
+.oa .composer .box .cbtn:hover{ background:var(--surface-3); }
+.oa .composer .box .input-action{ position:relative; width:44px; height:44px; flex-shrink:0; }
+.oa .composer .box .input-action .cbtn{ position:absolute; top:0; left:0; }
+.oa .composer .box .cbtn.send,
+.oa .composer .box .cbtn.stop{ background:transparent; color:var(--text-2); width:44px; height:44px; border-radius:50%; box-shadow:none; }
 
 /* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */
 /* ============================================================================
@@ -1865,10 +1885,14 @@
                accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.log"
                onchange="onAttachFiles(this)">
         <div class="input-bar">
-          <button class="btn small" id="voiceBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:15px;height:15px"><use href="#i-mic"/></svg></button>
-          <input id="chatInput" placeholder="发消息或按住说话…" onkeydown="if(event.key==='Enter')send()">
-          <button class="btn small" id="attachBtn" aria-label="上传文档" title="上传文档供 AI 参考（不进知识库）" onclick="document.getElementById('attachFile').click()">＋</button>
-          <button class="btn small" onclick="send()" id="sendBtn">发送</button>
+          <div class="pill">
+            <button class="ic-btn" id="voiceBtn" aria-label="按住说话" title="按住说话"><svg class="ic"><use href="#i-mic"/></svg></button>
+            <input id="chatInput" placeholder="发消息或按住说话…" onkeydown="if(event.key==='Enter')send()">
+            <div class="input-action">
+              <button class="ic-btn" id="attachBtn" aria-label="上传文档" title="上传文档供 AI 参考（不进知识库）" onclick="document.getElementById('attachFile').click()"><svg class="ic"><use href="#i-plus"/></svg></button>
+              <button class="ic-btn" id="sendBtn" aria-label="发送" title="发送" onclick="send()" style="display:none"><svg class="ic"><use href="#i-send"/></svg></button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2218,13 +2242,15 @@
       <div class="attach-strip" id="oaAttachStrip"></div>
       <input type="file" id="oaAttachFile" multiple hidden accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.log">
       <div class="composer">
-        <button class="cbtn" id="oaMicBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:17px;height:17px"><use href="#i-mic"/></svg></button>
         <div class="box">
+          <button class="cbtn" id="oaMicBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:17px;height:17px"><use href="#i-mic"/></svg></button>
           <input id="oaInput" placeholder="发消息或按住说话…" aria-label="发消息或按住说话">
-          <button class="cbtn" id="oaStop" aria-label="停止生成" style="display:none"><svg class="ic" style="width:17px;height:17px"><use href="#i-lock"/></svg></button>
+          <div class="input-action">
+            <button class="cbtn" id="oaAttachBtn" aria-label="上传文档" title="上传文档供 AI 参考（不进知识库）"><svg class="ic" style="width:17px;height:17px"><use href="#i-plus"/></svg></button>
+            <button class="cbtn send" id="oaSendBtn" aria-label="发送" style="display:none"><svg class="ic" style="width:19px;height:19px"><use href="#i-send"/></svg></button>
+            <button class="cbtn stop" id="oaStop" aria-label="停止生成" style="display:none"><svg class="ic" style="width:17px;height:17px"><use href="#i-lock"/></svg></button>
+          </div>
         </div>
-        <button class="cbtn" id="oaAttachBtn" aria-label="上传文档" title="上传文档供 AI 参考（不进知识库）">＋</button>
-        <button class="cbtn send" id="oaSendBtn" aria-label="发送"><svg class="ic" style="width:19px;height:19px"><use href="#i-send"/></svg></button>
       </div>
     </section>
 
@@ -3162,6 +3188,7 @@ function askSuggest(){
   const sug = $('todaySuggest');
   startChat(Number(sug.dataset.idx||0));
   $('chatInput').value = sug.dataset.q || '';
+  syncClassicInput();
   send();
 }
 
@@ -5423,6 +5450,7 @@ function reAnswer(action){
     ensureChatPage();
   }
   $('chatInput').value = q;
+  syncClassicInput();
   send();
 }
 function guidanceBlock(){
@@ -5462,7 +5490,7 @@ function startChat(i){
     (recs ? '<div class="chips">'+recs+'</div>' : '')+'</div></div>';
   m.scrollTop = m.scrollHeight;
 }
-function quickAsk(el, q){ $('chatInput').value = q || el.textContent; send(); }
+function quickAsk(el, q){ $('chatInput').value = q || el.textContent; syncClassicInput(); send(); }
 function toggleKB(){
   state.kbOn = !state.kbOn;
   const c = $('kbChip');
@@ -5607,6 +5635,7 @@ function bindVoice(btn, inputEl, onText){
         var text = String((d && d.text) || '').trim();
         if(!text){ toast('没听清，请再说一次'); return; }
         inputEl.value = text;
+        syncInputAction(inputEl);                        /* 切到发送图标 */
         onText();                                        /* 交回各形态自己的发送 */
       }).catch(function(err){
         hint(ph);
@@ -5643,6 +5672,27 @@ function bindVoice(btn, inputEl, onText){
 })();
 bindVoice(document.getElementById('voiceBtn'), document.getElementById('chatInput'), send);
 
+/* 根据输入框是否有文字 / 是否附着文档切换「＋」与「发送」图标（经典 + OA 共用） */
+function syncInputAction(inputEl, hasAttachments){
+  if(!inputEl) return;
+  var wrap = inputEl.closest && inputEl.closest('.pill, .box');
+  if(!wrap) wrap = inputEl.parentElement;
+  if(!wrap) return;
+  var hasText = !!(inputEl.value && inputEl.value.trim());
+  var showSend = !!hasText || !!hasAttachments;
+  var att = wrap.querySelector('#attachBtn') || wrap.querySelector('#oaAttachBtn');
+  var snd = wrap.querySelector('#sendBtn') || wrap.querySelector('#oaSendBtn');
+  if(att) att.style.display = showSend ? 'none' : '';
+  if(snd) snd.style.display = showSend ? '' : 'none';
+}
+/* hasAttachments：经典走 pendingFiles（留在闭包外层，不在此函数里直接摸）；
+   OA 走 S.pendingFiles，由 oaSyncInput 注入，syncInputAction 不感知 S。 */
+function syncClassicInput(){ syncInputAction($('chatInput'), pendingFiles && pendingFiles.length > 0); }
+(function bindInputToggle(){
+  var input = $('chatInput');
+  if(input) input.addEventListener('input', syncClassicInput);
+})();
+
 /* ================= 会话内文档上传：仅作本轮会话的 AI 参考，不进知识库 =================
    后端把附件正文解析后作为该会话的参考文档下发给 agent（RunService.resolveAttachments）；
    不进知识库、其它会话不可见，重开本会话仍可用。附件 id 数组随 createRun 的 attachments 下发。 */
@@ -5669,6 +5719,7 @@ function renderAttachStrip(){
       + '</span>';
   }).join('');
   strip.style.display = strip.children.length ? 'flex' : 'none';
+  syncClassicInput();   /* 附件条是 .pill 的兄弟节点、不在 wrap 内，靠状态驱动右侧「＋⇄发送」 */
 }
 function removeAttach(id){
   pendingFiles = pendingFiles.filter(function(f){ return f.id !== id; });
@@ -5704,6 +5755,7 @@ async function send(){
   if(!state.chatExpert) ensureDefaultChatTarget();
   ensureChatPage();
   input.value = '';
+  syncClassicInput();
   state.lastQuery = effectiveQ;
   const m = $('msgs');
   var userBubble = esc(effectiveQ);
@@ -6295,6 +6347,7 @@ function genDocInChat(name){
   const words = ($('pWords') && $('pWords').value) || '800 字左右';
   const type  = ($('pType') && $('pType').value) || '通知';
   $('chatInput').value = '请按以下参数生成' + type + '：主题为「' + topic + '」，篇幅 ' + words + '。要求格式规范、可直接对外发布。';
+  syncClassicInput();
   send();
 }
 
@@ -7882,6 +7935,7 @@ function oaRenderAttachStrip(){
       + '</span>';
   }).join('');
   strip.style.display = strip.children.length ? 'flex' : 'none';
+  oaSyncInput();   /* 附件条是 .box 的兄弟节点、不在 wrap 内，靠状态驱动右侧「＋⇄发送」 */
 }
 function oaRemoveAttach(id){
   S.pendingFiles = (S.pendingFiles||[]).filter(function(f){ return f.id !== id; });
@@ -7925,6 +7979,8 @@ async function oaSend(){
   // 流式文本必须写进 .tx —— 直接写 bubble.textContent 会把三角节点一起抹掉（三角会凭空消失）
   var tx = bubble.querySelector('.tx');
   S.busy = true;
+  var action = $o('oaAttachBtn') && $o('oaAttachBtn').parentElement;
+  if(action) action.style.display = 'none';
   var stop = $o('oaStop'); if(stop) stop.style.display = '';
   var text = '';
   var answered = false;
@@ -7983,6 +8039,8 @@ async function oaSend(){
   }finally{
     S.busy = false;
     if(stop) stop.style.display = 'none';
+    if(action) action.style.display = '';
+    oaSyncInput();
     oaScrollDock();
     oaLayoutTails();
     refreshShared();
@@ -7997,6 +8055,11 @@ async function oaStop(){
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }
+}
+
+/* 根据 OA 输入框内容 / 附着文档切换「＋」与「发送」图标（文档状态由 S.pendingFiles 注入） */
+function oaSyncInput(){
+  syncInputAction($o('oaInput'), S.pendingFiles && S.pendingFiles.length > 0);
 }
 
 /* 新对话：清空对话坞与会话绑定（不动经典形态的 state.conversationId） */
@@ -8030,7 +8093,7 @@ async function oaNewTask(){
       if(hit){
         toast('已识别为「' + (intent.roleName || code) + '」，交给 ' + (hit.name || '数字员工'));
         oaPickWorker(hit);
-        var i = $o('oaInput'); if(i){ i.value = text; oaSend(); }
+        var i = $o('oaInput'); if(i){ i.value = text; oaSyncInput(); oaSend(); }
       }else{
         toast(intent && intent.roleName
           ? ('识别为「' + intent.roleName + '」，当前无匹配的在册数字员工，请手动选择')
@@ -8183,7 +8246,7 @@ function oaTakeSuggestion(it, redo){
   if(!redo) return;
   var q = S.lastQuery;
   if(!q){ toast('还没有可重答的问题'); return; }
-  var i = $o('oaInput'); if(i) i.value = q;
+  var i = $o('oaInput'); if(i){ i.value = q; oaSyncInput(); }
   oaSend();
 }
 
@@ -8396,9 +8459,12 @@ function bind(){
   /* 语音输入：按住说话 → 后端转文字 → 复用 oaSend 发出（录音模块与经典形态共用 bindVoice） */
   var mic = $o('oaMicBtn'); if(mic && typeof bindVoice === 'function') bindVoice(mic, $o('oaInput'), oaSend);
   var input = $o('oaInput');
-  if(input) input.addEventListener('keydown', function(e){
-    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); oaSend(); }
-  });
+  if(input){
+    input.addEventListener('input', oaSyncInput);
+    input.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); oaSend(); }
+    });
+  }
   var dockList = dockEl();
   if(dockList) dockList.addEventListener('scroll', function(){ oaLayoutTails(); });
   /* 气泡的入场动画 bub-in 会在「首页从 display:none 恢复显示」时整体重放（浏览器行为）。
@@ -8508,6 +8574,7 @@ function oaBoot(){
 }
 window.oaBoot = oaBoot;
 window.oaSetMode = setMode;
+window.oaRemoveAttach = oaRemoveAttach;   /* 附件条 × 用内联 onclick 触发，需暴露到全局作用域 */
 window.oaLayoutTails = oaLayoutTails;
 window.oaState = S;
 /* 自检暴露（与上面 4 个同一定位：只给离线验证脚本用，产品路径不经过它）。
@@ -8515,6 +8582,11 @@ window.oaState = S;
    不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；
    暴露后可由 scripts/_verify_oa_action_popup.py 直接驱动判定函数并断言真的弹了窗。 */
 window.oaMaybeProjectAction = oaMaybeProjectAction;
+/* 把发送与输入栏同步函数暴露给 H5 输入栏离线验证脚本：
+   新交互下空输入时发送按钮隐藏，脚本需要直接调用函数完成空输入/只传文档等场景断言。 */
+window.oaSend = oaSend;
+window.oaSyncInput = oaSyncInput;
+
 /* 同一定位：把「进入项目」也暴露给离线自检脚本。
    进入项目会同时改动三件事（项目上下文 / 项目专属会话 / 对话坞历史），
    而用户明确要求「上一次会话记忆不能丢失」—— 这是唯一能离线证伪该点的入口：
