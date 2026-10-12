@@ -5,22 +5,32 @@ _check_voice_gesture.py —— 语音输入「手势状态机」哨兵（矩阵�
 
 为什么要有它
 ------------
-本轮修的缺陷是「点击录音按钮后无法正常结束录音」：用户松手时 getUserMedia 还没返回，
-旧的 `end()` 里 `if(!rec) return;` 直接放弃 ⇒ 之后麦克风一到，录音才开始，
-且再没有任何人来停它（永久录下去）。
+本轮修的缺陷是「点击录音按钮后无法正常结束录音」，根因在纯 JS 状态机（无浏览器即可复跑证明）：
+  (1) 旧 bindVoice 的 pointerup 里 `if(Date.now()-pressAt<300){ handsFree=true; ... return; }`
+      —— 短按进入**隐藏免提**继续录音，要再点一次才结束（哨兵 S3 抓住的偏离）。
+  (2) 旧 bindVoice 的 pointerdown 首行 `if(state.busy) return;` —— 一旦 busy 就进不到「结束」分支，
+      录音停不下来（哨兵 S6 抓住的偏离）。
 本环境无法真机验证麦克风（需 HTTPS + 设备，docs/47 §0），但**缺陷本体是纯 JS 状态机**，
 可以脱离浏览器用桩跑出来 —— 真实断言在 `scripts/_check_voice_gesture.js`（Node）。
 本文件是薄壳：矩阵(_run_all_regression.sh)只跑 *.py，故由它调用 Node 引擎并归并退出码。
 
+修正后的手势语义（哨兵要证明的「正确」）
+----------------------------------------
+  · 纯「按住说话」：pointerdown 开始 → pointerup 结束并发送（免提/短按进免提已删除）。
+  · VoiceInput 内 MIN_MS=300；end() 若已开始录音且 now-t0<MIN_MS ⇒ 误触(too-short)不发送，
+    并由 bindVoice 用 toast 提示「按住说话…」（断言读 toast 桩，不读 placeholder 文案）。
+  · done 回调签名 done(blob, why)，why∈'too-short'|'cancelled'|'no-media'|null。
+  · 「结束」优先于 busy：pointerdown 先判 if(isLive()){end();return;} 再判 if(state.busy) return;。
+
 判据不读界面副本（铁律 12）
 ---------------------------
 断言盯的是 **MediaRecorder 是否真的被 start/stop**、**asrTranscribe 被调用几次**、
-**拿到的 blob 是不是 null**，而不是 placeholder 文案（文案只是提示，不是事实源）。
+**拿到的 blob 是不是 null、toast 桩被调了什么**，而不是 placeholder 文案（文案只是提示，不是事实源）。
 
 用法
 ----
   python scripts/_check_voice_gesture.py            # 常态：源 + 产物 两份都必须 0 失败
-  python scripts/_check_voice_gesture.py --selftest # 判别力证明：旧版(HEAD)必须为红
+  python scripts/_check_voice_gesture.py --selftest # 判别力证明：旧版(HEAD)必须为红（S3/S6 必红）
 退出码 = 失败数（0 才算通过）；前置不满足（找不到 node / 找不到被测文件）以 2 报错，不伪装 PASS。
 """
 import os
