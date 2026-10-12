@@ -264,9 +264,17 @@ async def main():
         om2 = await page.evaluate("() => document.querySelector('.phone').classList.contains('oa-mode')")
         chk('C1 前置：已切回经典形态', om2 is False)
         await page.evaluate("() => go('page-me')")
-        await page.wait_for_timeout(1200)
         vbtn = '#kbList button[onclick="openKbDoc(%s)"]' % ids['c']
-        chk('C2 经典列表出现「查看」按钮', await page.query_selector(vbtn) is not None,
+        # ★必须等：经典列表是 go('page-me') 之后才**异步拉**的，非等待的 query_selector
+        # 会在矩阵满载时抢跑 ⇒ 假红。2026-10-12 实测：全量矩阵里 C2 红、单独跑绿，
+        # 且紧随其后的 `page.click(vbtn)`（自带等待）又能点到 —— 典型竞态。
+        # 口径同本项目「正向断言一律等明确的 DOM 条件」。
+        try:
+            await page.wait_for_selector(vbtn, timeout=20000)
+            ok_vbtn = True
+        except Exception:
+            ok_vbtn = False
+        chk('C2 经典列表出现「查看」按钮', ok_vbtn,
             await page.eval_on_selector('#kbList', 'el=>el.innerText.slice(0,90)')
             if await page.query_selector('#kbList') else 'no list')
         await page.click(vbtn)
