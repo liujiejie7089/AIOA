@@ -1,6 +1,7 @@
 package cn.aioa.gitee.service;
 
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.security.EffectiveHostGuard;
 import cn.aioa.gitee.config.GiteeConfig;
 import cn.aioa.gitee.config.PlatformConfigOverlay;
 import cn.aioa.gitee.config.PlatformConfigOverlay.Field;
@@ -124,6 +125,7 @@ public class GiteePlatformConfigService {
     private final PlatformConfigOverlay overlay;
     private final RepoProviderSettings props;
     private final GiteeConfig giteeConfig;
+    private final EffectiveHostGuard hostGuard;
 
     // ======================================================================
     // 加载与生效
@@ -425,14 +427,20 @@ public class GiteePlatformConfigService {
         }
     }
 
-    /** 非空的 URL 字段必须是 http(s) 绝对地址（否则会在调用时才炸，且报错离配置点很远）。 */
+    /**
+     * 非空的 URL 字段必须经共用 host 守卫（H-2，铁律：唯一判定点）。
+     * 仅允许 http(s)，并拒回环/RFC1918/link-local/0.0.0.0（prod 下默认禁止，
+     * 本地 E2E 通过 aioa.security.allow-private-hosts 放行 127.0.0.1 桩）。
+     */
     private void checkUrl(String v, String label) {
         if (!StringUtils.hasText(v)) {
             return;
         }
         String s = v.trim();
-        if (!s.startsWith("http://") && !s.startsWith("https://")) {
-            throw BizException.badRequest(label + " 必须是 http:// 或 https:// 开头的绝对地址：" + s);
+        try {
+            hostGuard.assertAllowed(s);
+        } catch (BizException e) {
+            throw new BizException(e.getCode(), label + "：" + e.getMessage());
         }
     }
 

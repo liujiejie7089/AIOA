@@ -3,6 +3,7 @@ package cn.aioa.bridge.service;
 import cn.aioa.bridge.entity.ToolDefinition;
 import cn.aioa.bridge.entity.ToolSystem;
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.security.EffectiveHostGuard;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -48,7 +49,23 @@ public class ToolDispatcher {
     private static final long DEFAULT_TIMEOUT_MS = 5_000L;
     private static final long DEFAULT_MAX_BYTES = 1_048_576L;
 
+    /**
+     * 进程级复用 HttpClient：每次调用重建会反复建连/走握手，且上传流若未显式关闭
+     * 还会泄漏。改成类级单例后，连接可被连接池复用。
+     *
+     * <p>铁律 #16：工具端点多为明文 http（uvicorn 桩/自建服务端），JDK HttpClient 默认
+     * HTTP/2 会先发 h2c 升级，被这类服务端拒绝、表现为「与业务无关的假象」。这里显式钉
+     * {@code HTTP_1_1}。connectTimeout 取 DEFAULT_TIMEOUT_MS（原每次调用也是
+     * {@code Math.min(timeout, DEFAULT_TIMEOUT_MS)}，上限即此值）。</p>
+     */
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofMillis(DEFAULT_TIMEOUT_MS))
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build();
+
     private final ObjectMapper objectMapper;
+    private final EffectiveHostGuard hostGuard;
 
     /**
      * 请求后端的产物。
@@ -70,6 +87,9 @@ public class ToolDispatcher {
         String method = def.getHttpMethod() == null || def.getHttpMethod().isBlank()
                 ? "GET" : def.getHttpMethod().trim().toUpperCase();
         String url = buildUrl(def, system);
+        // H-2：SSRF 防护（唯一判定点 = EffectiveHostGuard）。即使 endpoint 是绝对地址也在此兜底，
+        // 相对地址拼出 system.base_url 后同样受检；local E2E 通过 allow-private-hosts 放行 127.0.0.1 桩。
+        hostGuard.assertAllowed(url);
         long timeout = def.getTimeoutMs() != null ? def.getTimeoutMs()
                 : (system != null && system.getTimeoutMs() != null ? system.getTimeoutMs() : DEFAULT_TIMEOUT_MS);
         long maxBytes = def.getMaxBytes() != null && def.getMaxBytes() > 0 ? def.getMaxBytes() : DEFAULT_MAX_BYTES;
@@ -127,11 +147,7 @@ public class ToolDispatcher {
 
         long start = System.currentTimeMillis();
         try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(Math.min(timeout, DEFAULT_TIMEOUT_MS)))
-                    .followRedirects(HttpClient.Redirect.NEVER)
-                    .build();
-            HttpResponse<byte[]> resp = client.send(builder.build(),
+            HttpResponse<byte[]> resp = HTTP.send(builder.build(),
                     HttpResponse.BodyHandlers.ofByteArray());
             long cost = System.currentTimeMillis() - start;
             byte[] raw = resp.body() == null ? new byte[0] : resp.body();
