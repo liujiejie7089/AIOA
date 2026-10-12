@@ -30,19 +30,26 @@ kubectl apply -f 40-milvus.yaml
    因此 `etcd-data` / `milvus-minio-data` / `milvus-data` 三个 PVC 都是**可丢的**。
 5. 回滚 = 把 `AIOA_KB_STORE` 改回 `"mysql"` 重启，无需改代码。
 
-镜像需先构建推送（`aioa/server`、`aioa/agent`、`aioa/web`，Dockerfile 在 `deploy/`）：
+镜像需先构建推送（`aioa/server`、`aioa/agent`，Dockerfile 在 `deploy/`）：
 
 ```bash
 docker build -f deploy/Dockerfile.server -t aioa/server:latest .
 docker build -f deploy/Dockerfile.agent  -t aioa/agent:latest  agent/
-docker build -f deploy/Dockerfile.web    -t aioa/web:latest    .
 ```
+
+> **说明（docs/33 单端口改造）**：`aioa/web` 镜像**已不再需要**。`aioa-server` 镜像在构建期已把
+> 用户端 H5（`/app/h5`）与管理端 dist（`/app/web`）一并打进镜像（`deploy/Dockerfile.server` 阶段 1 + 阶段 3，
+> `COPY --from=web /out/h5 /app/h5` 与 `/out/web /app/web`），不再有独立的 `aioa-web` 容器 / 镜像。
+> 相应地，本目录下的 `30-web-ingress.yaml` 已删除 `Deployment aioa-web` 与 `Service aioa-web`，
+> Ingress 三个前缀统一指回 `aioa-server:8080`。
+> （`deploy/Dockerfile.web` 当前无构建管线引用——`deploy/ops/offline-images.sh` 的 `BUILT_IMAGES`
+> 仅剩 `aioa-server` / `aioa-agent` 两张——仅作为历史遗留文件保留，k8s 路径不再构建它。）
 
 ## 四个容易踩的点
 
 1. **Flyway 迁移与滚动更新**：server 用 `strategy: Recreate`，避免两个实例同时抢迁移锁。
    readinessProbe 的 `initialDelaySeconds` 给到 60s（首次冷启动 + 迁移可能很慢）。
-2. **SSE 必须关代理缓冲**：Ingress 与 nginx 两处都要关（`proxy_buffering off`），
+2. **SSE 必须关代理缓冲**：本清单的 Ingress annotation 必须关（`proxy_buffering off`，已配在 `30-web-ingress.yaml`）；k8s 路径没有独立的 nginx 层，
    否则流式回答会攒到结束才一次性到达前端——表现为「转圈很久然后突然全出来」。
 3. **uploads 必须是 ReadWriteMany**：附件与知识库原文落盘，多副本用 RWO 会调度失败。
 4. **agent 多副本前先改幂等缓存**：计划执行的回放缓存在进程内存里，多副本时重连可能

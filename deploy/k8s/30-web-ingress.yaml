@@ -1,67 +1,29 @@
 # =============================================================================
-# 前端（构建产物由 nginx 承载）与公网入口
+# 公网入口（单端口，docs/33 单端口部署改造）
 #
 # 唯一对外端口是 Ingress：server / agent 都是 ClusterIP，不直接暴露。
+# aioa-server :8080 一个端口同时提供三块内容（前端静态 + 业务接口），
+# 不需要任何边缘 nginx、也不需要独立的 aioa-web 镜像
+# （对应 compose 已删 nginx/web 服务，见 deploy/docker-compose.yml 头部与 §nginx 段）。
+#
+#   /aioa/h5/   用户端 H5（镜像内 /app/h5/index.html）
+#   /aioa/web/  管理端（镜像内 /app/web/，含 subapps/<name>/）
+#   /aioa/api/  业务接口（进入安全链前剥成 /api/** 复用既有控制器；/api/** 根前缀亦原样保留）
+#
+# ⇒ 本清单只保留 Ingress 一个对象；所有前缀统一指回 aioa-server:8080。
+#   原 aioa-web 的 Deployment + Service 已删除（镜像 aioa/web 已无构建管线引用，
+#   见 deploy/ops/offline-images.sh 的 BUILT_IMAGES 仅剩 aioa-server / aioa-agent）。
+#
 # SSE 必须关掉缓冲，否则流式回答会攒到结束才一次性到达前端：
-#   nginx 侧：proxy_buffering off;  （deploy/nginx/nginx.conf 已配置）
-#   Ingress 侧：见下方 annotation
+#   由下方 Ingress annotation 保证（k8s 路径没有独立的 nginx 层）。
 # =============================================================================
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: aioa-web
-  namespace: aioa
-  labels:
-    app: aioa-web
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: aioa-web
-  template:
-    metadata:
-      labels:
-        app: aioa-web
-    spec:
-      containers:
-        - name: web
-          image: aioa/web:latest
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 80
-          resources:
-            requests: { cpu: "100m", memory: "128Mi" }
-            limits:   { cpu: "500m", memory: "256Mi" }
-          readinessProbe:
-            httpGet: { path: /, port: 80 }
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet: { path: /, port: 80 }
-            initialDelaySeconds: 15
-            periodSeconds: 20
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: aioa-web
-  namespace: aioa
-spec:
-  selector:
-    app: aioa-web
-  ports:
-    - name: http
-      port: 80
-      targetPort: 80
-  type: ClusterIP
----
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: aioa
   namespace: aioa
   annotations:
-    # SSE：关掉代理缓冲 + 放宽读超时，否则流式回答会被攒到最后
+    # SSE：关掉代理缓冲 + 放宽读/发送超时，否则流式回答会被攒到最后
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
@@ -73,15 +35,24 @@ spec:
     - host: aioa.example.com
       http:
         paths:
+          # 单端口前缀：H5 / 管理端 / 接口三者同源，统一指回 aioa-server:8080
+          - path: /aioa
+            pathType: Prefix
+            backend:
+              service:
+                name: aioa-server
+                port: { number: 8080 }
+          # 旧口径根前缀（H5 在 /user 下推到的是 /api；既有探活脚本也打这里）
           - path: /api
             pathType: Prefix
             backend:
               service:
                 name: aioa-server
                 port: { number: 8080 }
+          # 兜底：所有未匹配前缀也进 aioa-server（含根路径、/aioa/h5、/aioa/web 等）
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: aioa-web
-                port: { number: 80 }
+                name: aioa-server
+                port: { number: 8080 }
