@@ -86,11 +86,27 @@ fi
 # 跑 httptools（= uvicorn[standard]，与 deploy/Dockerfile.agent 的生产镜像一致）时会丢，
 # 跑 h11 时会被 h11 悄悄兜住。auto 会让这个差异随 venv 是否装了 httptools 而漂移，
 # 于是「本地过、生产不过 / 本地掩盖了缺陷」都会发生。宁可启动即报错，也不要静默换实现。
+#
+# ★ 解释器必须用 agent/.venv，**不能**用上面的通用 PY：
+#   ASR（语音识别）依赖 faster-whisper（agent/pyproject.toml 的必装依赖），它只装在 agent/.venv 里。
+#   用 PY（envs/default）起 agent 时语音接口会直接 503「未安装 faster-whisper」，
+#   现象是「电脑端语音也用不了」——本机曾长期如此。agent/.venv 同时装有 httptools，
+#   故下面的 --http httptools 依旧成立（两个包都已实测确认存在）。
+#   缺了不静默退化：启动前明确喊出来，避免「以为语音能用」。
+ASR_PY="$ROOT/agent/.venv/Scripts/python.exe"
+if [ ! -f "$ASR_PY" ]; then
+  echo "[warn] 找不到 $ASR_PY ⇒ 本地语音识别（ASR）将不可用（改回通用 PY 启动 agent）。"
+  echo "       重建：python -m venv agent/.venv && agent/.venv/Scripts/python.exe -m pip install -e agent"
+  ASR_PY="$PY"
+elif ! "$ASR_PY" -c "import faster_whisper" >/dev/null 2>&1; then
+  echo "[warn] $ASR_PY 里没有 faster-whisper ⇒ 本地语音识别（ASR）将不可用。"
+  echo "       修复：\"$ASR_PY\" -m pip install faster-whisper"
+fi
 if port_up 8000; then
   echo "[skip] agent :8000 already running"
 else
   echo "[start] agent :8000 (logs/agent.log, --http httptools)"
-  ( cd agent && "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --http httptools ) > logs/agent.log 2>&1 &
+  ( cd agent && "$ASR_PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --http httptools ) > logs/agent.log 2>&1 &
 fi
 
 # ---- 用户端 H5 :5181（读 user-client/.env）----
