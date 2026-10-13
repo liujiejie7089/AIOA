@@ -2656,6 +2656,10 @@ const API = {
       return d.data;
     }));
   },
+  /* 语音可用性探测（服务端 Java→agent 的模型是否就绪）：
+     只给「麦克风按钮不可用就置灰」做降级用。**不可用它拦正常使用** ——
+     未登录/网络失败一律由调用方 fail-open 处理（详见 bindVoice）。 */
+  asrStatus(){ return this.req('/v1/asr/status'); },
 
   /* 业务域 */
   experts(){ return this.req('/v1/experts'); },
@@ -5674,6 +5678,47 @@ function bindVoice(btn, inputEl, onText){
   function hint(t){ inputEl.placeholder = t; }
   function idle(){ btn.classList.remove('rec'); hint(ph); }
 
+  /* 服务端 ASR 可用性：null=未知(不拦) / true=可用 / false=不可用(按钮置灰)。
+     纪律：**只有明确探测到不可用才置灰**；探测报错 / 未登录 / 环境没有该方法一律 fail-open。
+     否则「探测本身失败」会被误判成「语音不可用」，把本来能用的功能也关掉。
+     （纯状态机单测 _check_voice_gesture.js 的沙箱里 API 只有 asrTranscribe ⇒ 走 true 分支，不受影响。） */
+  var asrReady = null;
+  function markAsrDown(){
+    asrReady = false;
+    btn.disabled = true;
+    btn.title = '语音识别服务暂不可用，请联系管理员';
+  }
+  function probeAsr(){
+    if(asrReady !== null) return;
+    if(typeof API === 'undefined' || typeof API.asrStatus !== 'function'){ asrReady = true; return; }
+    try{
+      Promise.resolve(API.asrStatus()).then(function(d){
+        if(d && d.available === false && d.enabled !== true) markAsrDown();
+        else asrReady = true;
+      }).catch(function(){ /* 保持「未知」：下次按下再探（登录后 token 才有效） */ });
+    }catch(e){ /* 同上，保持「未知」 */ }
+  }
+
+  /* 手指滑出按钮也要能收尾：部分机型 setPointerCapture 不生效 ⇒ 录音停不下来。
+     录音期间在 window 上补一层 pointerup/pointercancel 兜底；靠 isLive() 保证只结束一次。
+     无 window.addEventListener 的环境（纯状态机单测）直接跳过，绝不让它崩。 */
+  function onGlobalEnd(){
+    disarmGlobalEnd();
+    if(VoiceInput.isLive()) VoiceInput.end();
+  }
+  function armGlobalEnd(){
+    if(!(window && window.addEventListener)) return;
+    disarmGlobalEnd();
+    window.addEventListener('pointerup', onGlobalEnd, true);
+    window.addEventListener('pointercancel', onGlobalEnd, true);
+  }
+  function disarmGlobalEnd(){
+    if(!(window && window.removeEventListener)) return;
+    window.removeEventListener('pointerup', onGlobalEnd, true);
+    window.removeEventListener('pointercancel', onGlobalEnd, true);
+  }
+  probeAsr();
+
   var hooks = {
     phase:function(on){
       btn.classList.toggle('rec', !!on);
@@ -5710,23 +5755,27 @@ function bindVoice(btn, inputEl, onText){
 
   btn.addEventListener('pointerdown', function(ev){
     ev.preventDefault();
+    if(asrReady === false){ toast('语音识别服务暂不可用，请联系管理员'); return; }
     if(VoiceInput.isLive()){ VoiceInput.end(); return; }   /* 录音中再按 = 结束并发送；绝不被 busy 拦 */
     if(state.busy) return;
+    probeAsr();                                            /* 首次按下时补探一次（登录后 token 才有效） */
     /* ★ 同步段发起 getUserMedia，前面不许有 await（pitfalls #121） */
     var p = navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}
     });
     /* 手指滑出按钮也要收到 pointerup，否则录音停不下来 */
     try{ btn.setPointerCapture(ev.pointerId); }catch(e){}
+    armGlobalEnd();
     VoiceInput.begin(p, hooks);
   });
 
   btn.addEventListener('pointerup', function(){
+    disarmGlobalEnd();
     if(!VoiceInput.isLive()) return;
     VoiceInput.end();
   });
 
-  btn.addEventListener('pointercancel', function(){ if(VoiceInput.isLive()) VoiceInput.abort(); });
+  btn.addEventListener('pointercancel', function(){ disarmGlobalEnd(); if(VoiceInput.isLive()) VoiceInput.abort(); });
 }
 /* 录音中按钮变红（两形态共用） */
 (function(){

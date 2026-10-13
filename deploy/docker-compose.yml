@@ -309,6 +309,15 @@ services:
       # M1 骨架 agent 为回声模型，不直连数据库；后续如需持久化（如 LangGraph checkpointer）
       # 复用统一 MySQL，DSN 形如：
       # AIOA_MYSQL_DSN: mysql://${MYSQL_USER:-aioa}:${MYSQL_PASSWORD:-}@${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aioa}
+
+      # ---- 语音识别（ASR）模型：挂卷只读进容器（docker 构建不 COPY 模型）----
+      #   宿主目录默认 ../agent/.models（相对 deploy/ 目录，即仓库的 agent/.models），
+      #   也可用 .env 的 AIOA_ASR_MODELS_DIR 指向别处；模型名默认 small（可改 AIOA_ASR_MODEL）。
+      #   ALLOW_DOWNLOAD 默认 0：生产机无外网，离线加载；目录缺失则 ASR 不可用（见下方 volumes 注释）。
+      #   （这三个键必须透传：不透传时 .env 里写 AIOA_ASR_* 是空转 —— 容器内会用 engine.py 的默认值）
+      AIOA_ASR_MODEL_DIR: /app/.models
+      AIOA_ASR_MODEL: ${AIOA_ASR_MODEL:-small}
+      AIOA_ASR_ALLOW_DOWNLOAD: ${AIOA_ASR_ALLOW_DOWNLOAD:-0}
       TZ: Asia/Shanghai
     expose:
       - "8000"
@@ -320,6 +329,18 @@ services:
     # 因此绑 127.0.0.1 —— agent 自身没有鉴权，绑 0.0.0.0 会等于把它暴露给整个内网。
     ports:
       - "127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000"
+    # ===========================================================================
+    # ★ ASR 模型挂载（只读）：这是手机端语音「模型 small 未就绪」报错的根因修复。
+    #   ① 宿主目录必须含 `small/`（model.bin / config.json / tokenizer.json / vocabulary.txt）；
+    #   ② 模型被 .gitignore 忽略、约 483MB，fresh clone 后需手工放置，
+    #      也可用 .env 的 AIOA_ASR_MODELS_DIR 指向别处；AIOA_ASR_MODEL 可改模型名（默认 small）。
+    #   ③ ⚠️ 宿主目录不存在时 Docker 会**静默建一个空目录**挂进去 ⇒ ASR 不可用
+    #      （接口 503、H5 麦克风置灰并提示「语音识别服务暂不可用」）—— 这正是本次手机端报错的原因，
+    #      别误判成别的 bug（也别把它当成「模型下载失败」去开 AIOA_ASR_ALLOW_DOWNLOAD）。
+    #   为什么不打进镜像：模型被 gitignore，且体积大、更新频繁，用挂卷更合适。
+    # ===========================================================================
+    volumes:
+      - ${AIOA_ASR_MODELS_DIR:-../agent/.models}:/app/.models:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s

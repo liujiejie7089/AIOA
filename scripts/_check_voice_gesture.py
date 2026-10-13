@@ -30,7 +30,7 @@ _check_voice_gesture.py —— 语音输入「手势状态机」哨兵（矩阵�
 用法
 ----
   python scripts/_check_voice_gesture.py            # 常态：源 + 产物 两份都必须 0 失败
-  python scripts/_check_voice_gesture.py --selftest # 判别力证明：旧版(HEAD)必须为红（S3/S6 必红）
+  python scripts/_check_voice_gesture.py --selftest # 判别力证明：**修复前版本**(见 PREFIX_REV)必须为红（S3/S6 必红）
 退出码 = 失败数（0 才算通过）；前置不满足（找不到 node / 找不到被测文件）以 2 报错，不伪装 PASS。
 """
 import os
@@ -42,6 +42,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENGINE = os.path.join(ROOT, "scripts", "_check_voice_gesture.js")
 MANAGED_NODE = r"C:/Users/刘尖尖/.workbuddy/binaries/node/versions/22.22.2-2/node.exe"
 OLD_DUMP = os.path.join(ROOT, "logs", "_voice_old.html")
+
+# ★ 判别力证明必须对着「确定的修复前版本」，不能对着 HEAD：
+#   修复一旦被提交，HEAD 就是**已修好**的版本，同一哨兵在它上面自然全绿，
+#   于是 --selftest 会误报「旧版竟然全绿 ⇒ 哨兵没有判别力」——那是假警报，不是真缺陷。
+#   故把「修复前版本」钉死成固定提交（曾因此假警报一次，见 2026-10-13）。
+PREFIX_REV = "10d26bc"   # = 66f8c24「修复语音「停不下来」」的父提交
+PREFIX_PATH = "user-client/_backup_index_pre_oa.html"
 
 def _out(s=""):
     try:
@@ -69,14 +76,15 @@ def run_engine(node, target):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 def selftest(node):
-    """判别力证明：把 HEAD（修复前）版本 dump 出来，同一哨兵必须为红。"""
-    _out("[selftest] 取出修复前版本：git show HEAD:user-client/_backup_index_pre_oa.html")
+    """判别力证明：把「修复前版本」dump 出来，同一哨兵必须为红。"""
+    _out("[selftest] 取出修复前版本：git show %s:%s" % (PREFIX_REV, PREFIX_PATH))
     os.makedirs(os.path.dirname(OLD_DUMP), exist_ok=True)
     with open(OLD_DUMP, "w", encoding="utf-8", newline="") as f:
-        g = subprocess.run(["git", "show", "HEAD:user-client/_backup_index_pre_oa.html"],
+        g = subprocess.run(["git", "show", "%s:%s" % (PREFIX_REV, PREFIX_PATH)],
                            cwd=ROOT, stdout=f, stderr=subprocess.PIPE)
     if g.returncode != 0:
-        _out("[SKIP] 本仓库取不到 HEAD 版本（浅克隆？）⇒ 判别力证明无法进行，记非 0。")
+        _out("[SKIP] 本仓库取不到 %s:%s（浅克隆 / 历史被改写？）⇒ 判别力证明无法进行，记非 0。"
+             % (PREFIX_REV, PREFIX_PATH))
         return 1
     code, out = run_engine(node, os.path.relpath(OLD_DUMP, ROOT))
     _out(out.rstrip())

@@ -77,8 +77,10 @@ async def transcribe(request: Request, lang: str = "zh"):
         except engine.AsrTooLong as exc:
             return _bad(422, "AUDIO_TOO_LONG", str(exc))
         except engine.AsrUnavailable as exc:
+            # 503 不回内部异常文本（原实现会把 /app/.models 这类内部路径带回给调用方，
+            # 经后端透传到 H5）；完整原因只进日志，便于排障。信封形状保持 {code, message} 不变。
             logger.warning("asr unavailable: %s", exc)
-            return _bad(503, "ASR_UNAVAILABLE", str(exc))
+            return _bad(503, "ASR_UNAVAILABLE", "语音识别服务暂不可用，请稍后再试")
         except Exception:  # noqa: BLE001
             # 500 不回内部异常文本（原实现会把临时文件路径带回给调用方）；详情只进日志
             logger.exception("asr failed")
