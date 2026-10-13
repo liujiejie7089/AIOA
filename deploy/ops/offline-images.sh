@@ -46,18 +46,46 @@ BUILD_SERVICES=(server agent)
 #   要短路径入口就在导出时加 --with-nginx，把它一起打进包。
 OPTIONAL_IMAGES=(nginx:1.27-alpine)
 
+# ★ ASR（语音识别）模型：**不在镜像里、也不在 git 里**（约 483MB，被 .gitignore 忽略）。
+#   agent 容器把宿主 <仓库>/agent/.models 以只读方式挂到 /app/.models
+#   （见 docker-compose.yml 的 agent.volumes；k8s 对应 deploy/k8s/20-agent.yaml）。
+#   ⇒ 离线搬到目标机时必须**单独携带**，并放到目标机仓库的 agent/ 下，
+#     否则目标机 /app/.models 是空的：语音接口 503、H5 麦克风按钮置灰。
+#     （这正是手机端「模型 small 未就绪（模型目录 /app/.models）」的根因。）
+ASR_MODEL_NAME="${AIOA_ASR_MODEL:-small}"
+ASR_MODELS_DIR="$DEPLOY_DIR/../agent/.models"
+ASR_MODEL_ARCHIVE="aioa-asr-models.tar.gz"
+
+# 本机是否具备 ASR 模型：✅ 就绪 / ⚠️ 目录在但缺 model.bin / ❌ 目录不存在
+asr_model_state() {
+  if [ -f "$ASR_MODELS_DIR/$ASR_MODEL_NAME/model.bin" ]; then printf '✅'; return 0; fi
+  if [ -d "$ASR_MODELS_DIR" ]; then printf '⚠️'; return 1; fi
+  printf '❌'; return 1
+}
+report_asr_model() {
+  local st; st="$(asr_model_state)"
+  printf '  %s ASR 模型：%s（期望 %s/model.bin）\n' "$st" "$ASR_MODELS_DIR" "$ASR_MODEL_NAME"
+  case "$st" in
+    '✅') ;;
+    '⚠️') echo "     ⚠️ 目录在但缺 $ASR_MODEL_NAME/model.bin ⇒ 目标机语音不可用" ;;
+    '❌') echo "     ❌ 目录不存在 ⇒ **目标机语音识别会 503、H5 麦克风置灰**"
+          echo "        请先放好模型，再用 --with-asr-model 一起打包搬过去" ;;
+  esac
+}
+
 hr() { printf '\n\033[36m===== %s =====\033[0m\n' "$*"; }
 die() { printf '\033[31m!! %s\033[0m\n' "$*" >&2; exit 1; }
 need_docker() { command -v docker >/dev/null 2>&1 || die "本机没有 docker"; }
 
 # ---------------------------------------------------------------- export
 do_export() {
-  local out="aioa-images.tar.gz" with_nginx=0
+  local out="aioa-images.tar.gz" with_nginx=0 with_asr=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --out) out="$2"; shift 2 ;;
       --with-nginx) with_nginx=1; shift ;;
-      *) die "未知参数：$1（可用：--out FILE / --with-nginx）" ;;
+      --with-asr-model) with_asr=1; shift ;;
+      *) die "未知参数：$1（可用：--out FILE / --with-nginx / --with-asr-model）" ;;
     esac
   done
   need_docker
@@ -106,13 +134,35 @@ do_export() {
   docker save "${save_images[@]}" | gzip -1 > "$out_abs" || die "docker save 失败"
   ls -lh "$out_abs" | sed 's/^/  /'
 
+  hr "3b) ASR（语音识别）模型 —— 不在镜像里，需单独搬"
+  report_asr_model
+  local asr_abs=""
+  if [ "$with_asr" = 1 ]; then
+    [ -f "$ASR_MODELS_DIR/$ASR_MODEL_NAME/model.bin" ] \
+      || die "--with-asr-model 需要 $ASR_MODELS_DIR/$ASR_MODEL_NAME/model.bin"
+    asr_abs="$DEPLOY_DIR/$ASR_MODEL_ARCHIVE"
+    echo "  打包模型（只打 $ASR_MODEL_NAME/，含 model.bin 等 4 个文件）→ $asr_abs"
+    # 只打模型本体，不连带 .models 下的 HF 缓存（那份是重复的，会把包再撑大一倍）
+    tar -czf "$asr_abs" -C "$ASR_MODELS_DIR" "$ASR_MODEL_NAME" || die "打包 ASR 模型失败"
+    ls -lh "$asr_abs" | sed 's/^/  /'
+  fi
+
   hr "完成：把包拷到目标机（用隧道机 → 真实服务器那条既有通道）"
   echo "  scp $out_abs root@10.0.0.3:/opt/aioa/"
+  [ -z "$asr_abs" ] || echo "  scp $asr_abs root@10.0.0.3:/opt/aioa/"
   echo "  目标机执行："
   echo "    cd /opt/aioa && bash deploy/ops/offline-images.sh import $out"
+  if [ -n "$asr_abs" ]; then
+    echo "    # ★ 语音识别必需：放到**仓库的 agent/** 下（compose 默认挂 ../agent/.models）"
+    echo "    mkdir -p /opt/aioa/agent/.models"
+    echo "    tar -xzf /opt/aioa/$ASR_MODEL_ARCHIVE -C /opt/aioa/agent/.models"
+  else
+    echo "    # ⚠️ 未打包 ASR 模型（--with-asr-model）⇒ 目标机语音仍会 503、H5 麦克风置灰"
+  fi
   echo "    cd /opt/aioa/deploy && docker compose up -d server agent   # 不要加 --build"
   echo "  验收：curl -s http://127.0.0.1:8080/actuator/health"
   echo "        curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/aioa/h5/"
+  echo "        curl -s http://127.0.0.1:8080/aioa/api/v1/asr/status   # 语音：期望 available=true"
 }
 
 # ---------------------------------------------------------------- import
@@ -148,6 +198,8 @@ do_list() {
   done
   echo "  现有全部镜像："
   docker images --format '    {{.Repository}}:{{.Tag}}  {{.Size}}' | head -40
+  hr "ASR（语音识别）模型"
+  report_asr_model
 }
 
 case "${1:-}" in
@@ -157,9 +209,12 @@ case "${1:-}" in
   *) cat <<'EOF'
 用法：
   # 在能上外网的机器上导出（必需 2 张：aioa-server + aioa-agent，均为本地构建）
-  bash deploy/ops/offline-images.sh export [--out FILE] [--with-nginx]
+  bash deploy/ops/offline-images.sh export [--out FILE] [--with-nginx] [--with-asr-model]
   #   --with-nginx  额外把入口 nginx（nginx:1.27-alpine）打进包，
   #                 用于 /web、/user 短路径入口（手册 §0.1）；不用短路径就别加。
+  #   --with-asr-model  额外把 ASR 语音模型（agent/.models/<模型名>，约 483MB）打成
+  #                     aioa-asr-models.tar.gz。★ 目标机要做语音识别就必须带上它 ——
+  #                     模型**不在镜像里、也不在 git 里**（见脚本内 ASR_MODELS_DIR 注释）。
 
   # 在目标机上导入
   bash deploy/ops/offline-images.sh import <aioa-images.tar.gz>
@@ -167,6 +222,8 @@ case "${1:-}" in
 
 说明：单端口部署（docs/33）后，管理端与用户端静态已随 aioa-server 镜像一起发布，
       aioa-web / ollama / minio 镜像都不再需要。
+      ★ 语音识别还额外需要一个 ASR 模型（约 483MB）：它**不在镜像里、也不在 git 里**，
+        离线部署请用 --with-asr-model 一起搬，并按导出结束时打印的步骤放到目标机 agent/.models 下。
       入口 nginx 是**可选**的：只是把 /web、/user 这两个短路径映射到 /aioa/web/、/aioa/h5/，
       不加它也能用原生地址 http://<host>:8080/aioa/web/ 与 /aioa/h5/。
 EOF

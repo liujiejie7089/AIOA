@@ -30,6 +30,16 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          volumeMounts:
+            # ★ ASR 模型（只读）：容器内 /app/.models 必须含 <模型名>/（默认 small/，
+            #   即 model.bin / config.json / tokenizer.json / vocabulary.txt）。镜像**不含**模型
+            #   （约 483MB，被 .gitignore 忽略）⇒ 必须由节点预置，否则语音识别直接 503。
+            #   ⚠️ 目录缺失时会被建成空目录 ⇒ ASR 静默不可用（H5 麦克风置灰）；
+            #      Pod 若落到没有该模型的节点上同样不可用 —— replicas=1 时请配合 nodeSelector，
+            #      或把下面的 hostPath 换成已预置模型的 PVC（写法参考 00-namespace-config.yaml 的 aioa-uploads）。
+            - name: asr-models
+              mountPath: /app/.models
+              readOnly: true
           envFrom:
             - configMapRef:
                 name: aioa-config
@@ -57,6 +67,16 @@ spec:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 30
             periodSeconds: 20
+      volumes:
+        # ★ ASR 模型目录（节点路径）。必须含 <模型名>/（默认 small/）那 4 个文件，约 483MB。
+        #   与 deploy/docker-compose.yml 的 agent.volumes 同义（那边默认 ../agent/.models）。
+        #   ⚠️ 刻意用 DirectoryOrCreate 而不是 Directory：缺目录时建空目录即可 ——
+        #      若用 Directory，模型缺失会让**整个 agent** 起不来，连普通对话一起挂掉。
+        #      ASR 到底可不可用，以 /internal/v1/asr/status 的 available 为准（H5 也会据此置灰麦克风）。
+        - name: asr-models
+          hostPath:
+            path: /opt/aioa/asr-models
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

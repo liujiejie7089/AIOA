@@ -66,6 +66,15 @@ data:
   # ---- 模型 ----
   MODEL_DEFAULT: "echo"
 
+  # ---- 语音识别（ASR）----
+  # 模型**不进镜像**（约 483MB，被 .gitignore 忽略）⇒ 必须由节点 / 共享存储提供，
+  # 见 20-agent.yaml 的 asr-models 卷（挂到容器 /app/.models，其下须有 <模型名>/，默认 small/）。
+  # 缺了会怎样：语音接口 503（ASR_UNAVAILABLE），H5 麦克风置灰并提示「语音识别服务暂不可用」。
+  # 验：curl -s http://aioa-agent:8000/internal/v1/asr/status   → "available": true
+  AIOA_ASR_MODEL_DIR: "/app/.models"
+  AIOA_ASR_MODEL: "small"
+  AIOA_ASR_ALLOW_DOWNLOAD: "0"             # 集群无外网：保持 0（离线加载，不联网下载）
+
   # ---- 代码托管方 ----
   AIOA_REPO_PROVIDER: "gitee"
   AIOA_GITEE_ENABLED: "true"

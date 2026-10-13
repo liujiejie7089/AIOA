@@ -45,7 +45,7 @@ docker build -f deploy/Dockerfile.agent  -t aioa/agent:latest  agent/
 > （`deploy/Dockerfile.web` 当前无构建管线引用——`deploy/ops/offline-images.sh` 的 `BUILT_IMAGES`
 > 仅剩 `aioa-server` / `aioa-agent` 两张——仅作为历史遗留文件保留，k8s 路径不再构建它。）
 
-## 四个容易踩的点
+## 五个容易踩的点
 
 1. **Flyway 迁移与滚动更新**：server 用 `strategy: Recreate`，避免两个实例同时抢迁移锁。
    readinessProbe 的 `initialDelaySeconds` 给到 60s（首次冷启动 + 迁移可能很慢）。
@@ -54,6 +54,15 @@ docker build -f deploy/Dockerfile.agent  -t aioa/agent:latest  agent/
 3. **uploads 必须是 ReadWriteMany**：附件与知识库原文落盘，多副本用 RWO 会调度失败。
 4. **agent 多副本前先改幂等缓存**：计划执行的回放缓存在进程内存里，多副本时重连可能
    命中不到缓存而重跑计划。见《docs/adr/ADR-004-计划执行按run_id幂等回放.md》。
+5. **ASR 模型必须由节点提供**：`aioa/agent` 镜像**不含**语音模型（`deploy/Dockerfile.agent` 只 `COPY app`；
+   模型约 483MB，且被 `.gitignore` 忽略，进不了 git）。`20-agent.yaml` 已声明
+   `hostPath: /opt/aioa/asr-models` 以**只读**方式挂到容器 `/app/.models`
+   ⇒ **每个可能被调度到的节点都要在该目录下放好 `<模型名>/`（默认 `small/`，含
+   model.bin / config.json / tokenizer.json / vocabulary.txt）**。
+   缺了不会让 Pod 起不来（`DirectoryOrCreate` 会建一个空目录），但语音接口会返回 503、
+   H5 麦克风按钮会置灰。诊断：
+   `kubectl -n aioa exec deploy/aioa-agent -- curl -s localhost:8000/internal/v1/asr/status` 看 `available`。
+   要用集群共享存储，就把那段 `hostPath` 换成已预置模型的 PVC。
 
 ## 密钥
 
