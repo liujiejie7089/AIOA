@@ -930,3 +930,29 @@
    **可复跑的判据**：`scripts/_check_voice_gesture.py`（22 项，纯状态机、无需 HTTPS/麦克风）；
    `--selftest` 对 HEAD 旧版跑出 6 红 ⇒ 证明该哨兵对本体有判别力（铁律 12）。
    ⚠️ 断言盯 **MediaRecorder 是否真被 start/stop**、**asrTranscribe 调用次数**，不读 placeholder 文案（文案不是事实源）。
+
+130. ★**Spring Security 的 `AuthorizationFilter` 默认参与 ASYNC 派发，而 `JwtAuthenticationFilter`(OncePerRequestFilter) 默认不参与**
+   ⇒ 任何 `SseEmitter` 端点（如 `GET /api/v1/runs/{id}/events`）**流一结束**就刷三段 ERROR（2026-10-15 实测）：
+   `AccessDeniedException: Access Denied` → `Unable to handle the Spring Security Exception because the response is already committed.`
+   → `Cannot render error page for request [null] as the response may have the wrong status code.`。
+   **本质**：流结束时容器做的那次 **ASYNC 派发**没有 SecurityContext（Jwt 过滤器跳过了它），AuthorizationFilter 却仍要判 ⇒ AccessDenied；
+   但 SSE 响应早已写出（committed）⇒ 403 写不进去。
+   ⚠️ **它不改变 HTTP 行为**（SSE 仍 200、事件完整）⇒ 唯一可观测面是**服务端日志**，判据必须读日志，不能看客户端收没收到。
+   **修法**：`SecurityConfig.authorizeHttpRequests(...)` 首行加 `.shouldFilterAllDispatcherTypes(false)`
+   ⇒ 鉴权只在首次 **REQUEST** 派发发生（能异步的前提是先过了 REQUEST 派发，不存在绕过）。
+   **可复跑判据**：`scripts/_check_sse_async_denied.py`（S1 SSE 仍 200 / S2 收到终止事件 / S3 新增日志无 committed 指纹）；
+   修复前 = `DEFECT-PRESENT`（S3 红、S1/S2 绿 ⇒ 能区分），修复后 = `CLEAN`。
+
+131. ★**别把「明文端口被 TLS 探测」当成代码 bug**：日志 `java.lang.IllegalArgumentException: Invalid character found in method name [0x16 0x03 0x01 ...]`
+   里的 `0x16 0x03 0x01` = **TLS ClientHello**（TLS 记录头）打到了**明文** HTTP 端口（2026-10-15 实测复现）。
+   **复现法**：raw socket 对 `127.0.0.1:8080` 发 `bytes([0x16,0x03,0x01,0x00,0x50,...])` ⇒ Tomcat 原文一字不差。
+   **来源**：该端口**暴露在公网**被扫描器 / `https://host:8080` 探到（实测 `http://<域>:8080/` → 502 前端代理）。
+   **处置（运维面，代码改不了）**：不要把明文端口暴露公网；**前置 nginx 做 TLS 终止**，后端只对内。
+   ⚠️ 与 #130 **互不相关**（同一批日志里两类错误从不同时出现）；排查时**先按指纹分类再归因**，不要混着修。
+
+132. ★**`mvn package` 会把你正在运行的 fat jar 改成「没有 BOOT-INF 的空壳」**（2026-10-15 实测）。
+   现象：`-pl aioa-boot -am` 打包在 `spring-boot:repackage` 步失败（`Unable to rename ... .jar to ...jar.original`，
+   因为**运行中的后端进程占着该 jar 文件锁**），而磁盘上留下的是**未 repackage 的 173KB 普通 jar**（无 `BOOT-INF/`）——
+   直接 `java -jar` 会启不起来。
+   **定式**：重新打包前**先停掉占用 jar 的后端进程**；打包后**验产物**`any(n.startswith('BOOT-INF/'))` 为真
+   （正常体量 ~110MB，见到 100+KB 的就是空壳）。
