@@ -68,6 +68,10 @@ def skip(cid, detail):
 
 def load_live_rules():
     """从工作区源码加载 rules()（不走 HTTP）。"""
+    # 重建后 app/core/answer_shape.py 已变为 shim，内部 `from aioa_ai.prompt.answer import *`
+    # 需要 agent/ 在 sys.path 上才能解析；显式补上，确保离线模式可加载（铁律：哨兵自身不能因重建而假死）。
+    if AGENT_DIR not in sys.path:
+        sys.path.insert(0, AGENT_DIR)
     path = os.path.join(AGENT_DIR, "app", "core", "answer_shape.py")
     spec = importlib.util.spec_from_file_location("answer_shape_live", path)
     mod = importlib.util.module_from_spec(spec)

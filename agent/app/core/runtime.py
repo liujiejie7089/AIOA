@@ -1,29 +1,15 @@
-"""运行时门面。
+"""运行时门面（服务接入层 / 兼容入口）。
 
-对外只暴露 `async def run(req) -> AsyncIterator[SseEvent]`。
-M1 委托 echo_runtime；当 model_gateway 解析到的 provider 为真实 LLM（driver=openai_compatible
-且已配置 api_key）时，自动切换到 agent_runtime（M2 真实推理）。
+AI 实现已统一搬迁到 ``aioa_ai``；本文件**不再是实现**，只做「服务层 → AI 层」的转接：
 
-事件序列在 echo 与 real 两条路径下完全一致，契约不变。
+  - 保持历史 import 路径 ``from app.core import runtime`` 与 ``runtime.run(req)`` 签名不变，
+    使 ``agent/app/main.py`` 等调用点零改动；
+  - 内部委托给 ``aioa_ai.entry.run``（按 ``provider.driver`` 分派回声 / LangGraph 图运行时）。
+
+分派规则、事件契约、错误语义全部在 ``aioa_ai.entry`` 内定义一份，这里不重复判定。
 """
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from aioa_ai.entry import FIRST_SEQ, run  # noqa: F401
 
-from app.core import agent_runtime, echo_runtime
-from app.model_gateway import gateway
-from app.schemas import RunRequest, SseEvent
-
-# 首个事件的 seq（契约要求 seq 从 1 单调递增）
-FIRST_SEQ = 1
-
-
-async def run(req: RunRequest) -> AsyncIterator[SseEvent]:
-    """执行一次 agent 运行，返回事件流。"""
-    provider = gateway.resolve(req.model_ref)
-    if provider.driver == "echo":
-        async for event in echo_runtime.run(req, seq_start=FIRST_SEQ):
-            yield event
-        return
-    async for event in agent_runtime.run(req, seq_start=FIRST_SEQ):
-        yield event
+__all__ = ["FIRST_SEQ", "run"]

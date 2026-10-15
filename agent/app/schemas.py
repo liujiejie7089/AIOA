@@ -1,128 +1,20 @@
-"""接口数据模型：与 docs/04-接口契约/internal-agent.yaml 严格一致。"""
+"""兼容垫片（deprecation shim）：实现已搬迁到 ``aioa_ai.contracts``。
+
+本模块不再包含实现，仅做再导出；历史 import 路径 ``from app.schemas import RunRequest``
+继续可用。新代码请直接 ``from aioa_ai.contracts import ...``。
+"""
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import BaseModel, Field
-
-
-class PageContext(BaseModel):
-    """页面上下文快照（子应用经 SDK 上报）。"""
-
-    appCode: str | None = None
-    page: str | None = None
-    pageTitle: str | None = None
-    entityType: str | None = None
-    entityId: str | None = None
-    filters: dict[str, Any] | None = None
-    selection: list[str] | None = None
-
-
-class UserContext(BaseModel):
-    """用户上下文（必填 user_id / tenant_id / roles）。"""
-
-    user_id: int
-    tenant_id: int
-    username: str | None = None
-    roles: list[str] = Field(default_factory=list)
-    trace_id: str | None = None
-
-
-class AttachmentDoc(BaseModel):
-    """用户在对话内上传、仅供 AI 参考的文档（不进知识库）。
-
-    由后端（Java）在会话里随请求下发，键名 ``attachment_docs`` 照抄后端契约，
-    agent 侧只做「参考上下文」注入，不参与知识库检索、不持久化。
-    """
-
-    file_id: int | None = None
-    name: str | None = None
-    text: str = ""
-    truncated: bool = False
-
-
-class RunRequest(BaseModel):
-    """POST /internal/v1/runs 请求体。"""
-
-    run_id: str
-    conversation_id: int
-    text: str
-    attachments: list[int] | None = None
-    # 对话内上传的参考文档（后端经 ExpertConfig / 会话上下文下发，键名照抄契约）
-    attachment_docs: list[AttachmentDoc] | None = None
-    context: PageContext | None = None
-    agent_code: str | None = None
-    model_ref: str | None = None
-    user_context: UserContext
-    history: list[dict[str, Any]] | None = None
-    # 发起方用户 accessToken（M2 工具回调）：调用业务工具网关时透传，工具权限 = 用户权限
-    user_token: str | None = None
-    # 职责范围（V21）：会话绑定数字员工时下发，用于限定回答边界（越界拒答）
-    # 键：worker_id / name / role / role_name / duty / permission
-    scope: dict[str, Any] | None = None
-    # 当前项目（有项目会话时由后端下发，键名照抄后端契约）：{id,name,type,status}
-    project: dict[str, Any] | None = None
-    # 专家生效配置（方案 P4 / B5）：由后端 ExpertConfigService.resolve 下发，
-    # 键：enabled/visibleScope/kbScope/model/temperature/topK/threshold/retrievalMode/tools/sort/chunkSize/chunkOverlap
-    # agent 据此真实驱动推理与检索，并把最终值回传 message.completed.effective_params。
-    expert_settings: dict[str, Any] | None = None
-    # 对话级知识库开关：由 Java 后端从 CreateRunRequest 透传；缺省视为 True。
-    # True（或缺省）= 知识库可用且优先；False = 本次 run 完全不使用知识库。
-    # 必须是顶层字段：RunRequest.context 是 PageContext 模型，未知键会被丢弃，
-    # 只有顶层字段才能被 pydantic 正确解析（见 _auto_d0aa64a2 需求）。
-    kb_on: bool | None = None
-
-
-class SubTaskSpec(BaseModel):
-    """多任务协同中的一个子任务（POST /internal/v1/tasks）。
-
-    ``dependsOn`` 里的 id 全部成功后本任务才开始；入参里的 ``"$taskId"`` /
-    ``"$taskId.field"`` 会被替换成前序任务的产出 —— 依赖关系的表达放在计划里，
-    不靠模型再推理一轮。
-    """
-
-    id: str
-    title: str | None = None
-    tool: str | None = None
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    dependsOn: list[str] = Field(default_factory=list)
-
-
-class TaskPlanRequest(BaseModel):
-    """POST /internal/v1/tasks 请求体：一份显式的多任务执行计划。"""
-
-    run_id: str
-    conversation_id: int = 0
-    text: str | None = None
-    user_context: UserContext
-    user_token: str | None = None
-    tasks: list[SubTaskSpec] = Field(default_factory=list)
-    max_concurrency: int | None = None
-
-
-class Usage(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-
-
-class CompleteRequest(BaseModel):
-    """POST /internal/v1/complete 请求体（非流式单轮补全，供数字员工定时任务等内部调用）。"""
-
-    prompt: str
-    system: str | None = None
-    model_ref: str | None = None
-    max_tokens: int | None = None
-
-
-class CompleteResponse(BaseModel):
-    content: str
-    model: str
-    usage: Usage = Field(default_factory=Usage)
-
-
-class SseEvent(BaseModel):
-    """SSE 事件：seq 单调递增，type 即 SSE event 名，data 为 JSON 对象。"""
-
-    seq: int
-    type: str
-    data: dict[str, Any] = Field(default_factory=dict)
+from aioa_ai.contracts import *  # noqa: F401,F403
+from aioa_ai.contracts import (  # noqa: F401
+    AttachmentDoc,
+    CompleteRequest,
+    CompleteResponse,
+    PageContext,
+    RunRequest,
+    SseEvent,
+    SubTaskSpec,
+    TaskPlanRequest,
+    Usage,
+    UserContext,
+)

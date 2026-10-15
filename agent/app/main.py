@@ -9,12 +9,16 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.asr import engine as asr_engine
-from app.asr.router import router as asr_router
-from app.core import multi_task, runtime
-from app.core.events import to_frame
-from app.core.guards import GuardError
-from app.schemas import CompleteRequest, RunRequest, SseEvent, TaskPlanRequest
+# AI 能力统一由 aioa_ai 提供（依赖方向：app -> aioa_ai，单向）。
+# 本文件只承担 HTTP 接入职责：路由挂载、SSE 帧化、异常信封。
+from aioa_ai import entry as runtime
+from aioa_ai.config import settings
+from aioa_ai.contracts import CompleteRequest, ResumeRequest, RunRequest, SseEvent, TaskPlanRequest
+from aioa_ai.events import to_frame
+from aioa_ai.guard import GuardError
+from aioa_ai.runtimes import multi_task
+from aioa_ai.speech import engine as asr_engine
+from aioa_ai.speech.router import router as asr_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("aioa.agent")
@@ -27,6 +31,30 @@ app.include_router(asr_router)
 def _warm_asr() -> None:
     """后台预热 ASR 模型：不阻塞启动；加载失败只记日志，真正不可用时接口回 503。"""
     threading.Thread(target=asr_engine.warmup, name="asr-warmup", daemon=True).start()
+
+
+@app.on_event("startup")
+async def _setup_hitl() -> None:
+    """HITL 开启时建好挂起态存储（本地内存 / 生产 Redis），并让图按「带 checkpointer」重编译。
+
+    必须在任何 run 之前完成：图是带 lru_cache 的单例，若先跑了无 checkpointer 的版本，
+    之后 setup 也来不及 —— 故这里 setup 后立刻 reset 掉已编译的图。
+    """
+    if not settings.agent_hitl:
+        return
+    from aioa_ai.graph import builder, checkpoint
+
+    await checkpoint.setup()
+    builder.reset()
+    logger.info("HITL enabled: checkpoint kind=%s", checkpoint.kind())
+
+
+@app.on_event("shutdown")
+async def _close_hitl() -> None:
+    """关闭挂起态存储连接（未启用 HITL 时是空操作）。"""
+    from aioa_ai.graph import checkpoint
+
+    await checkpoint.aclose()
 
 
 
@@ -109,10 +137,44 @@ async def create_task_plan(req: TaskPlanRequest, request: Request) -> StreamingR
     )
 
 
+@app.post("/internal/v1/runs/{run_id}/resume")
+async def resume_run(run_id: str, body: ResumeRequest, request: Request) -> StreamingResponse:
+    """HITL 澄清回填：把用户的选择塞回**已暂停**的 run，从断点继续（SSE 事件流）。
+
+    与 /internal/v1/runs 的区别：runs 发起一次新运行；resume 续跑暂停中的那一个
+    （按 run_id 从挂起态存储取回）。``body.answer`` 为澄清卡选择；``body.decision``
+    为审批形态（M3）。两者至少提供一个 —— 都缺则按「空答案」继续，由图自行处理。
+    """
+    answer = body.answer if body.answer is not None else body.decision
+    logger.info("run %s resume (answer=%r, approval=%s)", run_id, answer, body.approval_id)
+
+    async def event_stream():
+        seq = 1
+        try:
+            async for event in runtime.resume(run_id, answer):
+                seq = event.seq + 1
+                yield to_frame(event)
+        except GuardError as exc:
+            yield to_frame(SseEvent(seq=seq, type="error", data={"code": exc.code, "message": exc.message, "retryable": exc.retryable}))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed", data={"reason": exc.message, "error_code": exc.code}))
+        except Exception as exc:
+            logger.exception("run %s resume failed", run_id)
+            yield to_frame(SseEvent(seq=seq, type="error", data={"code": "INTERNAL_ERROR", "message": str(exc), "retryable": True}))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed", data={"reason": str(exc), "error_code": "INTERNAL_ERROR"}))
+        finally:
+            logger.info("run %s resume finished", run_id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/internal/v1/models")
 async def list_models_state() -> dict:
     """运维/管理端观测：当前注册表状态（密钥只暴露「是否已配置」）。"""
-    from app.model_gateway import configured_providers, current_default_key
+    from aioa_ai.llm import configured_providers, current_default_key
 
     return {"providers": configured_providers(), "default": current_default_key()}
 
@@ -128,7 +190,7 @@ async def check_model(payload: dict) -> dict:
 
     import httpx
 
-    from app.model_gateway import get_provider
+    from aioa_ai.llm import get_provider
 
     key = str(payload.get("key") or "").strip().lower()
     if not key:
@@ -179,7 +241,7 @@ async def apply_models(payload: dict, request: Request) -> dict:
 
     与 /internal/v1/runs 同为内网直信端点（M1）；管理端保存模型配置后调用，变更即时生效。
     """
-    from app.model_gateway import apply_overrides, configured_providers
+    from aioa_ai.llm import apply_overrides, configured_providers
 
     applied = apply_overrides(payload.get("models") or [], payload.get("default"))
     logger.info("model config applied via admin push (%d entries)", applied)
@@ -194,12 +256,12 @@ async def complete(req: CompleteRequest) -> dict:
     """
     import httpx
 
-    from app.core.agent_runtime import UpstreamError, _post_non_stream
-    from app.model_gateway import gateway
+    from aioa_ai.llm import resolve as resolve_provider
+    from aioa_ai.llm.upstream import UpstreamError, _post_non_stream
 
     if not req.prompt or not req.prompt.strip():
         raise GuardError("BAD_REQUEST", "prompt 不能为空")
-    provider = gateway.resolve(req.model_ref)
+    provider = resolve_provider(req.model_ref)
     api_key = provider.api_key()
     if not api_key:
         return {"content": "", "model": provider.model, "usage": {"prompt_tokens": 0, "completion_tokens": 0},
@@ -233,7 +295,7 @@ async def worker_intent(payload: dict) -> dict:
     调用方：Java 侧 `POST /api/v1/workers/intent`。
     Java 收到类型后再补权限码、可申请性与申请路径 —— 权限映射属治理事实，只在 Java 侧定义一份。
     """
-    from app.core.worker_intake import classify
+    from aioa_ai.intent.intake import classify
 
     text = str(payload.get("text") or "").strip()
     if not text:
@@ -260,7 +322,7 @@ async def answer_shape(payload: dict) -> dict:
     ``card`` 之所以不走模型：边界必须与「创建前预览」「会话中提示」两处完全一致，
     而任何经模型的改写都会让两处口径漂移。
     """
-    from app.core.answer_shape import audit, audit_hint, card, rules
+    from aioa_ai.prompt.answer import audit, audit_hint, card, rules
 
     role = str(payload.get("role") or "GENERAL")
     out = {"card": card(role), "rules": rules(payload.get("scope") or None)}

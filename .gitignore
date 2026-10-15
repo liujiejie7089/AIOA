@@ -39,7 +39,8 @@ venv/
 # 语音识别（ASR）离线模型：几百 MB，绝不能入库；由部署时预下载到该目录
 # （或用 AIOA_ASR_MODEL / AIOA_ASR_MODEL_DIR 指到别处）
 agent/.models/
-
+# HITL 挂起态的本地 SQLite 落盘（本地默认用内存，此项只在显式配 sqlite:// 时产生）
+agent/.checkpoints/
 # ---- Env / Secrets（密钥一律不入库）----
 .env
 .env.*
