@@ -148,6 +148,27 @@ def _build_attachment_block(docs: list) -> str:
     return "\n\n".join(blocks)
 
 
+def _build_kb_reference_block(rows: list) -> str:
+    """把预检索命中的知识库片段拼成一段「独立」的参考上下文块。
+
+    风格照搬 ``_build_attachment_block``：用硬边界包裹为不可信输入，同样经过
+    ``_neutralize_injection``（库文档可能夹带指令覆盖尝试），作为独立段落追加到
+    system 提示末尾，让模型区分「这是用户相关知识库资料」与「系统指令」。
+
+    库文档字段不固定（可能含 ``content`` / ``text`` / ``docName`` 等），这里做兼容取值。
+    """
+    blocks: list[str] = []
+    for doc in rows:
+        if not isinstance(doc, dict):
+            continue
+        name = doc.get("docName") or doc.get("title") or "未命名文档"
+        text = _neutralize_injection(doc.get("content") or doc.get("text") or "")
+        if not text:
+            continue
+        blocks.append(f"【知识库参考】《{name}》\n{text}\n【以上为知识库参考】")
+    return "\n\n".join(blocks)
+
+
 def _build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
     """构造带系统提示（职责范围 / 页面 / 用户上下文）与多轮历史的消息列表。
 
@@ -465,12 +486,51 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     messages = _build_messages(req, getattr(provider, "max_context", 0) or 0)
     tool_client = ToolClient.from_request(req.user_token)
     tools = await tool_client.list_tools()
-    logger.info("run %s: history=%d turns, tools=%d, temperature=%s, topK=%s, mode=%s",
-                req.run_id, len(req.history or []), len(tools), temperature, top_k, retrieval_mode)
+
+    # 对话级知识库开关（KB）：由 Java 后端从 CreateRunRequest 透传，缺省视为 True。
+    # False = 本次 run 完全不使用知识库（剔除检索工具，模型无法发起检索）；
+    # True（或缺省）= 知识库可用且优先（进入工具循环前先做预检索并注入参考上下文）。
+    kb_on = req.kb_on if req.kb_on is not None else True
+    effective["kbOn"] = kb_on
+
+    # citations 须在预检索之前初始化（预检索命中时会并入引用）
+    citations: list[dict] = []
+
+    if not kb_on:
+        # 关闭知识库：从候选工具中剔除检索工具，模型即使想检索也无工具可调用。
+        tools = [t for t in tools
+                 if (t.get("function", {}).get("name") or t.get("name")) != KB_TOOL]
+    else:
+        # 知识库可用且优先：进入工具循环前先预检索，命中则把片段作为参考上下文注入，
+        # 并把引用并入 citations。检索失败只记日志、绝不中断 run。
+        if tool_client.enabled and any(
+            (t.get("function", {}).get("name") or t.get("name")) == KB_TOOL for t in tools
+        ):
+            try:
+                kb_args = _inject_search_params(
+                    KB_TOOL, {"keyword": req.text}, top_k, threshold, retrieval_mode, kb_scope
+                )
+                kb_outcome = await tool_client.invoke(KB_TOOL, kb_args)
+                if kb_outcome.ok and isinstance(kb_outcome.data, list) and kb_outcome.data:
+                    kb_block = _build_kb_reference_block(kb_outcome.data)
+                    if kb_block and messages:
+                        messages[0]["content"] = (messages[0].get("content") or "") + "\n\n" + kb_block
+                    seen_ids = {c["docId"] for c in citations}
+                    for c in _citations_from_tool(KB_TOOL, kb_outcome):
+                        if c["docId"] not in seen_ids:
+                            citations.append(c)
+                            seen_ids.add(c["docId"])
+                    logger.info("run %s: kb pre-retrieval hit %d docs", req.run_id, len(kb_outcome.data))
+                else:
+                    logger.info("run %s: kb pre-retrieval returned no data", req.run_id)
+            except Exception as exc:  # 检索失败不冒泡成 error，保证 run 能跑完
+                logger.warning("run %s: kb pre-retrieval failed (ignored): %s", req.run_id, exc)
+
+    logger.info("run %s: history=%d turns, tools=%d, kbOn=%s, temperature=%s, topK=%s, mode=%s",
+                req.run_id, len(req.history or []), len(tools), kb_on, temperature, top_k, retrieval_mode)
 
     usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0}
     tool_calls_log: list[dict] = []
-    citations: list[dict] = []
     content_parts: list[str] = []
 
     # 运行期开关（见 config.Settings）：流式直出 / 一轮内多工具并发

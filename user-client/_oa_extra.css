@@ -367,3 +367,13 @@
 .oa .composer .box .input-action .cbtn{ position:absolute; top:0; left:0; }
 .oa .composer .box .cbtn.send,
 .oa .composer .box .cbtn.stop{ background:transparent; color:var(--text-2); width:44px; height:44px; border-radius:50%; box-shadow:none; }
+
+/* ---- 「知识库」对话级开关 chip（OA 形态）：与经典观感一致，改用 OA 品牌令牌 ---- */
+.oa .kb-chip{
+  align-self:center;
+  font-size:11px;color:var(--brand-ink);background:var(--brand-soft);border:1px solid var(--brand-line);
+  border-radius:var(--r-full);padding:5px 10px;cursor:pointer;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:4px;transition:all var(--dur-fast) var(--ease);
+}
+.oa .kb-chip .ic{width:13px;height:13px}
+.oa .kb-chip.off{color:var(--text-2);background:var(--surface-3);border-color:var(--border)}

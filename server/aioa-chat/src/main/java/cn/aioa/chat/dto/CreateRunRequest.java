@@ -16,6 +16,13 @@ public class CreateRunRequest {
     @JsonProperty("model_ref")
     private String modelRef;
 
+    /**
+     * 对话级知识库开关（顶层字段）：下发 Agent 侧控制本轮是否启用知识库检索。
+     * 缺失时回落到 {@code context.kb_on}（历史写法），二者皆无则保持 null（Agent 侧缺省当「开」）。
+     */
+    @JsonProperty("kb_on")
+    private Boolean kbOn;
+
     /** 页面上下文快照（SDK 上报格式）。 */
     private Map<String, Object> context;
 

@@ -88,6 +88,21 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // 只在「进来的那一次 HTTP 请求」（REQUEST 派发）上鉴权，容器内部的续跑派发
+                        // （ASYNC / ERROR）不再重复鉴权。
+                        //
+                        // 为什么必须关：JwtAuthenticationFilter 继承 OncePerRequestFilter，默认
+                        // shouldNotFilterAsyncDispatch()=true ⇒ 它不参与 ASYNC 派发；而
+                        // AuthorizationFilter 默认参与。于是 SSE（/api/v1/runs/{id}/events）流结束时，
+                        // 容器做的那次 ASYNC 派发没有 SecurityContext ⇒ 判 AccessDenied；但此时
+                        // SSE 响应早已写出（committed）⇒ 403 写不进去，日志每次都刷三段 ERROR：
+                        //   1) AccessDeniedException: Access Denied
+                        //   2) Unable to handle the Spring Security Exception because the response
+                        //      is already committed.
+                        //   3) Cannot render error page for request [null] ...
+                        // 关掉它只影响「内部派发」；首次 REQUEST 派发照常鉴权，鉴权语义不变
+                        // （同一个请求先过 REQUEST 派发才可能异步，不存在绕过）。
+                        .shouldFilterAllDispatcherTypes(false)
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .requestMatchers("/internal/**").hasAuthority(ServiceTokenProvider.AUTHORITY_SERVICE)
                         .requestMatchers("/api/**").authenticated()

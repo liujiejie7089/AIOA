@@ -36,8 +36,20 @@ var S = {
   currentProject:null,   // 当前进入的项目 {id,name,projectType,status,myRole}（需求一：项目即第一等上下文）
   projectConvId:{},      // projectId → conversationId（项目会话与「无项目」严格分账，互不串）
   projectConvWorker:{},  // projectId → 该会话创建时绑定的 workerId（null=未绑）；换人后必须新建会话
-  projectWorkerIds:[]    // 当前项目可用的数字员工 workerId（enabled 且未缺失；渲染数字人卡时按它过滤）
+  projectWorkerIds:[],   // 当前项目可用的数字员工 workerId（enabled 且未缺失；渲染数字人卡时按它过滤）
+  kbOn:true               // 对话级知识库开关，默认开，随 createRun 下发
 };
+
+/* 对话级「知识库」开关（OA 形态自带，与经典态 state.kbOn 互不干扰）。
+   翻转 S.kbOn，同步 chip 文案与 off 态，并 toast 提示。 */
+function oaToggleKB(){
+  S.kbOn = !S.kbOn;
+  var c = $o('oaKbChip');
+  var t = $o('oaKbChipText');
+  if(t) t.textContent = S.kbOn ? '知识库 开' : '知识库 关';
+  if(c) c.classList.toggle('off', !S.kbOn);
+  toast(S.kbOn ? '将优先检索你的知识库' : '仅用模型通用知识回答');
+}
 
 /* 当前项目 id 的唯一读取入口：不在别处散读 S.projects / S.currentProject 推断。
    无项目时返回 0（与后端「projectId=0 = 只要无项目会话」口径对齐）。 */
@@ -1637,7 +1649,7 @@ async function oaSend(){
   try{
     var convId = await oaEnsureConv();
     var run = await API.createRun(convId, effectiveQ, {
-      kb_on: (state.kbOn !== false),
+      kb_on: (S.kbOn !== false),
       expert: S.expert ? (S.expert.name || S.expert.key) : undefined
     }, (S.pendingFiles||[]).map(function(f){ return f.id; }));
     var runId = run && (run.id || run.runId);
@@ -2088,6 +2100,8 @@ function bind(){
   /* 会话内文档上传（不进知识库）：点「＋」开文件框，选完逐份上传，渲染到 #oaAttachStrip */
   var attach = $o('oaAttachBtn');
   if(attach) attach.onclick = function(){ var f = $o('oaAttachFile'); if(f) f.click(); };
+  /* 「知识库」对话级开关 chip：与经典态互不干扰，翻转 S.kbOn 并随 createRun 下发 kb_on */
+  var kbChip = $o('oaKbChip'); if(kbChip) kbChip.onclick = oaToggleKB;
   var attachFile = $o('oaAttachFile');
   if(attachFile) attachFile.onchange = function(){ onOaAttachFiles(attachFile); };
   /* 语音输入：按住说话 → 后端转文字 → 复用 oaSend 发出（录音模块与经典形态共用 bindVoice） */
@@ -2207,6 +2221,7 @@ function oaBoot(){
   fillSheet();
 }
 window.oaBoot = oaBoot;
+window.oaToggleKB = oaToggleKB;   // 供 OA composer 的 inline onclick 调用（本文件是 IIFE，需显式挂到 window）
 window.oaSetMode = setMode;
 window.oaRemoveAttach = oaRemoveAttach;   /* 附件条 × 用内联 onclick 触发，需暴露到全局作用域 */
 window.oaLayoutTails = oaLayoutTails;

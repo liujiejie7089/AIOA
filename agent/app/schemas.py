@@ -66,6 +66,11 @@ class RunRequest(BaseModel):
     # 键：enabled/visibleScope/kbScope/model/temperature/topK/threshold/retrievalMode/tools/sort/chunkSize/chunkOverlap
     # agent 据此真实驱动推理与检索，并把最终值回传 message.completed.effective_params。
     expert_settings: dict[str, Any] | None = None
+    # 对话级知识库开关：由 Java 后端从 CreateRunRequest 透传；缺省视为 True。
+    # True（或缺省）= 知识库可用且优先；False = 本次 run 完全不使用知识库。
+    # 必须是顶层字段：RunRequest.context 是 PageContext 模型，未知键会被丢弃，
+    # 只有顶层字段才能被 pydantic 正确解析（见 _auto_d0aa64a2 需求）。
+    kb_on: bool | None = None
 
 
 class SubTaskSpec(BaseModel):

@@ -29,9 +29,16 @@ _TOOL_ROUTES: list[tuple[tuple[str, ...], str]] = [
 ]
 
 
-def pick_tool(text: str) -> tuple[str, dict] | None:
-    """按关键词路由工具；返回 (name, arguments) 或 None。"""
+def pick_tool(text: str, kb_on: bool = True) -> tuple[str, dict] | None:
+    """按关键词路由工具；返回 (name, arguments) 或 None。
+
+    ``kb_on`` 为假时**永不**路由知识库检索（search_kb_documents）——这是对话级
+    知识库开关在回声运行时落点：开关关闭即完全不使用知识库，与普通闲聊行为一致。
+    ``kb_on`` 为真（缺省）时保持现有关键词行为不变，不改为「每句都检索」。
+    """
     for keywords, name in _TOOL_ROUTES:
+        if name == "search_kb_documents" and not kb_on:
+            continue
         for kw in keywords:
             idx = text.find(kw)
             if idx >= 0:
@@ -89,9 +96,12 @@ async def run(req: RunRequest, seq_start: int = 1) -> AsyncIterator[SseEvent]:
     tool_calls: list[dict] = []
     citations: list[dict] = []
 
+    # 对话级知识库开关：缺省视为 True（可用且优先）；False 时永不路由知识库检索。
+    kb_on = req.kb_on if req.kb_on is not None else True
+
     if client.enabled:
         tools = await client.list_tools()
-        hit = pick_tool(req.text)
+        hit = pick_tool(req.text, kb_on)
         if hit is not None and any(t.get("function", {}).get("name") == hit[0] for t in tools):
             name, args = hit
             yield SseEvent(seq=seq, type="tool.call", data={"name": name, "arguments": args})

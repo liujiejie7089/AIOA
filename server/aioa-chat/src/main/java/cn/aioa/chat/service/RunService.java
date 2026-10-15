@@ -113,7 +113,7 @@ public class RunService {
      * 创建 agent_run（RUNNING），返回 runId。
      */
     public String start(Long conversationId, String text, Map<String, Object> context,
-                        List<Long> attachments, String modelRef) {
+                        List<Long> attachments, String modelRef, Boolean kbOn) {
         AuthUser user = AuthUserContext.require();
         if (text == null || text.isBlank()) {
             throw BizException.badRequest("text 不能为空");
@@ -154,6 +154,22 @@ public class RunService {
         userMessage.setRole(ChatMessage.ROLE_USER);
         userMessage.setContent(text);
         userMessage.setContentType("text");
+        // 对话级知识库开关 kb_on：顶层优先于 context.kb_on（历史写法）；
+        // 解析结果保持 null 原样（不补默认值，Agent 侧缺省当「开」）。
+        // 合并进 context 快照，使后续独立的 subscribe 请求能回读该值。
+        if (kbOn == null && context != null) {
+            Object raw = context.get("kb_on");
+            if (raw instanceof Boolean b) {
+                kbOn = b;
+            }
+        }
+        if (kbOn != null) {
+            if (context == null) {
+                context = new java.util.LinkedHashMap<>();
+            }
+            context.put("kb_on", kbOn);
+        }
+
         userMessage.setContextSnapshot(context);
         userMessage.setStatus(ChatMessage.STATUS_OK);
         userMessage.setSeq(seq);
@@ -619,6 +635,15 @@ public class RunService {
         request.setConversationId(run.getConversationId());
         request.setText(text);
         request.setContext(context);
+        // 对话级知识库开关：回落读取 context.kb_on（已在 start 阶段解析/合并），保持 null 原样。
+        Boolean kbOn = null;
+        if (context != null) {
+            Object raw = context.get("kb_on");
+            if (raw instanceof Boolean b) {
+                kbOn = b;
+            }
+        }
+        request.setKbOn(kbOn);
         request.setUserContext(userContext);
         return request;
     }

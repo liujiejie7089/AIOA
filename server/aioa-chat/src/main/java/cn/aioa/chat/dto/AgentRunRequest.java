@@ -38,6 +38,14 @@ public class AgentRunRequest {
     @JsonProperty("model_ref")
     private String modelRef;
 
+    /**
+     * 对话级知识库开关：顶层下发 Agent 侧，控制本轮是否启用知识库检索。
+     * 键名 {@code kb_on} 必须与此处 @JsonProperty 一致（agent 侧 RunRequest.kb_on 契约）。
+     * 缺省（null）由 Agent 侧当作「开」，后端不补默认值。
+     */
+    @JsonProperty("kb_on")
+    private Boolean kbOn;
+
     @JsonProperty("user_context")
     private AgentUserContext userContext;
 

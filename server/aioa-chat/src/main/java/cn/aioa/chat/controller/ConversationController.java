@@ -92,7 +92,8 @@ public class ConversationController {
         String runId = runService.start(id, text,
                 request == null ? null : request.getContext(),
                 request == null ? null : request.getAttachments(),
-                request == null ? null : request.getModelRef());
+                request == null ? null : request.getModelRef(),
+                request == null ? null : request.getKbOn());
         return ApiResponse.ok(new RunCreatedResponse(runId));
     }
 }

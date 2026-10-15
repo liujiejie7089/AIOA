@@ -1411,7 +1411,9 @@ const API = {
   /* 会话与运行 */
   createConversation(title,appCode,workerId){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode,workerId:workerId||null})}); },
   createRun(convId,text,context,attachments){
-    var body = {text, context, model_ref: state.model};
+    var ctx = Object.assign({}, context);   // 浅拷贝，避免改写调用方原对象（防副作用）
+    var body = {text, context: ctx, model_ref: state.model};
+    if('kb_on' in ctx){ body.kb_on = ctx.kb_on; delete ctx.kb_on; }  // kb_on 提升到 body 顶层（两种前端共用，改一处两形态受益）
     if(attachments && attachments.length) body.attachments = attachments;
     return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify(body)});
   },
