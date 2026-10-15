@@ -396,6 +396,20 @@
   .ans .ans-key{
     font-size:14px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums;
   }
+  /* markdown 表格渲染：长表用 .ans-table-wrap 横向滚动，窄屏（375px）不撑破布局 */
+  .ans .ans-table-wrap{margin:7px 0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ans .ans-table{
+    border-collapse:collapse;max-width:100%;width:auto;table-layout:auto;
+    font-size:12.5px;line-height:1.55
+  }
+  .ans .ans-table th,
+  .ans .ans-table td{
+    border:1px solid var(--border);padding:5px 9px;text-align:left;vertical-align:top;
+    white-space:normal;word-break:break-word
+  }
+  .ans .ans-table th{background:var(--blue-soft);font-weight:800;color:var(--text)}
+  .ans .ans-table td{color:var(--text-2)}
+  .ans .ans-table tbody tr:nth-child(even) td{background:rgba(0,0,0,.015)}
 
   /* ---------- 8. 会话 ---------- */
   .chat{display:flex;flex-direction:column;height:100%}
@@ -4832,6 +4846,51 @@ function formatAnswer(raw){
     if (inCode) { code.push(line); continue; }
     const t = esc(line);
     if (!t.trim()) { out.push('<div style="height:6px"></div>'); continue; }
+    /* 表格块：连续若干 pipe 行（必须同时有前导与后导 |），且其中紧跟一行「分隔行」
+       （只由 | - : 空格构成，如 | --- | :---: |）才识别为表格；否则落回普通段落。
+       分隔行绝不进 thead/tbody，且单元格文本仍先 esc 再 ansInline，保持「先转义」不变式。 */
+    if (/^\s*\|.*\|\s*$/.test(line) && !/^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(line)) {
+      let j = i;
+      const rows = [];
+      while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) { rows.push(lines[j]); j++; }
+      let sep = -1;
+      for (let k = 0; k < rows.length; k++) {
+        if (/^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(rows[k])) { sep = k; break; }
+      }
+      if (sep >= 0) {
+        const splitRow = r => {
+          let s = r.trim();
+          if (s.startsWith('|')) s = s.slice(1);
+          if (s.endsWith('|')) s = s.slice(0, -1);
+          return s.split('|').map(c => c.trim());
+        };
+        const alignOf = c => {
+          const x = c.trim();
+          if (x.startsWith(':') && x.endsWith(':')) return 'center';
+          if (x.endsWith(':')) return 'right';
+          if (x.startsWith(':')) return 'left';
+          return '';
+        };
+        const aligns = splitRow(rows[sep]).map(alignOf);
+        const cellAttr = idx => aligns[idx] ? ' style="text-align:' + aligns[idx] + '"' : '';
+        let html = '<div class="ans-table-wrap"><table class="ans-table"><thead>';
+        for (let r = 0; r < sep; r++) {
+          html += '<tr>';
+          splitRow(rows[r]).forEach((c, idx) => { html += '<th' + cellAttr(idx) + '>' + ansInline(esc(c)) + '</th>'; });
+          html += '</tr>';
+        }
+        html += '</thead><tbody>';
+        for (let r = sep + 1; r < rows.length; r++) {
+          html += '<tr>';
+          splitRow(rows[r]).forEach((c, idx) => { html += '<td' + cellAttr(idx) + '>' + ansInline(esc(c)) + '</td>'; });
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        out.push(html);
+        i = j - 1; // 整块已消费，跳过后续行
+        continue;
+      }
+    }
     if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(t)) { out.push('<hr class="ans-hr">'); continue; }
     let m = t.match(/^\s*#{1,4}\s*(.+?)\s*$/);
     if (m) { out.push('<span class="ans-h">' + ansInline(m[1]) + '</span>'); continue; }

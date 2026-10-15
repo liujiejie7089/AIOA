@@ -1,17 +1,23 @@
 # -*- coding: utf-8 -*-
-"""独立验证：answer_shape 修复（「回答太多，只要答所问」）是否**真的生效**。
+"""独立验证：answer_shape 的回答口径是否**真的生效**（含「不冗长」与「严格知识库口径」两面）。
 
-要证的链路：agent/app/core/answer_shape.py 的 rules() 已从「每次必给六段、禁止省略」
-改为「默认只答所问、能一句答清就一句；**仅当用户提问涉及权限**时才补『下一步+找谁办』」，
-并由 agent_runtime 注入系统提示。本脚本跑活体对话 + 活体提示词口径 + 判别力证明，
-证明修复**不是只看代码改了**。
+要证的链路：agent/app/core/answer_shape.py 的 rules() 生成的行为规则由 agent_runtime 注入系统提示。
+本脚本跑活体对话 + 活体提示词口径 + 判别力证明，证明口径**不是只看代码改了**。
 
-口径收窄过两次（2026-10-12，均用户反馈驱动）：
-  ① 「每次必给六段」→「默认只答所问」；
-  ② 「做不了就补下一步」→「**仅限权限话题**」——答不了／超出职责／查不到数据一律不出现
-     办理指引、管理员话术或下一步建议。
-故本脚本在**两侧**都要立断言：权限场景**必须**有下一步/找谁办；非权限的「做不了」
-**不得**有（只验正面会漏掉「口径没收窄」这一半，等于判据残缺）。
+口径三次变更（全部用户反馈驱动）：
+  ① 2026-10-12「每次必给六段」→「默认只答所问」（用户原话：回答太多，只要答所问）；
+  ② 2026-10-12「做不了就补下一步」→「**仅限权限话题**」——答不了／超出职责／查不到数据
+     一律不出现办理指引、管理员话术或下一步建议；
+  ③ **2026-10-15「严格知识库口径」**——只依据本轮四类资料作答、逐维度覆盖不跳项、
+     缺失项标注到具体维度、统计/对比类用表格、输出前强制自检。③ 取代 ①② 的**结构**部分，
+     但**不撤**②的权限收窄，也不撤①的「不冗长」精神（由新规则 8「不得为没问到的维度凑段落」承载）。
+
+故本脚本在**两侧**都要立断言：
+  - 「不冗长」侧（①的延续，仍必须成立）：简单提问要短、不含分节词、不罗列没问的信息；
+  - 「权限收窄」侧（②，仍必须成立）：权限场景**必须**有下一步/找谁办；非权限的「做不了」
+    **不得**有办理指引/管理员话术/主动推销权限。
+  ⚠️ ③ 的**能力面**（逐维度覆盖 / 缺失标注三态 / 表格）**不在本脚本**，见
+     `scripts/_check_answer_kb_strict.py` —— 两个脚本各管一半，别互相替代。
 
 断言（逐条 PASS/FAIL/SKIP + 实测值）：
   1. 复现用户场景：上传含唯一地标的小 txt，问「这里面有什么？」
@@ -30,8 +36,9 @@
        a) 检查函数对**故意含五段标题**的合成文本判 FAIL；
        b) 对真实回答判 PASS。两条都贴出来。
   5. 活体提示词口径：POST :8000/internal/v1/answer-shape → rules 无旧口径
-       （必须齐备/按顺序组织/「做不了」），有新口径（只回答用户问到的内容 +
-       「涉及权限」+「除权限问题外」）。
+       （必须齐备/按顺序组织/「做不了」），有**新口径**关键件（知识库暂未收录 /
+       当前检索未返回相关内容 / 不得跳过任何一项 / 应答清单 / 数据来源 / 自检 / 维度层级），
+       且仍含「涉及权限」+「除权限问题外」，并保留护栏「没问到的维度」。
   6. 回归（不得被改动弄坏）：
        a) python scripts/_verify_chat_attachment_e2e.py → 9/9 PASS、退出码 0；
        b) cd agent && ./.venv/Scripts/python.exe -m pytest tests/ -q → 全绿（基线 106 passed）。
@@ -73,6 +80,13 @@ FORBIDDEN_HANDOFF_WHEN_NO_PERM = HANDOFF_HINTS + [
     "权限码", "开通权限", "申请权限", "审批权限", "办理权限"]
 # 「答不了」的自述标记：负向对照只在确实答不了时才判定，避免判据退化成恒真
 REFUSAL_HINTS = ["无法", "不能", "不支持", "办不到", "没办法", "不提供", "无权", "做不到"]
+
+
+# 额度耗尽：本项目把「今日免费额度已用完」视为**环境限制**，不是回答口径的回归。
+# 该异常由 start_run 抛出、由活体对话段捕获后如实记为 SKIP ——
+# 铁律：环境不允许的如实 SKIP，既不伪装 PASS，也不该判成 FAIL（否则「额度用完」会被读成缺陷）。
+class QuotaExhausted(RuntimeError):
+    pass
 
 PASS, FAIL, SKIP = [], [], []
 RES = []
@@ -135,6 +149,10 @@ def start_run(token, conv_id, text, attachments):
                       json=body, timeout=30)
     d = r.json()
     if d.get("code") != 0 or not (d.get("data") or {}).get("runId"):
+        msg = d.get("message") or ""
+        # 额度耗尽 ≠ 口径回归：单独抛出，交给活体段记 SKIP（不是 FAIL）。
+        if d.get("code") == 403 and ("额度" in msg):
+            raise QuotaExhausted("发起对话失败(额度耗尽): %s" % r.text[:200])
         raise RuntimeError("发起对话失败: %s" % r.text[:200])
     return d["data"]["runId"]
 
@@ -208,11 +226,18 @@ def check_live_prompt():
     rules_text = "\n".join(rules)
     print("    rules 原文:\n" + "\n".join("      " + ln for ln in rules))
     old_hits = [w for w in ("必须齐备", "按顺序组织", "做不了") if w in rules_text]
-    new_present = "只回答用户问到的内容" in rules_text
+    # 2026-10-15 契约变更：口径由「只答所问」改为「严格知识库口径」（见 answer_shape.rules 说明），
+    # 故 5b 改钉**新**口径关键件；旧短语（只回答用户问到的内容 / 最多 3-5 条）已不是契约，不再断言。
+    new_markers = ("知识库暂未收录", "当前检索未返回相关内容", "不得跳过任何一项",
+                   "应答清单", "数据来源", "自检", "维度层级")
+    new_missing = [m for m in new_markers if m not in rules_text]
     perm_scoped = ("涉及权限" in rules_text) and ("除权限问题外" in rules_text)
+    guard = "没问到的维度" in rules_text      # 防「全覆盖」被执行成「每题都展开」
     chk("5a 旧口径缺失（无『必须齐备』/『按顺序组织』/『做不了』）", not old_hits,
         "命中旧口径=%s" % (old_hits or "无"))
-    chk("5b 新口径存在（含『只回答用户问到的内容』）", new_present)
+    chk("5b 新口径存在（严格知识库口径关键件齐备）", not new_missing,
+        "缺失=%s" % (new_missing or "无"))
+    chk("5b2 保留护栏「不得为没问到的维度凑段落」", guard)
     chk("5c 触发条件已收窄到权限（含『涉及权限』『除权限问题外』）", perm_scoped,
         "涉及权限=%s 除权限问题外=%s" % ("涉及权限" in rules_text, "除权限问题外" in rules_text))
 
@@ -321,6 +346,12 @@ def check_live_conversation(token):
             skip("3b 非权限不做指引", "run 未收口")
 
         return ans1  # 供判别力证明使用
+    except QuotaExhausted as e:
+        # 环境额度限制：1/2/3/3b 全部无法判定 —— 如实 SKIP，不硬凑、不判 FAIL。
+        skip("1/2/3/3b 活体对话",
+             "%s —— 这是**环境额度限制**（非口径回归）；口径契约 5a–5c 已独立验证，"
+             "换一个有额度的账号或次日再跑本段即可" % e)
+        return ""
     finally:
         cleanup_convs(token, conv_ids)
 
@@ -339,8 +370,12 @@ def check_regression():
         # 更稳妥：看通过计数
         m = re.search(r"(\d+)/(\d+) 通过", out)
         ok9 = m and m.group(1) == m.group(2) and int(m.group(1)) >= 9
-        chk("6a 附件 e2e 通过且退出码 0", p.returncode == 0 and ok9,
-            "returncode=%s 计数=%s" % (p.returncode, m.group(0) if m else "?"))
+        if p.returncode == 2:
+            # 子脚本按纪律以「环境不可用」SKIP（退出码 2）—— 不是附件链路回归，如实 SKIP。
+            skip("6a 附件 e2e", "子脚本记 SKIP（退出码 2，环境不可用；常见原因＝账号额度耗尽）")
+        else:
+            chk("6a 附件 e2e 通过且退出码 0", p.returncode == 0 and ok9,
+                "returncode=%s 计数=%s" % (p.returncode, m.group(0) if m else "?"))
     except Exception as e:
         skip("6a 附件 e2e", "执行异常：%s" % e)
 

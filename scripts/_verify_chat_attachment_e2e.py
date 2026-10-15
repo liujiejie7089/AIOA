@@ -59,6 +59,12 @@ PASS, FAIL, SKIP = [], [], []
 RES = []
 
 
+# 额度耗尽：属**环境限制**，不是附件链路缺陷。由 start_run 抛出、main 捕获后记 SKIP（退出码 2）——
+# 否则「账号今日免费额度用完」会被读成「附件读文功能坏了」（本项目实测过的错误归因）。
+class QuotaExhausted(RuntimeError):
+    pass
+
+
 def chk(cid, ok, detail=""):
     RES.append((cid, bool(ok)))
     (PASS if ok else FAIL).append(cid + ("  | " + str(detail)[:500] if detail else ""))
@@ -110,6 +116,10 @@ def start_run(token, conv_id, text, attachments):
                       json=body, timeout=30)
     d = r.json()
     if d.get("code") != 0 or not (d.get("data") or {}).get("runId"):
+        msg = d.get("message") or ""
+        # 额度耗尽单独抛出 ⇒ 环境限制，记 SKIP，不判 FAIL。
+        if d.get("code") == 403 and ("额度" in msg):
+            raise QuotaExhausted("发起对话失败(额度耗尽): %s" % r.text[:200])
         raise RuntimeError("发起对话失败: %s" % r.text[:200])
     return d["data"]["runId"]
 
@@ -256,6 +266,10 @@ def main():
         chk("A5 ★负向对照：不带附件的 user 行 attachments 必须为 NULL（证 A3 非恒填）",
             ok_exists and raw2 is None, "attachments=%s" % ("NULL" if raw2 is None else raw2[:120]))
 
+    except QuotaExhausted as e:
+        # 额度耗尽：A3/A4/A5 无法判定 —— 如实 SKIP（退出码 2），不判 FAIL、不伪装 PASS。
+        skip("A3/A4/A5 附件读文判据",
+             "%s —— **环境额度限制**（非链路缺陷）；换一个有额度的账号或次日再跑" % e)
     finally:
         # 自净：逻辑删除测试会话（与产品同源软删），不污染回归环境
         try:
