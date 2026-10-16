@@ -56,8 +56,8 @@
 
 | 契约项 | 位置 | 状态 |
 |---|---|---|
-| `POST /internal/v1/runs/{runId}/resume`（含 `approval_id` / `decision` / `args_override`） | 第 46-70 行 | 未实现 |
-| `need_clarification: { question, suggested_options }` | 第 133 行 | **未实现 ← 用户要的单选表单** |
+| `POST /internal/v1/runs/{runId}/resume`（含 `approval_id` / `decision` / `args_override`） | 第 46-70 行 | ✅ **已实现**（澄清形态）：agent `app/main.py` + Java `RunController` 转发；`approval_id`/`args_override`（审批形态）仍未用 |
+| `need_clarification: { question, suggested_options }` | 第 133 行 | ✅ **已实现**（用户要的单选表单）：agent 门面发事件 → Java `EVENT_NEED_CLARIFICATION` 透传 + `AgentRun.WAITING_INPUT` → H5 `.clar-card` 单选卡回填 |
 | `approval.required` / `approval.resolved` | 第 129-130 行 | 未实现（但 Java 侧有演示级替代，见 1.4） |
 | `run.plan` / `run.step` / `agent.switched` | 第 124-126 行 | 未实现 |
 | `citation`（M4） | 第 132 行 | 未实现 |
@@ -250,7 +250,7 @@ Java 侧**已经在发卡片事件**：`RunService.java:722-724` 在 `message.co
 
 | 阶段 | 内容 | 出口判据 |
 |---|---|---|
-| **P0 契约补齐**（与试点并行） | 补 `need_clarification` / `runs/{id}/resume` / `approval.*` 的事件常量与 Java 侧状态 `WAITING_INPUT` | Java `RunService` 事件表含新常量；单元测试覆盖状态流转 |
+| **P0 契约补齐**（与试点并行） | 补 `need_clarification` / `runs/{id}/resume` / `approval.*` 的事件常量与 Java 侧状态 `WAITING_INPUT` | ✅ 澄清链两项 + `WAITING_INPUT` **已交付**（2026-10-16，见 §7 落地状态）；`approval.*` 仍未做 |
 | **P1 单点突破**（试点，见 §7） | LangGraph 图跑通「工具循环 + ask_user 中断 + resume」，门面后开关控制 | §7 的 5 条判据全绿 |
 | **P2 多智能体** | planner → 域子 agent → 汇总，落 `run.plan`/`run.step`/`agent.switched` | 契约事件真实产出；失败有终态 |
 | **P3 记忆与可观测** | checkpointer 长期化 + OTel/指标 | 会话跨天可续；有指标端点 |
@@ -274,6 +274,20 @@ Java 侧**已经在发卡片事件**：`RunService.java:722-724` 在 `message.co
 - **Q3 精确恢复**：resume 后**不重跑**已完成的工具调用（用工具网关的调用日志计数断言，防副作用重复）；
 - **Q4 契约不破**：既有 SSE 契约回归全绿（`scripts/_check_kb_toggle.py`、`_check_answer_kb_strict.py` 等既有哨兵 0 失败）；
 - **Q5 与 C 的对比量**：记录「澄清一轮的端到端耗时 / 代码行数 / 新增基础设施项 / 需自维护的持久化逻辑行数」——**四个数字**，作为扩大与否的依据。
+
+### 落地状态（2026-10-16）
+
+三层已实装。**Q1/Q3/Q4 有可复跑哨兵；Q2 只在生产 Redis 下成立**（本地内存 checkpointer 进程重启即丢断点）。
+
+| 层 | 落点 | 证据（可复跑） |
+|---|---|---|
+| agent 内核 | `aioa_ai/tools/ask_user.py`、`graph/nodes.py::clarify`、`graph/facade.py`（`_pause_events`/`resume`）、`graph/checkpoint.py`、`app/main.py::resume_run` | `scripts/_verify_ask_user_hitl.py` 11/11（含 **Q3**：已完成的工具调用计数=1；HITL 关闭时无 `need_clarification`）；`agent/tests/test_aioa_ai_hitl.py` |
+| Java 后端 | `AgentRun.STATUS_WAITING_INPUT`；`RunService` 的 `proxyAgentRun`/`resume`/`markWaitingInput`/`waitingInputNotice`；`RunController` `POST /api/v1/runs/{runId}/resume` | `scripts/_check_hitl_resume_wire.py` 7/7（含负向对照）；`./mvnw -q -pl aioa-chat -am -DskipTests compile` EXIT=0 |
+| H5 用户端 | `_backup_index_pre_oa.html`（`_sse` / `resumeStream` / `clarCardHtml` / `mountClarCard` / `cancelClarCard` + 经典 `send()` 回填循环）、`_oa_app.js`（OA `oaSend()`） | `scripts/_verify_h5_clarification.py`（拦截真实请求体 + 合成 SSE：OA 与经典各 N0–N8、三层线格式 L1–L10，0 失败；N8 为负向对照）；回归 `scripts/_e2e_oa.py` 105/106（唯一 FAIL 是 `/api/v1/asr/status` 401，与澄清链无关） |
+
+**与 §8 未决项 8 的关系（口径未统一）**：`need_clarification` 与 `approval.required` **仍是两条独立链路**，未合并进同一状态机。澄清走 agent 的 `interrupt()`/`resume`（真挂起、断点可续）；审批仍是 Java 侧关键词启发式（`RunService.approvalCardJson`，演示级）。统一留待审批形态（M3）落地时再做，避免为演示级启发式引入真实 HITL 语义。
+
+**本轮未验证（如实记录）**：未在真机跑通「新 Java + `AIOA_HITL=true` + 模型真实调用 `ask_user`」的整链闭环（`:8080` 上部署的是改动前的进程，Java 无热加载），故 Java 侧「暂停 → `WAITING_INPUT` → resume」的**运行时**行为仅由读码 + 编译 + 静态哨兵佐证；H5 行为由网络拦截 + 合成 SSE 验证（未走真实模型推理）。
 
 **试点不通过时的判据**：若 Q2 无法在 2 周内达成或 Q3 反复失败（幂等模型没设计好），即为「LangGraph 的持久化收益未兑现」的**负向证据**，应转方案 C。
 

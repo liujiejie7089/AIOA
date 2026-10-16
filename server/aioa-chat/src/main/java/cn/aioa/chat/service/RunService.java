@@ -73,6 +73,8 @@ public class RunService {
     private static final String EVENT_RUN_FAILED = "run.failed";
     private static final String EVENT_ERROR = "error";
     private static final String EVENT_PING = "ping";
+    /** Agent 在 ask_user 暂停时补发的澄清事件（SSE 末帧，之后本轮流正常结束）。 */
+    private static final String EVENT_NEED_CLARIFICATION = "need_clarification";
     private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
             new ParameterizedTypeReference<>() {
             };
@@ -214,6 +216,12 @@ public class RunService {
         if (!Objects.equals(run.getUserId(), user.getUserId())) {
             throw BizException.forbidden("无权访问该运行");
         }
+        // 挂起态（HITL 等待澄清）：**绝不**再打 /internal/v1/runs —— 同一 thread_id 会覆盖
+        // agent 侧断点，使已完成的工具调用面临重跑风险（HITL 验收判据 Q3）。
+        // 澄清只能由 /api/v1/runs/{runId}/resume 回填，重复订阅必须被拦截。
+        if (AgentRun.STATUS_WAITING_INPUT.equals(run.getStatus())) {
+            return waitingInputNotice(run, lastEventId);
+        }
         // 幂等恢复：run 已终结时直接回放缓存帧，不再次触发 Agent 推理，
         // 避免刷新/重进会话后重复回答、重复落库与重复计费
         if (AgentRun.STATUS_SUCCEEDED.equals(run.getStatus())
@@ -228,29 +236,6 @@ public class RunService {
                 .last("limit 1"));
         String text = userMessage == null ? "" : userMessage.getContent();
         Map<String, Object> context = userMessage == null ? null : userMessage.getContextSnapshot();
-
-        SseEmitter emitter = new SseEmitter(0L);
-        StringBuilder assistant = new StringBuilder();
-        AtomicReference<Usage> usageRef = new AtomicReference<>(Usage.ZERO);
-        AtomicReference<String> lastId = new AtomicReference<>(lastEventId);
-        AtomicReference<List<Object>> citationsRef = new AtomicReference<>(List.of());
-        AtomicReference<List<Object>> toolCallsRef = new AtomicReference<>(List.of());
-        AtomicReference<String> failureRef = new AtomicReference<>(null);
-        long heartbeatSeconds = Math.max(1, agentProperties.getHeartbeatSeconds());
-
-        ScheduledFuture<?> heartbeat = sseHeartbeatExecutor.scheduleAtFixedRate(
-                () -> safeSend(emitter, EVENT_PING, lastId.get(), "{}"),
-                heartbeatSeconds, heartbeatSeconds, TimeUnit.SECONDS);
-        Disposable[] subscription = new Disposable[1];
-        Runnable cleanup = () -> {
-            heartbeat.cancel(true);
-            if (subscription[0] != null) {
-                subscription[0].dispose();
-            }
-        };
-        emitter.onCompletion(cleanup);
-        emitter.onTimeout(cleanup);
-        emitter.onError(thrown -> cleanup.run());
 
         AgentRunRequest request = buildRequest(run, user, text, context);
         request.setUserToken(stripBearer(authorization));
@@ -280,21 +265,60 @@ public class RunService {
                 request.setProject(brief);
             }
         }
+        return proxyAgentRun("/internal/v1/runs", request, run, lastEventId);
+    }
+
+    /**
+     * 代理一次 agent SSE 流：创建 emitter、起心跳、逐帧转发，流末按既定口径收口
+     * （落 assistant 消息 / 计 usage / 记 citations / 故障原因）。
+     *
+     * subscribe（首发）与 resume（HITL 续跑）共用本方法，确保「续跑后回答的落库口径」
+     * 与「首发」逐字一致——否则 resume 后的回答会不一致。唯一差异是「发起哪条 agent 端点」：
+     *   · 首发：uri = {@code /internal/v1/runs}，body = 完整 {@link AgentRunRequest}；
+     *   · 续跑：uri = {@code /internal/v1/runs/{runId}/resume}，body = {@code {answer}}。
+     *
+     * clarificationRef 用于识别 ask_user 暂停帧：流末若收到 need_clarification，则本轮
+     * 不终结（挂起等待 /resume），天然覆盖多轮澄清。
+     */
+    private SseEmitter proxyAgentRun(String uri, Object requestBody, AgentRun run, String lastEventId) {
+        SseEmitter emitter = new SseEmitter(0L);
+        StringBuilder assistant = new StringBuilder();
+        AtomicReference<Usage> usageRef = new AtomicReference<>(Usage.ZERO);
+        AtomicReference<String> lastId = new AtomicReference<>(lastEventId);
+        AtomicReference<List<Object>> citationsRef = new AtomicReference<>(List.of());
+        AtomicReference<List<Object>> toolCallsRef = new AtomicReference<>(List.of());
+        AtomicReference<String> failureRef = new AtomicReference<>(null);
+        AtomicReference<String> clarificationRef = new AtomicReference<>(null);
+        long heartbeatSeconds = Math.max(1, agentProperties.getHeartbeatSeconds());
+
+        ScheduledFuture<?> heartbeat = sseHeartbeatExecutor.scheduleAtFixedRate(
+                () -> safeSend(emitter, EVENT_PING, lastId.get(), "{}"),
+                heartbeatSeconds, heartbeatSeconds, TimeUnit.SECONDS);
+        Disposable[] subscription = new Disposable[1];
+        Runnable cleanup = () -> {
+            heartbeat.cancel(true);
+            if (subscription[0] != null) {
+                subscription[0].dispose();
+            }
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(thrown -> cleanup.run());
         try {
             subscription[0] = agentWebClient.post()
-                    .uri("/internal/v1/runs")
+                    .uri(uri)
                     .accept(MediaType.TEXT_EVENT_STREAM)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header(HttpHeaders.AUTHORIZATION,
                             "Bearer " + serviceTokenProvider.generate(ServiceTokenProvider.SVC_SERVER))
-                    .bodyValue(request)
+                    .bodyValue(requestBody)
                     .retrieve()
                     .bodyToFlux(SSE_TYPE)
                     .subscribe(
                             event -> forward(emitter, event, assistant, lastId, usageRef,
-                                    citationsRef, toolCallsRef, failureRef),
+                                    citationsRef, toolCallsRef, failureRef, clarificationRef),
                             error -> {
-                                log.warn("agent run {} failed: {}", runId, error.getMessage());
+                                log.warn("agent run {} failed: {}", run.getRunId(), error.getMessage());
                                 markFailed(run, error.getMessage());
                                 safeSend(emitter, EVENT_ERROR, lastId.get(), errorJson(error));
                                 cleanup.run();
@@ -303,21 +327,67 @@ public class RunService {
                             () -> {
                                 try {
                                     completeRun(run, emitter, lastId, assistant, usageRef,
-                                            citationsRef, toolCallsRef, failureRef);
+                                            citationsRef, toolCallsRef, failureRef, clarificationRef);
                                 } catch (Exception e) {
-                                    log.error("finish run {} failed", runId, e);
+                                    log.error("finish run {} failed", run.getRunId(), e);
                                 }
                                 cleanup.run();
                                 emitter.complete();
                             });
         } catch (Exception e) {
-            log.error("subscribe agent run {} failed", runId, e);
+            log.error("subscribe agent run {} failed", run.getRunId(), e);
             markFailed(run, e.getMessage());
             safeSend(emitter, EVENT_ERROR, lastId.get(), errorJson(e));
             cleanup.run();
             emitter.completeWithError(e);
         }
         return emitter;
+    }
+
+    /**
+     * 挂起态重复订阅的拦截提示：报告型（恒不抛），发一条 error 帧说明后用
+     * code=WAITING_INPUT 收口。绝不再打 /internal/v1/runs，避免覆盖 agent 侧断点导致
+     * 已完成工具调用被重跑（HITL 验收判据 Q3）。
+     */
+    private SseEmitter waitingInputNotice(AgentRun run, String lastEventId) {
+        SseEmitter emitter = new SseEmitter(0L);
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(Map.of(
+                    "code", "WAITING_INPUT",
+                    "message", "该运行正在等待你的选择（澄清），请回填澄清卡；重复订阅不会重跑本轮。",
+                    "retryable", false));
+        } catch (Exception e) {
+            json = "{\"code\":\"WAITING_INPUT\",\"message\":\"该运行正在等待你的选择（澄清），请回填澄清卡；重复订阅不会重跑本轮。\",\"retryable\":false}";
+        }
+        safeSend(emitter, EVENT_ERROR, lastEventId, json);
+        emitter.complete();
+        return emitter;
+    }
+
+    /**
+     * HITL 澄清回填：把澄清卡选择送回 agent，从断点续跑（SSE 事件流）。
+     * 续跑用的是**已存在**的 run（不新建、不落 user 消息），因此 completeRun/finish 会在
+     * 同一 conversation 上追加 assistant 消息——这是期望行为。
+     *
+     * 续跑流若**又**收到 need_clarification（多轮澄清），clarificationRef 机制会再次置
+     * WAITING_INPUT，天然覆盖。
+     */
+    public SseEmitter resume(String runId, Map<String, Object> body, String lastEventId, String authorization) {
+        AuthUser user = AuthUserContext.require();
+        AgentRun run = findRun(runId);
+        if (!Objects.equals(run.getUserId(), user.getUserId())) {
+            throw BizException.forbidden("无权访问该运行");
+        }
+        if (!AgentRun.STATUS_WAITING_INPUT.equals(run.getStatus())) {
+            throw BizException.badRequest("该运行当前不是等待澄清状态（" + run.getStatus() + "）");
+        }
+        // answer 可以为 null（用户放弃澄清），由 agent 侧自行处理；不要在这里拦。
+        Object answer = body == null ? null
+                : (body.containsKey("answer") ? body.get("answer") : body.get("decision"));
+        Map<String, Object> resumeBody = new java.util.LinkedHashMap<>();
+        resumeBody.put("answer", answer);
+        return proxyAgentRun("/internal/v1/runs/" + run.getRunId() + "/resume", resumeBody, run, lastEventId);
     }
 
     /**
@@ -691,7 +761,8 @@ public class RunService {
                          AtomicReference<Usage> usageRef,
                          AtomicReference<List<Object>> citationsRef,
                          AtomicReference<List<Object>> toolCallsRef,
-                         AtomicReference<String> failureRef) {
+                         AtomicReference<String> failureRef,
+                         AtomicReference<String> clarificationRef) {
         String name = event.event() == null ? "message" : event.event();
         String data = event.data() == null ? "" : event.data();
         if (event.id() != null) {
@@ -726,6 +797,10 @@ public class RunService {
         } else if (EVENT_RUN_COMPLETED.equals(name)) {
             // 尾帧同样带 usage，取后到的为准
             usageRef.set(readUsage(data));
+        } else if (EVENT_NEED_CLARIFICATION.equals(name)) {
+            // ask_user 暂停帧：记下澄清负载，流末由 completeRun 据其置 WAITING_INPUT。
+            // 该帧**已**原样转发给前端（上面的 emitter.send），故前端能渲染澄清卡。
+            clarificationRef.set(data);
         } else if (EVENT_ERROR.equals(name)) {
             // Agent 流内错误帧（模型未配置/上游报错/流异常）：记录原因供流结束收口
             String code = readField(data, "code");
@@ -754,7 +829,14 @@ public class RunService {
                              StringBuilder assistant, AtomicReference<Usage> usageRef,
                              AtomicReference<List<Object>> citationsRef,
                              AtomicReference<List<Object>> toolCallsRef,
-                             AtomicReference<String> failureRef) {
+                             AtomicReference<String> failureRef,
+                             AtomicReference<String> clarificationRef) {
+        // ask_user 暂停：本轮没有回答、没花词元、run 未终结——挂起等 /resume 回填。
+        // 不落 assistant 消息、不发 run.completed、不计费（多轮澄清同理）。
+        if (clarificationRef != null && clarificationRef.get() != null) {
+            markWaitingInput(run);
+            return;
+        }
         // Agent 侧已宣告失败（模型未配置/上游报错等）：按 FAILED 收口，不落正文不计费
         String failure = failureRef.get();
         if (failure != null && !failure.isBlank()) {
@@ -866,6 +948,19 @@ public class RunService {
         patch.setError(message == null ? "unknown" : (message.length() > 500 ? message.substring(0, 500) : message));
         patch.setEndedAt(LocalDateTime.now());
         patch.setDurationMs(elapsedMillis(run.getStartedAt()));
+        agentRunMapper.updateById(patch);
+    }
+
+    /**
+     * ask_user 暂停：把 run 置 WAITING_INPUT 挂起。
+     * 有意不写 endedAt/durationMs——本轮尚未结束，resume 后仍是同一条 run（同一条 agent_run 记录）。
+     * MyBatis-Plus updateById 默认 FieldStrategy.NOT_NULL，null 字段不参与 SET，
+     * 故不写 endedAt 不会被清空（不要用 UpdateWrapper.set(null)）。
+     */
+    private void markWaitingInput(AgentRun run) {
+        AgentRun patch = new AgentRun();
+        patch.setId(run.getId());
+        patch.setStatus(AgentRun.STATUS_WAITING_INPUT);
         agentRunMapper.updateById(patch);
     }
 

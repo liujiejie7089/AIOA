@@ -44,4 +44,13 @@ public class RunController {
         runService.cancel(runId);
         return ApiResponse.ok();
     }
+
+    @Operation(summary = "HITL 澄清回填：把澄清卡选择送回 agent，从断点续跑（SSE 事件流）")
+    @PostMapping(path = "/api/v1/runs/{runId}/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter resume(@PathVariable String runId,
+                             @RequestBody(required = false) Map<String, Object> body,
+                             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+                             @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return runService.resume(runId, body, lastEventId, authorization);
+    }
 }

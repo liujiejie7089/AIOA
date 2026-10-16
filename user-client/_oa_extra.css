@@ -188,6 +188,9 @@
 .oa .bub .g-head{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}
 .oa .bub .g-head b{font-size:12.5px;font-weight:700;color:var(--text)}
 .oa .bub .g-tip{font-size:10.5px;color:var(--text-3);line-height:1.5}
+/* HITL 澄清单选卡：OA 的 .bub 有自身 padding 与 max-width（88%），卡片需与之对齐 */
+.oa .bub .clar-card{margin-top:8px}
+.oa .bub .clar-opt{font-size:12.5px}
 .oa .bub .g-row{
   display:flex;align-items:center;gap:8px;
   border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);

@@ -1645,6 +1645,24 @@ async function oaSend(){
   var stop = $o('oaStop'); if(stop) stop.style.display = '';
   var text = '';
   var answered = false;
+  var clar = null;
+  var h = {
+    onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
+    onCompleted: function(p){
+      var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
+      cites.slice(0, 3).forEach(function(c){
+        var s = document.createElement('span');
+        s.className = 'cite';
+        s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
+        bubble.appendChild(s);
+      });
+    },
+    onError: function(err){
+      tx.textContent = '生成失败：' + (err.message || '未知错误');
+      tx.style.color = 'var(--red)';
+    },
+    onClarification: function(p){ clar = p; }
+  };
 
   try{
     var convId = await oaEnsureConv();
@@ -1657,22 +1675,18 @@ async function oaSend(){
     state.runId = runId;
     S.controller = null;
     S.pendingFiles = []; oaRenderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
-    await API.stream(runId, {
-      onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
-      onCompleted: function(p){
-        var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
-        cites.slice(0, 3).forEach(function(c){
-          var s = document.createElement('span');
-          s.className = 'cite';
-          s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
-          bubble.appendChild(s);
-        });
-      },
-      onError: function(err){
-        tx.textContent = '生成失败：' + (err.message || '未知错误');
-        tx.style.color = 'var(--red)';
-      }
-    });
+    await API.stream(runId, h);
+    // 多轮回填：resume 仍可能再次 need_clarification，故用 while 收口到澄清结束
+    while(clar){
+      var tp = bubble.querySelector('.typing');
+      if(tp) tp.textContent = '等待你的选择…';
+      var pick = await mountClarCard(bubble, clar);
+      clar = null;
+      if(!pick) break;                            // 用户放弃：就地收口
+      var wait = bubble.querySelector('.typing');
+      if(wait && wait.textContent === '等待你的选择…') wait.remove();
+      await API.resumeStream(runId, pick.value, h);
+    }
     if(!text) tx.textContent = '（本次未返回内容）';
     else{
       bubble.classList.add('ans');
@@ -1698,6 +1712,8 @@ async function oaSend(){
 
 async function oaStop(){
   if(!S.busy) return;
+  // 停止生成：先把可能悬着的未决澄清卡以 null 收掉，否则卡片永远悬着、S.busy 永不释放
+  cancelClarCard();
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }

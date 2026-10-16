@@ -476,6 +476,46 @@
   .typing{display:inline-flex;gap:3px;align-items:center}
   .typing i{width:4px;height:4px;border-radius:50%;background:var(--text-3);animation:blink 1.2s infinite}
   .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+
+  /* HITL 澄清单选卡（经典 + OA 两形态共用，故放经典样式区；只用 :root 令牌，不写死色值） */
+  .clar-card{
+    width:100%; padding:var(--sp-3); border-radius:var(--r);
+    background:var(--surface-2); border:1px solid var(--border);
+    margin-top:var(--sp-2); box-shadow:var(--sh-1);
+  }
+  .clar-card .clar-q{ font-size:12.5px; color:var(--text); font-weight:600; margin-bottom:var(--sp-2); line-height:1.5; }
+  .clar-opt{
+    display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+    min-height:44px; border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--text);
+    cursor:pointer; margin-bottom:6px; padding:0 10px;
+    transition:border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  }
+  .clar-opt .co-mark{
+    flex:0 0 auto; width:16px; height:16px; border-radius:50%;
+    border:2px solid var(--border-strong); background:var(--surface);
+  }
+  .clar-opt.sel .co-mark{
+    background:var(--blue); border-color:var(--blue);
+    box-shadow:inset 0 0 0 3px var(--surface);   /* 内嵌白点 */
+  }
+  .clar-opt .co-label{ flex:1 1 auto; min-width:0; }
+  .clar-opt .co-label label{ font-weight:500; }
+  .clar-opt.sel{ border-color:var(--blue); background:var(--blue-soft); }
+  .clar-opt:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  .clar-free{
+    width:100%; min-height:38px; border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--text);
+    padding:0 10px; margin-bottom:6px;
+  }
+  .clar-free:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  .clar-ok{
+    background:var(--blue); color:#fff; border:0; border-radius:var(--r-sm);
+    min-height:36px; padding:0 14px; font-family:inherit; font-size:12.5px; cursor:pointer;
+  }
+  .clar-ok:disabled{ opacity:.45; cursor:not-allowed; }
+  .clar-card.done{ opacity:.92; }
+  .clar-card .clar-picked{ color:var(--text-2); font-size:11.5px; margin-top:6px; }
   @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
 
   .param-card{background:var(--surface);border:1px solid var(--blue);border-radius:12px;padding:11px 12px;max-width:88%;font-size:12px}
@@ -1381,6 +1421,9 @@
 .oa .bub .g-head{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}
 .oa .bub .g-head b{font-size:12.5px;font-weight:700;color:var(--text)}
 .oa .bub .g-tip{font-size:10.5px;color:var(--text-3);line-height:1.5}
+/* HITL 澄清单选卡：OA 的 .bub 有自身 padding 与 max-width（88%），卡片需与之对齐 */
+.oa .bub .clar-card{margin-top:8px}
+.oa .bub .clar-opt{font-size:12.5px}
 .oa .bub .g-row{
   display:flex;align-items:center;gap:8px;
   border:1px solid var(--border);border-radius:var(--r);background:var(--surface-2);
@@ -2804,13 +2847,17 @@ const API = {
     return state.conversationId;
   },
 
-  /* SSE：fetch + ReadableStream（EventSource 无法带 Authorization 头） */
-  async stream(runId, h){
+  /* SSE：fetch + ReadableStream（EventSource 无法带 Authorization 头）。
+     _sse 是 GET /events 与 POST /resume 共用的底层读取循环，
+     两个入口的事件分支完全一致，避免两套口径（HITL 澄清回填复用同一套解析）。 */
+  async _sse(url, opts, h){
+    opts = opts || {};
     const ctrl = new AbortController();
     state.controller = ctrl;
     const headers = {Accept:'text/event-stream'};
     if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
-    const res = await fetch(this.base+'/v1/runs/'+runId+'/events', {headers, signal:ctrl.signal});
+    if(opts.method === 'POST') headers['Content-Type'] = 'application/json';
+    const res = await fetch(this.base+url, {method:opts.method||'GET', headers, body:opts.body, signal:ctrl.signal});
     if(!res.ok) throw new Error('SSE HTTP ' + res.status);
     const reader = res.body.getReader();
     const dec = new TextDecoder('utf-8');
@@ -2836,6 +2883,10 @@ const API = {
           if(h.onCompleted) h.onCompleted(p);
         }else if(ev.event === 'approval.required'){
           const p = safeJson(ev.data); if(p && h.onApproval) h.onApproval(p);
+        }else if(ev.event === 'need_clarification'){
+          // ask_user 暂停：模型要澄清。本轮流到此结束（暂停时不发 run.completed），
+          // 故选完即 return，立刻把卡片交出去，不等连接自然关闭。
+          const p = safeJson(ev.data); if(h.onClarification) h.onClarification(p); return;
         }else if(ev.event === 'run.completed'){
           // usage 已在 message.completed 分支上报过，这里不再重复触发，避免消耗行输出两条
           return;
@@ -2846,7 +2897,15 @@ const API = {
         }
       }
     }
-  }
+  },
+  stream(runId, h){
+    return this._sse('/v1/runs/'+runId+'/events', {}, h);
+  },
+  /* HITL 澄清回填：把用户在单选卡上的选择送回后端，续跑同一 run（SSE 响应） */
+  resumeStream(runId, answer, h){
+    return this._sse('/v1/runs/'+runId+'/resume',
+                     {method:'POST', body:JSON.stringify({answer:answer})}, h);
+  },
 };
 
 function parseSseFrame(block){
@@ -5919,48 +5978,65 @@ async function send(){
   const bubbleId = 'a' + Date.now();
   m.insertAdjacentHTML('beforeend',
     '<div class="msg"><div class="avatar">'+icon(iconKey(state.chatExpert.icon))+'</div>'+
-    '<div><div class="bubble" id="'+bubbleId+'"><span class="typing"><i></i><i></i><i></i></span></div></div></div>');
+    '<div><div class="bubble" id="'+bubbleId+'"><div class="tx"><span class="typing"><i></i><i></i><i></i></span></div></div></div></div>');
   const bubble = $(bubbleId);
+  const tx = bubble.querySelector('.tx');
   m.scrollTop = m.scrollHeight;
 
   let text = '';
+  let clar = null;
+  const h = {
+    onDelta: t => {
+      const tp = bubble.querySelector('.typing'); if(tp) tp.remove();
+      text += t; tx.textContent = text; m.scrollTop = m.scrollHeight;
+    },
+    onUsage: u => { if(!u) return; state.lastUsage = u; },
+    onCompleted: p => {
+      const cites = (p && (p.citations || (p.data && p.data.citations))) || [];
+      if(cites && cites.length){
+        cites.slice(0,3).forEach(c=>{
+          const s = document.createElement('span');
+          s.className = 'cite';
+          s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
+          bubble.parentNode.appendChild(s);
+        });
+      }
+    },
+    onError: err => {
+      tx.textContent = '生成失败：' + (err.message || '未知错误');
+      bubble.style.color = 'var(--red)';
+    },
+    onClarification: p => { clar = p; }
+  };
   try{
     const convId = await API.ensureConversation();
     const run = await API.createRun(convId, effectiveQ, {kb_on:state.kbOn, expert:state.chatExpert.name},
                                     pendingFiles.map(function(f){ return f.id; }));
     state.runId = run.id || run.runId;
     pendingFiles = []; renderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
-    await API.stream(state.runId, {
-      onDelta: t => { text += t; bubble.textContent = text; m.scrollTop = m.scrollHeight; },
-      onUsage: u => {
-        if(!u) return;
-        state.lastUsage = u;
-      },
-      onCompleted: p => {
-        const cites = (p && (p.citations || (p.data && p.data.citations))) || [];
-        if(cites && cites.length){
-          cites.slice(0,3).forEach(c=>{
-            const s = document.createElement('span');
-            s.className = 'cite';
-            s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
-            bubble.parentNode.appendChild(s);
-          });
-        }
-      },
-      onError: err => {
-        bubble.textContent = '生成失败：' + (err.message || '未知错误');
-        bubble.style.color = 'var(--red)';
-      }
-    });
+    await API.stream(state.runId, h);
+    // 多轮回填：resume 仍可能再次 need_clarification，故用 while 收口到澄清结束
+    while(clar){
+      // 等待用户选择期间：若气泡还停在「打字中」占位，换成明确的等待提示，别让用户对着三个点发呆
+      const tp = bubble.querySelector('.typing');
+      if(tp) tp.textContent = '等待你的选择…';
+      const pick = await mountClarCard(bubble, clar);
+      clar = null;
+      if(!pick) break;                          // 用户放弃：就地收口
+      // 收口时若还停在等待提示（续跑没来过正文），清掉它，给 delta 让位
+      const wait = bubble.querySelector('.typing');
+      if(wait && wait.textContent === '等待你的选择…') wait.remove();
+      await API.resumeStream(state.runId, pick.value, h);
+    }
     state.lastAnswer = text;
-    if(!text) bubble.textContent = '（本次未返回内容）';
+    if(!text) tx.textContent = '（本次未返回内容）';
     // 回答统一做层级化突出（标题 / 列表 / 重点 / 数字），不再只限数字员工会话：
     // 默认助手与租户专家的回答同样是长文，纯文本铺开一样难读。
-    else { bubble.classList.add('ans'); bubble.innerHTML = formatAnswer(text); }
+    else { bubble.classList.add('ans'); tx.innerHTML = formatAnswer(text); }
     // 产出后的收口动作
     afterAnswer(bubble, text);
   }catch(e){
-    bubble.textContent = '请求失败：' + (e.message || '请检查网络或后端服务');
+    tx.textContent = '请求失败：' + (e.message || '请检查网络或后端服务');
     bubble.style.color = 'var(--red)';
   }finally{
     state.busy = false;
@@ -6157,6 +6233,120 @@ function formatAnswer(raw){
   return out.join('');
 }
 
+/* ============================================================================
+   HITL 澄清链：ask_user 暂停时，Agent 内核经由 need_clarification 事件把
+   {question, suggested_options[]} 下发给前端。前端在同一气泡里渲染一张单选卡，
+   用户选完（或自由输入）后把答案经 POST /v1/runs/{runId}/resume 回填续跑。
+   clarCardHtml 生成 DOM 字符串，mountClarCard 挂载并交互、返回 Promise；
+   cancelClarCard 供「停止生成」时把未决卡片以 null 收掉。
+   ============================================================================ */
+/* DOM/CSS 契约冻结：类名与属性必须与验证脚本断言一字不差。 */
+function clarCardHtml(p, opts){
+  opts = opts || {};
+  const q = (p && p.question != null) ? String(p.question) : '需要你补充一点信息';
+  const optsL = (p && Array.isArray(p.suggested_options)) ? p.suggested_options : [];
+  let html = '<div class="clar-card" data-clar="1">' +
+    '<div class="clar-q">' + esc(q) + '</div>';
+  if(optsL.length){
+    html += '<div class="clar-opts">';
+    optsL.slice(0, 6).forEach(function(o){
+      const v = (o && o.value !== undefined) ? o.value : '';
+      const l = (o && o.label !== undefined && o.label !== '') ? o.label : v;
+      html += '<button type="button" class="clar-opt" role="radio" aria-checked="false" data-value="' + esc(v) + '">' +
+        '<span class="co-mark"></span>' +
+        '<span class="co-label"><label>' + esc(l) + '</label></span>' +
+        '</button>';
+    });
+    html += '</div>';
+  } else {
+    html += '<input class="clar-free" placeholder="请输入…">';
+  }
+  html += '<button type="button" class="clar-ok" data-clar-ok="1" disabled>确认</button>';
+  html += '</div>';
+  return html;
+}
+
+/* 当前未决的澄清卡 resolve：mountClarCard 挂卡时写入，卡片 resolve 后清空。
+   供 cancelClarCard 以 null 收掉未决卡（停止生成 / 切走时调用）。 */
+var clarPendingResolve = null;
+
+/* 把澄清卡挂到 host（气泡元素）尾部，绑定交互，返回 Promise。
+   resolve 值为 {value, label}（已选/已输入）；用户放弃或被中止则 resolve(null)。 */
+function mountClarCard(host, p){
+  return new Promise(function(resolve){
+    const wrap = document.createElement('div');
+    wrap.innerHTML = clarCardHtml(p);
+    const card = wrap.firstElementChild;   // .clar-card
+    if(!card){ resolve(null); return; }
+    host.appendChild(card);
+
+    const optsWrap = card.querySelector('.clar-opts');
+    const free = card.querySelector('.clar-free');
+    const ok = card.querySelector('.clar-ok');
+
+    function freeze(extra){
+      card.classList.add('done');
+      Array.prototype.forEach.call(card.querySelectorAll('.clar-opt, .clar-ok, .clar-free'), function(el){ el.disabled = true; });
+      const note = document.createElement('div');
+      note.className = 'clar-picked';
+      note.innerHTML = extra;
+      card.appendChild(note);
+    }
+    function settle(val, lab){
+      const shown = (lab != null && lab !== '') ? lab : val;
+      freeze('已选择：<label>' + esc(shown) + '</label>');
+      clarPendingResolve = null;
+      resolve({value:val, label:shown});
+    }
+    function abandon(){
+      freeze('已放弃');
+      clarPendingResolve = null;
+      resolve(null);
+    }
+
+    // 单选：点 .clar-opt = 只选中不提交（单选语义）
+    if(optsWrap){
+      Array.prototype.forEach.call(optsWrap.querySelectorAll('.clar-opt'), function(btn){
+        btn.addEventListener('click', function(){
+          Array.prototype.forEach.call(optsWrap.querySelectorAll('.clar-opt'), function(b){
+            b.classList.remove('sel'); b.setAttribute('aria-checked', 'false');
+          });
+          btn.classList.add('sel'); btn.setAttribute('aria-checked', 'true');
+          ok.disabled = false;
+        });
+        btn.addEventListener('keydown', function(e){
+          if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); btn.click(); }
+        });
+      });
+    }
+    if(free){
+      free.addEventListener('keydown', function(e){
+        if(e.key === 'Enter'){ e.preventDefault(); ok.click(); }
+      });
+    }
+    ok.addEventListener('click', function(){
+      if(optsWrap){
+        const sel = optsWrap.querySelector('.clar-opt.sel');
+        if(!sel) return;                       // 没选中不许提交
+        const v = sel.getAttribute('data-value');
+        const lab = sel.querySelector('.co-label') ? sel.querySelector('.co-label').textContent : v;
+        settle(v, lab);
+      } else {
+        const val = free.value.trim();
+        if(!val) return;                        // 空输入不提交
+        settle(val, val);
+      }
+    });
+
+    clarPendingResolve = function(){ abandon(); };
+  });
+}
+
+/* 全局：停止生成 / 切走形态时，把悬着的未决澄清卡以 null 收掉（幂等）。 */
+function cancelClarCard(){
+  if(typeof clarPendingResolve === 'function'){ const fn = clarPendingResolve; clarPendingResolve = null; fn(); }
+}
+
 /* 请假申请：仅在用户主动提出请求时，由「请假类数字员工」当场发放表单（页面上无独立入口） */
 function isLeaveRequest(q){
   return /请假|休假|调休|年假|病假|事假|婚假|产假|丧假|探亲假/.test(String(q || ''));
@@ -6179,8 +6369,9 @@ function isLeaveCapable(){
 /* 产出收口：公文类触发审批卡点，并提供「存为成果」 */
 function afterAnswer(bubble, text){
   const wrap = bubble.parentNode;
-  // V36：产出过长时折叠展示（约 12 行），先给「收起 + 展开全文」，其余收口按钮仍然可见
-  autoClamp(bubble, 300, 260);
+  // V36：产出过长时折叠展示（约 12 行），先给「收起 + 展开全文」，其余收口按钮仍然可见。
+  // 只折文本内容（.tx），不要把澄清卡一起裁掉：澄清卡挂在 bubble 上、是 .tx 的兄弟节点。
+  autoClamp(bubble.querySelector('.tx') || bubble, 300, 260);
   // 默认 AI 会话：回答后固定给一个「转给更专业的同事」入口块（业务引导）。
   // 只加一次（同一气泡不重复注入），且不依赖模型输出，保证每次都会出现。
   if (isDefaultAiChat() && !wrap.querySelector('.guide-block')) {
@@ -8210,6 +8401,24 @@ async function oaSend(){
   var stop = $o('oaStop'); if(stop) stop.style.display = '';
   var text = '';
   var answered = false;
+  var clar = null;
+  var h = {
+    onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
+    onCompleted: function(p){
+      var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
+      cites.slice(0, 3).forEach(function(c){
+        var s = document.createElement('span');
+        s.className = 'cite';
+        s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
+        bubble.appendChild(s);
+      });
+    },
+    onError: function(err){
+      tx.textContent = '生成失败：' + (err.message || '未知错误');
+      tx.style.color = 'var(--red)';
+    },
+    onClarification: function(p){ clar = p; }
+  };
 
   try{
     var convId = await oaEnsureConv();
@@ -8222,22 +8431,18 @@ async function oaSend(){
     state.runId = runId;
     S.controller = null;
     S.pendingFiles = []; oaRenderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
-    await API.stream(runId, {
-      onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
-      onCompleted: function(p){
-        var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
-        cites.slice(0, 3).forEach(function(c){
-          var s = document.createElement('span');
-          s.className = 'cite';
-          s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
-          bubble.appendChild(s);
-        });
-      },
-      onError: function(err){
-        tx.textContent = '生成失败：' + (err.message || '未知错误');
-        tx.style.color = 'var(--red)';
-      }
-    });
+    await API.stream(runId, h);
+    // 多轮回填：resume 仍可能再次 need_clarification，故用 while 收口到澄清结束
+    while(clar){
+      var tp = bubble.querySelector('.typing');
+      if(tp) tp.textContent = '等待你的选择…';
+      var pick = await mountClarCard(bubble, clar);
+      clar = null;
+      if(!pick) break;                            // 用户放弃：就地收口
+      var wait = bubble.querySelector('.typing');
+      if(wait && wait.textContent === '等待你的选择…') wait.remove();
+      await API.resumeStream(runId, pick.value, h);
+    }
     if(!text) tx.textContent = '（本次未返回内容）';
     else{
       bubble.classList.add('ans');
@@ -8263,6 +8468,8 @@ async function oaSend(){
 
 async function oaStop(){
   if(!S.busy) return;
+  // 停止生成：先把可能悬着的未决澄清卡以 null 收掉，否则卡片永远悬着、S.busy 永不释放
+  cancelClarCard();
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }

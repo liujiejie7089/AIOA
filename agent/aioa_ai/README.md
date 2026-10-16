@@ -118,8 +118,8 @@ app/main.py  POST /internal/v1/runs
 |---|---|
 | 7 × 既有能力全部迁入 `aioa_ai`，门面切到 `entry.run` | ✅ 已做 |
 | 框架耦合收敛到 `graph/`（未使用的 langgraph 能力一律未引入） | ✅ 已做 |
-| checkpointer | ⛔ **缺省不挂**（见 §2 / builder.py）：当前无暂停续跑需求，挂了即「未使用部件」，且会强制状态可 msgpack 序列化、并使 checkpoint 随 run 数无界驻留内存 |
-| HITL（`ask_user` 暂停 / `resume`） | ⏳ **未做**：落地时 `build(checkpointer=PostgresSaver/RedisSaver)` 接上即可，状态已按可序列化约束设计，不需要重构节点 |
+| checkpointer | ⚙️ **可插拔，`AIOA_HITL=false` 时缺省不挂**（`graph/checkpoint.py`）：`AIOA_CHECKPOINT_URL` 空 → 内存（`InMemorySaver`，仅演示/**进程重启即丢挂起态**）；`redis://` → `AsyncRedisSaver`（**需 Redis Stack**；本项目生产环境用这条）；`sqlite://` → `AsyncSqliteSaver`。不挂时也不下发 `thread_id` —— 挂而无用只是让 checkpoint 随 run 数无界驻留内存 |
+| HITL（`ask_user` 暂停 / `resume`） | ✅ **已做**：`tools/ask_user.py`（内置控制工具）+ `graph/nodes.py::clarify`（`interrupt()`）+ 门面流末发 `need_clarification`（载荷 `{question, suggested_options}`）+ `POST /internal/v1/runs/{runId}/resume`。**`clarify` 是独立节点、且在任何副作用之前中断**，故 resume 不会重跑已完成的工具调用（Q3 由 `scripts/_verify_ask_user_hitl.py` 用工具调用计数断言）。Java 侧 `WAITING_INPUT` + `/api/v1/runs/{id}/resume` 转发、H5 单选卡见 `docs/42` |
 | `message.delta` 与 `tool.call` 的严格先后 | ⚠️ **既有约束（非本轮引入）**：模型若在同一轮既流式吐字又返回 tool_calls，delta 会先于 `tool.call`；`_post_stream` 是原样迁出的逻辑，行为与重建前一致 |
 
 ## 8. 扩展指引
