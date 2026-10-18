@@ -12,6 +12,7 @@ import cn.aioa.resource.service.ContentReviewService;
 import cn.aioa.resource.service.WorkerScheduleService;
 import cn.aioa.security.PermissionCatalog;
 import cn.aioa.resource.support.ScheduleTimeSupport;
+import cn.aioa.resource.support.WorkerProfile;
 import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
@@ -164,14 +165,15 @@ public class WorkerController {
             // V22：只有定时型（SCHEDULED）缺执行时刻才判「待配置」；
             // 事件驱动（EVENT）/按需唤起（ON_DEMAND）不需要执行时刻，不再被误标。
             String status = AgentWorker.resolveStatus(w.getRunMode(), w.getScheduleTime(), w.getStatus(), on);
-            WorkerRole role = WorkerRole.of(w.getWorkerType());
+            // 角色画像走唯一判定点：未知类型（OA 模块数字人）不得被静默说成「通用办公助手」
+            WorkerProfile role = WorkerProfile.of(w.getWorkerType(), w.getName(), w.getDescription());
             boolean mine = PermissionCatalog.isCreator(viewer, w.getCreatedBy());
             boolean editable = viewer != null
                     && (PermissionCatalog.holds(viewer, PermissionCatalog.WORKER_MANAGE) || mine);
             return new WorkerView(w.getId(), w.getName(), w.getIcon(), w.getDescription(), status,
                     w.getLastOutput(), w.getScheduleText(), w.getScheduleTime(), w.getRunMode(), w.getTaskPrompt(),
                     w.getLastRunAt() == null ? null : w.getLastRunAt().toString(), on,
-                    role.code(), role.displayName(), role.duty(), role.boundary(), role.requiredPermission(),
+                    role.code(), role.roleName(), role.duty(), role.boundary(), role.permission(),
                     w.getVisibleScope(), w.getDeptIds(), w.getSourceTemplateId(),
                     w.getCreatedBy(), mine, editable, w.getAuditStatus(), w.getAuditNote());
         }
@@ -182,9 +184,9 @@ public class WorkerController {
                                String workerType, String roleName, String runMode, String taskPrompt) {
 
         static TemplateView from(AgentWorker w) {
-            WorkerRole role = WorkerRole.of(w.getWorkerType());
+            WorkerProfile role = WorkerProfile.of(w.getWorkerType(), w.getName(), w.getDescription());
             return new TemplateView(w.getId(), w.getName(), w.getIcon(), w.getDescription(),
-                    role.code(), role.displayName(), w.getRunMode(), w.getTaskPrompt());
+                    role.code(), role.roleName(), w.getRunMode(), w.getTaskPrompt());
         }
     }
 
@@ -449,11 +451,16 @@ public class WorkerController {
         if (body.getIcon() != null) {
             cur.setIcon(trim(body.getIcon()).isEmpty() ? "bot" : body.getIcon());
         }
-        // 角色类型变更 = 承担新类型角色，必须重新通过权限准入
+        // 角色类型变更 = 承担新类型角色，必须重新通过权限准入。
+        // 未知类型（OA 模块数字人，worker_type=OA_*）不在此处接受改写：编辑名称/职责不应把角色身份
+        // 悄悄降级成 GENERAL —— WorkerRole.of 对未知取值一律回落 GENERAL，直接赋值会静默改写身份。
         if (body.getWorkerType() != null && !body.getWorkerType().isBlank()) {
             WorkerRole role = WorkerRole.of(body.getWorkerType());
-            requirePermission(user, role);
-            cur.setWorkerType(role.code());
+            if (role != WorkerRole.GENERAL
+                    || WorkerRole.GENERAL.name().equalsIgnoreCase(body.getWorkerType().trim())) {
+                requirePermission(user, role);
+                cur.setWorkerType(role.code());
+            }
         }
         if (body.getDescription() != null) {
             cur.setDescription(body.getDescription());

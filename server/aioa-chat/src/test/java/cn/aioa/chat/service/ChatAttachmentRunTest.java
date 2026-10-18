@@ -58,9 +58,16 @@ class ChatAttachmentRunTest {
                 mock(cn.aioa.resource.service.ActivityLogService.class),
                 mock(cn.aioa.chat.service.ContentGuardService.class),
                 mock(cn.aioa.resource.mapper.AgentWorkerMapper.class),
+                // 表单域 + 专家参数（docs/52）：构造器新增三依赖，本测试不触达其逻辑，给 mock 即可
+                mock(cn.aioa.resource.service.ExpertConfigService.class),
+                mock(cn.aioa.resource.mapper.AiExpertMapper.class),
+                mock(cn.aioa.resource.service.FormTemplateService.class),
+                // 数字人能力（2026-10-18）：表单清单按 worker_capability 收窄，本测试不触达其逻辑
+                mock(cn.aioa.resource.service.WorkerCapabilityService.class),
                 mock(cn.aioa.project.port.PmAiScopePort.class),
                 mock(cn.aioa.resource.mapper.SysFileMapper.class),
-                mock(cn.aioa.resource.service.KbFileParser.class));
+                mock(cn.aioa.resource.service.KbFileParser.class),
+                mock(cn.aioa.chat.service.ConversationService.class));
     }
 
     private static RunService buildResolvingService(Path uploadDir,
@@ -79,9 +86,16 @@ class ChatAttachmentRunTest {
                 mock(cn.aioa.resource.service.ActivityLogService.class),
                 mock(cn.aioa.chat.service.ContentGuardService.class),
                 mock(cn.aioa.resource.mapper.AgentWorkerMapper.class),
+                // 表单域 + 专家参数（docs/52）：构造器新增三依赖，本测试不触达其逻辑，给 mock 即可
+                mock(cn.aioa.resource.service.ExpertConfigService.class),
+                mock(cn.aioa.resource.mapper.AiExpertMapper.class),
+                mock(cn.aioa.resource.service.FormTemplateService.class),
+                // 数字人能力（2026-10-18）：表单清单按 worker_capability 收窄，本测试不触达其逻辑
+                mock(cn.aioa.resource.service.WorkerCapabilityService.class),
                 mock(cn.aioa.project.port.PmAiScopePort.class),
                 fileMapper,
-                parser);
+                parser,
+                mock(cn.aioa.chat.service.ConversationService.class));
         Field f = RunService.class.getDeclaredField("uploadDir");
         f.setAccessible(true);
         f.set(svc, uploadDir.toString());

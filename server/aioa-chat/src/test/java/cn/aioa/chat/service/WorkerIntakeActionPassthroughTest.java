@@ -1,10 +1,12 @@
 package cn.aioa.chat.service;
 
+import cn.aioa.org.service.PermissionGrantService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -28,8 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * stub 掉 HTTP 就变成了在测自己写的假数据。前置 {@code agent :8000} 不可达时 <b>整类 SKIP</b>
  * （{@link Assumptions}），而不是伪装 PASS —— 与项目「前置不满足就记 SKIP 并非 0」的口径一致。</p>
  *
- * <p>本类不启动 Spring 上下文：{@link WorkerIntakeService#intent(String)} 只用到
- * {@code objectMapper} 与 {@code agentBaseUrl}，其余协作者在本用例中传 null（方法体不触达）。</p>
+ * <p>本类不启动 Spring 上下文：{@code WorkerIntakeService#intent(user, text)} 只用到
+ * {@code objectMapper} 与 {@code agentBaseUrl}，其余协作者在本用例中传 null（方法体不触达）。
+ * 例外是 {@code permissionGrantService}：intent() 末尾的 {@code pending} 判定在权限码非空时
+ * 会调用它，传 null 会 NPE，故用 Mockito 替身返回 false（本类不校验 pending 语义）。</p>
  */
 class WorkerIntakeActionPassthroughTest {
 
@@ -42,7 +46,16 @@ class WorkerIntakeActionPassthroughTest {
         Assumptions.assumeTrue(agentUp(),
                 "agent " + AGENT + " 不可达 ⇒ SKIP（本用例刻意打真实分类链路，不 stub HTTP）");
         // 协作者全部传 null：intent() 只读 objectMapper / agentBaseUrl / http。
-        service = new WorkerIntakeService(new ObjectMapper(), null, null, null, null, null, null, null);
+        // permissionGrantService 例外 —— pending 行在权限码非空时会调用它，故给替身。
+        PermissionGrantService grants = Mockito.mock(PermissionGrantService.class);
+        Mockito.when(grants.hasPending(Mockito.any(), Mockito.any())).thenReturn(false);
+        // 服务间令牌用**真实** ServiceTokenProvider（默认密钥 = agent 侧同一占位串）：
+        // agent 的 /internal/v1/* 自 2026-10-18 起强制校验，这里不 stub 而是照生产口径签发，
+        // 于是本类顺带成为「签名口径两端一致」的活体验收（密钥不一致会在这里 401 暴露）。
+        cn.aioa.security.ServiceTokenProvider tokens =
+                new cn.aioa.security.ServiceTokenProvider(new cn.aioa.security.ServiceJwtProperties());
+        service = new WorkerIntakeService(new ObjectMapper(), null, null, null, null, null, grants,
+                null, null, null, null, tokens);
         Field baseUrl = WorkerIntakeService.class.getDeclaredField("agentBaseUrl");
         baseUrl.setAccessible(true);
         baseUrl.set(service, AGENT);
@@ -71,7 +84,7 @@ class WorkerIntakeActionPassthroughTest {
     @Test
     @DisplayName("★说「帮我上传一下这个文件」→ Java 透传出 action=UPLOAD_FILE")
     void uploadIntentPassesThrough() {
-        Map<String, Object> out = service.intent("帮我上传一下这个文件");
+        Map<String, Object> out = service.intent(null, "帮我上传一下这个文件");
         assertTrue(out.containsKey("action"),
                 "响应缺少 action 键 —— Java 层没有把 Python 的动作维度透出（H5 会因此永不弹窗）：" + out);
         assertEquals("UPLOAD_FILE", out.get("action"), String.valueOf(out));
@@ -81,14 +94,14 @@ class WorkerIntakeActionPassthroughTest {
     @Test
     @DisplayName("★宾语在前的语序「把项目合同传上去」→ action=UPLOAD_FILE")
     void objectFirstUploadIntentPassesThrough() {
-        Map<String, Object> out = service.intent("把项目合同传上去");
+        Map<String, Object> out = service.intent(null, "把项目合同传上去");
         assertEquals("UPLOAD_FILE", out.get("action"), String.valueOf(out));
     }
 
     @Test
     @DisplayName("★说「我要上报一笔差旅花费」→ action=REPORT_EXPENSE")
     void reportExpenseIntentPassesThrough() {
-        Map<String, Object> out = service.intent("我要上报一笔差旅花费");
+        Map<String, Object> out = service.intent(null, "我要上报一笔差旅花费");
         assertEquals("REPORT_EXPENSE", out.get("action"), String.valueOf(out));
         assertEquals("上报花费", out.get("actionName"), String.valueOf(out));
     }
@@ -98,7 +111,7 @@ class WorkerIntakeActionPassthroughTest {
     @Test
     @DisplayName("★「公司费用报销制度是怎么规定的」→ action 必须是 null，且角色不回归（KB_ASSISTANT）")
     void questionAboutExpenseIsNotAnAction() {
-        Map<String, Object> out = service.intent("公司费用报销制度是怎么规定的");
+        Map<String, Object> out = service.intent(null, "公司费用报销制度是怎么规定的");
         assertTrue(out.containsKey("action"), "action 键必须恒定存在（值为 null 也要有）：" + out);
         assertNull(out.get("action"), "制度类提问被误判成「要上报花费」：" + out);
         assertEquals("KB_ASSISTANT", out.get("role"), "角色判定被动作维度带偏了：" + out);
@@ -107,7 +120,7 @@ class WorkerIntakeActionPassthroughTest {
     @Test
     @DisplayName("负例：「帮我起草一份通知」→ action=null，角色仍是 DOC_DRAFTER")
     void docDraftHasNoAction() {
-        Map<String, Object> out = service.intent("帮我起草一份通知");
+        Map<String, Object> out = service.intent(null, "帮我起草一份通知");
         assertNull(out.get("action"), String.valueOf(out));
         assertEquals("DOC_DRAFTER", out.get("role"), String.valueOf(out));
     }
@@ -115,7 +128,7 @@ class WorkerIntakeActionPassthroughTest {
     @Test
     @DisplayName("负例/边界：空文本 → action 键在、值为 null（schema 恒定，H5 靠「键在值 null」区分正常对话）")
     void actionKeyPresentOnEmptyText() {
-        Map<String, Object> out = service.intent("");
+        Map<String, Object> out = service.intent(null, "");
         assertTrue(out.containsKey("action"), "空文本路径漏补 action 键：" + out);
         assertNull(out.get("action"), String.valueOf(out));
     }

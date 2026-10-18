@@ -49,6 +49,13 @@ public class WorkerScheduleService {
     private final NotificationService notificationService;
     private final ActivityLogService activityLogService;
     private final ObjectMapper objectMapper;
+    /**
+     * 服务间令牌：agent 的 `/internal/v1/*` 已于 2026-10-18 起强制校验，无票直接 401。
+     *
+     * <p>漏加票的后果是「定时任务全部静默失败」（401 被翻成 error_msg 落库），
+     * 而不是抛异常打断调度线程 —— 归因会指向模型不可用，故必须挂在同一个 HttpRequest 上。</p>
+     */
+    private final cn.aioa.security.ServiceTokenProvider serviceTokenProvider;
 
     @Value("${aioa.agent.base-url:http://localhost:8000}")
     private String agentBaseUrl;
@@ -182,6 +189,8 @@ public class WorkerScheduleService {
                 .uri(URI.create(agentBaseUrl + "/internal/v1/complete"))
                 .timeout(Duration.ofSeconds(150))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + serviceTokenProvider.generate(
+                        cn.aioa.security.ServiceTokenProvider.SVC_SERVER))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());

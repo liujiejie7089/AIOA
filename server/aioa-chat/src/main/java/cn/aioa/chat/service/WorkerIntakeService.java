@@ -7,10 +7,13 @@ import cn.aioa.org.mapper.OrgDepartmentMapper;
 import cn.aioa.org.mapper.OrgMemberMapper;
 import cn.aioa.org.service.ApprovalFlowService;
 import cn.aioa.org.service.LeaveService;
+import cn.aioa.org.service.PermissionGrantService;
 import cn.aioa.resource.entity.KbDocument;
 import cn.aioa.resource.service.BillingService;
+import cn.aioa.resource.service.FormTemplateService;
 import cn.aioa.resource.service.KbService;
 import cn.aioa.resource.service.ToolGatewayService;
+import cn.aioa.resource.service.WorkerCapabilityService;
 import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.PermissionCatalog;
@@ -67,14 +70,39 @@ public class WorkerIntakeService {
     /** 权限申请的审批流业务类型（V37 已种租户默认流）。 */
     private static final String BIZ_PERMISSION_GRANT = "PERMISSION_GRANT";
 
+    /**
+     * 类型 → 表单码 的唯一镜像（docs/52 P3）。
+     * <p>这里<b>只持有指针</b>（form_code 字符串），字段标签一律由
+     * {@link FormTemplateService#resolveForRender} 从表单库取回，不在此处写死任何字段名，
+     * 与 Python 侧 {@code _ROLES.formCode} 同源（同一组表单码）。</p>
+     */
+    private static final java.util.Map<WorkerRole, String> ROLE_FORM_CODE = java.util.Map.of(
+            WorkerRole.LEAVE_APPROVER, "leave_request",
+            WorkerRole.KB_ASSISTANT, "knowledge_upload",
+            WorkerRole.DOC_DRAFTER, "doc_draft"
+    );
+
     private final ObjectMapper objectMapper;
     private final ToolGatewayService toolGatewayService;
     private final ApprovalFlowService approvalFlowService;
     private final BillingService billingService;
     private final KbService kbService;
     private final LeaveService leaveService;
+    private final PermissionGrantService permissionGrantService;
     private final OrgDepartmentMapper departmentMapper;
     private final OrgMemberMapper memberMapper;
+    /** 表单模板服务：按 form_code 取 ACTIVE 表单的字段标签（与库定义同源）。 */
+    private final FormTemplateService formTemplateService;
+    /** 数字人能力声明服务：第 7 项「声明的能力自检」复用其 checkCapabilities。 */
+    private final WorkerCapabilityService workerCapabilityService;
+    /**
+     * 服务间令牌：agent 的 `/internal/v1/*` 已于 2026-10-18 起强制校验，无票直接 401。
+     *
+     * <p>此处漏加票的后果**不会报错**：{@link #callPython} 的降级分支会把 401 当成
+     * 「agent 不可达」而静默改用 Java 本地关键词推断 —— 于是 worker-intent 永远走兜底、
+     * 意图准确度悄悄退化。故令牌必须挂在**同一个** HttpRequest 上。</p>
+     */
+    private final cn.aioa.security.ServiceTokenProvider serviceTokenProvider;
 
     @Value("${aioa.agent.base-url:http://localhost:8000}")
     private String agentBaseUrl;
@@ -91,13 +119,14 @@ public class WorkerIntakeService {
      * <p>Python 侧不可达时降级为 Java 侧关键词推断（{@link WorkerRole#infer}），
      * 保证「agent 挂了」不会连带把创建入口也搞挂 —— 准入链路必须比 AI 推理更可靠。</p>
      */
-    public Map<String, Object> intent(String text) {
+    public Map<String, Object> intent(AuthUser user, String text) {
         Map<String, Object> out = new LinkedHashMap<>();
         String roleCode;
         double confidence;
         List<String> matched;
         String boundary;
         List<String> formFields;
+        String formCode = null;
         String nextStep;
         String source;
         // 动作意图（上传文件 / 上报花费）与角色正交，仅由 Python 侧判定；Java 侧只负责透传。
@@ -110,7 +139,15 @@ public class WorkerIntakeService {
             confidence = node.path("confidence").asDouble(0);
             matched = toStringList(node.path("matched"));
             boundary = node.path("boundary").asText("");
-            formFields = toStringList(node.path("formFields"));
+            // 表单字段标签以表单库定义为准（话术与事实同源）：Python 只回一枚 formCode，
+            // 这里按 formCode 调 resolveForRender 把字段标签填回 formFields。
+            // user 为空（如某些纯透传测试）或取不到定义时降级为空数组，绝不让意图接口整体失败。
+            formCode = node.hasNonNull("formCode") ? node.get("formCode").asText() : null;
+            if (formCode != null && !formCode.isBlank() && user != null) {
+                formFields = resolveFormFields(user, formCode);
+            } else {
+                formFields = toStringList(node.path("formFields"));
+            }
             nextStep = node.path("nextStep").asText("");
             source = "agent";
             // action 由 Python 一处判定，这里原样透传（node.path("action") 可能为 JSON null）
@@ -140,6 +177,7 @@ public class WorkerIntakeService {
         out.put("confidence", confidence);
         out.put("matched", matched);
         out.put("formFields", formFields);
+        out.put("formCode", formCode);
         out.put("nextStep", nextStep);
         out.put("source", source);
         // 与角色正交的动作意图：透传 Python 判定结果（local-fallback 时为 null）
@@ -153,6 +191,11 @@ public class WorkerIntakeService {
         out.put("applyPath", PermissionCatalog.applicable(permission)
                 ? "管理端 → 权限授权，或对 AI 说「帮我申请 " + permission + " 权限」"
                 : "该权限不开放申请，请联系平台管理员");
+        // 仅服务端一处判定「当前用户是否持有 / 是否有在途申请」（H5 据此分支，详见实施方案 §1.2）。
+        // permission 为空时 holds 返回 true（无需权限语义，直接沿用）、pending 为 false。
+        out.put("held", PermissionCatalog.holds(user, permission));
+        out.put("pending", (permission != null && !permission.isBlank())
+                ? permissionGrantService.hasPending(user, permission) : false);
         return out;
     }
 
@@ -163,6 +206,8 @@ public class WorkerIntakeService {
                     .uri(URI.create(agentBaseUrl + "/internal/v1/worker-intent"))
                     .timeout(Duration.ofSeconds(8))
                     .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + serviceTokenProvider.generate(
+                            cn.aioa.security.ServiceTokenProvider.SVC_SERVER))
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
@@ -191,12 +236,12 @@ public class WorkerIntakeService {
 
         Map<String, Object> identified;
         if (explicitType != null && !explicitType.isBlank()) {
-            identified = describe(explicitType);
+            identified = describe(user, explicitType);
             identified.put("confidence", 1.0);
             identified.put("matched", List.of());
             identified.put("source", "explicit");
         } else {
-            identified = intent(text == null ? "" : text);
+            identified = intent(user, text == null ? "" : text);
         }
 
         WorkerRole role = WorkerRole.of(str(identified.get("role")));
@@ -207,6 +252,8 @@ public class WorkerIntakeService {
         checks.add(checkForm(user, role));
         checks.add(checkFlow(user, role));
         checks.add(checkQuota(user));
+        // ⑦ 声明的能力自检：创建请求若声明了能力，逐项校验其依赖（表单/工具/审批流）是否就绪。
+        checks.add(checkDeclaredCapabilities(user, body));
 
         List<Map<String, Object>> blockers = checks.stream()
                 .filter(c -> BLOCKED.equals(c.get("status")))
@@ -229,15 +276,20 @@ public class WorkerIntakeService {
         return out;
     }
 
-    private Map<String, Object> describe(String workerType) {
+    private Map<String, Object> describe(AuthUser user, String workerType) {
         WorkerRole role = WorkerRole.of(workerType);
         String permission = role.requiredPermission();
+        // 类型 → 表单码镜像；字段标签按 formCode 从表单库取回（话术与事实同源）。
+        String formCode = ROLE_FORM_CODE.get(role);
+        List<String> formFields = (formCode != null && user != null)
+                ? resolveFormFields(user, formCode) : List.of();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("role", role.code());
         m.put("roleName", role.displayName());
         m.put("duty", role.duty());
         m.put("boundary", role.duty());
-        m.put("formFields", List.of());
+        m.put("formFields", formFields);
+        m.put("formCode", formCode);
         m.put("nextStep", "确认配置后创建");
         m.put("requiredPermission", permission);
         m.put("permissionName", PermissionCatalog.nameOf(permission));
@@ -441,6 +493,98 @@ public class WorkerIntakeService {
         }
         return check("QUOTA", "计费", PASS,
                 "额度充足（剩余 " + q.left() + " / 共 " + q.quota() + " 词元，已用 " + q.percent() + "%）");
+    }
+
+    /**
+     * 按表单码渲染字段标签（与库定义同源）。
+     *
+     * <p>取不到定义（表单不存在/未启用，或 formTemplateService 为 null）时<b>降级为空数组并记 warn</b>，
+     * 绝不抛异常让整个意图/创建接口失败。</p>
+     */
+    List<String> resolveFormFields(AuthUser user, String formCode) {
+        if (formTemplateService == null) {
+            return List.of();
+        }
+        try {
+            FormTemplateService.FormRender render =
+                    formTemplateService.resolveForRender(user.getTenantId(), formCode);
+            List<String> labels = new ArrayList<>();
+            for (FormTemplateService.FormField f : render.fields()) {
+                labels.add((f.label() != null && !f.label().isBlank()) ? f.label() : f.name());
+            }
+            return labels;
+        } catch (Exception e) {
+            log.warn("表单定义缺失，已降级（formCode={}）：{}", formCode, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * ⑦ 声明的能力自检（数字人创建第 7 项）。
+     *
+     * <p>依赖判定复用 {@link WorkerCapabilityService#checkCapabilities}（form_code 必须存在且 ACTIVE、
+     * 工具必须已注册、approval_biz_type 必须有 ACTIVE 审批流）。本方法只负责「读请求 → 调校验 →
+     * 组装成与 ①~⑥ 同形状的 check 结果」，不另写判定逻辑、不另起聚合。</p>
+     *
+     * <p>未声明能力（列表为空/字段缺失）→ PASS（提示「可稍后配置」），<b>不</b>把「没配」判成阻断。</p>
+     */
+    Map<String, Object> checkDeclaredCapabilities(AuthUser user, Map<String, Object> body) {
+        List<Map<String, Object>> caps = toCapabilityList(body == null ? null : body.get("capabilities"));
+        if (caps == null || caps.isEmpty()) {
+            return check("DECLARED_CAPABILITY", "声明能力", PASS,
+                    "未声明能力（可稍后在数字人详情里配置）");
+        }
+        List<WorkerCapabilityService.CapabilityReq> reqs = caps.stream().map(c ->
+                new WorkerCapabilityService.CapabilityReq(
+                        str(c.get("formCode")),
+                        toStringListFromObject(c.get("toolNames")),
+                        str(c.get("approvalBizType"))))
+                .toList();
+        List<String> reasons = workerCapabilityService.checkCapabilities(user.getTenantId(), reqs);
+        if (reasons.isEmpty()) {
+            return check("DECLARED_CAPABILITY", "声明能力", PASS,
+                    "已声明 " + caps.size() + " 项能力，表单/工具/审批流依赖全部校验通过");
+        }
+        String detail = String.join("；", reasons);
+        return check("DECLARED_CAPABILITY", "声明能力", BLOCKED,
+                "声明的能力自检未通过：" + detail,
+                "请先修正上述能力配置：在「表单管理」中启用对应表单、在「工具网关」注册对应工具，"
+                        + "或在「审批流定义」中配置对应审批流",
+                "该数字人声明的能力存在不可用依赖（" + detail
+                        + "）。请先在管理端补齐后再创建，避免创建后数字人因依赖缺失而无法工作。");
+    }
+
+    /** 把请求体里的 capabilities 解析成统一 String-key 的 Map 列表（容错：非列表/非 Map 一律视为空）。 */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> toCapabilityList(Object v) {
+        if (!(v instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object o : list) {
+            if (o instanceof Map<?, ?> m) {
+                Map<String, Object> sm = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> e : m.entrySet()) {
+                    sm.put(String.valueOf(e.getKey()), e.getValue());
+                }
+                out.add(sm);
+            }
+        }
+        return out;
+    }
+
+    /** 把任意对象（预期是字符串列表）安全转成字符串列表。 */
+    private static List<String> toStringListFromObject(Object v) {
+        if (!(v instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (Object o : list) {
+            if (o != null) {
+                out.add(String.valueOf(o));
+            }
+        }
+        return out;
     }
 
     // ================================================================== 工具

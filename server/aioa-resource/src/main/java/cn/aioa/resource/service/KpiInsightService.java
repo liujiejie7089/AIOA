@@ -54,6 +54,12 @@ public class KpiInsightService {
     private final BizKpiTrendMapper trendMapper;
     private final BizKpiInsightMapper insightMapper;
     private final ObjectMapper objectMapper;
+    /**
+     * 服务间令牌：agent 的 `/internal/v1/*` 已于 2026-10-18 起强制校验，无票直接 401。
+     *
+     * <p>漏加票时本服务会抛「AI 服务返回 HTTP 401」，看起来像模型不可用 —— 归因误导。</p>
+     */
+    private final cn.aioa.security.ServiceTokenProvider serviceTokenProvider;
 
     @Value("${aioa.agent.base-url:http://localhost:8000}")
     private String agentBaseUrl;
@@ -150,6 +156,8 @@ public class KpiInsightService {
                     .uri(URI.create(agentBaseUrl + "/internal/v1/complete"))
                     .timeout(Duration.ofSeconds(150))
                     .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + serviceTokenProvider.generate(
+                            cn.aioa.security.ServiceTokenProvider.SVC_SERVER))
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());

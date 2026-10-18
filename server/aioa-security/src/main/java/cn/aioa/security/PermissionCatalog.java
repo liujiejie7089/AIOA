@@ -66,6 +66,27 @@ public final class PermissionCatalog {
     public static final String WORKER_MANAGE = "worker:manage";
 
     /**
+     * 表单定义管理（docs/52 P1/P4）：配置/新建/更新「每个功能的自定义表单」。
+     *
+     * <p>表单定义是平台/租户级配置资产，与「管理数字员工」同属「管理员配置、成员使用」的边界——
+     * 普通成员只消费表单（GET /forms/{code} 与 submit 均登录即可，不校验本码）。
+     * 故授予 {@code WORKER_MANAGERS}（系统/租户/企业管理员 + 部门负责人），
+     * 与 {@link #WORKER_MANAGE} 同一口径，避免把「定义表单」这种治理动作下放给任意成员。</p>
+     */
+    public static final String FORM_MANAGE = "form:manage";
+
+    /**
+     * 数字人能力编排（docs/52 P1/P3）：给数字人声明「任务 → 表单 → 工具 → 审批」。
+     *
+     * <p>能力声明决定了「这个数字人能办什么」，并引用审批流与已注册工具，属治理动作，
+     * 同样授予 {@code WORKER_MANAGERS}（与 {@link #WORKER_MANAGE} / {@link #FORM_MANAGE} 同口径）。
+     * 注意：本码只控制「能否编排能力」；普通成员要创建带能力的数字人，仍受
+     * {@code WorkerCapabilityService#checkCapabilities} 的预检约束（表单必须存在、工具必须注册、
+     * 审批流必须存在），不会因持有本码而获得无约束的编排权。</p>
+     */
+    public static final String WORKER_CAPABILITY = "worker:capability";
+
+    /**
      * 专家（AI 专家）的创建与配置：从全局模板导入租户副本、改参数、启停、删除。
      *
      * <p>此前 {@code ExpertConfigController} 只认 {@code ROLE_ADMIN || ROLE_TENANT_ADMIN}，
@@ -213,6 +234,9 @@ public final class PermissionCatalog {
             Map.entry(WORKER_CREATE, ALL),
             Map.entry(WORKER_EDIT_SELF, ALL),
             Map.entry(WORKER_MANAGE, WORKER_MANAGERS),
+            // 表单定义 / 数字人能力编排：与「管理数字员工」同属治理动作，粗闸为管理者级（细判在服务层）
+            Map.entry(FORM_MANAGE, WORKER_MANAGERS),
+            Map.entry(WORKER_CAPABILITY, WORKER_MANAGERS),
             Map.entry(EXPERT_MANAGE, EXPERT_MANAGERS),
             Map.entry(APPROVAL_LEAVE, TENANT_ADMINS),
             // Gitee 项目与代码仓库：查看/管理/绑定对全体登录用户开放，范围由部门作用域收紧
@@ -257,6 +281,8 @@ public final class PermissionCatalog {
             Map.entry(WORKER_CREATE, "创建数字员工"),
             Map.entry(WORKER_EDIT_SELF, "修改自己的数字员工"),
             Map.entry(WORKER_MANAGE, "管理数字员工"),
+            Map.entry(FORM_MANAGE, "表单定义管理"),
+            Map.entry(WORKER_CAPABILITY, "数字人能力编排"),
             Map.entry(EXPERT_MANAGE, "专家管理"),
             Map.entry(APPROVAL_LEAVE, "请假审批"),
             Map.entry(PROJECT_VIEW, "项目与代码仓库（查看）"),

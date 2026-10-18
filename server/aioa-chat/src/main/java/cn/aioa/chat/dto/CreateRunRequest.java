@@ -27,4 +27,17 @@ public class CreateRunRequest {
     private Map<String, Object> context;
 
     private List<Long> attachments;
+
+    /**
+     * 本会话要绑定的专家 key（V88 链路补齐）：H5 新版本传专家稳定标识（policy / legal / ...）。
+     * 与 {@code expert} 二选一，优先；后端只在库里真实存在时才写回会话，绝不把乱码写进库。
+     */
+    @JsonProperty("expert_key")
+    private String expertKey;
+
+    /**
+     * 兼容旧前端：历史 H5 只传专家名称（或 key 字符串）。后端先按 key 命中 ai_expert，
+     * 再按 name 命中（本租户优先、回落 tenant_id=0）；命中不到则当没传。
+     */
+    private String expert;
 }

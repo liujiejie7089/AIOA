@@ -75,6 +75,13 @@ public class AsrController {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
+    /** 服务间令牌：agent 的 `/internal/v1/*` 已强制校验（2026-10-18），无票直接 401。 */
+    private final cn.aioa.security.ServiceTokenProvider serviceTokenProvider;
+
+    public AsrController(cn.aioa.security.ServiceTokenProvider serviceTokenProvider) {
+        this.serviceTokenProvider = serviceTokenProvider;
+    }
+
     @Operation(summary = "语音转文字：上传音频字节，返回识别文本")
     @PostMapping("/transcribe")
     public ApiResponse<Map<String, Object>> transcribe(
@@ -135,6 +142,8 @@ public class AsrController {
     private JsonNode callAgent(String pathAndQuery, String contentType, byte[] body) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder()
                 .uri(URI.create(agentBaseUrl + pathAndQuery))
+                .header("Authorization", "Bearer "
+                        + serviceTokenProvider.generate(cn.aioa.security.ServiceTokenProvider.SVC_SERVER))
                 .timeout(Duration.ofSeconds(120));
         if (contentType != null) {
             b.header("Content-Type", contentType);

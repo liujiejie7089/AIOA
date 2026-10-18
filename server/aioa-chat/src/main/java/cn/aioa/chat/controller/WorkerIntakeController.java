@@ -47,8 +47,8 @@ public class WorkerIntakeController {
     @Operation(summary = "意图识别：自然语言 → 数字员工类型与推荐权限")
     @PostMapping("/intent")
     public ApiResponse<Map<String, Object>> intent(@RequestBody IntentReq req) {
-        AuthUserContext.require();
-        return ApiResponse.ok(intakeService.intent(req == null || req.text() == null ? "" : req.text()));
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(intakeService.intent(user, req == null || req.text() == null ? "" : req.text()));
     }
 
     @Operation(summary = "创建前六项前置检查")

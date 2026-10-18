@@ -14,13 +14,21 @@ import cn.aioa.common.trace.TraceId;
 import cn.aioa.project.port.PmAiScopePort;
 import cn.aioa.resource.controller.KbController;
 import cn.aioa.resource.entity.AgentWorker;
+import cn.aioa.resource.entity.AiExpert;
 import cn.aioa.resource.entity.SysFile;
 import cn.aioa.resource.entity.TokenLedger;
+import cn.aioa.resource.entity.WorkerCapability;
+import cn.aioa.resource.model.ExpertSettings;
 import cn.aioa.resource.mapper.AgentWorkerMapper;
+import cn.aioa.resource.mapper.AiExpertMapper;
 import cn.aioa.resource.mapper.SysFileMapper;
 import cn.aioa.resource.service.ActivityLogService;
 import cn.aioa.resource.service.BillingService;
+import cn.aioa.resource.service.ExpertConfigService;
+import cn.aioa.resource.service.FormTemplateService;
 import cn.aioa.resource.service.KbFileParser;
+import cn.aioa.resource.service.WorkerCapabilityService;
+import cn.aioa.resource.support.WorkerProfile;
 import cn.aioa.resource.support.WorkerRole;
 import cn.aioa.security.AuthUser;
 import cn.aioa.security.AuthUserContext;
@@ -46,6 +54,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,6 +84,20 @@ public class RunService {
     private static final String EVENT_PING = "ping";
     /** Agent 在 ask_user 暂停时补发的澄清事件（SSE 末帧，之后本轮流正常结束）。 */
     private static final String EVENT_NEED_CLARIFICATION = "need_clarification";
+    /**
+     * Agent 在需要结构化表单输入时补发的帧（SSE 末帧，之后本轮流正常结束）。
+     * 复用 need_clarification 的 WAITING_INPUT 暂停语义：流末由 completeRun 据 clarificationRef
+     * 置 WAITING_INPUT，不终结、不落库、不计费，等 /resume 回填。
+     * 与 need_clarification 的差异：agent 只下发 {form_code, reason, prefill}，
+     * 表单字段（fields/title/submit_label/version）由 Java 从 DB 补全后一并下发给前端。
+     */
+    private static final String EVENT_NEED_FORM = "need_form";
+    /**
+     * 会话内跨数字人转交通知帧（SSE 前导帧）：在同一会话改绑数字人后、订阅 agent 之前下发，
+     * 告知前端「这个会话现在由另一个数字人接待」，前端据此更新界面并把答案渲染出来。
+     * 注意这是**通知帧**、不是暂停帧——流不被打断、不置 WAITING_INPUT、不要求用户重述。
+     */
+    private static final String EVENT_WORKER_HANDOFF = "worker.handoff";
     private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
             new ParameterizedTypeReference<>() {
             };
@@ -91,6 +114,14 @@ public class RunService {
     private final ActivityLogService activityLogService;
     private final ContentGuardService contentGuard;
     private final AgentWorkerMapper workerMapper;
+    /** 专家配置解析：数字人专属运行参数（expert_settings）由此解析五层配置。 */
+    private final ExpertConfigService expertConfigService;
+    /** 专家（ai_expert）只读映射：按 worker_type / name 命中数字人对应的专家。 */
+    private final AiExpertMapper expertMapper;
+    /** 表单模板渲染：need_form 帧据此从 DB 补全表单字段（单一事实源）。 */
+    private final FormTemplateService formTemplateService;
+    /** 数字人能力：按其 worker_capability 收窄下发给模型的表单清单（见 narrowFormsByWorker）。 */
+    private final WorkerCapabilityService workerCapabilityService;
     /** 项目域只读窄接口：项目会话下发该项目的生效上下文（跨模块单向依赖 chat → project）。 */
     private final PmAiScopePort pmAiScopePort;
 
@@ -99,6 +130,9 @@ public class RunService {
 
     /** 纯解析、零持久化（与知识库共用，但不进知识库）。 */
     private final KbFileParser kbFileParser;
+
+    /** 会话服务：转交时复用其 bindWorker 校验与改绑逻辑（同包，无循环依赖）。 */
+    private final ConversationService conversationService;
 
     /** 上传落盘根目录：与 FileController 同源（aioa.upload.dir，默认 ./uploads），读取字节时复用同一路径规则。 */
     @Value("${aioa.upload.dir:./uploads}")
@@ -115,7 +149,8 @@ public class RunService {
      * 创建 agent_run（RUNNING），返回 runId。
      */
     public String start(Long conversationId, String text, Map<String, Object> context,
-                        List<Long> attachments, String modelRef, Boolean kbOn) {
+                        List<Long> attachments, String modelRef, Boolean kbOn,
+                        String expertKey, String expert) {
         AuthUser user = AuthUserContext.require();
         if (text == null || text.isBlank()) {
             throw BizException.badRequest("text 不能为空");
@@ -144,6 +179,25 @@ public class RunService {
                     new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChatConversation>()
                             .eq(ChatConversation::getId, conversationId)
                             .set(ChatConversation::getModelRef, modelRef));
+        }
+
+        // V88 会话级专家落库：把用户本轮选的「专家 AI」解析为库里真实存在的 expert_key 写回会话，
+        // 使每一轮（subscribe 重新取 conversation）都能按 chat_conversation.expert_key 下发专家人设。
+        // 只认库里真实存在的专家（查不到就当没传，绝不把乱码写进库）；写库失败不得打断对话主链。
+        try {
+            long tid = user.getTenantId() == null ? 0L : user.getTenantId();
+            String targetKey = resolveExpertKeyFromRequest(expertKey, expert, tid);
+            if (targetKey != null && !targetKey.equals(conversation.getExpertKey())) {
+                conversationMapper.update(null,
+                        new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChatConversation>()
+                                .eq(ChatConversation::getId, conversationId)
+                                .set(ChatConversation::getExpertKey, targetKey));
+                conversation.setExpertKey(targetKey); // 本地对象同步，后续分支可直接读
+                log.info("会话 {} 绑定专家 {}", conversationId, targetKey);
+            }
+        } catch (Exception e) {
+            // 专家解析/写库异常绝不能打断对话主链
+            log.warn("会话级专家落库失败（不影响本轮对话）：{}", e.getMessage());
         }
 
         String runId = newRunId();
@@ -238,6 +292,79 @@ public class RunService {
         Map<String, Object> context = userMessage == null ? null : userMessage.getContextSnapshot();
 
         AgentRunRequest request = buildRequest(run, user, text, context);
+        // 会话在下面就绪前先取出来：表单清单必须按「本会话绑定的数字人」收窄（见下）。
+        ChatConversation conversation = conversationMapper.selectById(run.getConversationId());
+        // === 会话内跨数字人自动转交（handoff，唯一判定点 matchHandoff）===
+        // 命中则把同一会话改绑到目标数字人，复用已落库的这条 user 消息继续跑
+        // （不重复落 user 消息、不让用户重述）；并通过 SSE 前导帧通知前端。
+        // 关键：绝不换会话——loadHistory 按 conversation 查、不过滤 worker，换会话会丢历史。
+        HandoffDecision handoff = resolveHandoff(text, conversation);
+        Map<String, Object> handoffPayload = null;
+        if (handoff != null) {
+            conversationService.rebindWorker(conversation, handoff.toWorkerId());
+            conversation.setWorkerId(handoff.toWorkerId()); // 本地对象同步：后续 buildScope/收窄表单都用新 worker
+            String fromWorkerName = null;
+            AgentWorker fromWorker = workerMapper.selectById(handoff.fromWorkerId());
+            if (fromWorker != null) {
+                fromWorkerName = fromWorker.getName();
+            }
+            handoffPayload = new LinkedHashMap<>();
+            handoffPayload.put("from_worker_id", handoff.fromWorkerId());
+            handoffPayload.put("from_worker_name", fromWorkerName);
+            handoffPayload.put("to_worker_id", handoff.toWorkerId());
+            handoffPayload.put("to_worker_name", handoff.toWorkerName());
+            handoffPayload.put("task_name", handoff.taskName());
+            handoffPayload.put("question", handoff.question());
+            log.info("会话内转交：会话 {} 由数字人 {} 转交给 {}（任务「{}」）",
+                    conversation.getId(), handoff.fromWorkerId(), handoff.toWorkerId(), handoff.taskName());
+        }
+        // 下发可用表单清单（agent 据此选 form_code，避免编造）。清单为空则不注入，
+        // 保持与改动前逐字节一致，便于负向对照。
+        // ★ 2026-10-18 修：原实现只按**租户**过滤（本租户 43 张全给），完全无视
+        //   `worker_capability`（每个数字人恰好绑 1 张表）。后果实测：
+        //   用车助手数字人问「我要报销打车费」→ 弹出 expense_form（费用报销，别人的表）；
+        //   会议助手数字人问「我要申请出差」→ 弹出 travel_form。43/43 个数字人都有这个问题。
+        //   现已按能力收窄：数字人绑几张就发几张；未配置能力的（GENERAL 等历史数字人）保持租户全量。
+        // V88 专家会话（未绑数字人 + 选了专家）整段跳过：业务表单是数字员工的能力，专家 AI 是顾问，
+        // 下发会让模型把咨询当成办理（实测法律专家弹「合同起草」表、正文为空）；
+        // 普通会话（未绑数字人且未选专家）保持既有能力不受影响。唯一判定点 isExpertConversation。
+        if (!isExpertConversation(conversation)) {
+            try {
+                List<Map<String, Object>> forms =
+                        narrowFormsByWorker(formTemplateService.listAvailable(user.getTenantId()), conversation);
+                if (forms != null && !forms.isEmpty()) {
+                    request.setAvailableForms(forms);
+                }
+            } catch (Exception e) {
+                // 表单表缺失/查询异常绝不能打断对话主链
+                log.warn("下发可用表单清单失败（不影响本轮对话）：{}", e.getMessage());
+            }
+        }
+        // ★ 确定性开表提示：该数字人**只绑一张表** + 用户原话点名了这项任务 ⇒ 下发 form_hint。
+        //   为什么不在流末由后端补发 need_form 帧：那样图里没有 interrupt()、没有 checkpoint，
+        //   用户提交表单后 `/resume` 无从恢复（实测续跑零帧、模型不再确认，表单数据无处可去）。
+        //   故判定留在后端一处（shouldOpenSingleForm），执行交给 agent 走真实 interrupt()。
+        // V88 专家会话整段跳过（与上面同一唯一判定点 isExpertConversation）：确定性开表同样是数字员工的能力，
+        // 专家会话不应触发；普通会话（未绑数字人且未选专家）保持既有能力不受影响。
+        if (!isExpertConversation(conversation)) {
+            try {
+                WorkerCapability onlyCap = uniqueCapability(conversation == null ? null : conversation.getWorkerId());
+                if (onlyCap != null && onlyCap.getFormCode() != null && !onlyCap.getFormCode().isBlank()
+                        && shouldOpenSingleForm(text, onlyCap.getTaskName(), onlyCap.getTaskCode())) {
+                    Map<String, Object> hint = new LinkedHashMap<>();
+                    hint.put("form_code", onlyCap.getFormCode());
+                    if (onlyCap.getTaskName() != null && !onlyCap.getTaskName().isBlank()) {
+                        hint.put("reason", onlyCap.getTaskName());
+                    }
+                    request.setFormHint(hint);
+                    log.info("数字人 {} 命中确定性开表：{}（用户原话点名任务「{}」）",
+                            onlyCap.getWorkerId(), onlyCap.getFormCode(), onlyCap.getTaskName());
+                }
+            } catch (Exception e) {
+                // 能力表读取异常不得打断主链
+                log.warn("确定性开表判定失败（不影响本轮对话）：{}", e.getMessage());
+            }
+        }
         request.setUserToken(stripBearer(authorization));
         request.setHistory(loadHistory(run.getConversationId(), userMessage));
         // 本轮上传文档：把已落库的参考正文结构化下发 Agent（不进 content，结构体现在 attachment_docs）。
@@ -246,7 +373,6 @@ public class RunService {
             request.setAttachmentDocs(attachmentDocs);
         }
         // 会话级模型路由：Agent 按 model_ref 选择 provider（默认走 MODEL_DEFAULT）
-        ChatConversation conversation = conversationMapper.selectById(run.getConversationId());
         if (conversation != null && conversation.getModelRef() != null && !conversation.getModelRef().isBlank()) {
             request.setModelRef(conversation.getModelRef());
         }
@@ -256,6 +382,27 @@ public class RunService {
         if (conversation != null && conversation.getWorkerId() != null) {
             request.setScope(buildScope(conversation.getWorkerId(),
                     conversation.getProjectId(), conversation.getTenantId()));
+            // 数字人专属运行参数：从 ai_expert 解析后下发 expert_settings（顶层字段，agent 侧直接读）。
+            // 取不到（当前 agent_worker 与 ai_expert 无外键）则「不注入」，保持 agent 默认值。
+            Map<String, Object> expertSettings = resolveExpertSettings(conversation.getWorkerId(), user);
+            if (expertSettings != null) {
+                request.setExpertSettings(expertSettings);
+            }
+        }
+        // V88 专家会话（不绑数字员工）：按 chat_conversation.expert_key 解析专家画像 + 五层配置，
+        // 把 systemPrompt 下发到 agent —— 这是「专家真的会干这行」的唯一来源。
+        // 与上面 worker 分支是 else-if 语义（worker 优先）：绑定数字员工的会话走职责边界，
+        // 不绑数字员工的会话才走专家人设，二者互斥，绝不互相覆盖。
+        else if (conversation != null && conversation.getExpertKey() != null
+                && !conversation.getExpertKey().isBlank()) {
+            Map<String, Object> expert = buildExpertProfile(conversation, user);
+            if (expert != null) {
+                request.setExpert(expert);
+                Map<String, Object> settings = resolveExpertConfig(conversation.getExpertKey(), user);
+                if (settings != null) {
+                    request.setExpertSettings(settings);
+                }
+            }
         }
         // 项目维度与「是否绑定数字员工」解耦：未绑数字人的项目会话同样要告诉 agent 当前项目，
         // 否则 agent 会反问「上传到哪个系统或平台」（实测缺陷）。项目名以库为准，不由前端传入。
@@ -265,7 +412,17 @@ public class RunService {
                 request.setProject(brief);
             }
         }
-        return proxyAgentRun("/internal/v1/runs", request, run, lastEventId);
+        Long originWorkerId = conversation != null ? conversation.getWorkerId() : null;
+        String originWorkerName = null;
+        if (originWorkerId != null) {
+            AgentWorker originWorker = workerMapper.selectById(originWorkerId);
+            originWorkerName = originWorker != null ? originWorker.getName() : null;
+        }
+        if (handoffPayload != null) {
+            request.setHandoff(handoffPayload);
+        }
+        return proxyAgentRun("/internal/v1/runs", request, run, lastEventId, originWorkerId, originWorkerName,
+                handoffPayload);
     }
 
     /**
@@ -280,8 +437,20 @@ public class RunService {
      * clarificationRef 用于识别 ask_user 暂停帧：流末若收到 need_clarification，则本轮
      * 不终结（挂起等待 /resume），天然覆盖多轮澄清。
      */
-    private SseEmitter proxyAgentRun(String uri, Object requestBody, AgentRun run, String lastEventId) {
+    private SseEmitter proxyAgentRun(String uri, Object requestBody, AgentRun run, String lastEventId,
+                                     Long originWorkerId, String originWorkerName,
+                                     Map<String, Object> handoffPayload) {
         SseEmitter emitter = new SseEmitter(0L);
+        // 会话内转交前导帧：在订阅 agent 之前下发，告知前端「同一会话改绑了数字人」（这是通知帧、
+        // 不是暂停帧——流不被打断）。resume 调用时 handoffPayload 为 null，不发送。
+        if (handoffPayload != null && !handoffPayload.isEmpty()) {
+            try {
+                safeSend(emitter, EVENT_WORKER_HANDOFF, lastEventId,
+                        objectMapper.writeValueAsString(handoffPayload));
+            } catch (Exception e) {
+                log.warn("send worker handoff prelude failed: {}", e.getMessage());
+            }
+        }
         StringBuilder assistant = new StringBuilder();
         AtomicReference<Usage> usageRef = new AtomicReference<>(Usage.ZERO);
         AtomicReference<String> lastId = new AtomicReference<>(lastEventId);
@@ -316,7 +485,8 @@ public class RunService {
                     .bodyToFlux(SSE_TYPE)
                     .subscribe(
                             event -> forward(emitter, event, assistant, lastId, usageRef,
-                                    citationsRef, toolCallsRef, failureRef, clarificationRef),
+                                    citationsRef, toolCallsRef, failureRef, clarificationRef,
+                                    run.getTenantId(), originWorkerId, originWorkerName),
                             error -> {
                                 log.warn("agent run {} failed: {}", run.getRunId(), error.getMessage());
                                 markFailed(run, error.getMessage());
@@ -387,7 +557,15 @@ public class RunService {
                 : (body.containsKey("answer") ? body.get("answer") : body.get("decision"));
         Map<String, Object> resumeBody = new java.util.LinkedHashMap<>();
         resumeBody.put("answer", answer);
-        return proxyAgentRun("/internal/v1/runs/" + run.getRunId() + "/resume", resumeBody, run, lastEventId);
+        ChatConversation resumeConv = conversationMapper.selectById(run.getConversationId());
+        Long originWorkerId = resumeConv != null ? resumeConv.getWorkerId() : null;
+        String originWorkerName = null;
+        if (originWorkerId != null) {
+            AgentWorker originWorker = workerMapper.selectById(originWorkerId);
+            originWorkerName = originWorker != null ? originWorker.getName() : null;
+        }
+        return proxyAgentRun("/internal/v1/runs/" + run.getRunId() + "/resume", resumeBody, run,
+                lastEventId, originWorkerId, originWorkerName, null);
     }
 
     /**
@@ -728,15 +906,17 @@ public class RunService {
         if (worker == null) {
             return null;
         }
-        WorkerRole role = WorkerRole.of(worker.getWorkerType());
+        // 角色画像走唯一判定点：OA 模块数字人（worker_type=OA_*）不在 WorkerRole 枚举内，
+        // 用 WorkerRole.of 会被静默降级成「通用办公助手」，系统提示里的职责边界随之全错。
+        WorkerProfile role = WorkerProfile.of(worker.getWorkerType(), worker.getName(), worker.getDescription());
         Map<String, Object> scope = new java.util.LinkedHashMap<>();
         scope.put("worker_id", worker.getId());
         scope.put("name", worker.getName());
         scope.put("role", role.code());
-        scope.put("role_name", role.displayName());
+        scope.put("role_name", role.roleName());
         scope.put("duty", worker.getDescription() == null || worker.getDescription().isBlank()
                 ? role.duty() : worker.getDescription());
-        scope.put("permission", role.requiredPermission());
+        scope.put("permission", role.permission());
         // V79 项目会话：并入「该项目对该数字人生效的上下文来源」，使其只在所属项目的知识范围内作答。
         // 若查不到来源，effectiveScope 返回空列表（合法的「无项目上下文」），不阻断对话。
         if (projectId != null && projectId > 0L) {
@@ -744,6 +924,311 @@ public class RunService {
             scope.put("project_scope", pmAiScopePort.effectiveScope(tenantId, projectId, worker.getId()));
         }
         return scope;
+    }
+
+    /**
+     * 解析数字人专属运行参数（expert_settings）：数字员工(agent_worker)当前库表与 ai_expert 无直接外键，
+     * 故按 worker_type / name 命中 ai_expert（约定：worker_type 直等于 expert_key，或 name 同名；
+     * 跨租户回落到平台模板 tenant=0）。命中后按当前用户上下文解析五层配置（ExpertConfigService.resolve），
+     * 转成下发给 agent 的 Map（键名与 ExpertSettings 模型字段一致）。
+     *
+     * 「取不到 = 不注入」（返回 null，调用方据此不 set），绝不返回空对象——
+     * 空对象会让 agent 侧 es.get(...) 拿到空串把 ExpertSettings 的默认值打掉。
+     * 现状：worker_type 取值为 OA_*（如 OA_DOC），与 ai_expert.expert_key 取值（policy/legal/...）
+     * 命名不重合，故按当前数据「取不到」，本分支为后续建立关联（如 agent_worker 增加 expert_key 列、
+     * 或约定 worker_type == expert_key）预留，命中后自动生效。
+     */
+    /**
+     * 该数字人允许使用的表单码集合。
+     *
+     * @return {@code null} 表示**不限制**——未绑数字人、数字人没配能力（GENERAL / LEAVE_APPROVER 等
+     *         历史数字人）、或读库异常。其余情况返回集合（可能为空，见下）。
+     *         集合为空表示「能力指向的表全被停用」，调用方据此拒绝任何表单。
+     */
+    private java.util.Set<String> allowedFormCodes(Long workerId) {
+        if (workerId == null) {
+            return null;
+        }
+        List<WorkerCapability> caps;
+        try {
+            caps = workerCapabilityService.listByWorker(workerId);
+        } catch (Exception e) {
+            // 能力表读不到 ≠ 数字人没能力：宁可放开（保持历史行为），也不要让整轮对话失去表单
+            log.warn("读取数字人 {} 能力失败，本轮不限制表单：{}", workerId, e.getMessage());
+            return null;
+        }
+        if (caps == null || caps.isEmpty()) {
+            return null;
+        }
+        java.util.Set<String> allowed = new java.util.HashSet<>();
+        for (WorkerCapability c : caps) {
+            if (c.getEnabled() != null && c.getEnabled() == 0) {
+                continue;
+            }
+            if (c.getFormCode() != null && !c.getFormCode().isBlank()) {
+                allowed.add(c.getFormCode());
+            }
+        }
+        return allowed;
+    }
+
+    /**
+     * 按「本会话绑定的数字人」收窄表单清单。
+     *
+     * <p><b>为什么必须有这一步</b>：`worker_capability` 的语义就是「这个数字人办什么事、用哪张表」，
+     * 每个 OA 数字人恰好绑 1 张。而 {@link FormTemplateService#listAvailable} 只按租户过滤，
+     * 于是每个数字人都拿到全租户 43 张表 —— 模型可以合法地弹出**别的数字人的表单**。
+     * 2026-10-18 实测（tenant 3，真实链路）：用车助手（vehicle_apply）问「我要报销打车费」
+     * 实际弹出 expense_form；会议助手（meeting_book）问「我要申请出差」实际弹出 travel_form。
+     * 这不是模型违规，是下发面给宽了。</p>
+     *
+     * <p><b>兼容性</b>：未绑数字人 / 数字人没配能力 / 读能力异常 三种情况保持租户全量，
+     * 不改变历史数字人的能力面。只有「确实配了能力」才收窄，且支持一个数字人配多张。</p>
+     *
+     * <p><b>能力指向的表不在清单里</b>（被停用/改码）时返回空列表，让调用方「不下发清单」——
+     * 宁可让模型说没这功能，也不能让它去调一张已停用的表。</p>
+     */
+    /**
+     * 是否为「专家会话」：未绑数字员工（workerId 为空）且已选专家（expert_key 非空白）。
+     *
+     * <p><b>唯一判定点</b>（铁律 #1）：V88 专家会话不该暴露任何业务表单——
+     * 业务表单是数字员工的能力，专家 AI 是顾问，下发会让模型把咨询当成办理
+     * （实测法律专家问「试用期最长多久」被弹「合同起草」表、正文为空）。
+     * 「未绑数字人且未选专家」的普通会话**不算**专家会话，保持既有开表能力不受影响
+     * （经典形态里用户直接说「我要报销」仍会开表）。</p>
+     */
+    private boolean isExpertConversation(ChatConversation c) {
+        return c != null && c.getWorkerId() == null
+                && c.getExpertKey() != null && !c.getExpertKey().isBlank();
+    }
+
+    private List<Map<String, Object>> narrowFormsByWorker(List<Map<String, Object>> forms,
+                                                          ChatConversation conversation) {
+        if (forms == null || forms.isEmpty() || conversation == null) {
+            return forms;
+        }
+        java.util.Set<String> allowed = allowedFormCodes(conversation.getWorkerId());
+        if (allowed == null) {
+            return forms;
+        }
+        List<Map<String, Object>> narrowed = new ArrayList<>();
+        for (Map<String, Object> f : forms) {
+            Object code = f.get("code");
+            if (code != null && allowed.contains(String.valueOf(code))) {
+                narrowed.add(f);
+            }
+        }
+        if (narrowed.isEmpty()) {
+            log.warn("数字人 {} 的能力表单不在可用清单内（可能已停用），本轮不下发表单：{}",
+                    conversation.getWorkerId(), allowed);
+            return narrowed;
+        }
+        log.debug("数字人 {} 表单清单已收窄为 {}：{}", conversation.getWorkerId(), narrowed.size(), allowed);
+        return narrowed;
+    }
+
+    private Map<String, Object> resolveExpertSettings(Long workerId, AuthUser user) {
+        AgentWorker worker = workerMapper.selectById(workerId);
+        if (worker == null) {
+            return null;
+        }
+        AiExpert expert = findExpertForWorker(worker);
+        if (expert == null || expert.getExpertKey() == null || expert.getExpertKey().isBlank()) {
+            return null;
+        }
+        long tid = user.getTenantId() == null ? 0L : user.getTenantId();
+        ExpertSettings settings = expertConfigService.resolve(
+                tid, user.getInstitutionId(), user.getDepartmentId(), user.getUserId(), expert.getExpertKey())
+                .settings();
+        return expertSettingsToMap(settings);
+    }
+
+    /** 按 worker_type / name 命中 ai_expert（先本租户，再回落平台模板）。无命中返回 null。 */
+    private AiExpert findExpertForWorker(AgentWorker worker) {
+        String wt = worker.getWorkerType();
+        if (wt != null && !wt.isBlank()) {
+            AiExpert e = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                    .eq(AiExpert::getTenantId, worker.getTenantId() == null ? 0L : worker.getTenantId())
+                    .eq(AiExpert::getExpertKey, wt.trim())
+                    .last("limit 1"));
+            if (e != null) {
+                return e;
+            }
+            e = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                    .eq(AiExpert::getTenantId, 0L)
+                    .eq(AiExpert::getExpertKey, wt.trim())
+                    .last("limit 1"));
+            if (e != null) {
+                return e;
+            }
+        }
+        String name = worker.getName();
+        if (name != null && !name.isBlank()) {
+            AiExpert e = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                    .eq(AiExpert::getTenantId, worker.getTenantId() == null ? 0L : worker.getTenantId())
+                    .eq(AiExpert::getName, name.trim())
+                    .last("limit 1"));
+            if (e != null) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    /** 把 ExpertSettings 转成下发给 agent 的 Map（仅含非空键，避免注入 null 把默认值打掉）。 */
+    private Map<String, Object> expertSettingsToMap(ExpertSettings s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (s.getEnabled() != null) m.put("enabled", s.getEnabled());
+        if (s.getVisibleScope() != null) m.put("visibleScope", s.getVisibleScope());
+        if (s.getVisibleTargets() != null) m.put("visibleTargets", s.getVisibleTargets());
+        if (s.getDefaultEnabled() != null) m.put("defaultEnabled", s.getDefaultEnabled());
+        if (s.getKbScope() != null) m.put("kbScope", s.getKbScope());
+        if (s.getModel() != null) m.put("model", s.getModel());
+        if (s.getTemperature() != null) m.put("temperature", s.getTemperature());
+        if (s.getTopK() != null) m.put("topK", s.getTopK());
+        if (s.getThreshold() != null) m.put("threshold", s.getThreshold());
+        if (s.getRetrievalMode() != null) m.put("retrievalMode", s.getRetrievalMode());
+        if (s.getTools() != null) m.put("tools", s.getTools());
+        if (s.getSort() != null) m.put("sort", s.getSort());
+        if (s.getChunkSize() != null) m.put("chunkSize", s.getChunkSize());
+        if (s.getChunkOverlap() != null) m.put("chunkOverlap", s.getChunkOverlap());
+        if (s.getSystemPrompt() != null) m.put("systemPrompt", s.getSystemPrompt());
+        if (s.getKnowledgeScope() != null) m.put("knowledgeScope", s.getKnowledgeScope());
+        return m;
+    }
+
+    // ===== V88 专家会话链路（不绑数字员工）=====
+    // 以下方法服务于「会话选了专家 AI」这一支路：把 ai_expert 解析为画像与运行参数下发 agent。
+    // 与 worker 支路互斥（subscribe 里 else-if），worker 优先。
+
+    /** 按 expert_key 命中 ai_expert（先本租户，再回落平台模板 tenant=0）。无命中返回 null。 */
+    private AiExpert findExpertByKey(String expertKey, long tenantId) {
+        if (expertKey == null || expertKey.isBlank()) {
+            return null;
+        }
+        AiExpert e = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                .eq(AiExpert::getTenantId, tenantId)
+                .eq(AiExpert::getExpertKey, expertKey.trim())
+                .last("limit 1"));
+        if (e != null) {
+            return e;
+        }
+        return expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                .eq(AiExpert::getTenantId, 0L)
+                .eq(AiExpert::getExpertKey, expertKey.trim())
+                .last("limit 1"));
+    }
+
+    /** 按 name 命中 ai_expert（先本租户，再回落平台模板 tenant=0）。无命中返回 null。 */
+    private AiExpert findExpertByName(String name, long tenantId) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        AiExpert e = expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                .eq(AiExpert::getTenantId, tenantId)
+                .eq(AiExpert::getName, name.trim())
+                .last("limit 1"));
+        if (e != null) {
+            return e;
+        }
+        return expertMapper.selectOne(new LambdaQueryWrapper<AiExpert>()
+                .eq(AiExpert::getTenantId, 0L)
+                .eq(AiExpert::getName, name.trim())
+                .last("limit 1"));
+    }
+
+    /**
+     * 把前端传来的「专家」解析成库里真实存在的 expert_key。
+     * 优先级：expertKey（直当 key 命中）&gt; expert（先当 key、再当 name 命中）。
+     * 只认库里真实存在的专家；命中不到返回 null（调用方据此不写库，绝不把乱码写进库）。
+     */
+    private String resolveExpertKeyFromRequest(String expertKey, String expert, long tenantId) {
+        if (expertKey != null && !expertKey.isBlank()) {
+            AiExpert e = findExpertByKey(expertKey.trim(), tenantId);
+            if (e != null && e.getExpertKey() != null && !e.getExpertKey().isBlank()) {
+                return e.getExpertKey();
+            }
+            return null; // key 传了但库里没有 → 当没传，不写乱码
+        }
+        if (expert != null && !expert.isBlank()) {
+            AiExpert byKey = findExpertByKey(expert.trim(), tenantId);
+            if (byKey != null && byKey.getExpertKey() != null && !byKey.getExpertKey().isBlank()) {
+                return byKey.getExpertKey();
+            }
+            AiExpert byName = findExpertByName(expert.trim(), tenantId);
+            if (byName != null && byName.getExpertKey() != null && !byName.getExpertKey().isBlank()) {
+                return byName.getExpertKey();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 按会话的 expert_key 解析专家画像（下发 agent 的 expert 字段）。
+     * 库里查不到返回 null（不注入）；system_prompt 取自 ExpertConfigService.resolve 的 settings。
+     */
+    private Map<String, Object> buildExpertProfile(ChatConversation conv, AuthUser user) {
+        if (conv == null || conv.getExpertKey() == null || conv.getExpertKey().isBlank()) {
+            return null;
+        }
+        long tid = user.getTenantId() == null ? 0L : user.getTenantId();
+        AiExpert e = findExpertByKey(conv.getExpertKey(), tid);
+        if (e == null) {
+            return null;
+        }
+        ExpertSettings settings = expertConfigService.resolve(
+                tid, user.getInstitutionId(), user.getDepartmentId(), user.getUserId(),
+                e.getExpertKey()).settings();
+        return expertProfileMap(e, settings);
+    }
+
+    /**
+     * 按 expert_key 解析五层配置并转成下发 agent 的 expert_settings Map（键名与 ExpertSettings 同构）。
+     * 与 resolveExpertSettings(workerId, user) 同构，但直接按 expertKey 解析。
+     */
+    private Map<String, Object> resolveExpertConfig(String expertKey, AuthUser user) {
+        long tid = user.getTenantId() == null ? 0L : user.getTenantId();
+        ExpertSettings settings = expertConfigService.resolve(
+                tid, user.getInstitutionId(), user.getDepartmentId(), user.getUserId(),
+                expertKey).settings();
+        return expertSettingsToMap(settings);
+    }
+
+    /**
+     * 把 AiExpert + 其运行参数 ExpertSettings 拼成下发 agent 的 expert 画像 Map（纯函数，便于单测）。
+     * 只放非空键（空字符串/空集合不放），避免把 agent 侧默认值打掉。
+     * 键：key / name / summary / intro / tags / recs / system_prompt / knowledge_scope。
+     */
+    static Map<String, Object> expertProfileMap(AiExpert e, ExpertSettings s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (e == null) {
+            return m;
+        }
+        if (e.getExpertKey() != null && !e.getExpertKey().isBlank()) {
+            m.put("key", e.getExpertKey());
+        }
+        if (e.getName() != null && !e.getName().isBlank()) {
+            m.put("name", e.getName());
+        }
+        if (e.getSummary() != null && !e.getSummary().isBlank()) {
+            m.put("summary", e.getSummary());
+        }
+        if (e.getIntro() != null && !e.getIntro().isBlank()) {
+            m.put("intro", e.getIntro());
+        }
+        if (e.getTags() != null && !e.getTags().isEmpty()) {
+            m.put("tags", e.getTags());
+        }
+        if (e.getRecs() != null && !e.getRecs().isEmpty()) {
+            m.put("recs", e.getRecs());
+        }
+        if (s != null && s.getSystemPrompt() != null && !s.getSystemPrompt().isBlank()) {
+            m.put("system_prompt", s.getSystemPrompt());
+        }
+        if (s != null && s.getKnowledgeScope() != null && !s.getKnowledgeScope().isBlank()) {
+            m.put("knowledge_scope", s.getKnowledgeScope());
+        }
+        return m;
     }
 
     /** "Bearer xxx" -> "xxx"；异常输入返回 null（agent 侧降级为无工具模式）。 */    private static String stripBearer(String authorization) {
@@ -762,14 +1247,23 @@ public class RunService {
                          AtomicReference<List<Object>> citationsRef,
                          AtomicReference<List<Object>> toolCallsRef,
                          AtomicReference<String> failureRef,
-                         AtomicReference<String> clarificationRef) {
+                         AtomicReference<String> clarificationRef,
+                         Long tenantId,
+                         Long originWorkerId,
+                         String originWorkerName) {
         String name = event.event() == null ? "message" : event.event();
         String data = event.data() == null ? "" : event.data();
+        // need_form：在「无条件转发」之前补全表单字段（单一事实源在 DB）。
+        // 否则前端会先收到一次原始帧、再收到补全帧，渲染出两条表单卡。
+        String outData = data;
+        if (EVENT_NEED_FORM.equals(name)) {
+            outData = buildNeedFormPayload(data, tenantId, originWorkerId, originWorkerName);
+        }
         if (event.id() != null) {
             lastId.set(event.id());
         }
         try {
-            emitter.send(SseEmitter.event().id(event.id()).name(name).data(data));
+            emitter.send(SseEmitter.event().id(event.id()).name(name).data(outData));
         } catch (IOException e) {
             log.debug("forward sse frame failed: {}", e.getMessage());
             return;
@@ -801,6 +1295,12 @@ public class RunService {
             // ask_user 暂停帧：记下澄清负载，流末由 completeRun 据其置 WAITING_INPUT。
             // 该帧**已**原样转发给前端（上面的 emitter.send），故前端能渲染澄清卡。
             clarificationRef.set(data);
+        } else if (EVENT_NEED_FORM.equals(name)) {
+            // 表单补全帧：仅当 payload 不含 error 才置暂停标记。
+            // 定义查不到的帧带 error，不挂起，让 run 走失败/收尾，避免挂死。
+            if (!needFormHasError(outData)) {
+                clarificationRef.set(outData);
+            }
         } else if (EVENT_ERROR.equals(name)) {
             // Agent 流内错误帧（模型未配置/上游报错/流异常）：记录原因供流结束收口
             String code = readField(data, "code");
@@ -817,6 +1317,425 @@ public class RunService {
                 }
                 failureRef.set(reason == null || reason.isBlank() ? "agent run failed" : reason);
             }
+        }
+    }
+
+    /**
+     * 把 need_form 原始帧（{form_code, reason, prefill}）补全成前端契约：
+     * {form_code, version, title, submit_label, reason, fields, prefill, origin}。
+     * 表单字段（fields/title/submit_label/version）由 Java 从 DB 补全（单一事实源），
+     * agent 只下发 form_code，避免前端/agent 各自维护字段定义而漂移。
+     * 表单定义查不到时返回带 error 的 payload（且调用方据此「不设暂停标记」），
+     * 让 run 走失败/收尾，避免挂死。
+     */
+    private String buildNeedFormPayload(String rawData, Long tenantId, Long workerId, String workerName) {
+        Map<String, Object> frame;
+        try {
+            frame = objectMapper.readValue(rawData, Map.class);
+        } catch (Exception e) {
+            log.warn("need_form 解析失败: {}", e.getMessage());
+            return errorNeedForm(null, "表单帧格式错误: " + e.getMessage(), rawData);
+        }
+        Object codeObj = frame.get("form_code");
+        String code = codeObj == null ? null : String.valueOf(codeObj);
+        if (code == null || code.isBlank()) {
+            return errorNeedForm(null, "表单定义不存在: (空 form_code)", rawData);
+        }
+        // ★ 出口兜底闸：下发面已按数字人能力收窄，但模型仍可能编造 form_code
+        //   （提示词正文里就有 leave_request 示例）。2026-10-18 实测：会议助手在
+        //   available_forms 只有 meeting_book 的情况下，面对「我要申请出差」仍产出
+        //   form_code=leave_request，而 resolveForRender 只按租户查、照样渲染成功
+        //   ⇒ 用户看到「会议助手弹出请假表单」。这里做最后一道确定性拦截，
+        //   不依赖模型守规矩（与「确认归 UI、写工具不下发」同一条设计原则）。
+        java.util.Set<String> allowed = allowedFormCodes(workerId);
+        if (allowed != null && !allowed.contains(code)) {
+            log.warn("need_form 越权拦截：数字人 {} 请求表单 {} 不在其能力内（允许={}），已拒绝渲染",
+                    workerId, code, allowed);
+            return errorNeedForm(code, "该数字人不办理这张表单（" + code + "），已拦截", rawData);
+        }
+        // 实际签名 resolveForRender(Long tenantId, String code)：tenantId 用于解析动态选项（如 leave_types）。
+        Object renderRaw;
+        try {
+            renderRaw = formTemplateService.resolveForRender(tenantId, code);
+        } catch (Exception e) {
+            log.warn("need_form 解析表单模板失败 code={}: {}", code, e.getMessage());
+            return errorNeedForm(code, "表单定义不存在: " + code, rawData);
+        }
+        Map<String, Object> render;
+        try {
+            render = objectMapper.convertValue(renderRaw, Map.class);
+        } catch (Exception e) {
+            log.warn("need_form render 转换失败 code={}: {}", code, e.getMessage());
+            return errorNeedForm(code, "表单定义不存在: " + code, rawData);
+        }
+        // FormRender 实测字段：code / name / version / moduleCode / submitPolicy / fields
+        // （无 formCode/title/submitLabel）。取不到 code 视为无效。
+        if (render == null || render.get("code") == null) {
+            return errorNeedForm(code, "表单定义不存在: " + code, rawData);
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("form_code", render.get("code"));
+        payload.put("version", render.get("version"));
+        payload.put("title", render.get("name"));
+        // submit_label 是**按钮文案**（docs/52 §3.3 need_form 契约：`"submit_label": "提交"`），
+        // 不是策略串。2026-10-17 实测缺陷：这里原样塞了 submitPolicy ⇒ 提交按钮显示
+        // 「LEDGER」/「APPROVAL+RESUME」，用户看到的是内部枚举。按策略给中文文案。
+        String submitPolicy = render.get("submitPolicy") == null ? "" : String.valueOf(render.get("submitPolicy"));
+        payload.put("submit_label", submitPolicy.contains("APPROVAL") ? "提交审批" : "提交");
+        payload.put("reason", frame.get("reason"));
+        payload.put("fields", render.get("fields"));
+        payload.put("prefill", frame.get("prefill"));
+        Map<String, Object> origin = new LinkedHashMap<>();
+        origin.put("kind", "worker");
+        origin.put("worker_id", workerId);
+        origin.put("worker_name", workerName);
+        payload.put("origin", origin);
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            return errorNeedForm(code, "表单定义不存在: " + code, rawData);
+        }
+    }
+
+    /** need_form 失败回退 payload：带 error（不挂起），并尽量透传原帧的 reason/prefill 供前端提示。 */
+    private String errorNeedForm(String code, String message, String rawData) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("form_code", code);
+        payload.put("error", message);
+        try {
+            Map<String, Object> frame = objectMapper.readValue(rawData, Map.class);
+            payload.put("reason", frame.get("reason"));
+            payload.put("prefill", frame.get("prefill"));
+        } catch (Exception ignored) {
+            // 原帧都解析不了就不透传，error 已足够说明
+        }
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            return "{\"form_code\":" + (code == null ? "null" : "\"" + code + "\"")
+                    + ",\"error\":\"" + message + "\"}";
+        }
+    }
+
+    /** 判断 need_form 的已补全 payload 是否处于「定义查不到」状态（带 error 键）。 */
+    private boolean needFormHasError(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return false;
+        }
+        try {
+            Map<?, ?> m = objectMapper.readValue(payload, Map.class);
+            return m.containsKey("error");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 取「数字人唯一启用的能力行」（恰好 1 条启用记录时返回它，否则 null），
+     * 供确定性开表判据拿到 taskName / taskCode（判定只在后端这一处）。读库异常返回 null。
+     */
+    private WorkerCapability uniqueCapability(Long workerId) {
+        if (workerId == null) {
+            return null;
+        }
+        try {
+            List<WorkerCapability> caps = workerCapabilityService.listByWorker(workerId);
+            if (caps == null || caps.isEmpty()) {
+                return null;
+            }
+            WorkerCapability found = null;
+            for (WorkerCapability c : caps) {
+                if (c.getEnabled() != null && c.getEnabled() == 0) {
+                    continue;
+                }
+                if (c.getFormCode() == null || c.getFormCode().isBlank()) {
+                    continue;
+                }
+                if (found != null) {
+                    return null;            // 多于一条启用能力 → 不构成「唯一」
+                }
+                found = c;
+            }
+            return found;
+        } catch (Exception e) {
+            log.warn("读取数字人 {} 能力失败（确定性开表跳过）：{}", workerId, e.getMessage());
+            return null;
+        }
+    }
+
+
+    /**
+     * 单表单数字人的确定性开表判据：用户原话点名了该任务 ⇒ 直接开表。
+     * 纯函数、无模型参与，可单测。规则：
+     *  - userText 为 null/blank → false
+     *  - taskName 与 taskCode 都取不到（null/blank）→ false
+     *  - 三者统一 trim() + 转小写；taskName 长度 < 2 时忽略它（避免单字任务名误命中）
+     *  - 命中：userText 含 taskName，或（taskCode 非空且 userText 含 taskCode）→ true
+     *  - 否则 false
+     */
+    static boolean shouldOpenSingleForm(String userText, String taskName, String taskCode) {
+        if (userText == null || userText.isBlank()) {
+            return false;
+        }
+        if ((taskName == null || taskName.isBlank()) && (taskCode == null || taskCode.isBlank())) {
+            return false;
+        }
+        String u = userText.trim().toLowerCase(Locale.ROOT);
+        String tn = taskName == null ? "" : taskName.trim().toLowerCase(Locale.ROOT);
+        String tc = taskCode == null ? "" : taskCode.trim().toLowerCase(Locale.ROOT);
+        if (tn.length() >= 2 && u.contains(tn)) {
+            return true;
+        }
+        return !tc.isEmpty() && u.contains(tc);
+    }
+
+    /** 转交候选：一个「数字人 × 任务」绑定（taskName 用于中文命中，taskCode 用于码命中）。 */
+    public record HandoffCandidate(Long workerId, String workerName, String taskName, String taskCode) {
+    }
+
+    /**
+     * 转交决策：从 {@code fromWorkerId} 转交给 {@code toWorkerId}，承接同一句用户原话（question）。
+     * {@code fromWorkerName} 留给调用方（持有 worker 表）回填；纯函数 {@link #matchHandoff} 拿不到。
+     */
+    public record HandoffDecision(Long toWorkerId, String toWorkerName, String taskName,
+                                  Long fromWorkerId, String fromWorkerName, String question) {
+    }
+
+    /**
+     * 会话内跨数字人转交判据（**唯一判定点**，纯函数、无 Spring 依赖、可单测）。
+     *
+     * <p><b>为什么有两级匹配</b>：库里任务名是**书面语**（如「费用报销申请」），用户说的是
+     * **口语**（「我要报销差旅费」）。只做整词子串匹配时，后者永远匹配不上 —— 实测该场景
+     * 不触发转交。故加一级「核心词重叠」弱匹配（Tier B），但加了四道闸防误跳：
+     * 当前数字人也重叠则不转、必须唯一最高分、重叠片段不得是通用词、并列则放弃。</p>
+     *
+     * <p>规则：
+     * <ol>
+     *   <li>userText 为 null/blank 或 candidates 空/null → null（不转交）；</li>
+     *   <li><b>Tier A（强匹配）</b>：候选 {@code taskName} 非空且长度>=2 且 userText 含 taskName，
+     *       或 {@code taskCode} 非空且 userText 含 taskCode；</li>
+     *   <li><b>当前数字人自己命中（A 或 B）→ 返回 null</b>（用户在当前职责内说话，最高优先级）；</li>
+     *   <li><b>Tier A</b> 恰好命中一个其他 worker → 转交；命中 >=2 个（歧义）→ null；</li>
+     *   <li>Tier A 一个都没命中时，才走 <b>Tier B</b>：把任务名剥掉通用词（申请/办理/助手…）得到核心词，
+     *       与用户原话求「最长公共子串」；
+     *       <ul>
+     *         <li>片段长度 < 2、或片段本身是通用词 → 该候选不算命中；</li>
+     *         <li>当前数字人的核心词也重叠 → 返回 null（不抢自己人的活）；</li>
+     *         <li>取最高分：**唯一最高**才转交；并列（两个数字人一样像）→ null，宁可让模型按职责拒答；</li>
+     *       </ul>
+     *   </li>
+     *   <li>question 即 userText（供前端展示原话）。</li>
+     * </ol>
+     */
+    public static HandoffDecision matchHandoff(String userText, Long currentWorkerId,
+                                               List<HandoffCandidate> candidates) {
+        if (userText == null || userText.isBlank() || candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        // ★ 无「当前数字人」⇒ 不转交。转交的语义是「从 A 换到 B」；会话没绑数字人时
+        //   （典型是用户直接选了一位专家 AI，或走默认通用助手），命中任意一个数字人都
+        //   不是「转交」而是「无端把专家会话劫持成某个数字人」——实测会让专家的领域
+        //   问题突然弹出别人的业务表单。故此处硬闸：expert/无绑定会话一律不参与转交。
+        if (currentWorkerId == null) {
+            return null;
+        }
+        String u = userText.trim().toLowerCase(Locale.ROOT);
+
+        // ---- Tier A：整词/码命中 ----
+        boolean currentHit = false;
+        java.util.Map<Long, HandoffCandidate> byWorker = new java.util.LinkedHashMap<>();
+        for (HandoffCandidate c : candidates) {
+            if (c.workerId() == null) {
+                continue;
+            }
+            boolean hit = handoffHit(c, u);
+            if (Objects.equals(c.workerId(), currentWorkerId)) {
+                if (hit) {
+                    currentHit = true;
+                }
+                continue; // 当前数字人永不作为转交目标
+            }
+            if (hit) {
+                byWorker.put(c.workerId(), c);
+            }
+        }
+        if (currentHit) {
+            return null;
+        }
+        if (byWorker.size() == 1) {
+            return decisionOf(byWorker.values().iterator().next(), currentWorkerId, userText);
+        }
+        if (byWorker.size() > 1) {
+            return null; // 多个整词命中 ⇒ 歧义，不擅自换人
+        }
+
+        // ---- Tier B：核心词重叠（只在 Tier A 完全无命中时启用） ----
+        int currentScore = 0;
+        long bestScore = 0L;
+        HandoffCandidate best = null;
+        boolean tie = false;
+        for (HandoffCandidate c : candidates) {
+            if (c.workerId() == null) {
+                continue;
+            }
+            String overlap = coreOverlap(u, c.taskName());
+            int score = overlap.length();
+            if (Objects.equals(c.workerId(), currentWorkerId)) {
+                currentScore = Math.max(currentScore, score);
+                continue;
+            }
+            if (score < 2) {
+                continue;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = c;
+                tie = false;
+            } else if (score == bestScore) {
+                tie = true; // 同分 ⇒ 无法判断像谁，放弃
+            }
+        }
+        if (currentScore >= 2) {
+            return null; // 当前数字人也能吃下这句话，不转交
+        }
+        if (best != null && !tie && bestScore >= 2) {
+            return decisionOf(best, currentWorkerId, userText);
+        }
+        return null;
+    }
+
+    private static HandoffDecision decisionOf(HandoffCandidate target, Long currentWorkerId, String userText) {
+        return new HandoffDecision(target.workerId(), target.workerName(), target.taskName(),
+                currentWorkerId, null, userText);
+    }
+
+    /** 单候选命中判据（与 shouldOpenSingleForm 同口径：taskName 长度>=2 或 taskCode 命中）。 */
+    private static boolean handoffHit(HandoffCandidate c, String u) {
+        String tn = c.taskName() == null ? "" : c.taskName().trim().toLowerCase(Locale.ROOT);
+        String tc = c.taskCode() == null ? "" : c.taskCode().trim().toLowerCase(Locale.ROOT);
+        if (tn.length() >= 2 && u.contains(tn)) {
+            return true;
+        }
+        return !tc.isEmpty() && u.contains(tc);
+    }
+
+    /**
+     * 任务名里的**通用词**：单独重叠不代表任何业务归属，必须排除，否则「帮我办个申请」会乱跳。
+     * 同时用于「剥尾」得到核心词（「费用报销申请」→「费用报销」）。
+     */
+    private static final java.util.Set<String> GENERIC_TASK_WORDS = java.util.Set.of(
+            "申请", "办理", "审批", "流程", "助手", "数字人", "工作", "业务", "管理", "服务",
+            "信息", "记录", "统计", "查询", "处理", "系统", "平台", "客服", "支持", "助手数字人",
+            // ★ 2026-10-18 补：这些是「动作/载体」类尾缀，本身不含业务信息。缺了它们，
+            //   Tier B 会靠两字后缀把任务判成「像」——实测 43 个数字人集体互转：
+            //   「公文起草」↔「合同起草」重叠「起草」、「看板配置」→「门户布局配置」重叠「配置」，
+            //   表单路由普查从 43 PASS 掉到 27 PASS。凡两字尾缀都不算业务重合。
+            "配置", "起草", "设置", "填报", "登记", "录入", "借阅", "发起", "发布", "维护",
+            "添加", "新建", "申诉", "报名", "上报", "下发", "提交", "生成", "导入", "导出");
+
+    /** 剥掉结尾的通用词，得到任务核心词；剥完不足 2 字则原样返回（避免空串）。 */
+    static String coreTaskName(String taskName) {
+        if (taskName == null) {
+            return "";
+        }
+        String t = taskName.trim().toLowerCase(Locale.ROOT);
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (String g : GENERIC_TASK_WORDS) {
+                if (t.length() > g.length() && t.endsWith(g)) {
+                    t = t.substring(0, t.length() - g.length());
+                    changed = true;
+                }
+            }
+        }
+        return t.length() >= 2 ? t : taskName.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 用户原话与「任务核心词」的最长公共子串；片段本身是通用词（或长度<2）时返回空串。
+     *
+     * <p>用途仅限 Tier B 判「像不像」：如「我要报销差旅费」× 核心词「费用报销」⇒「报销」（2 字）。</p>
+     */
+    static String coreOverlap(String userTextLower, String taskName) {
+        String core = coreTaskName(taskName);
+        if (core.length() < 2 || userTextLower == null || userTextLower.length() < 2) {
+            return "";
+        }
+        int bestLen = 0;
+        int bestEnd = 0;
+        int[] prev = new int[core.length() + 1];
+        int[] cur = new int[core.length() + 1];
+        for (int i = 1; i <= userTextLower.length(); i++) {
+            char a = userTextLower.charAt(i - 1);
+            for (int j = 1; j <= core.length(); j++) {
+                if (a == core.charAt(j - 1)) {
+                    cur[j] = prev[j - 1] + 1;
+                    if (cur[j] > bestLen) {
+                        bestLen = cur[j];
+                        bestEnd = i;
+                    }
+                } else {
+                    cur[j] = 0;
+                }
+            }
+            int[] tmp = prev;
+            prev = cur;
+            cur = tmp;
+            java.util.Arrays.fill(cur, 0);
+        }
+        if (bestLen < 2) {
+            return "";
+        }
+        String fragment = userTextLower.substring(bestEnd - bestLen, bestEnd);
+        return GENERIC_TASK_WORDS.contains(fragment) ? "" : fragment;
+    }
+
+    /**
+     * 解析是否需要转交（同一会话内改绑数字人）。
+     *
+     * <p><b>当前数字人必须留在候选里</b>（2026-10-18 修）：{@link #matchHandoff} 的闸 #1 是
+     * 「当前数字人自己也命中 ⇒ 不转」，这个判据要靠候选里的当前行才成立。此前这里
+     * {@code continue} 排除了当前 worker ⇒ 闸 #1 结构上永不生效 ⇒ Tier B 把所有「带同一个
+     * 尾缀」的任务都判成「像」，43 个数字人互转（公文起草↔合同起草、看板配置→门户布局配置），
+     * 表单路由普查 43 PASS → 27 PASS。{@code matchHandoff} 内部本来就不会把当前 worker 当目标。
+     *
+     * <p>只取本租户启用中的数字人，按其 {@code worker_capability} 组装候选后
+     * 调 {@link #matchHandoff}。整个解析包在 try/catch 内：任何异常都只记 warn 并返回 null，
+     * <b>绝不打断对话主链</b>。无当前 worker / 无候选 / 命中 null 均返回 null。</p>
+     */
+    private HandoffDecision resolveHandoff(String text, ChatConversation conversation) {
+        if (conversation == null || conversation.getWorkerId() == null) {
+            return null;
+        }
+        try {
+            Long tenantId = conversation.getTenantId();
+            List<AgentWorker> workers = workerMapper.selectList(new LambdaQueryWrapper<AgentWorker>()
+                    .eq(AgentWorker::getTenantId, tenantId)
+                    .ne(AgentWorker::getEnabled, 0));
+            List<Long> ids = new ArrayList<>();
+            java.util.Map<Long, AgentWorker> workerById = new java.util.LinkedHashMap<>();
+            for (AgentWorker w : workers) {
+                ids.add(w.getId());
+                workerById.put(w.getId(), w);
+            }
+            if (ids.isEmpty()) {
+                return null;
+            }
+            List<WorkerCapability> caps = workerCapabilityService.listByWorkers(ids);
+            List<HandoffCandidate> candidates = new ArrayList<>();
+            for (WorkerCapability cap : caps) {
+                AgentWorker w = workerById.get(cap.getWorkerId());
+                if (w == null) {
+                    continue;
+                }
+                candidates.add(new HandoffCandidate(cap.getWorkerId(), w.getName(),
+                        cap.getTaskName(), cap.getTaskCode()));
+            }
+            return matchHandoff(text, conversation.getWorkerId(), candidates);
+        } catch (Exception e) {
+            log.warn("resolve handoff failed (no effect on conversation): {}", e.getMessage());
+            return null;
         }
     }
 

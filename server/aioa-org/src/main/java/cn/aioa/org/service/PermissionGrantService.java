@@ -321,13 +321,7 @@ public class PermissionGrantService implements ApprovalCallback {
             m.put("permissionName", PermissionCatalog.nameOf(code));
             m.put("requiredRoles", PermissionCatalog.rolesText(code));
             m.put("workerType", PermissionCatalog.workerTypeOf(code));
-            List<PermissionGrant> grants = grantMapper.selectList(new LambdaQueryWrapper<PermissionGrant>()
-                    .eq(PermissionGrant::getUserId, actor.getUserId())
-                    .eq(PermissionGrant::getPermissionCode, code)
-                    .isNull(PermissionGrant::getDeletedAt)
-                    .orderByDesc(PermissionGrant::getId));
-            PermissionGrant pending = grants.stream()
-                    .filter(g -> PermissionGrant.STATUS_PENDING.equals(g.getStatus())).findFirst().orElse(null);
+            PermissionGrant pending = pendingGrantOf(actor, code);
             m.put("held", PermissionCatalog.holds(actor, code));
             m.put("pending", pending != null);
             m.put("pendingOrderId", pending == null ? null : pending.getOrderId());
@@ -353,6 +347,32 @@ public class PermissionGrantService implements ApprovalCallback {
         out.put("canApplyAsDepartment", !led.isEmpty());
         out.put("ledDepartments", ledItems);
         return out;
+    }
+
+    /**
+     * 当前用户对该权限码是否有在途（PENDING、未软删）申请。
+     *
+     * <p>与 {@link #catalog} 共用同一段「什么算在途」查询（{@link #pendingGrantOf}），
+     * 避免在两个入口各写一遍判定语义。</p>
+     */
+    public boolean hasPending(AuthUser actor, String permissionCode) {
+        return pendingGrantOf(actor, permissionCode) != null;
+    }
+
+    /** 取当前用户对该权限码的在途（PENDING、未软删）授权单；无则返回 null。 */
+    private PermissionGrant pendingGrantOf(AuthUser actor, String permissionCode) {
+        if (actor == null || actor.getUserId() == null
+                || permissionCode == null || permissionCode.isBlank()) {
+            return null;
+        }
+        List<PermissionGrant> grants = grantMapper.selectList(new LambdaQueryWrapper<PermissionGrant>()
+                .eq(PermissionGrant::getUserId, actor.getUserId())
+                .eq(PermissionGrant::getPermissionCode, permissionCode)
+                .isNull(PermissionGrant::getDeletedAt)
+                .orderByDesc(PermissionGrant::getId));
+        return grants.stream()
+                .filter(g -> PermissionGrant.STATUS_PENDING.equals(g.getStatus()))
+                .findFirst().orElse(null);
     }
 
     /** 待审 / 在途授权清单（租户管理员 / 企业管理员按单位维度查阅）。 */

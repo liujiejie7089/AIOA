@@ -36,6 +36,16 @@ public class ChatConversation {
      */
     private Long workerId;
 
+    /**
+     * 本会话所属专家 ai_expert.expert_key（V88）：NULL = 未选专家（走默认 AI）。
+     *
+     * <p>会话级专家落库点：用户在 H5 选的「专家 AI」经 {@code RunService#start} 解析为库里
+     * 真实存在的 expert_key 后写回本列，使每一轮（subscribe 重新取 conversation）都能按此列下发
+     * 专家人设（{@code AgentRunRequest.expert} + 专家运行参数）。专家会话不绑数字员工，
+     * worker 职责边界优先于专家人设（见 {@code RunService#subscribe} 的 else-if 判定）。</p>
+     */
+    private String expertKey;
+
     private String modelRef;
     private String summary;
     private Integer contextTurns;

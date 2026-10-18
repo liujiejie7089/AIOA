@@ -58,6 +58,8 @@ public class ModelConfigService {
     private final ModelConfigMapper mapper;
     private final ObjectMapper objectMapper;
     private final ModelKeyCodec keyCodec;
+    /** 服务间令牌：agent 的 `/internal/v1/*` 已强制校验（2026-10-18），无票直接 401。 */
+    private final cn.aioa.security.ServiceTokenProvider serviceTokenProvider;
     private final HttpClient httpClient = AgentHttpClient.agentBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -65,10 +67,17 @@ public class ModelConfigService {
     @Value("${aioa.agent.base-url:http://127.0.0.1:8000}")
     private String agentBaseUrl;
 
-    public ModelConfigService(ModelConfigMapper mapper, ObjectMapper objectMapper, ModelKeyCodec keyCodec) {
+    public ModelConfigService(ModelConfigMapper mapper, ObjectMapper objectMapper, ModelKeyCodec keyCodec,
+                              cn.aioa.security.ServiceTokenProvider serviceTokenProvider) {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
         this.keyCodec = keyCodec;
+        this.serviceTokenProvider = serviceTokenProvider;
+    }
+
+    /** 调 agent 内部端点的统一鉴权头（单一口径，不要在各处手写）。 */
+    private String serviceAuthHeader() {
+        return "Bearer " + serviceTokenProvider.generate(cn.aioa.security.ServiceTokenProvider.SVC_SERVER);
     }
 
     // ---------- 读取 ----------
@@ -124,6 +133,7 @@ public class ModelConfigService {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(agentBaseUrl + "/internal/v1/models"))
+                    .header("Authorization", serviceAuthHeader())
                     .timeout(Duration.ofSeconds(3))
                     .GET()
                     .build();
@@ -281,6 +291,7 @@ public class ModelConfigService {
             String body = "{\"key\":" + quote(providerKey) + "}";
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(agentBaseUrl + "/internal/v1/models/check"))
+                    .header("Authorization", serviceAuthHeader())
                     .header("Content-Type", "application/json")
                     .timeout(CHECK_TIMEOUT)
                     .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -347,6 +358,7 @@ public class ModelConfigService {
             String body = objectMapper.writeValueAsString(Map.of("models", models, "default", defaultKey()));
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(agentBaseUrl + "/internal/v1/models/apply"))
+                    .header("Authorization", serviceAuthHeader())
                     .header("Content-Type", "application/json")
                     .timeout(Duration.ofSeconds(5))
                     .POST(HttpRequest.BodyPublishers.ofString(body))

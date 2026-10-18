@@ -97,6 +97,22 @@ public class ConversationService {
         conversation.setAgentCode("worker:" + worker.getId());
     }
 
+    /**
+     * 会话内跨数字人转交（handoff）：把会话改绑到另一个数字人。
+     *
+     * <p><b>必须复用同一会话</b>（{@code conversationId} 不变）——{@code RunService.loadHistory}
+     * 按 conversation 查、不过滤 worker，换会话会丢历史，导致「同一句用户原话」无法被新数字人承接。
+     * 故转交只改 {@code worker_id / agent_code}，绝不新建会话、绝不重落 user 消息。</p>
+     *
+     * <p>复用 {@link #bindWorker} 的全部校验（同租户 + 未停用 + 项目可分配）与赋值逻辑，
+     * 随后 {@code updateById} 落库。若目标数字人校验不通过（不存在 / 停用 / 项目不可用），
+     * 会抛出与新建会话同源的异常，由调用方决定如何降级（通常静默不转交）。</p>
+     */
+    public void rebindWorker(ChatConversation conversation, Long workerId) {
+        bindWorker(conversation, AuthUserContext.require(), workerId);
+        conversationMapper.updateById(conversation);
+    }
+
     public PageResult<ChatConversation> page(long page, long size, String keyword) {
         return page(page, size, keyword, null);
     }

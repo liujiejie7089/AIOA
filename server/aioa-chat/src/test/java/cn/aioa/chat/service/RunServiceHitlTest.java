@@ -143,7 +143,16 @@ class RunServiceHitlTest {
         runService = new RunService(
                 conversationMapper, messageMapper, agentRunMapper, agentWebClient, serviceTokenProvider,
                 objectMapper, sseHeartbeatExecutor, agentProperties, billingService, activityLogService,
-                contentGuard, workerMapper, pmAiScopePort, fileMapper, kbFileParser);
+                contentGuard, workerMapper,
+                // 表单域 + 专家参数（docs/52）：构造器新增三依赖；本测试只验澄清挂起/续跑，不触达其逻辑
+                mock(cn.aioa.resource.service.ExpertConfigService.class),
+                mock(cn.aioa.resource.mapper.AiExpertMapper.class),
+                mock(cn.aioa.resource.service.FormTemplateService.class),
+                // 数字人能力（2026-10-18）：表单清单按 worker_capability 收窄。本测试只验澄清挂起/续跑，
+                // 不触达该逻辑；mock 默认返回 null ⇒ narrowFormsByWorker 走「未配置能力」分支，保持原行为。
+                mock(cn.aioa.resource.service.WorkerCapabilityService.class),
+                pmAiScopePort, fileMapper, kbFileParser,
+                mock(cn.aioa.chat.service.ConversationService.class));
 
         // AuthUserContext 是 ThreadLocal；@BeforeEach 注入，@AfterEach 清掉，避免污染别的测试。
         user = AuthUser.builder().userId(7L).tenantId(100L).username("tester").build();
@@ -158,10 +167,14 @@ class RunServiceHitlTest {
     // ---------------------------------------------------------------- 反射调用 private 方法
 
     private static Method forwardMethod() throws NoSuchMethodException {
+        // 签名尾部三个参数（tenantId / originWorkerId / originWorkerName）是 need_form 补全
+        // 表单字段时下发给前端 origin 用的；反射按全签名精确匹配，产品加参数这里必须同步，
+        // 否则 NoSuchMethodException（曾经就是这样挂了两条用例）。
         return RunService.class.getDeclaredMethod("forward",
                 SseEmitter.class, ServerSentEvent.class, StringBuilder.class,
                 AtomicReference.class, AtomicReference.class, AtomicReference.class,
-                AtomicReference.class, AtomicReference.class, AtomicReference.class);
+                AtomicReference.class, AtomicReference.class, AtomicReference.class,
+                Long.class, Long.class, String.class);
     }
 
     private static Method completeRunMethod() throws NoSuchMethodException {
@@ -180,7 +193,7 @@ class RunServiceHitlTest {
         Method m = forwardMethod();
         m.setAccessible(true);
         m.invoke(runService, emitter, event, assistant, lastId, usageRef, citationsRef,
-                toolCallsRef, failureRef, clarificationRef);
+                toolCallsRef, failureRef, clarificationRef, 100L, 1L, "测试数字人");
     }
 
     @SuppressWarnings("unchecked")

@@ -2,6 +2,7 @@ package cn.aioa.org.service;
 
 import cn.aioa.common.event.NotificationRequested;
 import cn.aioa.common.exception.BizException;
+import cn.aioa.common.port.ApprovalOutcomeSink;
 import cn.aioa.org.entity.ApprovalFlowDef;
 import cn.aioa.org.entity.ApprovalFlowDefVersion;
 import cn.aioa.org.entity.ApprovalTask;
@@ -102,6 +103,13 @@ public class ApprovalFlowService {
     private final ObjectMapper objectMapper;
     private final AuditRecorder audit;
     private final ObjectProvider<ApprovalCallback> callbacks;
+    /**
+     * 审批终态回调端口（文档 52 P4 铁律 2）：审批单进入终态后，把 form_submission 落成一致终态。
+     *
+     * <p>用 {@link ObjectProvider} 惰性取出：表单域未提供实现方时 {@code getIfAvailable()} 返回
+     * null，直接跳过，绝不报错（审批引擎不反向依赖表单域）。</p>
+     */
+    private final ObjectProvider<ApprovalOutcomeSink> outcomeSinks;
     /**
      * 审批人解析策略族（四期）。
      *
@@ -974,7 +982,22 @@ public class ApprovalFlowService {
             m.put("mine", true);
             m.put("creatorName", r.get("applicantName"));
             m.put("totalNodes", statMapper.countTasksOfOrder(orderId));
-            m.put("timeline", timeline(orderId));
+            List<Map<String, Object>> tl = timeline(orderId);
+            m.put("timeline", tl);
+            // 终态订单要把「最后一个已决节点」的决策时间/意见**提升到订单级**：
+            // OA 审批列表直接读 decidedAt / decisionNote（_oa_app.js:733「审批时间」整行、
+            // :749「审批意见」），而此处此前从不输出这两个键 ⇒ 已办列表永远看不到审批时间、
+            // 意见恒显示「（未填写意见）」。判据 = scripts/_check_dto_fields.py 的 state.approvals。
+            Map<String, Object> lastDecided = null;
+            for (Map<String, Object> node : tl) {
+                if (node.get("decidedAt") != null) {
+                    lastDecided = node;
+                }
+            }
+            if (lastDecided != null) {
+                m.put("decidedAt", lastDecided.get("decidedAt"));
+                m.put("decisionNote", lastDecided.get("note"));
+            }
             Map<String, Object> cur = statMapper.selectCurrentTaskOfOrder(orderId);
             if (cur != null) {
                 m.put("currentSeq", cur.get("seq"));
@@ -1027,7 +1050,22 @@ public class ApprovalFlowService {
             m.put("readonly", true);
             m.put("creatorName", r.get("applicantName"));
             m.put("totalNodes", statMapper.countTasksOfOrder(orderId));
-            m.put("timeline", timeline(orderId));
+            List<Map<String, Object>> tl = timeline(orderId);
+            m.put("timeline", tl);
+            // 终态订单要把「最后一个已决节点」的决策时间/意见**提升到订单级**：
+            // OA 审批列表直接读 decidedAt / decisionNote（_oa_app.js:733「审批时间」整行、
+            // :749「审批意见」），而此处此前从不输出这两个键 ⇒ 已办列表永远看不到审批时间、
+            // 意见恒显示「（未填写意见）」。判据 = scripts/_check_dto_fields.py 的 state.approvals。
+            Map<String, Object> lastDecided = null;
+            for (Map<String, Object> node : tl) {
+                if (node.get("decidedAt") != null) {
+                    lastDecided = node;
+                }
+            }
+            if (lastDecided != null) {
+                m.put("decidedAt", lastDecided.get("decidedAt"));
+                m.put("decisionNote", lastDecided.get("note"));
+            }
             Map<String, Object> cur = statMapper.selectCurrentTaskOfOrder(orderId);
             if (cur != null) {
                 m.put("currentSeq", cur.get("seq"));
@@ -1458,6 +1496,16 @@ public class ApprovalFlowService {
                         throw e;
                     }
                 });
+        // 铁律 2：审批进入终态后，把 form_submission 落成一致的终态（APPROVED/REJECTED）。
+        // 此处是 approval_order 进入终态的唯一回调点：decide 的两处终态写入（REJECTED @1278、
+        // APPROVED 终审 @1317）以及子流程回填父节点（resolveParentNode→decide）都会走到这里。
+        // 写回失败则向上抛，随 decide 的 @Transactional 一起回滚，绝不容忍
+        // 「审批已终态但 submission 仍 APPROVING」的静默不一致。
+        ApprovalOutcomeSink sink = outcomeSinks.getIfAvailable();
+        if (sink != null) {
+            Long orderId = lng(order.get("id"));
+            sink.onApprovalFinished(orderId, approved ? "APPROVED" : "REJECTED");
+        }
     }
 
     // ================================================================== 六期：加签 / 子流程（V60）

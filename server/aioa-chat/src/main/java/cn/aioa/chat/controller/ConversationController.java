@@ -93,7 +93,9 @@ public class ConversationController {
                 request == null ? null : request.getContext(),
                 request == null ? null : request.getAttachments(),
                 request == null ? null : request.getModelRef(),
-                request == null ? null : request.getKbOn());
+                request == null ? null : request.getKbOn(),
+                request == null ? null : request.getExpertKey(),
+                request == null ? null : request.getExpert());
         return ApiResponse.ok(new RunCreatedResponse(runId));
     }
 }
