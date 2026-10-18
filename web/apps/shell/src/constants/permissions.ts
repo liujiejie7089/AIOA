@@ -20,6 +20,22 @@ export const WORKER_MANAGER_ROLES: readonly string[] = [
   ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN, ROLE.DEPT_LEADER
 ]
 
+/**
+ * 表单定义管理（docs/52 P1 / 后端 {@code PermissionCatalog.FORM_MANAGE} = {@code form:manage}）。
+ *
+ * <p>与后端 {@code PermissionCatalog.FORM_MANAGE}（权限码 {@code form:manage}，角色集 {@code WORKER_MANAGERS}）
+ * 严格同值：平台管理员 / 租户管理员 / 企业管理员 / 部门负责人。
+ * 普通成员只消费表单（GET /forms/{code} 与 submit 均登录即可），表单定义属治理动作，不放给成员。</p>
+ *
+ * <p>⚠ <b>三处同源铁律</b>：本常量（前端唯一入口）必须与 ——
+ * ① 路由 {@code router/index.ts} 中本页的 {@code meta.allowRoles}；
+ * ② 后端 {@code PermissionCatalog.FORM_MANAGE}（权限码 {@code form:manage}，角色集 {@code WORKER_MANAGERS}）
+ * —— 严格同值。历史上三处各写一套就出过「菜单能进但接口 403」与「接口放开但菜单藏起来」两类镜像缺陷。</p>
+ */
+export const FORM_MANAGER_ROLES: readonly string[] = [
+  ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN, ROLE.DEPT_LEADER
+]
+
 /** 专家创建/配置（= 后端 expert:manage）。 */
 export const EXPERT_MANAGER_ROLES: readonly string[] = [
   ROLE.ADMIN, ROLE.TENANT_ADMIN, ROLE.ORG_ADMIN
@@ -402,3 +418,49 @@ export const PM_REPO_SYNC_STATUS_LABEL: Record<string, string> = {
   PENDING: '待同步',
   FAILED: '同步失败'
 }
+
+// ============================================================================
+// 表单设计器（docs/52 P1）
+// ============================================================================
+// ⚠ 三层必须同源：菜单（MainLayout.showFormMenu）→ 路由 meta.allowRoles（router/index.ts）
+//   → 后端 PermissionCatalog.FORM_MANAGE（form:manage）。
+// 控件类型白名单与后端 FormFieldMeta.CONTROL_TYPES 严格一致；分流策略与后端
+// FormTemplate.POLICY_* 一致。新增时**必须同步改这里**（前端唯一入口），勿在视图里另起字面量。
+
+/** 表单字段控件类型白名单（与后端 {@code FormFieldMeta.CONTROL_TYPES} 同源）。 */
+export const FORM_FIELD_TYPES = [
+  { value: 'text', label: '单行文本' },
+  { value: 'textarea', label: '多行文本' },
+  { value: 'number', label: '数字' },
+  { value: 'amount', label: '金额' },
+  { value: 'date', label: '日期' },
+  { value: 'datetime', label: '日期时间' },
+  { value: 'select', label: '下拉单选' },
+  { value: 'multiselect', label: '下拉多选' },
+  { value: 'file', label: '文件' },
+  { value: 'boolean', label: '布尔（是/否）' }
+] as const
+
+/** 合法的控件类型码集合（保存前校验非法控件类型用）。 */
+export const FORM_FIELD_TYPE_VALUES: readonly string[] = FORM_FIELD_TYPES.map((t) => t.value)
+
+/** 控件类型 → 中文名（回显用；未收录时原样显示类型码）。 */
+export const FORM_FIELD_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  FORM_FIELD_TYPES.map((t) => [t.value, t.label])
+) as Record<string, string>
+
+/** 需要编辑「选项」的控件类型（select / multiselect）。 */
+export const FORM_OPTION_TYPES: readonly string[] = ['select', 'multiselect']
+
+/** 分流策略（与后端 {@code FormTemplate.POLICY_*} 同源；可组合如 APPROVAL+RESUME）。 */
+export const FORM_SUBMIT_POLICIES = [
+  { value: 'LEDGER', label: '台账（仅落库即完成）' },
+  { value: 'APPROVAL', label: '审批（走审批流）' },
+  { value: 'RESUME', label: '回填对话（交给数字人续跑）' },
+  { value: 'APPROVAL+RESUME', label: '审批 + 回填对话' }
+] as const
+
+/** 分流策略 → 中文名（回显用；未收录时原样显示策略码）。 */
+export const FORM_SUBMIT_POLICY_LABEL: Record<string, string> = Object.fromEntries(
+  FORM_SUBMIT_POLICIES.map((p) => [p.value, p.label])
+) as Record<string, string>

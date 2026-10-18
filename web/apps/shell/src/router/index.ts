@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { TOKEN_KEY } from '@/api'
-import { EXPERT_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_CONFIG_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, PM_VIEW_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
+import { EXPERT_MANAGER_ROLES, FORM_MANAGER_ROLES, GITEE_VIEW_ROLES, ORG_CONFIG_ROLES, ORG_VIEW_ROLES, PERSONNEL_VIEW_ROLES, PLATFORM_ONLY_ROLES, PM_VIEW_ROLES, REVIEW_RECORD_ROLES, TENANT_SCOPE_ROLES, WORKER_MANAGER_ROLES, hasAnyRole } from '@/constants/permissions'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -156,6 +156,8 @@ const routes: RouteRecordRaw[] = [
         path: 'tenants', name: 'tenants', component: () => import('@/views/TenantAdminView.vue'), meta: { title: '租户管理', minTier: 'platform'  }
       },
       { path: 'experts', name: 'experts', component: () => import('@/views/ExpertConfigView.vue'), meta: { title: '专家配置', allowRoles: EXPERT_MANAGER_ROLES } },
+      // 表单设计器（docs/52 P1）：与路由 meta.allowRoles、后端 PermissionCatalog.FORM_MANAGE（form:manage）共用 FORM_MANAGER_ROLES。
+      { path: 'forms', name: 'forms', component: () => import('@/views/FormDesignerView.vue'), meta: { title: '表单设计器', allowRoles: FORM_MANAGER_ROLES } },
       { path: 'tools', name: 'tools', component: () => import('@/views/ToolRegistryView.vue'), meta: { title: '业务工具', minTier: 'tenant' } },
       // V34：租户管理员创建的数字员工/专家需平台管理员审核后生效
       { path: 'content-reviews', name: 'content-reviews', component: () => import('@/views/ContentReviewView.vue'), meta: { title: '内容审核', allowRoles: PLATFORM_ONLY_ROLES } },

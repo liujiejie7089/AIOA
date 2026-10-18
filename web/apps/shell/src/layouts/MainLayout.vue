@@ -175,6 +175,8 @@
             <el-menu-item v-if="showExpertMenu" index="/experts">专家配置</el-menu-item>
             <el-menu-item v-if="showTenantMenu" index="/tools">业务工具</el-menu-item>
             <el-menu-item v-if="showTenantMenu" index="/biz-systems">业务系统</el-menu-item>
+            <!-- 表单设计器（docs/52 P1）：与路由 meta.allowRoles、后端 PermissionCatalog.FORM_MANAGE（form:manage）共用 FORM_MANAGER_ROLES。 -->
+            <el-menu-item v-if="showFormMenu" index="/forms">表单设计器</el-menu-item>
           </el-sub-menu>
 
           <!-- 成果与项目：成果沉淀 + 项目管理 -->
@@ -389,6 +391,7 @@ import {
 } from '@/api/institutionScope'
 import {
   EXPERT_MANAGER_ROLES,
+  FORM_MANAGER_ROLES,
   GITEE_VIEW_ROLES,
   PM_VIEW_ROLES,
   ORG_VIEW_ROLES,
@@ -487,6 +490,8 @@ const showGiteeMenu = computed(() => hasAnyRole(roles.value, GITEE_VIEW_ROLES))
 const showPmMenu = computed(() => hasAnyRole(roles.value, PM_VIEW_ROLES))
 /** 机构参数配置（需求二 / docs/44 §2.4）：平台/租户/机构管理员三档都能进；页内与接口按档位收窄（机构管理员只能改本机构，后端 scopeLocked 钉死）。与路由 meta.allowRoles、后端 PermissionCatalog.ORG_CONFIG_MANAGE 共用 ORG_CONFIG_ROLES。 */
 const showOrgConfigMenu = computed(() => hasAnyRole(roles.value, ORG_CONFIG_ROLES))
+/** 表单设计器（docs/52 P1）：与路由 meta.allowRoles、后端 PermissionCatalog.FORM_MANAGE（form:manage）共用 FORM_MANAGER_ROLES（= WORKER_MANAGERS：平台/租户/企业管理员 + 部门负责人）。 */
+const showFormMenu = computed(() => hasAnyRole(roles.value, FORM_MANAGER_ROLES))
 
 /**
  * 侧边菜单的高亮项。
@@ -535,6 +540,8 @@ const PATH_GROUP: Record<string, string> = {
   // 旧深链（现在会重定向到 /sys-roles），保留归组以免直达时菜单不展开
   '/sys-permissions': 'gov',
   '/approval-flows': 'gov',
+  // 表单设计器（docs/52 P1）：同组，深链直达时需展开「智能服务」
+  '/forms': 'svc',
   '/audit': 'gov',
   '/review-records': 'gov',
   // 系统配置
