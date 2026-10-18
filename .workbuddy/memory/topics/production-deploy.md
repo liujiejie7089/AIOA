@@ -35,6 +35,32 @@ L8 禁止 Dockerfile 里出现 `-i http…` / `--index-url`（硬编码源），
 **同类模式通用化**：凡是「生产要和开发不一样」的构建/运行参数，一律走 `.env` 或 build arg，
 **绝不在目标机上改受版本控制的文件** —— 那等于给每次 `git pull` 埋一颗雷。
 
+## ⚠️ 拉取后到底要重建哪些服务（2026-10-18 实测踩坑）
+
+**现象**：用户 `git pull` 后执行 `docker compose up -d --force-recreate server`，
+界面/接口全没变，怀疑「拉的代码没更新」。实际代码**已更新**，是**没重建镜像**。
+
+| 改动落在哪 | 对应服务 | 只重启够不够 |
+|---|---|---|
+| `server/**`（Java、V*迁移）、`web/**`、`user-client/index.html` | **server** | ❌ 必须 `build`：`Dockerfile.server` 三阶段同时产出 jar + 管理端 dist + H5 |
+| `agent/**`、`deploy/Dockerfile.agent` | **agent** | ❌ 必须 `build` |
+| 仅 `.env`（运行期变量） | 对应服务 | ✅ `up -d` 重建容器即可 |
+
+**判据（别信 `up -d` 的 "Started 10.5s"）**：
+`docker compose build server` 会真的跑 node + maven（**5–15 分钟**）；只看到 `Running 1/1 Started` 就是**旧镜像重启**。
+
+**一次到位的命令**：`docker compose up -d --build server agent`。
+
+**如何证明镜像里是新代码**（而不是看 git）：
+```bash
+docker compose exec server sh -c 'grep -c "expert_key" /app/h5/index.html'         # >0
+docker compose exec server sh -c 'grep -rl "表单设计器" /app/web/assets | head -3'  # 有命中
+docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | tail -8   # 应到 V88
+```
+**旁证**：BuildKit 打印的 `RUN` 会把 `ARG` 的**值展开后**显示 ——
+看到 `RUN pip install -i https://pypi.tuna…` 并不等于「手改的那行还在」，那是 `PIP_EXTRA_ARGS` 生效的表现；
+真正的判据是 `transferring dockerfile: 1.70kB`（新版 1657B，旧版 843B）。
+
 ## ★ 定案（2026-09-21）：本次走「后端档」
 
 - 用户口径：`目前不用nginx`；`我目前有mysql,redis,milvus,nginx，但都在其他服务器上，这些就不用下载了，直接连接`。
