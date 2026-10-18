@@ -380,3 +380,21 @@
 }
 .oa .kb-chip .ic{width:13px;height:13px}
 .oa .kb-chip.off{color:var(--text-2);background:var(--surface-3);border-color:var(--border)}
+
+/* ---------------------------------------------------------------------------
+   OA 模块目录（43 个功能模块，每个模块对应一个数字人）
+   .view 自带 14px 横向内边距，故这里只补纵向间距，避免双重缩进。
+   点击 = oaPickWorker(w)，与「数字员工」页同一个入口，不另写第二套。
+   --------------------------------------------------------------------------- */
+.oa .mod-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:2px 0 8px}
+.oa .mod-card{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 6px;
+  background:#fff;border:1px solid var(--brand-line);border-radius:14px;cursor:pointer;
+  font:inherit;color:inherit;-webkit-tap-highlight-color:transparent}
+.oa .mod-card:active{transform:scale(.97)}
+.oa .mod-card.disabled{opacity:.45}
+.oa .mod-card .mi{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:var(--brand-soft);color:var(--brand-ink)}
+.oa .mod-card .mn{font-size:12px;line-height:1.25;text-align:center;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.oa .mod-tip{margin:0 0 10px;padding:9px 12px;border-radius:12px;font-size:12px;line-height:1.5;
+  background:var(--brand-soft);color:var(--brand-ink);border:1px solid var(--brand-line)}

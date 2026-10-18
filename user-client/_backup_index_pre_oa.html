@@ -716,11 +716,12 @@
   .leave-form{margin-top:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 12px}
   .lf-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;font-size:12px}
   .lf-row>label{width:56px;flex-shrink:0;color:var(--text-2);padding-top:6px}
-  .lf-row select,.lf-row input[type=date],.lf-row textarea{
+  .lf-row select,.lf-row input[type=date],.lf-row textarea,.lf-row .lf-input{
     flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12px;
     font-family:inherit;background:var(--surface);color:var(--text);outline:none;
   }
   .lf-row textarea{resize:vertical}
+  .lf-row input[type=file].lf-input{padding:4px 6px}
   .lf-hint{font-size:10px;color:var(--text-3);align-self:center;margin-left:4px}
   /* G-3：附件按钮不换行；说明文字另起一行与控件对齐 */
   .lf-upload{white-space:nowrap}
@@ -731,6 +732,37 @@
     border:1px solid var(--blue-line);border-radius:14px;padding:3px 9px;cursor:pointer}
   .lf-file i{font-style:normal;font-weight:700;color:var(--red);cursor:pointer}
   .lf-actions{display:flex;gap:8px;margin-top:6px;padding-left:64px}
+  /* ---------- 通用表单渲染器（need_form）新增的少量样式，复用 .leave-form 外壳 ---------- */
+  .lf-title{font-size:13px;font-weight:700;margin-bottom:6px;color:var(--text)}
+  .lf-reason{font-size:12px;color:var(--text-2);margin-bottom:8px;line-height:1.5}
+  .lf-origin{font-size:11px;color:var(--text-3);margin-top:4px;text-align:right}
+  .lf-req{color:var(--red);font-style:normal;margin-left:2px}
+  .lf-unknown{font-size:11.5px;color:var(--red);background:var(--red-soft);border:1px solid #f3c2c2;border-radius:8px;padding:6px 8px;flex:1}
+  .lf-submitted{font-size:11.5px;color:var(--text-2);margin-top:6px}
+  .lf-receipt{margin-top:4px}
+  /* boolean 开关：保留原生 checkbox（哨兵据此断言），视觉用 .lf-slider 美化 */
+  .lf-switch{position:relative;display:inline-flex;align-items:center;flex:1;height:22px}
+  .lf-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
+  .lf-slider{position:relative;display:inline-block;width:40px;height:22px;background:var(--border-strong);border-radius:22px;
+    transition:background var(--dur-fast) var(--ease);cursor:pointer}
+  .lf-slider:before{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;background:#fff;border-radius:50%;
+    transition:transform var(--dur-fast) var(--ease)}
+  .lf-switch input:checked + .lf-slider{background:var(--blue)}
+  .lf-switch input:checked + .lf-slider:before{transform:translateX(18px)}
+  .lf-switch input:focus-visible + .lf-slider{outline:2px solid var(--blue);outline-offset:2px}
+  /* ---------- 提交前汇总确认（两段式）+ 规则命中回填（need_form）：只用现有变量，暗色主题不瞎 ---------- */
+  .lf-confirm{margin-top:8px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:9px 11px}
+  .lf-confirm-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:7px}
+  .lf-confirm-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:12px;line-height:1.5;padding:3px 0}
+  .lf-confirm-row>span{color:var(--text-2);flex-shrink:0}
+  .lf-confirm-row>b{font-weight:600;color:var(--text);text-align:right;word-break:break-word;overflow-wrap:anywhere}
+  .lf-confirm-actions{display:flex;gap:8px;margin-top:9px}
+  .lf-rule{margin-top:8px;border-left:3px solid var(--brand);background:var(--surface);border-radius:8px;padding:9px 11px}
+  .lf-rule-msg{font-size:12px;color:var(--text);line-height:1.5;margin-bottom:7px;word-break:break-word;overflow-wrap:anywhere}
+  .lf-rule-opts{display:flex;flex-wrap:wrap;gap:8px}
+  .lf-rule-opt{font-family:inherit;font-size:12px;color:var(--brand);background:var(--surface-2);
+    border:1px solid var(--brand);border-radius:14px;padding:5px 12px;cursor:pointer;transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease)}
+  .lf-rule-opt:hover{background:var(--brand);color:#fff}
   /* ---------- 审批详情：结构化字段 + 附件 ---------- */
   .td-extra-title{font-size:11px;color:var(--text-2);margin-bottom:6px;font-weight:600}
   .td-form{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
@@ -1452,7 +1484,7 @@ const API = {
     if(body && typeof body==='object' && 'code' in body){
       if(body.code !== 0){
         const err = new Error(body.message || ('业务错误 '+body.code));
-        err.code = body.code; err.status = res.status;
+        err.code = body.code; err.status = res.status; err.data = body.data;  // 把响应 data 挂到错误上（规则命中 40090 用），向后兼容
         throw err;
       }
       return body.data;
@@ -1649,6 +1681,18 @@ const API = {
           // ask_user 暂停：模型要澄清。本轮流到此结束（暂停时不发 run.completed），
           // 故选完即 return，立刻把卡片交出去，不等连接自然关闭。
           const p = safeJson(ev.data); if(h.onClarification) h.onClarification(p); return;
+        }else if(ev.event === 'need_form'){
+          // 通用表单暂停帧：模型需要结构化数据才能继续（如提交请假/报销单）。
+          // 与 need_clarification 同属暂停帧（暂停时不发 run.completed），选完即 return，
+          // 立刻把表单交出去，不等连接自然关闭。前端只渲染、不做取数决策（Java 补全 fields）。
+          const p = safeJson(ev.data); if(h.onForm) h.onForm(p); return;
+        }else if(ev.event === 'worker.handoff'){
+          // 会话内数字人自动转交：后端在同一会话内把 conversation.worker_id 改绑到新数字员工，
+          // 并用同一条已落库的用户消息继续跑；本帧**不是**暂停帧（后续回答仍在该流里到达），
+          // 故不 return，继续读完后续 message.delta。经典形态 send() 也走同一 _sse，
+          // 它没有 onHandoff 回调，故用 h.onHandoff && 守卫，避免未定义报错。
+          const p = safeJson(ev.data);
+          try{ if(h.onHandoff) h.onHandoff(p); }catch(e){ console.warn('onHandoff failed', e); }
         }else if(ev.event === 'run.completed'){
           // usage 已在 message.completed 分支上报过，这里不再重复触发，避免消耗行输出两条
           return;
@@ -1667,6 +1711,13 @@ const API = {
   resumeStream(runId, answer, h){
     return this._sse('/v1/runs/'+runId+'/resume',
                      {method:'POST', body:JSON.stringify({answer:answer})}, h);
+  },
+  /* 通用表单提交：对话内（带 conversationId/runId）与独立入口（不带 runId）共用同一封装。
+     后端返回 {submissionId, status, resume, receipt}（信封 data 层）。resume===false 表示
+     不续跑（独立入口或后端明确不续跑），由前端就地渲染回执卡；否则调用方用 resumeStream 续跑。 */
+  formSubmit(code, values, extra){
+    const body = Object.assign({data: values}, extra || {});
+    return this.req('/v1/forms/'+code+'/submit', {method:'POST', body:JSON.stringify(body)});
   },
 };
 
@@ -1730,7 +1781,11 @@ function toast(msg){
 /* 图标键映射：后端存 icon 键，前端映射 SVG；未知键回退 bot */
 const ICON_MAP = {bot:'bot', bell:'bell', pen:'pen', megaphone:'megaphone', doc:'doc', sheet:'sheet',
                   chart:'chart', scale:'scale', bank:'bank', user:'user', clock:'clock',
-                  calendar:'clock', leave:'clock', trophy:'check-circle', inbox:'inbox'};
+                  calendar:'clock', leave:'clock', trophy:'check-circle', inbox:'inbox',
+                  /* V-专家图标：后端 ai_expert.icon 存的是 emoji，前端映射回 SVG 键（只加不删既有键） */
+                  '🏛️':'bank', '⚖️':'scale', '👥':'user', '📋':'doc', '✍️':'pen', '🗒️':'doc',
+                  '💰':'bank', '🛒':'sheet', '🛡️':'bell', '💡':'trophy', '🌐':'megaphone',
+                  '🏢':'bank', '📊':'chart', '📝':'pen', '🧠':'bot'};
 function iconKey(k){ return ICON_MAP[k] || 'bot'; }
 
 /* ============================================================================
@@ -4747,6 +4802,7 @@ async function send(){
 
   let text = '';
   let clar = null;
+  let form = null;            // need_form 暂停帧：模型要结构化数据才能继续
   const h = {
     onDelta: t => {
       const tp = bubble.querySelector('.typing'); if(tp) tp.remove();
@@ -4768,27 +4824,43 @@ async function send(){
       tx.textContent = '生成失败：' + (err.message || '未知错误');
       bubble.style.color = 'var(--red)';
     },
-    onClarification: p => { clar = p; }
+    onClarification: p => { clar = p; },
+    onForm: p => { form = p; }
   };
   try{
     const convId = await API.ensureConversation();
-    const run = await API.createRun(convId, effectiveQ, {kb_on:state.kbOn, expert:state.chatExpert.name},
+    const run = await API.createRun(convId, effectiveQ, {kb_on:state.kbOn, expert_key:(state.chatExpert && state.chatExpert.key) || null},
                                     pendingFiles.map(function(f){ return f.id; }));
     state.runId = run.id || run.runId;
     pendingFiles = []; renderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(state.runId, h);
-    // 多轮回填：resume 仍可能再次 need_clarification，故用 while 收口到澄清结束
-    while(clar){
-      // 等待用户选择期间：若气泡还停在「打字中」占位，换成明确的等待提示，别让用户对着三个点发呆
+    // 多轮回填：resume 仍可能再次 need_clarification / need_form，故用 while 收口到暂停结束。
+    // clar 是标量回填（ask_user），form 是结构化回填（need_form）：两形态同此循环，行为一致。
+    while(clar || form){
+      // 等待用户选择/填表期间：若气泡还停在「打字中」占位，换成明确的等待提示，别让用户对着三个点发呆
       const tp = bubble.querySelector('.typing');
       if(tp) tp.textContent = '等待你的选择…';
-      const pick = await mountClarCard(bubble, clar);
-      clar = null;
-      if(!pick) break;                          // 用户放弃：就地收口
-      // 收口时若还停在等待提示（续跑没来过正文），清掉它，给 delta 让位
-      const wait = bubble.querySelector('.typing');
-      if(wait && wait.textContent === '等待你的选择…') wait.remove();
-      await API.resumeStream(state.runId, pick.value, h);
+      if(clar){
+        const pick = await mountClarCard(bubble, clar);
+        clar = null;
+        if(!pick) break;                          // 用户放弃：就地收口
+        // 收口时若还停在等待提示（续跑没来过正文），清掉它，给 delta 让位
+        const wait = bubble.querySelector('.typing');
+        if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        await API.resumeStream(state.runId, pick.value, h);   // 标量走原路
+      } else {
+        const fc = form.form_code;                 // 先记下 code，随后把 form 置空
+        const res = await mountFormCard(bubble, form);
+        form = null;
+        if(!res) break;                            // 用户取消：就地收口
+        const wait = bubble.querySelector('.typing');
+        if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        const sub = res.submission || {};
+        if(sub.resume === false){ break; }          // 回执已在卡片内渲染，结束
+        // 对象走新路：把 submission 信息作为 answer 续跑同一 run
+        await API.resumeStream(state.runId,
+          {form_code: fc, submission_id: sub.submissionId, status: sub.status, data: res.data, receipt: sub.receipt}, h);
+      }
     }
     state.lastAnswer = text;
     if(!text) tx.textContent = '（本次未返回内容）';
@@ -5109,6 +5181,421 @@ function cancelClarCard(){
   if(typeof clarPendingResolve === 'function'){ const fn = clarPendingResolve; clarPendingResolve = null; fn(); }
 }
 
+/* ============================================================================
+   12c. 通用表单渲染器（need_form 暂停帧）
+   ----------------------------------------------------------------------------
+   Java 补全 fields 后下发，前端只渲染、不做取数决策。与请假表单共用
+   .leave-form / .lf-row / .lf-error / .btn 那套样式（作用域为全站，两形态都生效）。
+   字段类型白名单（只认这些；未知类型跳过并显示一行提示，绝不 innerHTML 原样插入）：
+   text|textarea|number|amount|date|datetime|select|multiselect|file|boolean
+   所有用户可见文案与字段值都经 esc() 转义，schema 内容绝不被原样拼进 DOM。
+   ============================================================================ */
+const FORM_FIELD_TYPES = ['text','textarea','number','amount','date','datetime','select','multiselect','file','boolean'];
+
+/* 纯字符串渲染。返回挂到气泡里的表单卡片 HTML；所有动态值均转义。 */
+function renderFormHtml(p){
+  p = p || {};
+  const code = p.form_code || '';
+  const title = p.title || '表单';
+  const reason = p.reason || '';
+  const submitLabel = p.submit_label || '提交';
+  const fields = Array.isArray(p.fields) ? p.fields : [];
+  const prefill = (p.prefill && typeof p.prefill === 'object') ? p.prefill : {};
+  const origin = p.origin || null;
+
+  let rows = '';
+  let unknown = 0;
+  fields.forEach(function(f){
+    if(!f || typeof f !== 'object') return;
+    const name = f.name != null ? String(f.name) : '';
+    const label = f.label != null ? String(f.label) : name;
+    const type = (f.type || 'text');
+    const required = !!f.required;
+    const placeholder = f.placeholder != null ? String(f.placeholder) : '';
+    const def = f.default != null ? f.default : (name in prefill ? prefill[name] : '');
+    const reqMark = required ? '<i class="lf-req">*</i>' : '';
+    const reqAttr = required ? ' data-required="1"' : '';
+    const phAttr = ' placeholder="'+esc(placeholder)+'"';
+
+    if(FORM_FIELD_TYPES.indexOf(type) === -1){
+      // 未知类型：跳过控件，给一行提示（不 innerHTML 原样插入 schema）
+      unknown++;
+      rows += '<div class="lf-row"><label>'+esc(label)+'</label>'+
+        '<div class="lf-unknown">不支持的字段类型「'+esc(type)+'」，已跳过</div></div>';
+      return;
+    }
+
+    if(type === 'select' || type === 'multiselect'){
+      const opts = Array.isArray(f.options) ? f.options : [];
+      let inner = '<option value="">'+esc(placeholder || '请选择')+'</option>';
+      opts.forEach(function(o){
+        const v = (o != null && o.value !== undefined) ? o.value : '';
+        const l = (o != null && o.label !== undefined && o.label !== '') ? o.label : v;
+        const sel = (String(v) === String(def)) ? ' selected' : '';
+        inner += '<option value="'+esc(v)+'"'+sel+'>'+esc(l)+'</option>';
+      });
+      const multi = (type === 'multiselect') ? ' multiple data-multi="1"' : '';
+      rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<select class="lf-input" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="'+esc(type)+'"'+multi+reqAttr+'>'+inner+'</select></div>';
+    } else if(type === 'textarea'){
+      rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<textarea class="lf-input" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="textarea"'+reqAttr+phAttr+' rows="2">'+esc(def)+'</textarea></div>';
+    } else if(type === 'boolean'){
+      const checked = (def === true || def === 'true' || def === 1 || def === '1') ? ' checked' : '';
+      // 保留原生 checkbox（哨兵据此断言），视觉上用 .lf-switch 美化
+      rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<label class="lf-switch"><input type="checkbox" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="boolean"'+reqAttr+checked+'>'+
+        '<span class="lf-slider"></span></label></div>';
+    } else if(type === 'date' || type === 'datetime'){
+      const tp = (type === 'datetime') ? 'datetime-local' : 'date';
+      rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<input class="lf-input" type="'+tp+'" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="'+esc(type)+'"'+reqAttr+phAttr+' value="'+esc(def)+'"></div>';
+    } else if(type === 'file'){
+      rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<input class="lf-input" type="file" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="file"'+reqAttr+'></div>';
+    } else { // text | number | amount
+      const tp = (type === 'number' || type === 'amount') ? 'number' : 'text';
+      const step = (type === 'amount') ? ' step="0.01"' : ((type === 'number') ? ' step="1"' : '');
+      rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<input class="lf-input" type="'+tp+'" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="'+esc(type)+'"'+reqAttr+phAttr+step+' value="'+esc(def)+'"></div>';
+    }
+  });
+
+  const originHtml = origin ? '<div class="lf-origin">由 '+(origin.worker_name ? esc(origin.worker_name) : '系统')+' 发起</div>' : '';
+  const reasonHtml = reason ? '<div class="lf-reason">'+esc(reason)+'</div>' : '';
+  const unknownHtml = unknown ? '<div class="lf-error" style="display:block">有 '+unknown+' 个字段因类型不支持未渲染</div>' : '';
+
+  return '<div class="leave-form" data-form="1" data-code="'+esc(code)+'">'+
+    '<div class="lf-title">'+esc(title)+'</div>'+
+    reasonHtml+
+    rows+
+    unknownHtml+
+    '<div class="lf-error" data-form-error style="display:none"></div>'+
+    '<div class="lf-actions">'+
+      '<button class="btn small" type="button" data-form-submit="1">'+esc(submitLabel)+'</button>'+
+      '<button class="btn ghost small" type="button" data-form-cancel="1">取消</button>'+
+    '</div>'+
+    originHtml+
+  '</div>';
+}
+
+/* 从挂载后的表单卡片收集值（按 data-field / data-type 解析）。 */
+function collectFormValues(card){
+  const vals = {};
+  const ctrls = card.querySelectorAll('[data-field]');
+  Array.prototype.forEach.call(ctrls, function(c){
+    const name = c.getAttribute('data-field');
+    const type = c.getAttribute('data-type');
+    if(type === 'multiselect'){
+      vals[name] = Array.prototype.filter.call(c.options, function(o){ return o.selected; })
+                    .map(function(o){ return o.value; });
+    } else if(type === 'boolean'){
+      vals[name] = !!c.checked;
+    } else if(type === 'file'){
+      vals[name] = Array.prototype.map.call(c.files || [], function(f){ return f.name; });
+    } else if(type === 'number' || type === 'amount'){
+      vals[name] = (c.value === '' || c.value == null) ? null : Number(c.value);
+    } else {
+      vals[name] = c.value;
+    }
+  });
+  return vals;
+}
+
+/* 体验级校验：必填 + 类型（数字）。返回错误文案数组，空数组表示通过。 */
+function validateForm(card){
+  const errs = [];
+  const ctrls = card.querySelectorAll('[data-field]');
+  Array.prototype.forEach.call(ctrls, function(c){
+    const name = c.getAttribute('data-field');
+    const type = c.getAttribute('data-type');
+    const required = c.getAttribute('data-required') === '1';
+    if(!required) return;
+    if(type === 'multiselect'){
+      const any = Array.prototype.some.call(c.options, function(o){ return o.selected; });
+      if(!any) errs.push((name || '该项') + ' 为必填项');
+    } else if(type === 'file'){
+      if(!c.files || !c.files.length) errs.push((name || '该项') + ' 为必填项');
+    } else if(type === 'boolean'){
+      if(!c.checked) errs.push((name || '该项') + ' 为必填项');
+    } else {
+      if(c.value === '' || c.value == null) errs.push((name || '该项') + ' 为必填项');
+    }
+  });
+  return errs;
+}
+
+/* 结果回执卡（与 showLeaveResultCard 观感一致）。receipt 可能含 submissionId / status / fields。 */
+function formReceiptHtml(receipt){
+  receipt = receipt || {};
+  const no = receipt.submissionId != null ? ('#'+receipt.submissionId)
+           : (receipt.receiptNo || receipt.no || (receipt.id != null ? ('#'+receipt.id) : '—'));
+  const status = receipt.status || '已提交';
+  let rows = '';
+  if(receipt.fields && typeof receipt.fields === 'object'){
+    Object.keys(receipt.fields).forEach(function(k){
+      rows += '<div class="rc-row"><span>'+esc(k)+'</span><b>'+esc(String(receipt.fields[k]))+'</b></div>';
+    });
+  }
+  return '<div class="result-card">'+
+    '<div class="rc-head">'+icon('check-circle','rc-ok')+'<b>'+esc(receipt.title || '提交成功')+'</b></div>'+
+    '<div class="rc-row"><span>受理单号</span><b>'+esc(String(no))+'</b></div>'+
+    '<div class="rc-row"><span>当前状态</span><b><span class="badge wait">'+esc(status)+'</span></b></div>'+
+    rows+
+  '</div>';
+}
+
+/* 提交前汇总确认卡的纯函数（与 renderFormHtml/formReceiptHtml 同级，便于浏览器级哨兵直接 evaluate 调用）。
+   返回 HTML 字符串：标题「请核对以下信息」+ 逐字段一行（label + 值）+ 末尾两个按钮。
+   值展示口径：multiselect/file 数组用「、」连接；boolean 显示「是/否」；null/''/空数组显示「—」。
+   全部经 esc() 转义（值和标签都可能是用户/库里数据）。 */
+function formSummaryHtml(p, values){
+  p = p || {};
+  const fields = Array.isArray(p.fields) ? p.fields : [];
+  values = (values && typeof values === 'object') ? values : {};
+  let rows = '';
+  fields.forEach(function(f){
+    if(!f || typeof f !== 'object') return;
+    const name = f.name != null ? String(f.name) : '';
+    const label = f.label != null ? String(f.label) : name;
+    let v = values[name];
+    let txt;
+    if(Array.isArray(v)){
+      // multiselect / file 都是数组：空 → 「—」
+      if(v.length === 0){ txt = '—'; }
+      else if(f.type === 'multiselect'){
+        // 多选：尽量回显 label（选项名比裸 value 好懂）
+        const opts = Array.isArray(f.options) ? f.options : [];
+        txt = v.map(function(val){
+          const hit = opts.filter(function(o){ return String(o.value) === String(val); })[0];
+          return hit && (hit.label != null && hit.label !== '') ? String(hit.label) : String(val);
+        }).join('、');
+      } else {
+        // file 等：元素本身是文件名，直接连接
+        txt = v.join('、');
+      }
+    } else if(f.type === 'select'){
+      // 单选：回显选项名（裸 value 用户看不懂）；命中不到就原样显示（负向对照）
+      if(v === null || v === undefined || v === ''){ txt = '—'; }
+      else {
+        const opts = Array.isArray(f.options) ? f.options : [];
+        const hit = opts.filter(function(o){ return o && String(o.value) === String(v); })[0];
+        txt = (hit && hit.label != null && hit.label !== '') ? String(hit.label) : String(v);
+      }
+    } else if(f.type === 'boolean'){
+      // boolean：显示「是/否」（未定义也回落到否）
+      txt = (v === true || v === 'true') ? '是' : '否';
+    } else if(v === null || v === undefined || v === ''){
+      txt = '—';
+    } else {
+      txt = String(v);
+    }
+    rows += '<div class="lf-confirm-row"><span>'+esc(label)+'</span><b>'+esc(txt)+'</b></div>';
+  });
+  return '<div class="lf-confirm">'+
+    '<div class="lf-confirm-title">请核对以下信息</div>'+
+    rows+
+    '<div class="lf-confirm-actions">'+
+      '<button class="btn small" type="button" data-form-confirm="1">确认提交</button>'+
+      '<button class="btn ghost small" type="button" data-form-back="1">返回修改</button>'+
+    '</div>'+
+  '</div>';
+}
+
+/* 挂载通用表单到 host（气泡元素）尾部，绑定交互与提交，返回 Promise。
+   resolve 形态：
+     {data, submission}  —— 提交成功（submission.resume===false 时回执已在卡片内渲染；否则交回调用方续跑）
+     null                —— 用户取消
+   opts.standalone=true 时（独立入口，无 run）：提交成功后一律就地渲染回执并结束。 */
+function mountFormCard(host, p, opts){
+  opts = opts || {};
+  return new Promise(function(resolve){
+    const wrap = document.createElement('div');
+    wrap.innerHTML = renderFormHtml(p);
+    const card = wrap.firstElementChild;           // .leave-form[data-form]
+    if(!card){ resolve(null); return; }
+    host.appendChild(card);
+
+    const code = (p && p.form_code) ? String(p.form_code) : '';
+    const errBox = card.querySelector('[data-form-error]');
+    const submitBtn = card.querySelector('[data-form-submit]');
+    const cancelBtn = card.querySelector('[data-form-cancel]');
+    let settled = false;
+
+    function fail(msg){
+      if(errBox){ errBox.textContent = msg; errBox.style.display = 'block'; }
+      if(typeof toast === 'function') toast(msg);
+    }
+    function showReceipt(submission){
+      const rc = document.createElement('div');
+      rc.className = 'lf-receipt';
+      rc.innerHTML = formReceiptHtml((submission && submission.receipt) || {});
+      card.innerHTML = '';
+      card.appendChild(rc);
+      card.classList.add('done');
+    }
+
+    // 按 data-field 精确找到控件（避免字段名含特殊字符破坏 CSS 选择器）
+    function findCtrl(name){
+      const ctrls = card.querySelectorAll('[data-field]');
+      for(let i=0;i<ctrls.length;i++){
+        if(ctrls[i].getAttribute('data-field') === String(name)) return ctrls[i];
+      }
+      return null;
+    }
+
+    // 把规则命中的某个选项值写回对应控件
+    function writeBackValue(name, value){
+      const c = findCtrl(name);
+      if(!c) return;
+      const type = c.getAttribute('data-type');
+      if(type === 'boolean'){
+        c.checked = (value === true || value === 'true' || value === '1' || value === 1);
+      } else if(type === 'multiselect' || type === 'select'){
+        // select/多选：把该 value 对应的 option 选中（multiselect 保留其它已选项）
+        Array.prototype.forEach.call(c.options, function(o){
+          if(String(o.value) === String(value)) o.selected = true;
+        });
+      } else {
+        c.value = String(value);
+      }
+    }
+
+    // 真正发起提交：与「确认提交」共用同一份 values（绝不重读 DOM，这是判断两段式正确的关键）
+    function doSubmit(values){
+      if(settled) return;
+      if(submitBtn){ submitBtn.textContent = '提交中…'; submitBtn.disabled = true; }
+      if(cancelBtn) cancelBtn.disabled = true;
+      const extra = {};
+      if(!opts.standalone){
+        if(state.conversationId) extra.conversationId = state.conversationId;
+        if(state.runId) extra.runId = state.runId;
+      }
+      API.formSubmit(code, values, extra).then(function(submission){
+        submission = submission || {};
+        const resume = submission.resume;
+        if(opts.standalone || resume === false){
+          // 独立入口或后端明确不续跑：就地渲染回执卡，结束
+          showReceipt(submission);
+          settled = true;
+          resolve({data:values, submission:submission});
+        } else {
+          // 续跑策略（RESUME 等）：保留卡片为已提交态，交回调用方 resume
+          card.classList.add('done');
+          Array.prototype.forEach.call(card.querySelectorAll('[data-field], [data-form-submit], [data-form-cancel]'), function(el){ el.disabled = true; });
+          const note = document.createElement('div');
+          note.className = 'lf-submitted';
+          note.textContent = '已提交，正在继续…';
+          card.appendChild(note);
+          settled = true;
+          resolve({data:values, submission:submission});
+        }
+      }).catch(function(err){
+        if(submitBtn){ submitBtn.textContent = (p && p.submit_label) || '提交'; submitBtn.disabled = false; }
+        if(cancelBtn) cancelBtn.disabled = false;
+        // 业务规则命中（HTTP 200 + code 40090）：渲染可点选选项回填，不报失败
+        const rv = err && err.code === 40090 && err.data && err.data.rule_violation;
+        if(rv){ showRuleHint(rv, values); return; }
+        fail((err && err.message) || '提交失败，请稍后重试');
+      });
+    }
+
+    // 提交入口（校验 + 采集一次 + 汇总面板）；点「提交」与规则选项回填后都会走这里
+    function startFlow(){
+      if(settled) return;
+      const errs = validateForm(card);
+      if(errs.length){ fail(errs.join('；')); return; }
+      if(errBox) errBox.style.display = 'none';
+      // 只采集这一次：汇总面板与「确认提交」共用同一份 values（判据）
+      const values = collectFormValues(card);
+      showSummary(values);
+    }
+
+    // 渲染汇总确认面板（插入到 .lf-actions 之前）
+    function showSummary(values){
+      const old = card.querySelector('.lf-confirm');
+      if(old) old.remove();
+      const oldRule = card.querySelector('.lf-rule');
+      if(oldRule) oldRule.remove();
+      const box = document.createElement('div');
+      box.innerHTML = formSummaryHtml(p, values);
+      const panel = box.firstElementChild;
+      const actions = card.querySelector('.lf-actions');
+      card.insertBefore(panel, actions);
+      if(submitBtn) submitBtn.disabled = true;
+      const backBtn = panel.querySelector('[data-form-back]');
+      const confirmBtn = panel.querySelector('[data-form-confirm]');
+      if(backBtn) backBtn.addEventListener('click', function(){
+        panel.remove();                          // 返回修改：移除面板、恢复提交按钮
+        if(submitBtn) submitBtn.disabled = false; // 不发任何请求
+      });
+      if(confirmBtn) confirmBtn.addEventListener('click', function(){
+        doSubmit(values);                        // 同一份 values，绝不重新读 DOM
+      });
+    }
+
+    // 规则命中：在 .lf-actions 之前插入/替换提示条 + 选项按钮（复用「单选卡」交互形态）
+    function showRuleHint(rv, values){
+      const target = rv.target_field || rv.field;
+      const oldRule = card.querySelector('.lf-rule');
+      if(oldRule) oldRule.remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'lf-rule';
+      let html = '<div class="lf-rule-msg">'+esc(rv.message || '信息有误，请调整后再提交')+'</div>';
+      const opts = Array.isArray(rv.options) ? rv.options : [];
+      if(opts.length){
+        html += '<div class="lf-rule-opts">';
+        opts.forEach(function(o){
+          const val = (o && o.value !== undefined) ? o.value : '';
+          const lab = (o && (o.label !== undefined && o.label !== '')) ? o.label : String(val);
+          html += '<button type="button" class="lf-rule-opt" data-opt-value="'+esc(val)+'">'+esc(lab)+'</button>';
+        });
+        html += '</div>';
+      }
+      wrap.innerHTML = html;
+      const actions = card.querySelector('.lf-actions');
+      card.insertBefore(wrap, actions);
+      if(submitBtn) submitBtn.disabled = true;   // 用户选过选项前，禁用原提交按钮
+      Array.prototype.forEach.call(wrap.querySelectorAll('.lf-rule-opt'), function(btn){
+        btn.addEventListener('click', function(){
+          const val = btn.getAttribute('data-opt-value');
+          writeBackValue(target, val);           // 把值写回对应控件
+          wrap.remove();                         // 移除规则面板、恢复提交按钮
+          if(submitBtn) submitBtn.disabled = false;
+          startFlow();                           // 重跑校验 + 汇总，保证汇总里就是新值
+        });
+      });
+    }
+
+    if(submitBtn){
+      submitBtn.addEventListener('click', startFlow);
+    }
+
+    if(cancelBtn){
+      cancelBtn.addEventListener('click', function(){
+        if(settled) return;
+        settled = true;
+        if(card.parentNode) card.parentNode.removeChild(card);
+        resolve(null);
+      });
+    }
+  });
+}
+
+/* 独立入口：用户自己点进去填（非必须接线到导航）。GET /v1/forms/{code} → 渲染到
+   当前消息框并提交（standalone，不带 runId）。供离线哨兵 window.oaOpenForm 驱动。 */
+window.oaOpenForm = function(code){
+  code = String(code || '');
+  if(!code) return Promise.reject(new Error('缺少表单 code'));
+  const host = (typeof window.oaActiveMsgBox === 'function' ? window.oaActiveMsgBox() : null) || (typeof $ === 'function' ? $('msgs') : null);
+  if(!host) return Promise.reject(new Error('找不到挂载容器'));
+  return API.req('/v1/forms/'+code).then(function(def){
+    def = def || {};
+    if(!def.form_code) def.form_code = code;
+    return mountFormCard(host, def, {standalone:true});
+  });
+};
+
 /* 请假申请：仅在用户主动提出请求时，由「请假类数字员工」当场发放表单（页面上无独立入口） */
 function isLeaveRequest(q){
   return /请假|休假|调休|年假|病假|事假|婚假|产假|丧假|探亲假/.test(String(q || ''));
@@ -5277,7 +5764,7 @@ function gotoTodo(){ go('page-todo'); activateTodoTab(); }
 /* 提交结果确认卡（走查发现 A-7）：原实现「toast + 立即跳转」，用户来不及看清单号与状态。
    多级审批上线后补上「当前流转到谁」——申请人不必再猜这单卡在哪一级（#211）。 */
 function showLeaveResultCard(order, info){
-  const box = $('msgs');
+  const box = (typeof window.oaActiveMsgBox === 'function' ? window.oaActiveMsgBox() : null) || $('msgs');
   if(!box){ gotoTodo(); return; }
   const o = order || {};
   const no = o.orderId != null ? ('#' + o.orderId)
@@ -5300,12 +5787,14 @@ function showLeaveResultCard(order, info){
       '<div class="rc-row"><span>当前流转到</span><b>'+cur+'</b></div>'+
       '<div class="rc-row"><span>当前状态</span><b><span class="badge wait">待审批</span></b></div>'+
       '<div class="rc-ops">'+
-        '<button class="btn small" onclick="openAllMine()">查看我的申请</button>'+
-        '<button class="btn ghost small" onclick="gotoTodo()">返回待办</button>'+
+        (typeof window.oaResultCardOpsHtml === 'function' ? window.oaResultCardOpsHtml() :
+          '<button class="btn small" onclick="openAllMine()">查看我的申请</button>'+
+          '<button class="btn ghost small" onclick="gotoTodo()">返回待办</button>')+
       '</div>'+
     '</div></div>';
   box.appendChild(card);
   box.scrollTop = box.scrollHeight;
+  if(typeof window.oaAfterMsgBoxAppend === 'function') window.oaAfterMsgBoxAppend(box);
 }
 
 async function submitLeave(btn){

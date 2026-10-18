@@ -132,6 +132,7 @@ var META = {
   home:    {t:'工作助手',      tab:'home'},
   collab:  {t:'AIOA 办公协同', tab:'collab'},
   kb:      {t:'知识库',        tab:'kb'},
+  modules: {t:'OA 模块',       tab:null, sub:1},
   org:     {t:'部门',          tab:'org'},
   me:      {t:'我的',          tab:'me'},
   workers: {t:'数字员工',      tab:null, sub:1},
@@ -171,6 +172,8 @@ function oaRefreshView(view){
   // 项目面板接真 PM 模块（/v1/pm/projects，可见性由后端 canSee 唯一判定点收窄）。
   else if(view === 'collab') p = API.req('/v1/pm/projects?pageSize=100')
       .then(function(r){ S.projects = arr(r); });
+  // 模块目录与「数字员工」同源（/v1/workers），进页补拉一次，避免登录早于预置数据时看到空表
+  else if(view === 'modules') p = API.workers().then(function(r){ state.workers = arr(r); });
   if(!p) return;
   p.catch(function(){}).then(function(){ if(S.mode === 'oa' && S.view === view) oaRender(); });
 }
@@ -224,6 +227,7 @@ function oaRender(){
   if(S.view === 'home')    renderHome();
   if(S.view === 'collab')  renderCollab();
   if(S.view === 'kb')      renderKb();
+  if(S.view === 'modules') renderModules();
   if(S.view === 'org')     renderOrg();
   if(S.view === 'me')      renderMe();
   if(S.view === 'workers') renderWorkers();
@@ -1239,6 +1243,41 @@ function renderOaFeedback(){
 }
 
 /* ------------------------------------------- 8. 数字员工 / 专家 / 定时 / 技能 */
+/* OA 模块：43 个功能模块各对应一个数字人（后端 worker_type = OA_*，见 V83/V84）。
+   顺序按 sourceTemplateId（= 模块模板主键，与《OA系统功能清单》一致）；缺值回落自身 id。 */
+function oaModuleWorkers(){
+  return arr(state.workers).filter(function(w){
+    return String(w.workerType || '').indexOf('OA') === 0;
+  }).sort(function(a,b){
+    return (a.sourceTemplateId || a.id) - (b.sourceTemplateId || b.id);
+  });
+}
+
+function renderModules(){
+  var el = $o('oaModGrid'); if(!el) return;
+  var ws = oaModuleWorkers();
+  var inProject = currentProjectId() > 0;
+  var head = inProject
+    ? '<div class="mod-tip">当前在项目《' + txt(S.currentProject ? S.currentProject.name : '') +
+      '》内：模块数字人属平台公共资产，需先在「项目管理」里分配给该项目；退出项目后可直接使用。</div>'
+    : '';
+  if(!ws.length){ el.innerHTML = head + empty('暂无模块数字人'); return; }
+  el.innerHTML = head + ws.map(function(w){
+    return '<button class="mod-card' + (inProject ? ' disabled' : '') + '"' +
+      ' data-worker="' + txt(w.id) + '" data-oa-mod="' + txt(w.workerType) + '"' +
+      ' aria-label="' + txt(w.name) + '">' +
+      '<span class="mi">' + ic(iconKey(w.icon), 18) + '</span>' +
+      '<span class="mn">' + txt(w.name) + '</span></button>';
+  }).join('');
+  el.querySelectorAll('[data-worker]').forEach(function(b){
+    b.onclick = function(){
+      if(inProject){ toast('请先退出项目，再使用模块数字人'); return; }
+      var w = arr(state.workers).filter(function(x){ return String(x.id) === b.dataset.worker; })[0];
+      if(w) oaPickWorker(w);      /* 与「数字员工」页同一个入口：换人即换会话，不另写一套 */
+    };
+  });
+}
+
 function renderWorkers(){
   var el = $o('oaWorkersList'); if(!el) return;
   var ws = arr(state.workers);
@@ -1536,6 +1575,41 @@ function oaPickWorker(w){
     txt(w.scheduleTime ? '排班 ' + w.scheduleTime : '可随时对话')+'</div>');
   var i = $o('oaInput'); if(i) i.focus();
 }
+
+/* 会话内自动转交（后端 worker.handoff SSE 帧）：只改「当前数字人」状态，绝不换会话。
+   与 oaPickWorker 的关键区别：oaPickWorker 会 S.convId=null（换人=换会话）并落
+   「已选择数字员工…」气泡；本函数刻意不碰 S.convId、不建新会话——后端已在同一条会话内
+   把 conversation.worker_id 改绑、并复用同一条已落库的用户消息继续跑。若这里也换会话，
+   就会丢掉已落库上下文、且后续回答归到错误数字人。供 oaSend 的 onHandoff 即时调用，
+   也保留给其它入口复用。 */
+function oaApplyHandoff(p){
+  if(!p || !p.to_worker_id) return;
+  // 幂等：已经在该数字人名下就不用再切（同帧重放/抖动都不会重复落气泡）
+  if(S.worker && Number(S.worker.id) === Number(p.to_worker_id)) return;
+  // 只改当前数字人相关字段：Object.assign 保留原对象其它字段（如 roleName/scheduleTime），
+  // 避免界面取值变 undefined。
+  S.worker = Object.assign({}, S.worker || {}, {id:p.to_worker_id, name:p.to_worker_name});
+  // 项目会话按 (pid, workerId) 分账：同步更新映射的 workerId，否则下一条消息会因
+  // (pid, workerId) 不匹配而新建会话、丢掉上下文。projectConvId[pid] 保持不变（同一会话）。
+  if(S.currentProject && S.projectConvWorker){
+    var pid = S.currentProject.id;
+    if(pid != null && Object.prototype.hasOwnProperty.call(S.projectConvWorker, pid)){
+      S.projectConvWorker[pid] = p.to_worker_id;
+    }
+  }
+  // 顶部标出当前对话对象（.oa-who）刷新到新数字人
+  oaBanner();
+  // 对话坞落一条可见提示气泡：已自动转交、原问题已带过去、不用重述
+  var text;
+  if(p.from_worker_name){
+    text = '「'+txt(p.from_worker_name)+'」不负责这件事，已转交「'
+         + txt(p.to_worker_name)+'」继续处理（原问题已带过去，不用重说）。';
+  }else{
+    text = '这件事属于「'+txt(p.to_worker_name)+'」的职责，已自动切换（原问题已带过去，不用重说）。';
+  }
+  var b = oaPushBub('ai', text);
+  if(b) b.classList.add('oa-handoff-note');   // 供离线哨兵稳定定位（非视觉用途）
+}
 function oaPickExpert(e){
   if(!e) return;
   // 同 oaPickWorker：换人即换会话，并作废在途收口
@@ -1646,6 +1720,8 @@ async function oaSend(){
   var text = '';
   var answered = false;
   var clar = null;
+  var form = null;            // need_form 暂停帧：与经典形态共用同一套渲染/挂载/续跑口径
+  var handoff = null;         // worker.handoff 帧：会话内自动转交（只改当前数字人、不换会话）
   var h = {
     onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
     onCompleted: function(p){
@@ -1661,14 +1737,18 @@ async function oaSend(){
       tx.textContent = '生成失败：' + (err.message || '未知错误');
       tx.style.color = 'var(--red)';
     },
-    onClarification: function(p){ clar = p; }
+    onClarification: function(p){ clar = p; },
+    onForm: function(p){ form = p; },
+    // 会话内数字人自动转交：每收到一帧即时应用（后续 message.delta 要显示在新数字人名下）。
+    // 不回退到 while 收口处重放——幂等已保证安全。
+    onHandoff: function(p){ handoff = p; oaApplyHandoff(p); }
   };
 
   try{
     var convId = await oaEnsureConv();
     var run = await API.createRun(convId, effectiveQ, {
       kb_on: (S.kbOn !== false),
-      expert: S.expert ? (S.expert.name || S.expert.key) : undefined
+      expert_key: S.expert && S.expert.key ? S.expert.key : null
     }, (S.pendingFiles||[]).map(function(f){ return f.id; }));
     var runId = run && (run.id || run.runId);
     // 与经典形态共用 state.runId：停止生成按钮只有一个真值来源
@@ -1676,16 +1756,31 @@ async function oaSend(){
     S.controller = null;
     S.pendingFiles = []; oaRenderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(runId, h);
-    // 多轮回填：resume 仍可能再次 need_clarification，故用 while 收口到澄清结束
-    while(clar){
+    // 多轮回填：resume 仍可能再次 need_clarification / need_form，故用 while 收口到暂停结束。
+    // clar 是标量回填，form 是结构化回填；与经典形态同此循环，行为一致。
+    while(clar || form){
       var tp = bubble.querySelector('.typing');
       if(tp) tp.textContent = '等待你的选择…';
-      var pick = await mountClarCard(bubble, clar);
-      clar = null;
-      if(!pick) break;                            // 用户放弃：就地收口
-      var wait = bubble.querySelector('.typing');
-      if(wait && wait.textContent === '等待你的选择…') wait.remove();
-      await API.resumeStream(runId, pick.value, h);
+      if(clar){
+        var pick = await mountClarCard(bubble, clar);
+        clar = null;
+        if(!pick) break;                            // 用户放弃：就地收口
+        var wait = bubble.querySelector('.typing');
+        if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        await API.resumeStream(runId, pick.value, h);   // 标量走原路
+      } else {
+        var fc = form.form_code;                     // 先记下 code，随后把 form 置空
+        var fres = await mountFormCard(bubble, form);
+        form = null;
+        if(!fres) break;                             // 用户取消：就地收口
+        var wait2 = bubble.querySelector('.typing');
+        if(wait2 && wait2.textContent === '等待你的选择…') wait2.remove();
+        var sub = fres.submission || {};
+        if(sub.resume === false){ break; }            // 回执已在卡片内渲染，结束
+        // 对象走新路：把 submission 信息作为 answer 续跑同一 run
+        await API.resumeStream(runId,
+          {form_code: fc, submission_id: sub.submissionId, status: sub.status, data: fres.data, receipt: sub.receipt}, h);
+      }
     }
     if(!text) tx.textContent = '（本次未返回内容）';
     else{
@@ -1766,11 +1861,11 @@ async function oaNewTask(){
   });
 }
 
-/* --------------------------------------- 9.5 职责推荐 / 换人 / 表单直出（同老版）
+/* --------------------------------------- 9.5 职责推荐 / 换人（同老版）
    与经典形态（老版）同一套逻辑，只是把载体换成首页对话坞：
-     · 老版：回答回来固定给一个「转给更专业的同事」块（guidanceBlock），点名称即换人；
-       问句命中请假、且当前是请假类数字员工时，由它当场发放《请假申请》（afterAnswer）。
-     · 新版：同样两件事 —— 推荐块落在对话坞里，表单直接插进对话流。
+     · 老版：回答回来固定给一个「转给更专业的同事」块（guidanceBlock），点名称即换人。
+     · 新版：推荐块落在对话坞里。请假「判权 + 申请/跳转」改由 oaMaybeLeaveAction 统一编排
+       （唯一判定在服务端 intent.action === 'APPLY_LEAVE'，不再用本地词表，见铁律 1）。
    判据只认两个可核对的来源，别的一概不用（铁律 1）：
      (a) 后端职责分类器 POST /v1/workers/intent —— 与「新工作任务」同一个判定点，不另写一套；
      (b) 问句里**字面**出现该员工名 / 职责名，或老版专家词表里的词（逐字复用 scoreExpert）。
@@ -1781,28 +1876,6 @@ var GUIDE_CAP = 3;
    等待期间用户可能已经切走形态或换了对象 —— 用代次把在途收口作废，
    否则会往已隐藏的对话坞里塞一份请假表单，并让经典形态再发一份 ⇒ 同一 id 出现两份。 */
 var oaAnswerSeq = 0;
-
-function oaWhoType(){
-  var w = S.worker;
-  if(!w) return '';
-  if(w.workerType) return String(w.workerType);
-  var hit = arr(state.workers).filter(function(x){ return x.id === w.id; })[0];
-  return hit ? String(hit.workerType || '') : '';
-}
-
-/* 是否「请假类」数字员工：与老版 isLeaveCapable 同一判据（类型码 + 名称/职责文本）。
-   会话绑定可能只带 id（从「最近」续聊），故回落到 state.workers 补类型。 */
-function oaLeaveCapable(){
-  var w = S.worker;
-  if(!w) return false;
-  var key = (oaWhoType() + ' ' + (w.roleName || w.name || '')).trim();
-  return /LEAVE_APPROVER|请假|假勤|休假/.test(key);
-}
-
-/* 问句问的是不是请假：与老版 isLeaveRequest 同一份词表 */
-function oaIsLeaveRequest(q){
-  return /请假|休假|调休|年假|病假|事假|婚假|产假|丧假|探亲假/.test(String(q || ''));
-}
 
 /* 一位数字员工是否值得推荐；返回 null = 不推荐。
    排除当前对话对象本身 —— 「更换数字人」不该把当前这位再推荐一遍。 */
@@ -1912,19 +1985,6 @@ function oaTakeSuggestion(it, redo){
   oaSend();
 }
 
-/* 表单直出：与老版 afterAnswer 同一对判据 —— 用户主动提请假 + 当前是请假类数字员工。
-   两个条件缺一不可，否则会出现「一边说不管请假、一边发表单」的自相矛盾。 */
-function oaMaybeLeaveForm(){
-  if(!oaIsLeaveRequest(S.lastQuery) || !oaLeaveCapable()) return false;
-  if(document.getElementById('leaveForm')) return false;      // 文档里已有一份，不重复发放
-  if(typeof leaveFormHtml !== 'function') return false;
-  oaPushBub('ai', '已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml());
-  if(typeof ensureLeaveTypes === 'function') ensureLeaveTypes(); // 假种来自后端配置，写死会打不到真实链路
-  oaScrollDock();
-  oaLayoutTails();
-  return true;
-}
-
 /* 进入项目后在对话正文里落一条上下文卡：项目名 + 隔离口径 + 对话式操作入口。
    项目名唯一事实源仍是 S.currentProject（由 enterProject 用 GET /v1/pm/projects/{id} 拿到）。 */
 function oaProjectIntroHtml(){
@@ -1967,6 +2027,334 @@ function oaMaybeProjectAction(intent){
   return false;
 }
 
+/* 请假编排（需求）：识别到 APPLY_LEAVE 后，按服务端 intent.held / intent.pending 分支。
+   唯一判定在服务端 intake.py（H5 不再用本地词表判断「是不是请假」，铁律 1）；
+   且**不受项目上下文门控**——普通对话里说「我要请假」也生效。 */
+function oaMaybeLeaveAction(intent){
+  if(!intent || intent.action !== 'APPLY_LEAVE') return false;
+  var held = intent.held;                 // 未定义（未知）不默认 true/false
+  var pending = intent.pending === true;
+  if(held === true){
+    // 跳转分支：在已通过服务端可见性过滤的 state.workers 里按 workerType === role 取第一个
+    var w = arr(state.workers).filter(function(x){
+      return String(x.workerType || '') === String(intent.role || '');
+    })[0];
+    if(w){
+      if(oaOnLeaveWorker(intent)){
+        // 已经在对的请假数字人里 ⇒ 直接把《请假申请》渲染出来（§1.6 的「纯渲染器」路径）。
+        // 缺了这一支，「有权限的用户」只会被反复跳转、却始终拿不到可填写的表单 ⇒ 无法提交请假。
+        oaEmitLeaveForm();
+        return true;
+      }
+      oaPickWorker(w);
+      oaPushBub('ai', '你已持有「'+txt(intent.permissionName || '请假审批')+
+        '」权限，已为你跳转到请假数字员工「'+txt(w.name || '请假助手')+'」。');
+      oaScrollDock(); oaLayoutTails();
+      return true;
+    }
+    // 找不到匹配员工（演示环境即如此）→ 先按 §1.5 补齐再跳转
+    oaEnsureLeaveWorkerThenPick(intent);
+    return true;
+  }
+  // held 非 true（false 或未知）→ 申请卡；未知不默认成有权/无权，一律走申请卡
+  oaOpenLeavePermCard(intent, pending);
+  return true;
+}
+
+/* 当前对话对象是否就是本次意图对应的请假数字人。
+   这是**渲染前置**（表单只发给「正在和请假数字人说话」的人），不是意图判定 ——
+   「这句话是不是请假」仍只由服务端 intent.action 决定，见 docs/51 §1.6。
+   会话绑定可能只带 id（从「最近」续聊），故回落到 state.workers 补类型（与老版 oaWhoType 同一判据）。 */
+function oaOnLeaveWorker(intent){
+  var w = S.worker;
+  if(!w) return false;
+  var role = String((intent && intent.role) || 'LEAVE_APPROVER');
+  var t = String(w.workerType || '');
+  if(!t){
+    var hit = arr(state.workers).filter(function(x){ return String(x.id) === String(w.id); })[0];
+    t = hit ? String(hit.workerType || '') : '';
+  }
+  if(t && role && t === role) return true;
+  // 类型码拿不到时按「名称/职责是不是请假类」兜底（与老版 oaLeaveCapable 同一词表，仅作渲染前置）
+  return /LEAVE_APPROVER|请假|假勤|休假/.test((t + ' ' + (w.roleName || w.name || '')).trim());
+}
+
+/* 《请假申请》表单的**纯渲染器**（docs/51 §1.6）：自己不判断「这句话是不是请假」，
+   是否发放由调用方依据服务端 intent.action === 'APPLY_LEAVE' 决定。
+   表单本体 leaveFormHtml() 与假种 ensureLeaveTypes() 仍在经典基线里，两形态共用同一文档 ⇒ 直接复用，
+   不在 OA 侧另写第二份表单（否则就是「同一决策点两处判定」的反面：两处渲染）。 */
+function oaEmitLeaveForm(){
+  if(document.getElementById('leaveForm')) return false;      // 文档里已有一份，不重复发放
+  if(typeof leaveFormHtml !== 'function') return false;
+  oaPushBub('ai', '已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml());
+  if(typeof ensureLeaveTypes === 'function') ensureLeaveTypes(); // 假种来自后端配置，写死会打不到真实链路
+  oaScrollDock(); oaLayoutTails();
+  return true;
+}
+
+/* 经典侧 showLeaveResultCard 写请假结果卡时「按形态取当前可见的对话面」：
+   OA 形态把卡落进 OA 对话坞（dockEl()），经典形态落进 #msgs。
+   经典的结果卡必须落在「当前形态可见」的对话面上 —— 否则 OA 用户提交请假后，
+   结果卡被写进隐藏的经典 #msgs，看不到单号与「当前流转到谁」（缺陷 A-7 的 OA 延伸）。
+   判据与 setMode 同一套：.phone.oa-mode ⇔ S.mode === 'oa'。 */
+function oaActiveMsgBox(){
+  if(typeof document !== 'undefined' && document.querySelector('.phone.oa-mode')){
+    return dockEl() || document.getElementById('msgs');
+  }
+  return document.getElementById('msgs');
+}
+
+/* 结果卡追加到可见对话面之后：OA 形态要把它真正滚进视口并触发尾部重排，
+   否则卡片在视口外、用户仍以为「没反应」。经典形态无需此举（原生滚动即可）。 */
+function oaAfterMsgBoxAppend(box){
+  oaScrollDock();
+  oaLayoutTails();
+}
+
+/* OA 形态下结果卡的按钮组：经典 openAllMine()/gotoTodo() 在 OA 里要么触发隐藏经典页切换
+   （gotoTodo→go('page-todo') 只点亮经典背后那张隐藏页，OA 层纹丝不动 ⇒ 静默无效）、
+   要么无对应落点。改为跳 OA 审批面板（META.appr 已存在）：
+     · 查看我的申请 → 切到「我发起的」（S.apprScope='mine'，renderApprovalPanel 同源支持）
+     · 返回待办     → 审批面板默认「待我审批」
+   两个按钮都落在 OA 内可见入口，不踢出 OA 形态。经典形态因本钩子缺失而维持原样。 */
+function oaResultCardOpsHtml(){
+  return '<button class="btn small" onclick="S.apprScope=\'mine\'; oaGo(\'appr\')">查看我的申请</button>'+
+         '<button class="btn ghost small" onclick="oaGo(\'appr\')">返回待办</button>';
+}
+
+window.oaActiveMsgBox = oaActiveMsgBox;
+window.oaAfterMsgBoxAppend = oaAfterMsgBoxAppend;
+window.oaResultCardOpsHtml = oaResultCardOpsHtml;
+
+/* 权限申请卡：仅在对话里触发，不依赖项目上下文。
+   pending===true 时只提示「审批中」，不显示申请按钮（避免重复提交）；
+   否则给 [帮我申请] [取消]。 */
+function oaOpenLeavePermCard(intent, isPending){
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  var permName = intent.permissionName || '请假审批';
+  var roles = intent.allowedRoles || '租户管理员 / 系统管理员';   // 后端下发的字符串
+  var msg = isPending
+    ? '权限申请已提交，正在审批中，暂时还无法为你办理请假。'
+    : '该权限由 <b>'+txt(roles)+'</b> 授权，你当前尚未持有。'+
+      '可先提交申请，审批通过后即可自助跳转「请假数字人」办理。';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg" role="dialog" aria-modal="true" aria-label="请假权限申请">'+
+      '<div class="notif-head">办理请假需要「'+txt(permName)+'」权限</div>'+
+      '<div class="notif-body"><div class="oa-perm-msg">'+msg+'</div>'+
+        '<div class="note-err" id="leavePermErr" style="display:none"></div>'+
+      '</div>'+
+      '<div class="notif-foot">'+
+        (isPending ? '' : '<button class="btn small" data-leave-apply>帮我申请</button>')+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var done = false;
+  var finish = function(){ if(done) return; done = true; mask.remove(); };
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ finish(); };
+  mask.addEventListener('click', function(ev){ if(ev.target === mask) finish(); });
+  if(!isPending){
+    var applyBtn = mask.querySelector('[data-leave-apply]');
+    var err = mask.querySelector('#leavePermErr');
+    applyBtn.onclick = async function(){
+      applyBtn.disabled = true;
+      try{
+        // 复用 applyPermission 同款端点与 §1.4 请求体（reason 内联，无需二次弹窗）
+        await API.permissionApply({
+          permissionCode: intent.requiredPermission,
+          targetWorkerType: intent.role,
+          reason: '在对话中申请办理请假'
+        });
+        // 成功 → 冻结卡片为「已提交，等待审批」
+        var foot = mask.querySelector('.notif-foot');
+        if(foot){
+          foot.innerHTML = '<button class="btn ghost small" data-dlg-cancel>关闭</button>';
+          foot.querySelector('[data-dlg-cancel]').onclick = function(){ finish(); };
+        }
+        var m = mask.querySelector('.oa-perm-msg');
+        if(m) m.textContent = '已提交，等待审批。后续可在「我的 → 权限申请」查看进度。';
+        if(err) err.style.display = 'none';
+      }catch(e){
+        if(applyBtn) applyBtn.disabled = false;
+        // 失败 → 后端 message 就地显示在卡片里，不静默吞掉、也不只弹通用 toast
+        if(err){ err.textContent = (e && e.message) ? e.message : '申请失败'; err.style.display = 'block'; }
+      }
+    };
+  }
+}
+
+/* held===true 但 state.workers 里没有 workerType===role 的员工（演示环境即如此）：
+   按 §1.5 创建一名请假数字员工 → 重新拉取 → 再跳转。幂等：只有「找不到」才创建，
+   重触发会先 re-fetch 列表，已存在即不再建第二个「请假助手」。 */
+async function oaEnsureLeaveWorkerThenPick(intent){
+  oaPushBub('ai', '正在为你准备请假数字员工…');
+  oaScrollDock(); oaLayoutTails();
+  try{
+    var role = String(intent.role || 'LEAVE_APPROVER');
+    await API.createWorker({
+      name: '请假助手',
+      workerType: role,
+      icon: 'bot',
+      description: '请假审批与办理数字员工',
+      taskPrompt: '受理员工请假申请、发起审批，并解答请假政策与办理流程问题。'
+    });
+    var list = await API.workers();          // 重新拉取，确保新员工进入 state.workers
+    if(arr(list).length) state.workers = list;
+    var w = arr(state.workers).filter(function(x){
+      return String(x.workerType || '') === role;
+    })[0];
+    if(!w) throw new Error('创建成功但未能在列表中取到该数字员工');
+    oaPickWorker(w);
+    oaPushBub('ai', '已为你创建并进入「请假助手」，现在可以直接和 TA 办理请假了。');
+    oaScrollDock(); oaLayoutTails();
+    return true;
+  }catch(e){
+    // 创建失败（如缺 worker:create）：如实提示，不假装跳转
+    oaPushBub('ai', '为你创建请假数字员工失败：'+((e && e.message) || '未知错误')+
+      '。你已持有「请假审批」权限，可稍后在「我的 → 数字员工」中手动创建。');
+    oaScrollDock(); oaLayoutTails();
+    return false;
+  }
+}
+
+/* 创建数字员工编排（需求）：识别到 CREATE_WORKER 后，由**用户补齐必要参数**再创建。
+   与「上传/上报/请假」同形：不复用经典形态的 agentDemo/confirmAgent ——
+   那两条是**整页聊天流**（写 $('msgs')、go('page-chat')），在 OA 形态里会落到隐藏的经典 DOM 上、用户看不见；
+   这里复用**共享 API 层**（API.workerPrecheck / API.createWorker）与同一套参数与准入语义。
+   「能不能建」仍只在服务端一处判定（precheck + create），H5 不另写判据（铁律 1）。 */
+function oaMaybeCreateWorker(intent){
+  if(!intent || intent.action !== 'CREATE_WORKER') return false;
+  oaPushBub('ai', '好的，为你打开创建窗口 —— 补上名称与职责就能创建数字员工。');
+  oaScrollDock(); oaLayoutTails();
+  oaOpenCreateWorkerForm(intent);
+  return true;
+}
+
+/* 创建表单：先跑服务端「六项前置检查」，阻断项就地给「下一步」，通过后才允许创建。
+   字段口径与后端 AgentWorker / WorkerController.create 对齐：name 必填（空名服务端 400），
+   icon 固定 bot，workerType 取意图识别出的角色（用户说「建个请假数字人」时会带上类型闸门）。 */
+function oaOpenCreateWorkerForm(intent){
+  var q = String(S.lastQuery || '').trim();
+  var role = String((intent && intent.role) || '').trim();
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg" role="dialog" aria-modal="true" aria-label="创建数字员工">'+
+      '<div class="notif-head">创建数字员工</div>'+
+      '<div class="notif-body"><div class="oa-exp-form">'+
+        '<label class="oa-ef-row"><span>名称 *</span>'+
+          '<input id="cwName" type="text" maxlength="40" placeholder="例如：合同到期提醒助手"></label>'+
+        '<label class="oa-ef-row"><span>职责描述</span>'+
+          '<input id="cwDesc" type="text" maxlength="120" placeholder="这个数字员工负责什么"></label>'+
+        '<label class="oa-ef-row"><span>任务内容</span>'+
+          '<textarea id="cwTask" rows="2" placeholder="可选：要它定期做什么"></textarea></label>'+
+        '<label class="oa-ef-row"><span>执行时刻</span>'+
+          '<input id="cwTime" type="time"></label>'+
+        '<div class="muted" style="font-size:11px">执行时刻留空则不会自动运行，可稍后补充。</div>'+
+        '<div class="intake-box" id="cwGate">'+
+          '<div class="intake-head">'+ic('info')+'<span>准入检查中…</span></div></div>'+
+        '<div class="note-err" id="cwErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" data-dlg-ok>创建</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+
+  var nameEl = mask.querySelector('#cwName');
+  var descEl = mask.querySelector('#cwDesc');
+  var taskEl = mask.querySelector('#cwTask');
+  var timeEl = mask.querySelector('#cwTime');
+  var gateEl = mask.querySelector('#cwGate');
+  var errEl  = mask.querySelector('#cwErr');
+  var okBtn  = mask.querySelector('[data-dlg-ok]');
+  var done = false;
+  var finish = function(){ if(done) return; done = true; mask.remove(); };
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ finish(); };
+  mask.addEventListener('click', function(ev){ if(ev.target === mask) finish(); });
+  if(q) descEl.value = q;          // 用原话预填职责，用户可改
+  if(nameEl) nameEl.focus();
+
+  var gateBlocked = false;
+  var badge = function(s){
+    return s === 'PASS' ? '<span class="badge ok">通过</span>'
+         : s === 'WARN' ? '<span class="badge warn">提醒</span>'
+         : '<span class="badge danger">阻断</span>';
+  };
+  var paintChecks = function(pc){
+    var cs = arr(pc && pc.checks);
+    if(!cs.length){
+      gateEl.innerHTML = '<div class="intake-head">'+ic('info')+'<span>准入检查</span></div>'+
+        '<div class="muted" style="font-size:11px">服务端未返回检查项，创建时会再校验一次。</div>';
+      return;
+    }
+    gateEl.innerHTML = '<div class="intake-head">'+ic('shield')+'<span>准入检查</span></div>'+
+      cs.map(function(c){
+        return '<div class="intake-row"><span class="ik">'+txt(c.label || '')+'</span>'+
+          '<span class="im">'+badge(c.status)+' <span class="muted">'+txt(c.message || '')+'</span></span></div>';
+      }).join('')+
+      (pc.ok === false
+        ? '<div class="muted" style="font-size:11px;margin-top:4px">下一步：'+txt(pc.nextAction || '请先处理阻断项')+'</div>'
+        : '');
+  };
+  var runPrecheck = function(){
+    return API.workerPrecheck({
+      text: q || (nameEl.value || ''),
+      name: (nameEl.value || '').trim() || '新建数字员工',
+      description: (descEl.value || q || ''),
+      scheduleTime: (timeEl.value || ''),
+      taskPrompt: (taskEl.value || descEl.value || q || ''),
+      workerType: role || null
+    }).then(function(pc){
+      gateBlocked = !!(pc && pc.ok === false);
+      paintChecks(pc);
+      if(okBtn) okBtn.disabled = gateBlocked;
+    }, function(e){
+      // 前置检查失败**不**阻断创建（服务端创建时会独立再校验一次），但要如实告知、不静默
+      gateBlocked = false;
+      if(gateEl) gateEl.innerHTML = '<div class="intake-head">'+ic('info')+'<span>准入检查未完成</span></div>'+
+        '<div class="muted" style="font-size:11px">'+txt((e && e.message) || '')+
+        '；可直接创建，服务端会再校验一次。</div>';
+      if(okBtn) okBtn.disabled = false;
+    });
+  };
+  runPrecheck();
+
+  okBtn.onclick = async function(){
+    var name = (nameEl.value || '').trim();
+    if(!name){ errEl.textContent = '名称不能为空'; errEl.style.display = 'block'; nameEl.focus(); return; }
+    if(gateBlocked){ errEl.textContent = '准入检查未通过，请先处理阻断项'; errEl.style.display = 'block'; return; }
+    var tm = timeEl.value || '';
+    okBtn.disabled = true; errEl.style.display = 'none';
+    try{
+      var w = await API.createWorker({
+        name: name,
+        icon: 'bot',
+        workerType: role || null,
+        description: (descEl.value || '').trim(),
+        taskPrompt: (taskEl.value || '').trim(),
+        scheduleTime: tm
+      });
+      state.workers = arr(state.workers);
+      if(w && w.id != null) state.workers.unshift(w);
+      try{ renderWorkers(); }catch(e){}
+      try{ fillSheet(); }catch(e){}
+      finish();
+      toast('数字员工「'+name+'」已创建');
+      oaPushBub('ai', '已创建数字员工「'+name+'」，可在「数字员工」里点开它开始对话'+
+        (tm ? '；它会每天 '+tm+' 自动运行。' : '。补上执行时刻后即可自动运行。'));
+      oaScrollDock(); oaLayoutTails();
+    }catch(e){
+      // 失败把后端 message 就地显示（如缺 worker:create、类型权限不足），不吞掉、不假装成功
+      okBtn.disabled = false;
+      errEl.textContent = (e && e.message) ? e.message : '创建失败';
+      errEl.style.display = 'block';
+    }
+  };
+}
+
 /* 两形态共用一个文档，而请假表单的 id 是固定的（lfType/lfStart…，经典 helper 全靠它们取值）。
    故**同一时刻只允许存在一份**：
      · 新版要发新表单前，先清掉经典形态遗留的那份（那个页面此刻整体隐藏，已无法操作），
@@ -2007,8 +2395,9 @@ async function oaAfterOaAnswer(){
   if(seq !== oaAnswerSeq || S.mode !== 'oa' || S.lastQuery !== q) return;
   var items = oaSuggestList(q, intent);
   if(items.length) oaPushGuide(items);
-  oaMaybeLeaveForm();
   oaMaybeProjectAction(intent);
+  oaMaybeLeaveAction(intent);
+  oaMaybeCreateWorker(intent);
 }
 
 /* ------------------------------------------------------------- 10. 抽屉 / 弹层 */
@@ -2028,6 +2417,8 @@ function fillSheet(){
   var tn = $o('odTimersN'), sn = $o('odSkillsN');
   if(tn) tn.textContent = String(arr(state.workers).filter(function(w){ return has(w.scheduleTime); }).length);
   if(sn) sn.textContent = String(arr(state.skills).length);
+  var mn = $o('odModulesN');
+  if(mn) mn.textContent = String(oaModuleWorkers().length);
 }
 
 function renderDrawer(){
@@ -2151,6 +2542,8 @@ function bind(){
   if(odNew) odNew.onclick = function(){ oaCloseDrawer(); oaNewTask(); };
   var odChat = $o('odNewChat');
   if(odChat) odChat.onclick = function(){ oaCloseDrawer(); oaNewChat(); };
+  var odM = $o('odModules');
+  if(odM) odM.onclick = function(){ oaCloseDrawer(); oaGo('modules'); };
   var odT = $o('odTimers');
   if(odT) odT.onclick = function(){ oaCloseDrawer(); oaGo('timers'); };
   var odS = $o('odSkills');
@@ -2247,6 +2640,10 @@ window.oaState = S;
    不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；
    暴露后可由 scripts/_verify_oa_action_popup.py 直接驱动判定函数并断言真的弹了窗。 */
 window.oaMaybeProjectAction = oaMaybeProjectAction;
+/* 同一定位：把「创建数字员工」的判定函数也暴露出去，供离线验证脚本直接驱动，
+   断言「识别到创建意图 ⇒ 真的打开了创建表单」，而不必起整套后端 + 真登录。
+   见 scripts/_verify_create_worker_ui.py。 */
+window.oaMaybeCreateWorker = oaMaybeCreateWorker;
 /* 把发送与输入栏同步函数暴露给 H5 输入栏离线验证脚本：
    新交互下空输入时发送按钮隐藏，脚本需要直接调用函数完成空输入/只传文档等场景断言。 */
 window.oaSend = oaSend;
