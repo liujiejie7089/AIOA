@@ -984,3 +984,71 @@
    「源码已改」≠「运行态已改」。**判据要回到运行态**：`POST :8000/internal/v1/answer-shape` 取回**跑着的**
    agent 实际下发的 rules，断言其中含新口径关键件（`scripts/_check_answer_kb_strict.py` 的 C5 就干这个）。
    只看源码/单测通过就宣称生效，会在真机上得到旧行为。改完口径的完整动作：**改源码 → 停 :8000 → 重启 → 跑 C5**。
+
+136. ★**IDE 语言服务器把 ECJ 编译产物写进 `target/`，其 mtime 新于源文件 ⇒ Maven 增量编译跳过 ⇒ 真实编译错误被静默掩盖**（2026-10-16 实测，同一坑连踩两次）。
+   现象链：`mvn test-compile` 报 **BUILD SUCCESS / exit 0**，但 `mvn test` 抛
+   `java.lang.Error: Unresolved compilation problem: The constructor ... refers to the missing type X`。
+   把坏 `.class` 删掉重编，真错误才浮出水面 —— 这次的真错误是
+   `WorkerIntakeService.java:76` 用了 `PermissionGrantService` 字段却**漏了 import**
+   （javac 原文：`无法访问PermissionGrantService / 找不到PermissionGrantService的类文件`）。
+   **一眼识破的判据**：`ls -la` 对比 `src/.../Foo.java` 与 `target/.../Foo.class` 的 mtime ——
+   **`.class` 比 `.java` 新 1~2 秒 = IDE 写的，Maven 会跳过它**；`-q` 的「静默成功」与运行时的
+   `Unresolved compilation problem` 是同一件事的两面。
+   **定式**：① 见到 `Unresolved compilation problem`，先 `rm` 掉 `target/{classes,test-classes}` 下对应 `.class` 再编；
+   ② 新增字段/引用后**必须真编一次并确认 `target/classes` 真被重生成**，别信 `-q` 的 exit 0；
+   ③ 本环境有 IDE 语言服务器在后台编译，**`target/` 的内容不可信**。
+   附：`grep` 在本仓库常把混合编码的输出判成二进制（只回 `Binary file (standard input) matches`）⇒ 取 Maven 日志一律用 `grep -a`。
+
+137. ★**「用 `-Dtest=` 只跑一条用例」时，`-am` 会把过滤条件套到上游兄弟模块 ⇒ 兄弟模块「无匹配用例」被判失败**（2026-10-16 实测）。
+   `mvn -pl aioa-chat -am test -Dtest=XxxTest` 会在 `aioa-common` 等无该用例的模块上报
+   `No tests matching pattern "XxxTest" were executed!` 并 `BUILD FAILURE`。
+   **正确写法**：`-Dsurefire.failIfNoSpecifiedTests=false`（**属性名是 `surefire.` 前缀**，
+   写成 `-DfailIfNoSpecifiedTests=false` 无效）。
+
+138. ★**浏览器级哨兵里「点击/填表」前必须先守卫元素存在**，否则负向对照下 playwright 抛超时、
+   **整个脚本中止**，后面所有断言全丢 —— 现象是「只看到前几条红、没有 `合计`」，极易被误读成
+   「只坏了前几条」。2026-10-16 实测：给 `_verify_oa_action_popup.py` 加 `CREATE_WORKER` 组后，
+   做判别力回退（中性化 `oaMaybeCreateWorker`）时，`G16` 的 `.click()` 直接 `TimeoutError` 中止脚本，
+   `G16–G20` 与 `合计` 全部没打印。
+   **定式**：① 交互前先算 `n = page.locator(sel).count()`，`if n == 1:` 才 click/fill；
+   ② 断言里显式带上该 `n` 作为 detail，让「窗口没弹出来」与「弹出来了但断言错」可区分；
+   ③ 需要读按钮态时用 `btn_b.count() == 1 and btn_b.first.is_disabled()`，不要对可能不存在的选择器直接 `.is_disabled()`。
+   **判别力回退的正确做法（同 #136 的 TEMP 标记思路）**：在成品源码里插一行 `if(true) return false; /* TEMP-NEGCTRL */`
+   把被测函数中性化 → 重建产物 → 跑哨兵（期望新断言全红、旧断言与负向对照仍绿）→
+   `cp` 备份还原 → `md5sum` 核对字节一致 + `grep -c TEMP-NEGCTRL` 归零。**这一步是铁律 12 的落地动作**：
+   不做它就无法区分「真通过」与「判据恒真」。
+
+---
+
+## 阶段补充（2026-10-18）：表单/HITL 链路的四个坑
+
+- **「补一帧」≠「有断点」**：`need_form` 只能由 agent 图里的 `clarify.interrupt()` 产出。
+  在 Java 流末补发帧虽然前端能看到表单卡、`need_form` 断言也绿，但图里没有 checkpoint
+  ⇒ 用户提交表单后 `/resume` 零帧、模型拿不到回填数据。
+  **判据必须含「提交后那条续跑流有内容」**（`scripts/_verify_form_resume_no_reopen.py` 的 U3 + 帧非空）。
+- **`Command(resume=None)` 会让 LangGraph 崩**：`pregel/_loop.py` 的
+  `if resume_is_map := (...)` 在 None 时不赋值，紧接着的 `if not writes and not resume_is_map`
+  抛 `UnboundLocalError` → `MODEL_STREAM_ERROR` + `run.failed`。
+  用户关掉澄清卡/表单卡就是这个路径。修法：`facade.resume` 里 `None → {"cancelled": True}`。
+- **状态里的 tool_call 与消息里的 tool_call 是两种形状**：`pending_calls` 用
+  `{id,name,arguments(dict)}`（`_parse_tool_calls` 归一化），回注 `messages` 必须用
+  OpenAI 的 `{id,type,function:{name,arguments(str)}}`。混用会让 `route_after_agent`
+  认不出 `request_form` → 误走 `tools` → `KeyError: 'name'`。
+- **哨兵读 SSE 的终止条件**：读到 `need_form` 或 `message.completed` 就 return 会**提前断开**
+  ⇒ 后端 `completeRun` 不执行、`markWaitingInput` 不落库、run 卡 `RUNNING`，
+  后续 `/resume` 报「不是等待澄清状态」——红是哨兵自己造的。必须读到
+  `run.completed` / `run.failed` 或 EOF；`/resume` 遇非 200 做 ≤6×1s 重试（收口有毫秒级竞态）。
+
+## 禁删清单（铁律 13 的完整版，2026-10-18 从 MEMORY.md 迁来）
+
+「看起来像垃圾」与「真的没人用」是两件事。引用即保留：
+
+- `logs/proof/`（举证图，被 docs 引用）、`logs/reset_backup/`（复位备份）
+- `docs/_incoming/非违接口文档.txt`、`docs/_incoming/probe_show_result.json`、`ux-review/`
+- `user-client/_oa_clean.html` + `_backup_index_pre_oa.html` —— **H5 构建输入**，产物 `index.html` 才是可手改的禁区
+- `scripts/_check_* _probe_* _verify_* _refaudit_* _run_all_regression.sh` 与 `scripts/e2e_*.py`
+  —— **长期回归面**，且被 `.gitignore` ⇒ 删了不可恢复
+- `scripts/_diag_member1_restore.py`、`start-backend.bat`
+- `.workbuddy/memory/`、`.workbuddy/artifacts/*.md|*.html|*.json`（已入库交付文档）
+- `scripts/_fullsystem_h5_home.png`（docs/20 引用）
+- 生成物目录（可删可重建）：`agent/.venv`、`*/target`、`*/node_modules`、`*/dist`

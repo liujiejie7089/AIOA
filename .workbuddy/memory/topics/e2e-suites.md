@@ -520,3 +520,25 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   3. 顺带更正 `_check_kpi_cards.py` 上方的**过期注释**：原写「四张浮动卡的三角必须指向数字人」，
      而脚本实际断言的是「**卡内不得有任何尾巴**」（2026-09-29 口径变更）—— 注释与断言相反（铁律 1）。
   判据：`_run_all_regression.sh` 现在 **41 套件、全部在磁盘上**。
+
+- **表单闭环新增两套（2026-10-17，`docs/54`）**：
+  - **`scripts/_verify_form_confirm.py`（28 条）**：`file://` 载 `user-client/index.html` + `page.route` 打桩 submit，**不需要后端**。
+    断言两段式提交（点「提交」时 `.lf-confirm` 出现且 **submit 计数=0**；「确认提交」后=1 且请求体逐键一致）、
+    「返回修改」零请求、汇总回显中文名（C2b：`annual`→「年假」且**不含**裸值）、
+    负向对照 C2c（不在 options 里的值要原样显示，**不能吞成「—」**）、
+    规则 40090 选项回填（C5 点选项后第二次提交 `leave_type=annual`）、C6（options 空 → 0 个按钮）。
+  - **`scripts/_check_form_contract.py`（8 条）**：跨 Java/Python/H5 **键名**对齐，**必须用 `agent/.venv` 的 python**（要 pydantic，托管 python 没装）。
+    钉 `@JsonProperty("available_forms")` == `RunRequest.available_forms` == 提示词注入；
+    K2 负向：驼峰 `availableForms` 解析后必为 `None`（键名写错就真收不到）；K5：H5 读的键 ⊆ Java 输出的键。
+    **已做变异验证**（改 `contracts.py` 字段名 → K1/K2/K3/K4 立即红，还原后逐字节一致）。
+    ⚠️ 教训：三层各测各的时，**键名可以不一致而测试全绿** —— 这类跨层字段必须有「同一字符串比对」的哨兵。
+
+- **`scripts/_verify_form_autocall_live.py`（5 条，真实 LLM）** —— 2026-10-17 新增，**唯一能回答「数字人会不会自己请求表单」的哨兵**。
+  前面两套表单哨兵都**伪造 need_form 帧**，只证明「帧到了前端怎么渲染」；本套登录 → 建会话 → 发 run → 读**真实 SSE**。
+  判据：P1 「办公用品报销」必须出现 `need_form`；P2 `form_code/fields/title` 齐全；P3 `reason` 非空；
+  N1 寒暄「你好」**不得**触发表单（负向对照，防恒真）。
+  `--worker-id <id>` 可测绑定数字人的会话（用户真实路径）。前置：`:8080` + `:8000` 在线；会自建并删除临时会话。
+  ⚠️ **跑之前先确认 `agent/.env` 有 `AIOA_HITL=true`**，并在 `logs/agent.log` 里看 `tools=` 是否为 **9**
+  （7 业务 + ask_user + request_form；为 7 说明内置工具没注入，本套必红）。
+
+
