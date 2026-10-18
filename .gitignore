@@ -174,3 +174,11 @@ ux-review/after-fix/
 
 # 图像生成产物（WorkBuddy generated-images 默认目录，素材不入库）
 generated-images/
+
+# ---- 本地一次性产物（哨兵/普查的临时输出、跑套件前的数据备份，不留痕）----
+# 普查脚本落盘的判定结果 JSON（每跑一次都变，属证据不属源码）
+scripts/verify_*.json
+# 语法检查的返回码暂存
+scripts/_syntax_rc.txt
+# 套件跑前对 quota 等业务行做的备份文件（根目录，含真实数据，绝不能入库）
+/*_backup_*.json
