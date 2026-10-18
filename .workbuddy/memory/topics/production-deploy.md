@@ -13,6 +13,28 @@
 > 「可选」nginx** —— `10.0.0.3/web`→管理端、`10.0.0.3/user`→用户端。见下方「★ 2026-09-24 入口 nginx」。
 > 入口文档 = `deploy/生产部署手册.md`（含「§4.0 填写位置总览」+ §0.1 入口 Nginx + §5.2 静态前端放哪 + 验收 + 故障对照表）。
 
+## ⚠️ 生产机上**不要**手改 `deploy/Dockerfile.agent`（pip 源）
+
+2026-10-18 实测故障：生产机 `git pull` 报
+`error: Your local changes to the following files would be overwritten by merge: deploy/Dockerfile.agent`。
+根因不是代码冲突，而是为了让 pip 走清华源，把 `RUN pip install …` 那一行**手改**了
+⇒ 工作区从此常驻一处未提交改动 ⇒ **此后每次拉取都被挡住**（`git status` 只显示 `M`，很容易被忽略）。
+
+**已改成参数化**（`5e59652`）：`Dockerfile.agent` 里有 `ARG PIP_EXTRA_ARGS=`，
+compose 的 `agent.build.args` 透传 `${PIP_EXTRA_ARGS:-}`，两个 `.env` 也加了「10 · 构建期」段。
+⇒ 换源只改 `deploy/.env`（该文件 gitignore，拉取不会冲突）：
+
+```bash
+echo 'PIP_EXTRA_ARGS=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn' >> deploy/.env
+docker compose build agent && docker compose up -d agent
+```
+
+哨兵 `scripts/_check_agent_image_layout.py` 的 **L8/L9** 钉住这件事：
+L8 禁止 Dockerfile 里出现 `-i http…` / `--index-url`（硬编码源），必须有 `${PIP_EXTRA_ARGS}` 口子；
+**L8b 是负向对照**（把真文件换成硬编码源后判据必须翻红，证明 L8 有牙）；L9 要求 compose 真透传该 build arg。
+**同类模式通用化**：凡是「生产要和开发不一样」的构建/运行参数，一律走 `.env` 或 build arg，
+**绝不在目标机上改受版本控制的文件** —— 那等于给每次 `git pull` 埋一颗雷。
+
 ## ★ 定案（2026-09-21）：本次走「后端档」
 
 - 用户口径：`目前不用nginx`；`我目前有mysql,redis,milvus,nginx，但都在其他服务器上，这些就不用下载了，直接连接`。
