@@ -27,6 +27,59 @@ app = FastAPI(title="AIOA Agent", version="0.1.0", description="AIOA Python agen
 app.include_router(asr_router)
 
 
+@app.middleware("http")
+async def _require_service_jwt(request: Request, call_next):
+    """`/internal/v1/*` 强制校验服务间令牌（2026-10-18 补上，此前**零鉴权**）。
+
+    为什么放在中间件而不是逐路由加依赖：这些端点有 10 个且还会增加，
+    逐路由加必然漏；放在路径前缀上，**新增的内部端点自动受保护**。
+
+    为什么必须校验：`/internal/v1/models/apply` 能把模型密钥热加载进进程，
+    `/internal/v1/runs` 会消耗额度并执行工具 —— 同网段任何进程都能调。
+    令牌由 Java `ServiceTokenProvider` 签发（HS256，`svc` claim，5min），
+    本侧用同一密钥按同一口径验（`aioa_ai/security/service_jwt.py`）。
+
+    失败一律 401 且**不回显具体原因**（过期/签名错/claims 非法对外不可区分）。
+    """
+    path = request.url.path
+    if not path.startswith("/internal/v1/"):
+        return await call_next(request)
+    from aioa_ai.security.service_jwt import ServiceTokenError, bearer_value, verify
+
+    token = bearer_value(request.headers.get("Authorization"))
+    try:
+        svc = verify(token, settings.service_jwt_secret)
+    except ServiceTokenError as exc:
+        logger.warning("internal api rejected path=%s reason=%s", path, exc)
+        return JSONResponse(
+            {"code": "UNAUTHORIZED_SERVICE", "message": "服务间令牌缺失或无效", "retryable": False},
+            status_code=401,
+        )
+    request.state.service = svc
+    return await call_next(request)
+
+
+@app.on_event("startup")
+def _log_service_jwt() -> None:
+    """启动时打印服务间密钥指纹（只打 8 位 sha256，不泄漏密钥本身）。
+
+    为什么值得单独一行日志：两端密钥不一致的症状是「全部 /internal/v1/* 401」，
+    看起来像 agent 挂了或 Java 没带票，实际只是编排里变量名/取值不同。
+    有了指纹就能直接和 Java 侧 `ServiceJwtProperties` 的值对比，不必逐层抓包。
+    """
+    import hashlib
+
+    from aioa_ai.security.service_jwt import DEV_SECRET
+
+    secret = settings.service_jwt_secret or ""
+    fingerprint = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8] if secret else "<empty>"
+    logger.info(
+        "service jwt ready: fingerprint=%s dev_placeholder=%s",
+        fingerprint,
+        secret == DEV_SECRET,
+    )
+
+
 @app.on_event("startup")
 def _warm_asr() -> None:
     """后台预热 ASR 模型：不阻塞启动；加载失败只记日志，真正不可用时接口回 503。"""
@@ -41,12 +94,26 @@ async def _setup_hitl() -> None:
     之后 setup 也来不及 —— 故这里 setup 后立刻 reset 掉已编译的图。
     """
     if not settings.agent_hitl:
+        # 关掉 HITL 不只是「少个澄清卡」：ask_user / request_form 两个工具根本不进工具表，
+        # 于是数字人「只会写字面步骤、永远不弹自定义表单」。生产编排默认已置 true，
+        # 这里把它喊出来，避免「本地修了、镜像里是 false」再排查一次。
+        logger.warning(
+            "HITL disabled (AIOA_HITL != true): ask_user / request_form 不会进模型工具表，"
+            "数字人将无法弹澄清卡与自定义表单"
+        )
         return
     from aioa_ai.graph import builder, checkpoint
 
     await checkpoint.setup()
     builder.reset()
     logger.info("HITL enabled: checkpoint kind=%s", checkpoint.kind())
+    if checkpoint.kind() == "memory":
+        # B-2（审计遗留）：内存版挂起态随进程消失 —— 用户提交表单/澄清后若赶上重启，
+        # /resume 找不到断点，表现为「表单提交了但 AI 不再回话」。生产必须配 Redis(Stack)。
+        logger.warning(
+            "HITL checkpoint = memory：挂起态只存在本进程内存，重启后 /resume 取不到断点。"
+            "生产请配 AIOA_CHECKPOINT_URL=redis://…（Redis Stack）"
+        )
 
 
 @app.on_event("shutdown")
@@ -339,6 +406,21 @@ async def answer_shape(payload: dict) -> dict:
 async def on_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.warning("bad request %s: %s", request.url.path, json.dumps(exc.errors(), ensure_ascii=False, default=str))
     return JSONResponse(status_code=422, content={"code": "BAD_REQUEST", "message": "invalid request body", "errors": exc.errors()})
+
+
+@app.exception_handler(GuardError)
+async def on_guard_error(request: Request, exc: GuardError) -> JSONResponse:
+    """护栏/入参错误 → 4xx，而不是掉进兜底 500。
+
+    2026-10-17 实测：`text 不能为空` 这类**调用方错误**原先被兜底处理器吞成 500，
+    调用方（Java `WorkerIntakeService`）看到 5xx 只能当「agent 故障」降级，
+    日志里也只剩一坨 ASGI traceback，真实原因（入参空）被埋掉。
+    `BAD_REQUEST` 归 400，其余护栏（限流/超长/超时）按 429 回。
+    """
+    status = 400 if exc.code == "BAD_REQUEST" else 429
+    logger.warning("guard rejected %s: %s (%s)", request.url.path, exc.message, exc.code)
+    return JSONResponse(status_code=status,
+                        content={"code": exc.code, "message": exc.message, "retryable": exc.retryable})
 
 
 @app.exception_handler(Exception)

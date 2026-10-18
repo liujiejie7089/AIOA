@@ -6,8 +6,11 @@ import json
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests._svc import svc_headers
 
 client = TestClient(app)
+# 内部端点强制服务间令牌（2026-10-18 起）：本文件验的是 SSE 帧序列，故统一带票。
+AUTH = svc_headers()
 
 RUN_ID = "run_20260906_000001"
 USER_CONTEXT = {"user_id": 1, "tenant_id": 0, "username": "admin", "roles": ["ROLE_ADMIN"], "trace_id": "trace-8f3a2c"}
@@ -15,7 +18,7 @@ USER_CONTEXT = {"user_id": 1, "tenant_id": 0, "username": "admin", "roles": ["RO
 
 def post_run(payload: dict) -> list[dict]:
     """POST /internal/v1/runs，解析 SSE 帧为 [(seq, type, data)]。"""
-    with client.stream("POST", "/internal/v1/runs", json=payload) as resp:
+    with client.stream("POST", "/internal/v1/runs", json=payload, headers=AUTH) as resp:
         assert resp.status_code == 200, resp.read()
         assert resp.headers["content-type"].startswith("text/event-stream")
         events = parse_sse(resp.iter_text())

@@ -66,11 +66,29 @@ class RunRequest(BaseModel):
     # 键：enabled/visibleScope/kbScope/model/temperature/topK/threshold/retrievalMode/tools/sort/chunkSize/chunkOverlap
     # agent 据此真实驱动推理与检索，并把最终值回传 message.completed.effective_params。
     expert_settings: dict[str, Any] | None = None
+    # 会话级专家画像（V88 链路补齐）：由 Java 后端按 chat_conversation.expert_key 解析 ai_expert 后下发，
+    # 键：key / name / summary / intro / tags / recs / system_prompt / knowledge_scope。
+    # 顶层字段（与 scope 区分）：数字员工职责边界走 scope，专家人设走本字段；二者互斥（worker 优先）。
+    # 来源：后端 RunService.buildExpertProfile → AgentRunRequest.expert；agent 侧 RunRequest.expert 直接读取。
+    expert: dict[str, Any] | None = None
     # 对话级知识库开关：由 Java 后端从 CreateRunRequest 透传；缺省视为 True。
     # True（或缺省）= 知识库可用且优先；False = 本次 run 完全不使用知识库。
     # 必须是顶层字段：RunRequest.context 是 PageContext 模型，未知键会被丢弃，
     # 只有顶层字段才能被 pydantic 正确解析（见 _auto_d0aa64a2 需求）。
     kb_on: bool | None = None
+    # 当前租户可用表单清单（Java 从 form_template 查得并随 run 下发）：
+    # [{code,name,module_code,biz_type}]。agent 侧只用于系统提示，不查库、不生成 fields[]。
+    # 清单为空时该字段不下发（None），agent 侧据此保持与改动前逐字一致。
+    available_forms: list[dict[str, Any]] | None = None
+    # 确定性开表提示（Java 侧判定，单一判定点）：`{form_code, reason}`。
+    # 当「该数字人只绑一张表 + 用户原话点名了这项任务」时由后端下发；agent 在模型
+    # **没有自己调 request_form** 的收尾轮据此补一次真实 `interrupt()`——必须在图里开表，
+    # 否则只有帧没有断点，用户提交表单后无从续跑。
+    form_hint: dict[str, Any] | None = None
+    # 会话内跨数字人转交（handoff）通知：由 Java 后端在「同一会话改绑数字人」时下发，
+    # 键：from_worker_id / from_worker_name / to_worker_id / to_worker_name / task_name / question。
+    # 非空时提示词会追加一段说明，让接收方数字人直接承接同一句用户原话、不要要求重述。
+    handoff: dict[str, Any] | None = None
 
 
 class SubTaskSpec(BaseModel):

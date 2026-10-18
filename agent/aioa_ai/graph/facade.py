@@ -37,6 +37,10 @@ logger = logging.getLogger("aioa.ai.graph.facade")
 # 首个事件的 seq（契约要求 seq 从 1 单调递增）
 FIRST_SEQ = 1
 
+# 「用户没有作答」（关掉澄清卡 / 关掉表单卡不提交）时送给图的 resume 值。
+# 必须是非 None 的 JSON 可序列化值：None 会触发 LangGraph 的 UnboundLocalError（见 resume()）。
+_RESUME_NO_ANSWER: dict[str, Any] = {"cancelled": True}
+
 
 async def run(req: RunRequest, seq_start: int = FIRST_SEQ) -> AsyncIterator[SseEvent]:
     """执行一次 agent 运行，返回事件流（可能在 ask_user 处暂停并发出 need_clarification）。"""
@@ -63,7 +67,12 @@ async def resume(run_id: str, answer: Any, seq_start: int = FIRST_SEQ) -> AsyncI
                        data={"reason": "no checkpointer", "error_code": "NEED_CHECKPOINTER"})
         return
     config = _config(compiled, run_id)
-    async for event in _stream(compiled, Command(resume=answer), config, seq_start, run_id):
+    # resume 值不能是 None：LangGraph 的 pregel/_loop.py 用 `if resume_is_map := (...)` 做 walrus
+    # 赋值，传 None 时该赋值不执行，紧接着的 `if not writes and not resume_is_map` 抛
+    # UnboundLocalError（MODEL_STREAM_ERROR，run 直接失败）。用户「关掉表单卡/不选」时
+    # Java 侧透传的就是 null ⇒ 必须在此归一，否则一次放弃澄清就把整轮对话打成失败。
+    async for event in _stream(compiled, Command(resume=_RESUME_NO_ANSWER if answer is None else answer),
+                              config, seq_start, run_id):
         yield event
 
 
@@ -105,8 +114,27 @@ async def _stream(compiled, stream_input, config: dict | None, seq_start: int,
                        data={"reason": str(exc)[:200], "error_code": "MODEL_STREAM_ERROR"})
 
 
+def _frame_type(payload: dict) -> str:
+    """根据暂停载荷判定补发哪一帧（**纯函数**，便于单测）。
+
+    判定（两条 HITL 控制链共用 interrupt 底座，靠 payload 形状区分帧类型）：
+      - request_form 归一化产物带 ``kind="form"``（且无 question）⇒ ``need_form``；
+      - ask_user 归一化产物只有 ``question`` / ``suggested_options``（无 kind）⇒ ``need_clarification``。
+
+    两条判定互为兜底：只要命中「显式 kind=form」**或**「含 form_code 且无 question」就走表单帧，
+    其余一律澄清帧，避免把表单误判成澄清、也兼容未来 ask_user 即使误带额外键。
+    """
+    if not isinstance(payload, dict):
+        return "need_clarification"
+    if payload.get("kind") == "form":
+        return "need_form"
+    if "form_code" in payload and "question" not in payload:
+        return "need_form"
+    return "need_clarification"
+
+
 async def _pause_events(compiled, config: dict | None, seq: int) -> AsyncIterator[SseEvent]:
-    """图停在 interrupt 时产出 need_clarification 事件（每个中断点一条）。"""
+    """图停在 interrupt 时补发暂停帧（每个中断点一条）：need_form 或 need_clarification。"""
     if not config:
         return
     try:
@@ -118,5 +146,6 @@ async def _pause_events(compiled, config: dict | None, seq: int) -> AsyncIterato
         for itr in getattr(task, "interrupts", ()) or ():
             payload = getattr(itr, "value", itr)
             data = payload if isinstance(payload, dict) else {"question": str(payload)}
-            yield SseEvent(seq=seq, type="need_clarification", data=data)
+            # 按 payload 区分帧类型：request_form → need_form；ask_user → need_clarification。
+            yield SseEvent(seq=seq, type=_frame_type(data), data=data)
             seq += 1

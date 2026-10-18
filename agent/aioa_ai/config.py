@@ -10,6 +10,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from aioa_ai.security.service_jwt import DEV_SECRET as DEV_SERVICE_JWT_SECRET
+
 
 def _load_dotenv() -> None:
     """轻量 .env 加载：读 agent/.env 的 KEY=VALUE 注入环境变量。
@@ -40,9 +42,10 @@ _load_dotenv()
 class Settings(BaseModel):
     """agent 服务运行期配置。"""
 
-    # 服务间调用 JWT（Java aioa-server 签发的 service JWT，RS256，5min）
-    # M1 仅记录日志，不强制校验；M2 启用校验。
-    service_jwt_secret: str = Field(default="", alias="SERVICE_JWT_SECRET")
+    # 服务间调用 JWT（Java aioa-server 签发的 service JWT，HS256，5min）。
+    # **默认值与 Java 侧 DevSecretPlaceholders.SERVICE_JWT 逐字相同**，否则本地开发会全 401。
+    # `/internal/v1/*` 已强制校验（见 app/main.py 的中间件）；生产用 SERVICE_JWT_SECRET 覆盖。
+    service_jwt_secret: str = Field(default=DEV_SERVICE_JWT_SECRET, alias="SERVICE_JWT_SECRET")
 
     # Java 业务后端地址，agent 回调（tools/invoke、runs 上报）使用
     aioa_server_base_url: str = Field(default="http://aioa-server:8080", alias="AIOA_SERVER_BASE_URL")
@@ -83,7 +86,10 @@ class Settings(BaseModel):
 def _load() -> Settings:
     return Settings(
         **{
-            "SERVICE_JWT_SECRET": os.getenv("SERVICE_JWT_SECRET", ""),
+            # ⚠ 这里**不能**写 os.getenv("SERVICE_JWT_SECRET", "")：显式传空串会覆盖字段默认值，
+            # 而 verify() 对空密钥是「失败关闭」⇒ 全站 /internal/v1/* 一起 401。
+            # 2026-10-18 实测踩到：加了鉴权后 Java → agent 全链路直接 401，配置默认值形同虚设。
+            "SERVICE_JWT_SECRET": os.getenv("SERVICE_JWT_SECRET") or DEV_SERVICE_JWT_SECRET,
             "AIOA_SERVER_BASE_URL": os.getenv("AIOA_SERVER_BASE_URL", "http://aioa-server:8080"),
             "MODEL_DEFAULT": os.getenv("MODEL_DEFAULT", "echo"),
             "AGENT_STREAM": os.getenv("AGENT_STREAM", "true"),

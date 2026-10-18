@@ -7,6 +7,7 @@ Agent 侧不做二次授权，只负责把模型输出的 tool_calls 转发给�
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -45,6 +46,10 @@ class ToolClient:
         self._base_url = base_url.rstrip("/")
         self._token = (user_token or "").strip()
         self._timeout = timeout
+        # list_tools 的失败原因。调用方据此区分「真的没有工具（200+空数组）」与
+        # 「网关不可用/非 200（本来该有工具）」—— 两者都返回 []，但后者会导致
+        # 知识库被静默跳过（见 graph/nodes.py 的 kb 降级提示）。
+        self.list_error: str | None = None
 
     @classmethod
     def from_request(cls, user_token: str | None) -> "ToolClient":
@@ -59,20 +64,36 @@ class ToolClient:
         return {"Authorization": f"Bearer {self._token}", "Content-Type": "application/json"}
 
     async def list_tools(self) -> list[dict]:
-        """拉取工具清单（OpenAI function 格式）；网关不可达/为空时返回 []，推理照常。"""
+        """拉取工具清单（OpenAI function 格式）。
+
+        返回 [] 有两种截然不同的含义，必须可区分（旧实现把两者混为一谈）：
+          - 网关正常、该用户确实没有工具 ⇒ ``list_error is None``；
+          - 网关不可达 / 非 200 ⇒ ``list_error`` 有值。
+
+        为什么重要：知识库工具就在这份清单里。失败时静默返回 [] 会让
+        ``has_kb_tool([])`` 为假 ⇒ 预检索整段不跑、run 照样 SUCCESS，
+        用户看到的是「AI 没查知识库就答了」，且没有任何告警。
+        """
+        self.list_error = None
         if not self.enabled:
             return []
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.get(f"{self._base_url}/api/v1/tools", headers=self._headers())
-                body = resp.json()
-            if resp.status_code == 200 and isinstance(body.get("data"), list):
-                return body["data"]
-            logger.warning("list_tools unexpected response: status=%s", resp.status_code)
-            return []
-        except Exception as exc:
-            logger.warning("list_tools failed: %s", exc)
-            return []
+        last_exc: str | None = None
+        for attempt in range(2):            # 一次重试：吸收网关重启/瞬时 glitch
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    resp = await client.get(f"{self._base_url}/api/v1/tools", headers=self._headers())
+                    body = resp.json()
+                if resp.status_code == 200 and isinstance(body.get("data"), list):
+                    return body["data"]
+                last_exc = f"status={resp.status_code}"
+            except Exception as exc:        # noqa: BLE001 —— 统一收敛成可读原因
+                last_exc = f"{type(exc).__name__}: {exc}"
+            if attempt == 0:
+                await asyncio.sleep(0.2)
+        self.list_error = last_exc or "unknown"
+        logger.error("list_tools failed after retry: %s（本轮知识库不可用，已在提示中显式告知模型）",
+                     self.list_error)
+        return []
 
     async def invoke(self, name: str, arguments: dict | None = None) -> ToolOutcome:
         """执行单个工具；网络/契约异常统一收敛为 ok=False，交由模型组织失败回答。"""

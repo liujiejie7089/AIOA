@@ -135,3 +135,58 @@ def test_hitl_ask_user_pauses_then_resumes(monkeypatch):
     # seq 在每一段内各自单调（Java 侧按段拼接）
     assert [s for s, _, _ in first] == list(range(1, len(first) + 1))
     assert [s for s, _, _ in second] == list(range(1, len(second) + 1))
+
+
+def test_hitl_resume_with_none_answer_is_not_a_failure(monkeypatch):
+    """用户关掉澄清卡（``answer=null``）时不得把整轮打成 ``run.failed``。
+
+    回归的真实缺陷：LangGraph ``pregel/_loop.py`` 用
+    ``if resume_is_map := (...):`` 做 walrus 赋值；传 ``resume=None`` 时该赋值不执行，
+    紧随其后的 ``if not writes and not resume_is_map:`` 直接抛 ``UnboundLocalError``
+    ⇒ facade 产出 ``error(MODEL_STREAM_ERROR)`` + ``run.failed``。
+    用户「不选/关掉卡片」时 Java 侧透传的就是 null，所以这条路径必须能走通。
+    修法：``facade.resume`` 把 None 归一成 ``{"cancelled": True}``。
+    """
+    monkeypatch.setenv("AIOA_TEST_FAKE_KEY", "k")
+    calls = {"n": 0}
+
+    async def fake_stream(http, provider, api_key, messages, tools, temperature=0.3):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            yield ("done", {"role": "assistant", "content": None, "tool_calls": [
+                {"id": "a1", "type": "function",
+                 "function": {"name": "ask_user", "arguments":
+                              '{"question":"你要处理哪一类？","options":['
+                              '{"value":"contract","label":"合同"},'
+                              '{"value":"expense","label":"报销"}]}'}}]},
+                {"prompt_tokens": 5, "completion_tokens": 2})
+        else:
+            yield ("delta", "好")
+            yield ("done", {"role": "assistant", "content": "好"},
+                   {"prompt_tokens": 6, "completion_tokens": 1})
+
+    async def scenario():
+        from aioa_ai import entry
+
+        req = RunRequest(run_id="run_hitl_none_0001", conversation_id=1, text="帮我处理一下",
+                         model_ref="fake", user_token="tok",
+                         user_context=UserContext(user_id=1, tenant_id=1))
+        ctx = _stub(fake_stream,
+                    patch.object(ToolClient, "list_tools", AsyncMock(return_value=[])))
+        await _enable_hitl()
+        for c in ctx:
+            c.start()
+        try:
+            first = [(e.type, e.data) async for e in entry.run(req)]
+            second = [(e.type, e.data) async for e in entry.resume(req.run_id, None)]
+        finally:
+            for c in ctx:
+                c.stop()
+            await _disable_hitl()
+        return first, second
+
+    first, second = asyncio.run(scenario())
+    assert "need_clarification" in [t for t, _ in first], f"应先暂停，实际={first}"
+    types = [t for t, _ in second]
+    assert "run.failed" not in types, f"放弃澄清不得打成 run.failed，实际={types} / {second}"
+    assert "resume_is_map" not in str(second), "不得再出现 LangGraph 的 UnboundLocalError"

@@ -48,6 +48,29 @@ def test_classify_empty_text_is_general():
     assert out["confidence"] == 0.0
 
 
+def test_classify_role_carries_form_code_and_empty_fields():
+    """话术与事实同源：_ROLES 只持 form_code，不再写死表单字段。
+
+    - 每个专用类型的 formCode 指向库里真实的表单码；
+    - formFields 必须是空数组（字段标签改由 Java 侧按 formCode 从表单库取回），
+      证明「字段定义」已不再是 Python 这边的第二份真相。
+    """
+    cases = {
+        "帮我处理请假审批": "leave_request",
+        "我要问劳动合同法怎么规定的": "knowledge_upload",
+        "帮我起草一份通知": "doc_draft",
+    }
+    for text, expected_code in cases.items():
+        out = classify(text)
+        assert out["formCode"] == expected_code, (text, out)
+        assert out["formFields"] == [], "formFields 必须为空数组，字段定义只来自库：" + str(out)
+    # 通用助手不绑定表单，formCode 为 None
+    out = classify("随便聊聊今天天气")
+    assert out["formCode"] is None, out
+    assert out["formFields"] == []
+
+
+
 # ------------------------------------------------------------------- 动作意图（与角色正交）
 
 @pytest.mark.parametrize("text,expected_action", [
@@ -88,6 +111,65 @@ def test_action_intent_not_triggered_for_questions(text):
     assert out["action"] is None, (text, out["action"])
     assert out["actionName"] is None
     assert out["actionMatched"] == []
+
+
+@pytest.mark.parametrize("text", [
+    # 正例：必须表达「我要去办」的意愿动词，命中 APPLY_LEAVE
+    "我要请假",
+    "帮我请个年假",
+    "我想休假",
+    "帮我申请年假",
+    "提交请假",
+    "请个假",
+])
+def test_action_apply_leave_positive(text):
+    out = classify(text)
+    assert out["action"] == "APPLY_LEAVE", (text, out["action"])
+    assert out["actionName"] == "请假", (text, out["actionName"])
+    assert out["actionMatched"], (text, out["actionMatched"])
+
+
+@pytest.mark.parametrize("text", [
+    # 反例（必须不命中）：这些是「问政策」，缺「要去办」的意愿动词，应保持 action=null
+    "年假有几天",
+    "请假流程是什么",
+    "考勤制度怎么规定",
+    "我想知道年假怎么算",
+])
+def test_action_apply_leave_negative(text):
+    out = classify(text)
+    assert out["action"] is None, (text, out["action"])
+    assert out["actionName"] is None
+    assert out["actionMatched"] == []
+
+
+@pytest.mark.parametrize("text", [
+    # 反例（**必须不命中 APPLY_LEAVE**）：这些是「申请权限」诉求，走 V36「用户通过 AI 提交申请」，
+    # 不是「去办请假」。旧口径 `帮我\s*(请|休|申请|提交)` 会把它们吞成请假，后果有二（2026-10-17 实测）：
+    #   ① prompt 的 APPLY_LEAVE 分支（「不得调用权限申请类工具」）与全局硬规则
+    #      （「用户显式要求提交/申请权限时应照常调用」）**自相矛盾**，V36 能否可用全凭模型仲裁；
+    #   ② 同一句还会让 H5 弹出「请假」卡片，与「AI 已提交申请」的事实冲突（违反铁律 1）。
+    # 注：「帮我申请年假」这类带**假种**的表达仍应命中（见上面的正例），所以不能一刀切删规则。
+    "请直接调用工具帮我提交 approval:leave 权限申请",
+    "帮我提交 approval:leave 权限申请",
+    "帮我申请一下请假权限",
+])
+def test_action_apply_leave_not_triggered_for_permission_apply(text):
+    out = classify(text)
+    assert out["action"] is None, (text, out["action"])
+    assert out["actionName"] is None
+    assert out["actionMatched"] == []
+
+
+@pytest.mark.parametrize("text,expected", [
+    # 回归：既有动作意图不得被新分支抢走
+    ("帮我上传这个文件", "UPLOAD_FILE"),
+    ("帮我创建一个数字员工", "CREATE_WORKER"),
+    ("我要上报一笔差旅花费", "REPORT_EXPENSE"),
+])
+def test_action_intent_regression(text, expected):
+    out = classify(text)
+    assert out["action"] == expected, (text, out["action"])
 
 
 def test_action_keys_present_on_every_path():

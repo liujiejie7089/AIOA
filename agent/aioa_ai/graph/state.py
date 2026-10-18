@@ -41,7 +41,10 @@ class RunState(TypedDict, total=False):
     content_parts: list[str]     # 正文分片（累计）
     tool_calls_log: list[dict]   # 工具调用日志（回传前端）
     usage: dict                  # token 用量（多轮累加）
-    clarifications: list[dict]   # 本轮 run 内发生过的澄清（question/answer），供审计与回传
+    clarifications: list[dict]   # 本轮 run 内发生过的 HITL 回填，供审计与回传。
+                                  # 两种形状都允许（同走 interrupt/resume 底座，不新建状态机）：
+                                  #   - ask_user 澄清：{"question": str, "answer": 标量}
+                                  #   - request_form 表单：{"form_code": str, "answer": 回执对象}
 
     # ---- 内部通道（不在对外契约里；LangGraph 要求节点写回的每个键都在 schema 中声明）----
     started_at: float            # 墙钟起点（time.monotonic()）。存 float 而非 WallClock 实例，

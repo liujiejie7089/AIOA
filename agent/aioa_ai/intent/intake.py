@@ -67,9 +67,27 @@ _ACTION_RULES = [
         (r"(新建|创建|建一个|建个|生成|添加)(一?个|个)?(数字人|数字员工|数字机器人)", 3.0),
         (r"(数字人|数字员工|数字机器人).{0,4}(新建|创建|建一个)", 2.8),
     ]),
+    # 请假动作意图：窄口径，必须表达「我要去办」，不得命中政策咨询（见 docs/51 §1.3）。
+    # 与 role 维度正交——「年假/请假」等名词仍归 LEAVE_APPROVER（role），本分支只认「去办」的意愿动词。
+    # 裸「请假流程是什么」含疑问词且缺意愿动词，应回落为 action=null（由 _ACTION_QUESTION 与反例钉住）。
+    ("APPLY_LEAVE", [
+        (r"(要|想|打算|准备)\s*(请|休)", 3.0),
+        # 只认「帮我请假 / 帮我休假」。**不得**再吞「帮我申请 / 帮我提交」——
+        # 那两句是「申请权限」诉求（V36：用户通过 AI 提交申请），不是「去办请假」。
+        # 旧口径 `帮我\s*(请|休|申请|提交)` 把两者混为一谈，后果有二（2026-10-17 实测）：
+        #   ① 「请直接调用工具帮我提交 approval:leave 权限申请」被判为 APPLY_LEAVE，
+        #      于是 prompt 的 APPLY_LEAVE 分支（不得调用申请权限类工具）与全局硬规则
+        #      （用户显式要求时照常调用）**自相矛盾**，V36 正对照能否通过全凭模型仲裁；
+        #   ② 同句还会让 H5 弹出「请假」卡片，与「AI 已提交申请」的事实冲突（违反铁律 1）。
+        # 「帮我申请年假」这类带假种的表达仍由下面第 3 条规则命中，不会漏。
+        (r"帮我\s*(请|休)", 3.0),
+        (r"(申请|提交|发起)\s*(请假|休假|年假|调休|病假|事假|婚假|产假)", 3.0),
+        # 仅「请 + 量/数量 + 假」命中；裸「请假」(问政策) 因 请、假 之间无 个/一天… 而不命中
+        (r"请(个|一天|两天|半天|三天)假", 3.0),
+    ]),
 ]
 
-_ACTION_META = {"UPLOAD_FILE": "上传文件", "REPORT_EXPENSE": "上报花费", "CREATE_WORKER": "创建数字员工"}
+_ACTION_META = {"UPLOAD_FILE": "上传文件", "REPORT_EXPENSE": "上报花费", "CREATE_WORKER": "创建数字员工", "APPLY_LEAVE": "请假"}
 # 疑问 / 制度类语句优先按「问答」处理：命中这些词且动作得分不强时，不判为动作意图，
 # 否则「公司费用报销制度是怎么规定的」会被误判成「要上报花费」。
 _ACTION_QUESTION = re.compile(r"(制度|规定|政策|流程|办法|标准|指南|手册|怎么|如何|为什么|是什么|哪些|可以吗|能不能|多大|上限|限制|大小|最大)")
@@ -77,29 +95,40 @@ _ACTION_QUESTION = re.compile(r"(制度|规定|政策|流程|办法|标准|指�
 # 组合否定：出现这些词时，「报告/通知」更可能是数据分析产出而非公文
 _DATA_HINT = re.compile(r"(销量|销售额|营收|业绩|订单|客户|库存|环比|同比|统计|占比|排行|top\s*\d*)", re.I)
 
-# 类型元数据：中文名、能力边界（不做什么）、建议表单字段、唯一下一步。
+# 类型元数据：中文名、能力边界（不做什么）、关联表单码、唯一下一步。
+# ⚠️ 铁律 1（话术与事实同源）：本模块<b>不再</b>维护任何「建议表单字段」的中文串。
+#   字段定义是表单库的真相（form_template 的 fields），这里只持有一枚指向它的 form_code，
+#   真正的字段标签由 Java 侧 WorkerIntakeService 在返回意图结果前调
+#   FormTemplateService.resolveForRender(tenantId, formCode) 取回并填回 formFields。
+#   谁要是再在这里写死 ["假种", "起止时间" ...]，就制造了第二份真相，必然与库漂移。
 _ROLES: dict[str, dict] = {
     "LEAVE_APPROVER": {
         "roleName": "请假审批数字人",
         "boundary": "只受理请假类申请并按其制度送审；不解答与请假无关的业务问题，也不代为审批（终审权在人）。",
-        "formFields": ["假种", "起止时间", "请假事由", "证明材料"],
+        # 表单码指向库里的 leave_request（请假，6 字段）；字段标签不再在此处写死。
+        "formCode": "leave_request",
+        "formFields": [],
         "nextStep": "补齐「假种 / 起止时间」等信息后提交审批",
     },
     "KB_ASSISTANT": {
         "roleName": "知识库问答数字人",
         "boundary": "只依据企业知识库检索结果作答并标注来源；检索不到时明确说「知识库中没有」，不凭常识编造。",
-        "formFields": ["检索范围", "关键词"],
+        "formCode": "knowledge_upload",
+        "formFields": [],
         "nextStep": "在对话中直接提出制度类问题",
     },
     "DOC_DRAFTER": {
         "roleName": "公文起草数字人",
         "boundary": "只起草通知、请示、报告、函等公文并遵循公文格式；不代签、不对外发送、不处理数据统计类需求。",
-        "formFields": ["文种", "主题与要点", "字数要求"],
+        "formCode": "doc_draft",
+        "formFields": [],
         "nextStep": "确认文种与要点后生成文稿",
     },
     "GENERAL": {
         "roleName": "通用办公助手",
         "boundary": "处理通用办公问答、文案撰写与信息整理；涉及审批权、企业数据或知识库专有内容时，需相应类型数字员工承担。",
+        # 通用助手不绑定特定表单，formCode 为 None（不解析、formFields 恒为空）。
+        "formCode": None,
         "formFields": [],
         "nextStep": "直接开始对话，或补充职责描述让助手更聚焦",
     },
@@ -123,7 +152,11 @@ class WorkerIntent:
             "confidence": round(self.confidence, 3),
             "matched": self.matched,
             "boundary": meta["boundary"],
+            # formFields 键必须保留（值为空数组）：字段标签由 Java 侧按 formCode 从表单库取回，
+            # 不要在这里写死中文串（违反同源铁律）。消费方（answer.card / H5）只读键不读内容。
             "formFields": meta["formFields"],
+            # formCode 是通往表单库定义的唯一指针；Java 侧据此 resolveForRender 填回标签。
+            "formCode": meta.get("formCode"),
             "nextStep": meta["nextStep"],
             "alternatives": self.alternatives,
         }
