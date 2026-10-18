@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """单端口入口（docs/33）一致性静态校验。
 
-为什么需要它：docs/33 把线上入口收敛成「aioa-server :8080 一个端口，经 /aioa/h5、/aioa/web、
-/aioa/api 三个前缀对外」。这个设计的脆弱点不在语法，而在**同一件事散落在 5 个文件里**：
+为什么需要它：docs/33 把线上入口收敛成「aios-server :8080 一个端口，经 /aios/h5、/aios/web、
+/aios/api 三个前缀对外」。这个设计的脆弱点不在语法，而在**同一件事散落在 5 个文件里**：
 
-    前缀 /aioa      : AioaWebProperties(Java) · application.yml · docker-compose.yml · user-client/index.html · vite base
-    静态目录 /app/h5、/app/web : AioaWebProperties · application.yml · docker-compose.yml · Dockerfile.server
+    前缀 /aios      : AiosWebProperties(Java) · application.yml · docker-compose.yml · user-client/index.html · vite base
+    静态目录 /app/h5、/app/web : AiosWebProperties · application.yml · docker-compose.yml · Dockerfile.server
     子应用 base     : web/apps/*/vite.config.ts  ⇄  Dockerfile.server 的组装目录
-    剥离顺序        : AioaWebPrefixConfig.setOrder(必须最先) · SecurityConfig 放行名单
+    剥离顺序        : AiosWebPrefixConfig.setOrder(必须最先) · SecurityConfig 放行名单
 
 只要其中**任何一处**漂移，症状都不是「校验器报错」，而是部署后：
 管理端白屏（base 未生效）/ 入口全 404（目录没 COPY）/ 登录 401（剥离顺序晚于安全链）。
@@ -29,12 +29,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 COMPOSE = "deploy/docker-compose.yml"
 DOCKERFILE = "deploy/Dockerfile.server"
-APP_YML = "server/aioa-boot/src/main/resources/application.yml"
-PROPS = "server/aioa-boot/src/main/java/cn/aioa/boot/web/AioaWebProperties.java"
-PREFIX_CFG = "server/aioa-boot/src/main/java/cn/aioa/boot/web/AioaWebPrefixConfig.java"
-SUPPORT = "server/aioa-boot/src/main/java/cn/aioa/boot/web/AioaPathPrefixSupport.java"
-STATIC_CFG = "server/aioa-boot/src/main/java/cn/aioa/boot/web/AioaStaticConfig.java"
-SECURITY = "server/aioa-security/src/main/java/cn/aioa/security/SecurityConfig.java"
+APP_YML = "server/aios-boot/src/main/resources/application.yml"
+PROPS = "server/aios-boot/src/main/java/cn/aios/boot/web/AiosWebProperties.java"
+PREFIX_CFG = "server/aios-boot/src/main/java/cn/aios/boot/web/AiosWebPrefixConfig.java"
+SUPPORT = "server/aios-boot/src/main/java/cn/aios/boot/web/AiosPathPrefixSupport.java"
+STATIC_CFG = "server/aios-boot/src/main/java/cn/aios/boot/web/AiosStaticConfig.java"
+SECURITY = "server/aios-security/src/main/java/cn/aios/security/SecurityConfig.java"
 H5 = "user-client/index.html"
 VITE = {
     "shell": "web/apps/shell/vite.config.ts",
@@ -44,7 +44,7 @@ VITE = {
 SHELL_ROUTER = "web/apps/shell/src/router/index.ts"
 
 # 期望的「唯一前缀 / 静态目录」口径（改这里 = 改契约，必须同步全部落点）
-PREFIX = "/aioa"
+PREFIX = "/aios"
 H5_DIR = "/app/h5"
 WEB_DIR = "/app/web"
 
@@ -57,10 +57,10 @@ WEB_DIR = "/app/web"
 REMOVED_SERVICES = ("ollama", "web")
 
 # 入口 nginx（2026-09-24 新增）：compose 服务定义与配置文件必须同源
-NGINX_CONF = "deploy/nginx/aioa-entry.conf"
+NGINX_CONF = "deploy/nginx/aios-entry.conf"
 
 # 管理端 SPA 的接口基址落点（2026-09-27）：axios 实例与不走 axios 的 SSE 各一处。
-# 外网入口只反代 `/aioa/`，写成根路径 `/api/v1` ⇒ 管理端每个接口 404（页面能开、数据全空）。
+# 外网入口只反代 `/aios/`，写成根路径 `/api/v1` ⇒ 管理端每个接口 404（页面能开、数据全空）。
 SHELL_API = "web/apps/shell/src/api/index.ts"
 SHELL_RUNS = "web/apps/shell/src/api/runs.ts"
 
@@ -125,9 +125,9 @@ def c2_compose_no_stale_artifacts() -> tuple[list, list]:
         (r"^\s*-\s*ollamadata\s*:", "ollamadata 卷挂载"),
         (r"^\s*ollamadata:\s*$", "ollamadata 卷定义"),
         (r"^\s*-\s*[\"']?81:81", "81 端口发布（当年那层边缘 nginx 的双端口档）"),
-        # 入口 nginx 应挂 nginx/aioa-entry.conf；挂回历史档说明在照抄旧部署资料。
-        # （注意 `nginx/aioa-entry.conf` 不含 `nginx.conf` 子串，不会误报。）
-        (r"api-proxy\.conf|nginx\.conf", "历史 nginx 配置文件挂载（现应为 nginx/aioa-entry.conf）"),
+        # 入口 nginx 应挂 nginx/aios-entry.conf；挂回历史档说明在照抄旧部署资料。
+        # （注意 `nginx/aios-entry.conf` 不含 `nginx.conf` 子串，不会误报。）
+        (r"api-proxy\.conf|nginx\.conf", "历史 nginx 配置文件挂载（现应为 nginx/aios-entry.conf）"),
     ]
     for pat, what in stale:
         for m in re.finditer(pat, text, re.M):
@@ -142,11 +142,11 @@ def c3_ports() -> tuple[list, list]:
     text = read(COMPOSE)
     if not re.search(r"^\s*-\s*[\"']8080:8080[\"']\s*$", text, re.M):
         f.append("%s 未把 server 的 8080 发布到宿主（没有这一行，入口就出不了容器）" % COMPOSE)
-    # agent 宿主端口允许写成 `${AIOA_AGENT_HOST_PORT:-8000}`（默认值仍是 8000；目标机常被占用，
+    # agent 宿主端口允许写成 `${AIOS_AGENT_HOST_PORT:-8000}`（默认值仍是 8000；目标机常被占用，
     # 让用户改 .env 而不是改受版本控制的 compose）。**「只绑 127.0.0.1」这一条不许放宽**。
-    if not re.search(r"^\s*-\s*[\"']127\.0\.0\.1:(?:\$\{AIOA_AGENT_HOST_PORT:-8000\}|8000):8000[\"']\s*$",
+    if not re.search(r"^\s*-\s*[\"']127\.0\.0\.1:(?:\$\{AIOS_AGENT_HOST_PORT:-8000\}|8000):8000[\"']\s*$",
                      text, re.M):
-        f.append("%s 的 agent 端口应为 `127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000`"
+        f.append("%s 的 agent 端口应为 `127.0.0.1:${AIOS_AGENT_HOST_PORT:-8000}:8000`"
                  "（仅本机排查用，不对内网暴露）" % COMPOSE)
     return f, w
 
@@ -199,28 +199,28 @@ def c4_no_backend_override() -> tuple[list, list]:
 
 
 def c5_prefix_consistency() -> tuple[list, list]:
-    """前缀 /aioa 的四个落点必须一致。"""
+    """前缀 /aios 的四个落点必须一致。"""
     f, w = [], []
     if not hit(PROPS, r'String\s+prefix\s*=\s*"%s"' % re.escape(PREFIX)):
         f.append("%s 里默认前缀不是 \"%s\"" % (PROPS, PREFIX))
-    if not hit(APP_YML, r"AIOA_WEB_PREFIX:%s\b" % re.escape(PREFIX)):
-        f.append("%s 里 AIOA_WEB_PREFIX 的默认值不是 %s" % (APP_YML, PREFIX))
-    if not hit(COMPOSE, r"AIOA_WEB_PREFIX:-\s*%s\b" % re.escape(PREFIX)):
-        f.append("%s 里 AIOA_WEB_PREFIX 的默认值不是 %s" % (COMPOSE, PREFIX))
-    # vite 侧：三个应用的 build base 必须都在 /aioa/web/ 之下
+    if not hit(APP_YML, r"AIOS_WEB_PREFIX:%s\b" % re.escape(PREFIX)):
+        f.append("%s 里 AIOS_WEB_PREFIX 的默认值不是 %s" % (APP_YML, PREFIX))
+    if not hit(COMPOSE, r"AIOS_WEB_PREFIX:-\s*%s\b" % re.escape(PREFIX)):
+        f.append("%s 里 AIOS_WEB_PREFIX 的默认值不是 %s" % (COMPOSE, PREFIX))
+    # vite 侧：三个应用的 build base 必须都在 /aios/web/ 之下
     for name, rel in VITE.items():
         want = "%s/web/" % PREFIX if name == "shell" else "%s/web/subapps/%s/" % (PREFIX, name)
         if ("'%s'" % want) not in read(rel) and ('"%s"' % want) not in read(rel):
             f.append("%s 的 build base 不是 %s" % (rel, want))
     if not hit(SHELL_ROUTER, r"createWebHistory\(import\.meta\.env\.BASE_URL\)"):
-        f.append("%s 未用 import.meta.env.BASE_URL 建 history（写死 '/' 会让 /aioa/web/ 白屏）" % SHELL_ROUTER)
+        f.append("%s 未用 import.meta.env.BASE_URL 建 history（写死 '/' 会让 /aios/web/ 白屏）" % SHELL_ROUTER)
     return f, w
 
 
 def c6_static_dirs() -> tuple[list, list]:
     """静态目录 /app/h5、/app/web 在 Java / yml / compose / Dockerfile 四处一致。"""
     f, w = [], []
-    pairs = [("h5", "h5Dir", "AIOA_WEB_H5_DIR", H5_DIR, "/out/h5"), ("web", "webDir", "AIOA_WEB_WEB_DIR", WEB_DIR, "/out/web")]
+    pairs = [("h5", "h5Dir", "AIOS_WEB_H5_DIR", H5_DIR, "/out/h5"), ("web", "webDir", "AIOS_WEB_WEB_DIR", WEB_DIR, "/out/web")]
     for short, camel, env, container, out in pairs:
         if not hit(PROPS, r'String\s+%s\s*=\s*"%s"' % (camel, re.escape(container))):
             f.append("%s 里 %s 的默认值不是 %s" % (PROPS, camel, container))
@@ -245,7 +245,7 @@ def c7_image_selfcheck() -> tuple[list, list]:
     """镜像内三块内容自检 + 管理端产物基址的构建期断言必须在。"""
     f, w = [], []
     d = read(DOCKERFILE)
-    need = ["/app/aioa-server.jar", "%s/index.html" % H5_DIR, "%s/index.html" % WEB_DIR]
+    need = ["/app/aios-server.jar", "%s/index.html" % H5_DIR, "%s/index.html" % WEB_DIR]
     if "test -f" not in d or any(n not in d for n in need):
         f.append("%s 缺少「三块内容缺一不可」的构建期自检（%s）" % (DOCKERFILE, "、".join(need)))
     if "grep -q '%s/web/assets/'" % PREFIX not in d:
@@ -258,11 +258,11 @@ def c8_filter_and_security() -> tuple[list, list]:
     """剥离 Filter 的顺序必须最先；安全链必须放行静态根与 /error；控制器仍映射 /api。"""
     f, w = [], []
     if not hit(PREFIX_CFG, r"setOrder\(Integer\.MIN_VALUE\)"):
-        f.append("%s 未用 setOrder(Integer.MIN_VALUE)：剥离晚于安全链会导致 /aioa/api/** 登录 401" % PREFIX_CFG)
+        f.append("%s 未用 setOrder(Integer.MIN_VALUE)：剥离晚于安全链会导致 /aios/api/** 登录 401" % PREFIX_CFG)
     sec = read(SECURITY)
-    # ★ 必须断言**带引号的字面量**：注释里也出现 `/aioa/web/**` 这种字样，
+    # ★ 必须断言**带引号的字面量**：注释里也出现 `/aios/web/**` 这种字样，
     #   只搜裸子串会被注释满足 ⇒ 变成恒真断言（本脚本自检已抓到过一次）。
-    #   注意 `"/aioa/web"` 是 `"/aioa/web/**"` 的子串，所以两个都要查、不能互相代替。
+    #   注意 `"/aios/web"` 是 `"/aios/web/**"` 的子串，所以两个都要查、不能互相代替。
     for must in ('"%s/h5/**"' % PREFIX, '"%s/web/**"' % PREFIX,
                  '"%s/h5"' % PREFIX, '"%s/web"' % PREFIX, '"/error"'):
         if must not in sec:
@@ -277,7 +277,7 @@ def c9_h5_base_derivation() -> tuple[list, list]:
     f, w = [], []
     h5 = read(H5)
     if "apiBaseFromPath" not in h5:
-        f.append("%s 里没有 apiBaseFromPath：H5 挪到 /aioa/h5/ 后接口会打到根路径" % H5)
+        f.append("%s 里没有 apiBaseFromPath：H5 挪到 /aios/h5/ 后接口会打到根路径" % H5)
     m = re.search(r"const\s+API\s*=\s*\{(.{0,400}?)\}", h5, re.S)
     if not m:
         f.append("%s 里找不到 `const API = {...}` 定义" % H5)
@@ -306,10 +306,10 @@ def c11_nginx_entry() -> tuple[list, list]:
 
     这层最容易漂移的三处：
       ① compose 里有服务、但没挂配置文件（或挂成历史档）⇒ 现场起的是默认站点；
-      ② 配置里少 `/aioa/` ⇒ 管理端白屏（静态资源全打到 nginx 上 404）；
+      ② 配置里少 `/aios/` ⇒ 管理端白屏（静态资源全打到 nginx 上 404）；
       ③ 配置里少 `/api/` ⇒ /user 下 H5 推导出的接口基址是 `/api`，登录就失败。
-    以及一条**方向性**约定：`/web` 必须是 302 到 `/aioa/web/`，不能改成内部改写 ——
-    管理端 base 固定为 `/aioa/web/`，地址栏停在 `/web/` 时 vue-router 会落在 base 之外。
+    以及一条**方向性**约定：`/web` 必须是 302 到 `/aios/web/`，不能改成内部改写 ——
+    管理端 base 固定为 `/aios/web/`，地址栏停在 `/web/` 时 vue-router 会落在 base 之外。
     另有 ④ **门控**：nginx 必须在 `profiles: ["entry"]`（默认 `up -d` 不起它，见该处注释）。
     """
     f, w = [], []
@@ -319,7 +319,7 @@ def c11_nginx_entry() -> tuple[list, list]:
         f.append("%s 缺少 `nginx:` 入口服务（/web 与 /user 靠它提供）" % COMPOSE)
     if not re.search(r"^\s*-\s*[\"']?80:80[\"']?\s*$", text, re.M):
         f.append("%s 的 nginx 未发布 80 端口（入口出不了容器）" % COMPOSE)
-    if "./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro" not in text:
+    if "./nginx/aios-entry.conf:/etc/nginx/conf.d/default.conf:ro" not in text:
         f.append("%s 未把 %s 挂成 /etc/nginx/conf.d/default.conf" % (COMPOSE, NGINX_CONF))
 
     # ④ 入口层必须**默认不起**：门控在 profile=entry。
@@ -340,9 +340,9 @@ def c11_nginx_entry() -> tuple[list, list]:
 
     must = [
         (r"location\s*=\s*/user\b", "/user 入口"),
-        (r"location\s*/user/", "/user/（H5 内部改写回 /aioa/h5/）"),
+        (r"location\s*/user/", "/user/（H5 内部改写回 /aios/h5/）"),
         (r"location\s*=\s*/web\b", "/web 入口"),
-        (r"location\s*/aioa/", "/aioa/（后端单端口三前缀）"),
+        (r"location\s*/aios/", "/aios/（后端单端口三前缀）"),
         (r"location\s*/api/", "/api/（旧根前缀；/user 下 H5 推导到的就是它）"),
         (r"proxy_buffering\s+off", "SSE 关缓冲"),
     ]
@@ -350,8 +350,8 @@ def c11_nginx_entry() -> tuple[list, list]:
         if not re.search(pat, conf, re.M):
             f.append("%s 缺少 %s" % (NGINX_CONF, what))
 
-    if not re.search(r"return\s+302\s+/aioa/web/", conf):
-        f.append("%s 的 /web 未 302 到 /aioa/web/（管理端 base 固定，内部改写会让"
+    if not re.search(r"return\s+302\s+/aios/web/", conf):
+        f.append("%s 的 /web 未 302 到 /aios/web/（管理端 base 固定，内部改写会让"
                  "vue-router 落在 base 之外 ⇒ 白屏）" % NGINX_CONF)
     return f, w
 
@@ -369,20 +369,20 @@ def _strip_js_comments(src: str) -> str:
 def c12_shell_api_base() -> tuple[list, list]:
     """管理端 SPA 的接口基址必须**带前缀**（与 H5 的 apiBaseFromPath 同口径）。
 
-    背景（2026-09-27 实测）：外网入口是共用域名 + `location /aioa/`（原样转发、**不剥前缀**）。
+    背景（2026-09-27 实测）：外网入口是共用域名 + `location /aios/`（原样转发、**不剥前缀**）。
     SPA 若把 axios baseURL 写死根路径 `/api/v1`，浏览器会打到域名根下**未被代理**的路径
     ⇒ 管理端每个接口 404，症状是「页面能开、列表/登录全空」。用户端 H5 早已按 pathname 推导
-    （`/aioa/h5/` ⇒ `/aioa/api`），只有 SPA 漏了 —— 因为本机 44 个套件都直打 `:8080/api/**`，
+    （`/aios/h5/` ⇒ `/aios/api`），只有 SPA 漏了 —— 因为本机 44 个套件都直打 `:8080/api/**`，
     根路径在本地**一直是对的**，缺陷只在生产入口暴露。
 
     两处落点：axios 实例（index.ts）与不走 axios 的 SSE（runs.ts，fetchEventSource 自己拼 URL）。
-    判据取「同源于 import.meta.env.BASE_URL」：生产 `/aioa/web/` ⇒ `/aioa/api/v1`，
+    判据取「同源于 import.meta.env.BASE_URL」：生产 `/aios/web/` ⇒ `/aios/api/v1`，
     dev `/` ⇒ `/api/v1`（走 vite 代理），dev 与生产不必各写一份。
     """
     f, w = [], []
     idx = _strip_js_comments(read(SHELL_API))
     if "import.meta.env.BASE_URL" not in idx:
-        f.append("%s 的接口基址没接 import.meta.env.BASE_URL（写死路径 ⇒ 外网只反代 /aioa/ 时接口全 404）"
+        f.append("%s 的接口基址没接 import.meta.env.BASE_URL（写死路径 ⇒ 外网只反代 /aios/ 时接口全 404）"
                  % SHELL_API)
     if not re.search(r"baseURL\s*:\s*API_BASE\b", idx):
         f.append("%s 的 axios baseURL 不是 API_BASE（不得写死 '/api/v1'）" % SHELL_API)
@@ -426,7 +426,7 @@ CHECKS = [
     ("compose 无残留行", c2_compose_no_stale_artifacts),
     ("端口发布", c3_ports),
     ("叠加文件已清理", c4_no_backend_override),
-    ("前缀 /aioa 四处一致", c5_prefix_consistency),
+    ("前缀 /aios 四处一致", c5_prefix_consistency),
     ("静态目录四处一致", c6_static_dirs),
     ("镜像自检与产物基址断言", c7_image_selfcheck),
     ("剥离顺序与安全放行", c8_filter_and_security),
@@ -459,8 +459,8 @@ MUTATIONS = [
     ("c3", "server 端口改成 9090:8080", COMPOSE,
      lambda t: t.replace('"8080:8080"', '"9090:8080"', 1)),
     ("c3", "agent 端口改成 0.0.0.0", COMPOSE,
-     lambda t: t.replace('"127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000"',
-                          '"${AIOA_AGENT_HOST_PORT:-8000}:8000"', 1)),
+     lambda t: t.replace('"127.0.0.1:${AIOS_AGENT_HOST_PORT:-8000}:8000"',
+                          '"${AIOS_AGENT_HOST_PORT:-8000}:8000"', 1)),
     ("c4", "重建叠加文件", "deploy/docker-compose.backend.yml",
      lambda t: "services:\n  server:\n    ports:\n      - \"8080:8080\"\n"),
     # 钉住 c4 的**文本扫描**分支（上面那条只测「文件存在」分支）。
@@ -469,9 +469,9 @@ MUTATIONS = [
     ("c4", "别处又引用叠加文件", "deploy/ops/offline-images.sh",
      lambda t: t + "\ndocker compose -f docker-compose.yml -f docker-compose.backend.yml up -d\n"),
     ("c5", "前缀改成 /x", PROPS,
-     lambda t: t.replace('String prefix = "/aioa"', 'String prefix = "/x"', 1)),
+     lambda t: t.replace('String prefix = "/aios"', 'String prefix = "/x"', 1)),
     ("c5", "子应用 base 回退到 '/'", VITE["demo-ticket"],
-     lambda t: t.replace("'/aioa/web/subapps/demo-ticket/'", "'/'", 1)),
+     lambda t: t.replace("'/aios/web/subapps/demo-ticket/'", "'/'", 1)),
     ("c5", "shell router 写死 '/'", SHELL_ROUTER,
      lambda t: t.replace("createWebHistory(import.meta.env.BASE_URL)", "createWebHistory('/')", 1)),
     ("c6", "Dockerfile 不拷 /app/web", DOCKERFILE,
@@ -479,15 +479,15 @@ MUTATIONS = [
     ("c6", "Dockerfile 组装目录与 base 脱节", DOCKERFILE,
      lambda t: t.replace("/out/web/subapps/demo-dispatch", "/out/web/dispatch")),
     ("c7", "删掉产物基址构建期断言", DOCKERFILE,
-     lambda t: t.replace("RUN grep -q '/aioa/web/assets/' /out/web/index.html || \\\n"
-                         "    { echo \"❌ 管理端产物基址不对：/out/web/index.html 里找不到 /aioa/web/assets/（vite build 的 base 未生效）\"; exit 1; }\n", "", 1)),
+     lambda t: t.replace("RUN grep -q '/aios/web/assets/' /out/web/index.html || \\\n"
+                         "    { echo \"❌ 管理端产物基址不对：/out/web/index.html 里找不到 /aios/web/assets/（vite build 的 base 未生效）\"; exit 1; }\n", "", 1)),
     ("c7", "删掉镜像内容自检", DOCKERFILE,
-     lambda t: t.replace("RUN test -f /app/aioa-server.jar && test -f /app/h5/index.html && test -f /app/web/index.html || \\\n"
-                         "    { echo \"❌ 镜像内容不全：需要同时存在 /app/aioa-server.jar、/app/h5/index.html、/app/web/index.html\"; exit 1; }\n", "", 1)),
+     lambda t: t.replace("RUN test -f /app/aios-server.jar && test -f /app/h5/index.html && test -f /app/web/index.html || \\\n"
+                         "    { echo \"❌ 镜像内容不全：需要同时存在 /app/aios-server.jar、/app/h5/index.html、/app/web/index.html\"; exit 1; }\n", "", 1)),
     ("c8", "Filter 顺序改回默认", PREFIX_CFG,
      lambda t: t.replace("registration.setOrder(Integer.MIN_VALUE);", "registration.setOrder(0);", 1)),
-    ("c8", "安全链删掉 /aioa/web/** 放行", SECURITY,
-     lambda t: t.replace('"/aioa/web/**",\n', "", 1)),
+    ("c8", "安全链删掉 /aios/web/** 放行", SECURITY,
+     lambda t: t.replace('"/aios/web/**",\n', "", 1)),
     ("c9", "H5 API.base 写回字面 /api", H5,
      lambda t: t.replace("base:apiBaseFromPath(location.pathname)", "base:'/api'", 1)),
     # ---- c11 入口 nginx（2026-09-24）：服务定义与配置四处都要能被弄坏即报红 ----
@@ -496,21 +496,21 @@ MUTATIONS = [
     ("c11", "nginx 未发布 80 端口", COMPOSE,
      lambda t: t.replace('      - "80:80"\n', "", 1)),
     ("c11", "nginx 未挂入口配置", COMPOSE,
-     lambda t: t.replace("      - ./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro\n", "", 1)),
+     lambda t: t.replace("      - ./nginx/aios-entry.conf:/etc/nginx/conf.d/default.conf:ro\n", "", 1)),
     ("c11", "/web 不再跳到 SPA base", NGINX_CONF,
-     lambda t: t.replace("return 302 /aioa/web/;", "return 302 /web/;")),
+     lambda t: t.replace("return 302 /aios/web/;", "return 302 /web/;")),
     ("c11", "/user 路由被删", NGINX_CONF,
      lambda t: t.replace("location /user/ {", "location /nope/ {", 1)),
     # ---- c12 管理端接口基址（2026-09-27）----
     ("c12", "SPA axios 基址写回根路径", SHELL_API,
      lambda t: t.replace("baseURL: API_BASE", "baseURL: '/api/v1'")),
     ("c12", "SPA 基址不再同源 BASE_URL", SHELL_API,
-     lambda t: t.replace("import.meta.env.BASE_URL.replace(", "('/aioa/web/').replace(", 1)),
+     lambda t: t.replace("import.meta.env.BASE_URL.replace(", "('/aios/web/').replace(", 1)),
     ("c12", "SSE 端点写回根路径", SHELL_RUNS,
      lambda t: t.replace("`${API_BASE}/runs/${runId}/events`", "`/api/v1/runs/${runId}/events`", 1)),
     # ---- c13 Dockerfile 模块 pom 清单（2026-09-27）----
     ("c13", "Dockerfile 漏 COPY 某模块 pom", DOCKERFILE,
-     lambda t: t.replace("COPY server/aioa-integration-scfy/pom.xml aioa-integration-scfy/\n", "", 1)),
+     lambda t: t.replace("COPY server/aios-integration-scfy/pom.xml aios-integration-scfy/\n", "", 1)),
 ]
 
 

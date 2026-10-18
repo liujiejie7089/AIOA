@@ -10,23 +10,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: aioa-agent
-  namespace: aioa
+  name: aios-agent
+  namespace: aios
   labels:
-    app: aioa-agent
+    app: aios-agent
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: aioa-agent
+      app: aios-agent
   template:
     metadata:
       labels:
-        app: aioa-agent
+        app: aios-agent
     spec:
       containers:
         - name: agent
-          image: aioa/agent:latest
+          image: aios/agent:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -36,25 +36,25 @@ spec:
             #   （约 483MB，被 .gitignore 忽略）⇒ 必须由节点预置，否则语音识别直接 503。
             #   ⚠️ 目录缺失时会被建成空目录 ⇒ ASR 静默不可用（H5 麦克风置灰）；
             #      Pod 若落到没有该模型的节点上同样不可用 —— replicas=1 时请配合 nodeSelector，
-            #      或把下面的 hostPath 换成已预置模型的 PVC（写法参考 00-namespace-config.yaml 的 aioa-uploads）。
+            #      或把下面的 hostPath 换成已预置模型的 PVC（写法参考 00-namespace-config.yaml 的 aios-uploads）。
             - name: asr-models
               mountPath: /app/.models
               readOnly: true
           envFrom:
             - configMapRef:
-                name: aioa-config
+                name: aios-config
             - secretRef:
-                name: aioa-secrets
+                name: aios-secrets
           env:
-            - name: AIOA_SERVER_BASE_URL
+            - name: AIOS_SERVER_BASE_URL
               valueFrom:
                 configMapKeyRef:
-                  name: aioa-config
+                  name: aios-config
                   key: SERVER_BASE_URL
             - name: SERVICE_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: aioa-secrets
+                  name: aios-secrets
                   key: SERVICE_JWT_SECRET
           resources:
             requests: { cpu: "500m", memory: "1Gi" }
@@ -75,17 +75,17 @@ spec:
         #      ASR 到底可不可用，以 /internal/v1/asr/status 的 available 为准（H5 也会据此置灰麦克风）。
         - name: asr-models
           hostPath:
-            path: /opt/aioa/asr-models
+            path: /opt/aios/asr-models
             type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: aioa-agent
-  namespace: aioa
+  name: aios-agent
+  namespace: aios
 spec:
   selector:
-    app: aioa-agent
+    app: aios-agent
   ports:
     - name: http
       port: 8000

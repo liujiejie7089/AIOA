@@ -7,7 +7,7 @@
   [H2] 该轮**不发** run.completed（是暂停，不是结束）；
   [H3] POST /internal/v1/runs/{id}/resume 回填答案 ⇒ 续跑到 message.completed + run.completed；
   [H4] **Q3 精确恢复**：resume 后已完成的业务工具**不重跑**（调用计数 = 1）；
-  [H5] 关闭 HITL（AIOA_HITL=false）时同样输入不产生 need_clarification（开关有效，默认零回归）。
+  [H5] 关闭 HITL（AIOS_HITL=false）时同样输入不产生 need_clarification（开关有效，默认零回归）。
 
 实现方式：用 FastAPI TestClient 在**进程内**起真实路由，只把「模型解析 + 上游 HTTP +
 业务工具」打桩 —— 路由、SSE 帧化、图、checkpointer 全是真跑。
@@ -27,19 +27,19 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "agent"))
 
 # ⚠️ 必须在 import app.main 之前设置：settings 是导入期单例，读的就是此刻的环境变量。
-os.environ["AIOA_HITL"] = "true"
-os.environ["AIOA_CHECKPOINT_URL"] = ""      # 内存（本地）
-os.environ["AIOA_TEST_FAKE_KEY"] = "k"
+os.environ["AIOS_HITL"] = "true"
+os.environ["AIOS_CHECKPOINT_URL"] = ""      # 内存（本地）
+os.environ["AIOS_TEST_FAKE_KEY"] = "k"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from aioa_ai.llm import Provider  # noqa: E402
-from aioa_ai.tools.client import ToolClient, ToolOutcome  # noqa: E402
+from aios_ai.llm import Provider  # noqa: E402
+from aios_ai.tools.client import ToolClient, ToolOutcome  # noqa: E402
 sys.path.insert(0, str(Path(__file__).parent))
 from _svc_token import svc_headers  # noqa: E402 服务间令牌（/internal/v1/* 已强制校验）
 
 FAKE = Provider(key="fake", driver="openai_compatible", base_url="http://fake.invalid",
-                model="fake-1", api_key_env="AIOA_TEST_FAKE_KEY")
+                model="fake-1", api_key_env="AIOS_TEST_FAKE_KEY")
 
 RUN_ID = "run_hitl_sentinel_0001"
 RESULTS: list[tuple[str, bool, str]] = []
@@ -122,9 +122,9 @@ def main() -> int:
             "user_context": {"user_id": 1, "tenant_id": 1}}
 
     patches = [
-        patch("aioa_ai.entry.resolve", return_value=FAKE),
-        patch("aioa_ai.graph.nodes.gateway.resolve", return_value=FAKE),
-        patch("aioa_ai.graph.nodes._post_stream", fake_stream),
+        patch("aios_ai.entry.resolve", return_value=FAKE),
+        patch("aios_ai.graph.nodes.gateway.resolve", return_value=FAKE),
+        patch("aios_ai.graph.nodes._post_stream", fake_stream),
         patch.object(ToolClient, "list_tools", AsyncMock(return_value=[
             {"type": "function", "function": {"name": "get_my_quota",
                                              "description": "q", "parameters": {}}}])),
@@ -170,8 +170,8 @@ def main() -> int:
     # —— H5：关闭 HITL，同一输入**不得**产生 need_clarification，且正常跑完（开关真有效）——
     import asyncio
 
-    from aioa_ai.config import settings
-    from aioa_ai.graph import builder, checkpoint
+    from aios_ai.config import settings
+    from aios_ai.graph import builder, checkpoint
 
     async def _off():
         settings.agent_hitl = False
@@ -189,9 +189,9 @@ def main() -> int:
         return ToolOutcome(name=name, arguments=arguments or {}, ok=True, data={"left": 10})
 
     patches2 = [
-        patch("aioa_ai.entry.resolve", return_value=FAKE),
-        patch("aioa_ai.graph.nodes.gateway.resolve", return_value=FAKE),
-        patch("aioa_ai.graph.nodes._post_stream", fake2),
+        patch("aios_ai.entry.resolve", return_value=FAKE),
+        patch("aios_ai.graph.nodes.gateway.resolve", return_value=FAKE),
+        patch("aios_ai.graph.nodes._post_stream", fake2),
         patch.object(ToolClient, "list_tools", AsyncMock(return_value=[])),
         patch.object(ToolClient, "invoke", off_invoke),
     ]

@@ -3,7 +3,7 @@ import { http, unwrap } from './index'
 /**
  * Gitee 仓库联动（V48）。
  *
- * <p>本文件是「后端 {@code aioa-gitee} 模块 REST 契约」在前端的唯一映射入口。
+ * <p>本文件是「后端 {@code aios-gitee} 模块 REST 契约」在前端的唯一映射入口。
  * 字段名与后端 {@code GiteeController} / {@code GiteeOauthController} 返回的
  * {@code Map<String,Object>} **逐字对应**，不在视图里另起一套类型或字面量。</p>
  *
@@ -27,7 +27,7 @@ export interface GiteeConfig {
   provider?: string
   /** 托管方展示名（`Gitee` / `Gitea`），与 `provider` 同源，由后端给出。 */
   providerLabel?: string
-  /** 该托管方在后端的配置前缀（`aioa.gitee` / `aioa.gitea`），用于「未启用」提示。 */
+  /** 该托管方在后端的配置前缀（`aios.gitee` / `aios.gitea`），用于「未启用」提示。 */
   configKey?: string
   /**
    * 企业初始化时对访问令牌权限的要求（整句文案）。
@@ -322,7 +322,7 @@ export interface GiteeAuthorizeResult {
  * <p>隔离口径：**每个入驻企业一个 Gitee 组织**。同一企业内各部门仍用仓库命名空间
  * （`dept<id>-` 前缀）隔离；跨企业则落到各自的组织里。</p>
  *
- * <p>回落规则：租户未配置时回落到平台默认组织（`aioa.gitee.org`），
+ * <p>回落规则：租户未配置时回落到平台默认组织（`aios.gitee.org`），
  * 因此 `source=DEFAULT` 是正常状态而不是"未配置错误"——既有租户与演示环境零改动。</p>
  *
  * <p>OAuth 应用仍是**平台统一**一套（`client_id`/`client_secret` 不按租户区分），
@@ -338,7 +338,7 @@ export interface GiteeTenantConfig {
   configured?: boolean
   /** 企业级开关（关闭后该企业建仓等写操作被拒）。 */
   enabled?: boolean
-  /** 平台默认组织（`aioa.gitee.org`），用于提示"未配置时会落到这里"。 */
+  /** 平台默认组织（`aios.gitee.org`），用于提示"未配置时会落到这里"。 */
   defaultOrg?: string
   /** 保存后返回的校验结论：组织是否存在且当前账号可见（**仅提示，不阻断保存**）。 */
   orgVerified?: boolean
@@ -657,7 +657,7 @@ export type GiteePlatformSource = 'ADMIN' | 'ENV'
 export interface GiteePlatformConfigView {
   provider: string
   providerLabel: string
-  /** 后端配置前缀（`aioa.gitee`），提示文案里指名去哪改环境变量。 */
+  /** 后端配置前缀（`aios.gitee`），提示文案里指名去哪改环境变量。 */
   configKey: string
   /** 管理端是否已保存过一份；false = 9 项全部来自环境变量。 */
   configured: boolean

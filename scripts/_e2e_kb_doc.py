@@ -160,7 +160,7 @@ async def main():
 
         async def boot(mode):
             await page.goto(H5, wait_until='domcontentloaded')
-            await page.evaluate("m => localStorage.setItem('aioa_mode', m)", mode)
+            await page.evaluate("m => localStorage.setItem('aios_mode', m)", mode)
             await page.reload(wait_until='domcontentloaded')
             await page.wait_for_timeout(800)
             if not await page.query_selector('body.auth'):

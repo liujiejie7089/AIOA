@@ -7,8 +7,8 @@ import {
   MSG_TOKEN,
   type BridgeMessage,
   type NotificationKind
-} from '@aioa/sdk'
-import type { AioaAction } from '@aioa/sdk'
+} from '@aios/sdk'
+import type { AiosAction } from '@aios/sdk'
 import { useAssistantStore } from '@/stores/assistant'
 import { useAuthStore } from '@/stores/auth'
 import type { AppEntry } from '@/types'
@@ -66,7 +66,7 @@ function isOriginAllowed(origin: string): boolean {
 
 function onMessage(event: MessageEvent): void {
   const data: unknown = event.data
-  if (!isBridgeMessage(data) || !data.type.startsWith('AIOA_')) return
+  if (!isBridgeMessage(data) || !data.type.startsWith('AIOS_')) return
   if (!isOriginAllowed(event.origin)) {
     if (!warnedUnknownOrigin) {
       warnedUnknownOrigin = true
@@ -129,10 +129,10 @@ export function destroyBridge(): void {
  * 优先按 appCode 精确匹配 iframe（wujie 子应用的 iframe name 即为 appCode），
  * 并按该应用注册表中的 origin 定向投递；拿不到 origin 时不投递（不再用 '*' 广播）。
  */
-export function sendAction(appCode: string, action: AioaAction): void {
+export function sendAction(appCode: string, action: AiosAction): void {
   if (!appCode) return
   const payload: BridgeMessage = {
-    type: 'AIOA_ACTION',
+    type: 'AIOS_ACTION',
     appCode,
     action
   }

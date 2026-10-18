@@ -26,7 +26,7 @@ FAKE = "__probe_no_such_method__"
 
 def call(path, timeout=10):
     req = urllib.request.Request(HOST + path, headers={
-        "User-Agent": "Mozilla/5.0 aioa-probe/1.0",
+        "User-Agent": "Mozilla/5.0 aios-probe/1.0",
         "Accept": "application/json, text/html, */*",
     })
     try:

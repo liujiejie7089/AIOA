@@ -3,7 +3,7 @@
     <el-header class="layout-header" height="56px">
       <div class="brand">
         <el-icon class="brand-icon"><Platform /></el-icon>
-        <span class="brand-text">AIOA 智能办公基座</span>
+        <span class="brand-text">AIOS 智能办公基座</span>
       </div>
       <div class="header-right">
         <!--

@@ -8,7 +8,7 @@
 
 注意：只负责「停在 :8080 的进程」与「打包」，不负责启动 —— 启动请用 run_in_background
 的常驻任务，否则沙箱会在 tool call 结束后回收子进程：
-    java -Dspring.flyway.validate-on-migrate=false -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar
+    java -Dspring.flyway.validate-on-migrate=false -jar aios-boot/target/aios-boot-0.1.0-SNAPSHOT.jar
 
 硬约束（曾踩过）：repackage 期间后端必须已停，否则 JVM 占用 fat-jar，
 maven 半路 rename 出 20KB 的 stripped-jar，原 jar 消失、运行中的 JVM 立刻
@@ -23,7 +23,7 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
-JAR = os.path.join(SERVER, "aioa-boot", "target", "aioa-boot-0.1.0-SNAPSHOT.jar")
+JAR = os.path.join(SERVER, "aios-boot", "target", "aios-boot-0.1.0-SNAPSHOT.jar")
 MIN_JAR_BYTES = 20 * 1024 * 1024  # 真 fat-jar 约 82MB；stripped 版只有 ~20KB
 
 
@@ -99,7 +99,7 @@ def main() -> None:
         sys.exit(1)
     print("[done] 请再用常驻任务启动后端：")
     print("  cd server && java -Dspring.flyway.validate-on-migrate=false "
-          "-jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar")
+          "-jar aios-boot/target/aios-boot-0.1.0-SNAPSHOT.jar")
 
 
 if __name__ == "__main__":

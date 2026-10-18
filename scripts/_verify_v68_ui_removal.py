@@ -19,7 +19,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-SHELL = "http://127.0.0.1:8080/aioa/web"
+SHELL = "http://127.0.0.1:8080/aios/web"
 # 目标租户：DSJ-DEMO（sys_tenant.id=2），演示库里唯一有「非零席位」且状态可用的租户之一
 TARGET_CODE = "DSJ-DEMO"
 EXP_TOKEN = "20000000"
@@ -84,8 +84,8 @@ with sync_playwright() as pw:
     page.screenshot(path=str(PROOF / "v68-2-tenant-list.png"), full_page=True)
     tbody = page.inner_text("body")
     chk("租户列表渲染出演示租户", TARGET_CODE in tbody or "大数据管理局" in tbody)
-    chk("列表显示登录域名列（⑥ 能力仍在）", "dsj.aioa.local" in tbody,
-        [ln for ln in tbody.splitlines() if "aioa.local" in ln][:3])
+    chk("列表显示登录域名列（⑥ 能力仍在）", "dsj.aios.local" in tbody,
+        [ln for ln in tbody.splitlines() if "aios.local" in ln][:3])
 
     row = page.locator("tr", has_text=TARGET_CODE).first
     chk("定位到 %s 行" % TARGET_CODE, row.count() > 0, row.count())

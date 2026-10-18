@@ -99,9 +99,9 @@ function runAsserts(label, createRun) {
 
 function checkJava() {
   console.log('--- Java 契约 ---');
-  const rq = fs.readFileSync(path.join(REPO, 'server/aioa-chat/src/main/java/cn/aioa/chat/dto/CreateRunRequest.java'), 'utf8');
-  const ar = fs.readFileSync(path.join(REPO, 'server/aioa-chat/src/main/java/cn/aioa/chat/dto/AgentRunRequest.java'), 'utf8');
-  const sv = fs.readFileSync(path.join(REPO, 'server/aioa-chat/src/main/java/cn/aioa/chat/service/RunService.java'), 'utf8');
+  const rq = fs.readFileSync(path.join(REPO, 'server/aios-chat/src/main/java/cn/aios/chat/dto/CreateRunRequest.java'), 'utf8');
+  const ar = fs.readFileSync(path.join(REPO, 'server/aios-chat/src/main/java/cn/aios/chat/dto/AgentRunRequest.java'), 'utf8');
+  const sv = fs.readFileSync(path.join(REPO, 'server/aios-chat/src/main/java/cn/aios/chat/service/RunService.java'), 'utf8');
 
   chk('B3.1 CreateRunRequest 有 @JsonProperty("kb_on")', /@JsonProperty\("kb_on"\)/.test(rq));
   chk('B3.2 AgentRunRequest 有 @JsonProperty("kb_on")', /@JsonProperty\("kb_on"\)/.test(ar));

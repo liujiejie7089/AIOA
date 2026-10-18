@@ -30,13 +30,13 @@
 
 ### 修法
 
-- 新增独立配置 `aioa.gitee.oauth-authorize-base-url`（环境变量 `AIOA_GITEE_OAUTH_AUTHORIZE_URL`），
+- 新增独立配置 `aios.gitee.oauth-authorize-base-url`（环境变量 `AIOS_GITEE_OAUTH_AUTHORIZE_URL`），
   **默认 `https://gitee.com`，生产无需任何额外配置即正确**；只有显式 opt-in 端到端回归时才指向桩。
 - `GiteeAccountService.bindUrl` 回传 `authorizeHost` / `sandbox` / `warning`；
   `GiteeOauthController` 结果页在非 `gitee.com` 域注入警示条；前端先弹 warning 再开新窗口。
 - 前端 `window.open` **刻意不写 `noopener`**：按规范那样做返回值恒为 `null`，「是否被拦截」就无从判断；
   改为打开后 `win.opener = null` 达到同样安全效果，并在被拦截时**回退整页跳转**（不再"点了没反应"）。
-- 接线收进 `scripts/gitee-e2e-env.sh` + `start-all.sh` 的 `AIOA_GITEE_E2E=1` 显式 opt-in，
+- 接线收进 `scripts/gitee-e2e-env.sh` + `start-all.sh` 的 `AIOS_GITEE_E2E=1` 显式 opt-in，
   默认打印「授权跳转 = `https://gitee.com`」。**这类"查不出来的谜"以后不会再出现。**
 
 ### 验收（同一份 jar、只改配置，两个实例对照）
@@ -46,7 +46,7 @@
 | 实例 | 配置 | `authorizeHost` | `sandbox` | 授权 URL |
 |---|---|---|---|---|
 | `:8080` | 端到端回归接线（三项基址都指向桩） | `127.0.0.1` | `True` + warning | `http://127.0.0.1:8090/oauth/authorize?...` |
-| `:8099` | **生产默认**（未设任何 `AIOA_GITEE_*` 基址） | `gitee.com` | `False` | `https://gitee.com/oauth/authorize?...` ✅ |
+| `:8099` | **生产默认**（未设任何 `AIOS_GITEE_*` 基址） | `gitee.com` | `False` | `https://gitee.com/oauth/authorize?...` ✅ |
 
 ---
 
@@ -94,7 +94,7 @@ String shown = accessToken == null ? "null" : accessToken;   // ← 把 null 拼
 |---|---|---|
 | 内容 | 机构 / 部门树 / 员工名册 | 人员名册（按档位分组）+ 角色分配 + 账号启停 + 平台级卡片 |
 | 角色 | `ORG_VIEW_ROLES`（**含 MEMBER**） | `PERSONNEL_VIEW_ROLES`（**不含 MEMBER**） |
-| 后端 | `aioa-org` | `aioa-admin` |
+| 后端 | `aios-org` | `aios-admin` |
 
 后端模块也互不重复。但两个入口并列指向同一批人、同一批数据，用户会在两处反复横跳 ⇒ 合并合理。
 
@@ -146,7 +146,7 @@ E14（成员菜单无该入口）、E15（成员强闯 `/admin` 仍被拦回 `/h
    下轮永远报"未找到绑定按钮（页面异常）"）⇒ 补已绑定态分支 + 把还原步骤移出 `else`（两种入口都还原）；
    检查 11 加 try 兜底（原先单条失败即**整场崩溃、零信号**）。
 5. **`SMOKE_v48.py`** 断言"未配置 OAuth 应用时返回业务错误"，但它与所有 Gitee 套件都需要的
-   `AIOA_GITEE_CLIENT_ID` **互斥** ⇒ 带接线跑必然假红。守卫本身**未被改动**
+   `AIOS_GITEE_CLIENT_ID` **互斥** ⇒ 带接线跑必然假红。守卫本身**未被改动**
    （`GiteeAccountService:227-236` 仍在）；改为「未配置→验报错质量 / 已配置→验授权地址合格」两条分支，
    验的是同一个契约。
 
@@ -215,7 +215,7 @@ E14（成员菜单无该入口）、E15（成员强闯 `/admin` 仍被拦回 `/h
 **换台机器 clone 下来前端根本跑不起来**，而本地一直全绿。
 
 ⇒ 本次提交 **70 个文件**，把 V48 收尾 + V50/V51/V52 + 三项修复一次性对齐。
-另：提交前发现两份历史产物被误删（`docs/审核报告-AIOA一期交付核验.html`、`ux-review/用户体验走查报告.html`），
+另：提交前发现两份历史产物被误删（`docs/审核报告-AIOS一期交付核验.html`、`ux-review/用户体验走查报告.html`），
 与本次修复无关 → 已 `git checkout --` 还原，**未把删除一起提交**。
 
 ### 推送未完成 —— 环境限制，非「已推送」

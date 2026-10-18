@@ -35,11 +35,11 @@ scrape_configs:
       - targets: ["etcd:2379"]
 
   # 前置条件满足后再打开（见文件头「尚未接入」）
-  # - job_name: aioa-server
+  # - job_name: aios-server
   #   metrics_path: /actuator/prometheus
   #   static_configs:
   #     - targets: ["server:8080"]
-  # - job_name: aioa-agent
+  # - job_name: aios-agent
   #   metrics_path: /metrics
   #   static_configs:
   #     - targets: ["agent:8000"]

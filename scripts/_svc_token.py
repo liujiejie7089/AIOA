@@ -21,14 +21,14 @@ import os
 import time
 
 # 与 Java `DevSecretPlaceholders.SERVICE_JWT` / Python `service_jwt.DEV_SECRET` 逐字相同。
-DEV_SECRET = "aioa-dev-service-jwt-secret-please-change"
+DEV_SECRET = "aios-dev-service-jwt-secret-please-change"
 
 
 def secret() -> str:
-    """按优先级取密钥：SERVICE_JWT_SECRET（agent 侧读这个）> AIOA_SERVICE_JWT_SECRET（后端读这个）。"""
+    """按优先级取密钥：SERVICE_JWT_SECRET（agent 侧读这个）> AIOS_SERVICE_JWT_SECRET（后端读这个）。"""
     return (
         os.getenv("SERVICE_JWT_SECRET")
-        or os.getenv("AIOA_SERVICE_JWT_SECRET")
+        or os.getenv("AIOS_SERVICE_JWT_SECRET")
         or DEV_SECRET
     )
 

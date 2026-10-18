@@ -50,7 +50,7 @@ export interface TenantScope {
 }
 
 /** 仅对已声明的作用域前缀附作用域参数，避免污染全局目录接口 */
-const STORAGE_KEY = 'aioa.tenantId'
+const STORAGE_KEY = 'aios.tenantId'
 
 /**
  * 声明式作用域参数表（<b>单一入口</b>）。

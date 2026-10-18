@@ -18,7 +18,7 @@
 | `GET /api/v1/settings/api` | `max_response_items: 50`、`default_paging_num: 30` | **分页硬上限 50**，必须翻页 |
 | `GET /login/oauth/authorize?...` | HTTP 303 → `/user/login?redirect_to=…` | OAuth2 提供方**已启用**（非登录态只能拿到跳登录） |
 | `GET /api/v1/orgs` | 仅 1 个公开组织：`huimao` | 可用的组织宿主候选 |
-| `GET /api/v1/repos/liujiejie/AIOA_System` | HTTP 404 | 匿名读**仓库级**接口不可用 |
+| `GET /api/v1/repos/liujiejie/AIOS_System` | HTTP 404 | 匿名读**仓库级**接口不可用 |
 | `git ls-remote origin` | `Repository not found` | git 层同样需认证 |
 
 > **结论**：实例的**公共**接口（version / settings / 公开组织）无需认证即可读，

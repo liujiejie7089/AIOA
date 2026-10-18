@@ -171,7 +171,7 @@ def main():
             page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
             # 启动前注入假 session（boot 据它判定已登录）
             page.add_init_script(
-                "localStorage.setItem('aioa_session', JSON.stringify({token:'fake',"
+                "localStorage.setItem('aios_session', JSON.stringify({token:'fake',"
                 "user:{username:'zhangsan',nickname:'张三',roles:['ROLE_USER']}}));")
             page.goto(base + "/index.html", wait_until="load")
             page.wait_for_timeout(2500)

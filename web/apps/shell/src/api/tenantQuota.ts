@@ -9,7 +9,7 @@ import { http, unwrap } from './index'
  * 若跟着一起删掉，平台就失去「事后调整某租户资源上限」的入口（铁律 #4）。
  * 故按能力拆分归属，而不是按「当初谁跟谁写在一起」。</p>
  *
- * <p>路径挂在 `/admin/tenants/{id}/quota`，后端实现是 aioa-org 的
+ * <p>路径挂在 `/admin/tenants/{id}/quota`，后端实现是 aios-org 的
  * `PlatformTenantQuotaController`（复用它才能不复制「总量不得低于已分配量」的既有判定）。</p>
  */
 

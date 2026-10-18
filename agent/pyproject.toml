@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aioa-agent"
+name = "aios-agent"
 version = "0.1.0"
-description = "AIOA Python agent service (M1 skeleton, echo mode)"
+description = "AIOS Python agent service (M1 skeleton, echo mode)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
@@ -20,11 +20,11 @@ dependencies = [
     #   TypeError: open() got an unexpected keyword argument 'metadata_errors'
     "av>=14,<19",
     # ★★★ LangGraph 内核（HITL 澄清链 / 多步图）—— 曾经**漏在这里**，导致生产镜像起不来：
-    #   aioa_ai/graph/{builder,facade,nodes}.py 都 `from langgraph...`，但本清单没有它。
+    #   aios_ai/graph/{builder,facade,nodes}.py 都 `from langgraph...`，但本清单没有它。
     #   本地 `.venv` 是手工 `pip install langgraph` 的，所以本机一直正常；
     #   而镜像走的是 `pip install .`（只装本清单）⇒ 容器启动即
     #   `ModuleNotFoundError: No module named 'langgraph'` → `Application startup failed`
-    #   （compose 里表现成 aioa-agent 一直 `Restarting`，对话「本次未返回内容」）。
+    #   （compose 里表现成 aios-agent 一直 `Restarting`，对话「本次未返回内容」）。
     #   判据：容器内 `python -c "import langgraph"` 必须成功，且 `pip show langgraph` 有版本。
     "langgraph>=1.0,<2",
     # checkpoint 三档实现里有两种是**独立发行包**（memory 档随 langgraph 自带）：
@@ -39,14 +39,14 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-# ★ 必须同时包含 aioa_ai：AI 能力已整体迁到 aioa_ai，app/ 只是 HTTP 接入层 + 兼容垫片。
+# ★ 必须同时包含 aios_ai：AI 能力已整体迁到 aios_ai，app/ 只是 HTTP 接入层 + 兼容垫片。
 #   只写 ["app*"] 时 `pip install .`（**非 editable**，即镜像构建）产出的 wheel 里
-#   **没有 aioa_ai**，容器按 CMD 起 uvicorn 时 `app/main.py:14 from aioa_ai import entry`
+#   **没有 aios_ai**，容器按 CMD 起 uvicorn 时 `app/main.py:14 from aios_ai import entry`
 #   直接 ModuleNotFoundError → 容器起不来。
 #   本地之所以看不出来：`uvicorn`/`python -m` 会把 cwd（agent/）放进 sys.path，
-#   aioa_ai 恰好就在 cwd 下，掩盖了打包缺失。
-#   判据：python -m pip install --target /tmp/x . 后 /tmp/x 下必须同时有 app/ 与 aioa_ai/。
-include = ["app*", "aioa_ai*"]
+#   aios_ai 恰好就在 cwd 下，掩盖了打包缺失。
+#   判据：python -m pip install --target /tmp/x . 后 /tmp/x 下必须同时有 app/ 与 aios_ai/。
+include = ["app*", "aios_ai*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

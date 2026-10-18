@@ -56,7 +56,7 @@ def chk(name, cond, detail=""):
 
 
 class FakeProvider:
-    # 必须非 "echo"，否则 entry.run 会路由到回声路径而非图路径（见 aioa_ai/entry.py）
+    # 必须非 "echo"，否则 entry.run 会路由到回声路径而非图路径（见 aios_ai/entry.py）
     driver = "openai_compatible"
     key = "fake"
     model = "fake-model"
@@ -74,7 +74,7 @@ class FakeToolClient:
     enabled = True
     instances = []
     # 目标路径绑定（run_once 按新旧路径设置）：为保持「同源」，ToolOutcome 必须取自
-    # 被测代码真正使用的那个模块（新路径 aioa_ai.tools.client，旧路径 app.*）。
+    # 被测代码真正使用的那个模块（新路径 aios_ai.tools.client，旧路径 app.*）。
     ToolOutcome = None
 
     @classmethod
@@ -115,11 +115,11 @@ async def run_once(kb_on):
     import app.core.agent_runtime as ar
     from app.schemas import RunRequest, UserContext
 
-    # 双路径探测：aioa_ai 重建后，图节点读取的是 aioa_ai.graph.nodes 的模块级全局；
-    # 在 HEAD（修复前）代码上 aioa_ai 不存在，应退回打 app.core.agent_runtime 的旧桩。
+    # 双路径探测：aios_ai 重建后，图节点读取的是 aios_ai.graph.nodes 的模块级全局；
+    # 在 HEAD（修复前）代码上 aios_ai 不存在，应退回打 app.core.agent_runtime 的旧桩。
     nodes = None
     try:
-        import aioa_ai.graph.nodes as nodes  # 仅探测可导入性
+        import aios_ai.graph.nodes as nodes  # 仅探测可导入性
     except Exception:
         nodes = None
     has_graph = nodes is not None
@@ -128,7 +128,7 @@ async def run_once(kb_on):
     FakeToolClient.instances.clear()
 
     class Shim:
-        # 冒充 aioa_ai.config.settings。⚠️ 被测代码**新增任何 settings 读取**都必须同步补到这里，
+        # 冒充 aios_ai.config.settings。⚠️ 被测代码**新增任何 settings 读取**都必须同步补到这里，
         # 否则会以 AttributeError 逼红本套件（曾因新增 settings.agent_hitl 而翻车）。
         agent_stream = False
         agent_parallel_tools = False
@@ -136,9 +136,9 @@ async def run_once(kb_on):
         agent_hitl = False
 
     if has_graph:
-        # 新路径：图在调用时按模块全局查找这些名字，故 patch 在 aioa_ai.* 上才生效。
-        import aioa_ai.entry as entry
-        import aioa_ai.tools.client as toolmod
+        # 新路径：图在调用时按模块全局查找这些名字，故 patch 在 aios_ai.* 上才生效。
+        import aios_ai.entry as entry
+        import aios_ai.tools.client as toolmod
         entry.resolve = lambda ref: FakeProvider()          # entry.run 的路由分派点
         nodes.gateway.resolve = lambda ref: FakeProvider()  # prepare/agent 节点内的 provider 解析
         nodes.ToolClient = FakeToolClient
@@ -153,7 +153,7 @@ async def run_once(kb_on):
         ar.settings = Shim()
         FakeToolClient.ToolOutcome = ar.ToolOutcome
 
-    print("  [path] %s" % ("graph(aioa_ai)" if has_graph else "legacy(app)"))
+    print("  [path] %s" % ("graph(aios_ai)" if has_graph else "legacy(app)"))
 
     kwargs = dict(run_id="r1", conversation_id=1, text="年假有多少天？",
                   user_context=UserContext(user_id=1, tenant_id=1, roles=[]))
@@ -242,7 +242,7 @@ async def main(agent_dir):
 def run_self(agent_dir):
     """以子进程跑一次本体，返回 (exit_code, stdout)。子进程隔离可避免模块缓存串味。"""
     env = dict(os.environ)
-    env["AIOA_KB_CHECK_CHILD"] = "1"
+    env["AIOS_KB_CHECK_CHILD"] = "1"
     p = subprocess.run([sys.executable, os.path.abspath(__file__), "--agent-dir", agent_dir],
                        capture_output=True, text=True, env=env, cwd=agent_dir)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -250,7 +250,7 @@ def run_self(agent_dir):
 
 def selftest(repo_root):
     """负向对照：在 HEAD（修复前）代码上跑同一套断言，必须变红。"""
-    tmp = tempfile.mkdtemp(prefix="aioa_kb_selftest_")
+    tmp = tempfile.mkdtemp(prefix="aios_kb_selftest_")
     tar = os.path.join(tmp, "head.tar")
     try:
         r = subprocess.run(["git", "archive", "-o", tar, "HEAD", "agent"],
@@ -279,7 +279,7 @@ def selftest(repo_root):
         # 既不能崩在 AttributeError（旧 app.* 仍可被桩），也必须真的选中了 legacy 路径。
         chose_legacy = "[path] legacy(app)" in old_out
         crashed = ("Traceback" in old_out) or ("EXCEPTION" in old_out)
-        # 子进程（AIOA_KB_CHECK_CHILD=1）退出前不打印 [STATUS]，故用退出码判定干净运行。
+        # 子进程（AIOS_KB_CHECK_CHILD=1）退出前不打印 [STATUS]，故用退出码判定干净运行。
         legacy_clean = (old_code == 0) and chose_legacy and not crashed
         if note_hit or len(reds) >= 2:
             # 经典负向对照：HEAD 上 kb_on 尚为死开关 ⇒ 判据变红 ⇒ 有判别力。
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         traceback.print_exc()
         FAILS.append("EXCEPTION")
 
-    is_child = os.environ.get("AIOA_KB_CHECK_CHILD") == "1"
+    is_child = os.environ.get("AIOS_KB_CHECK_CHILD") == "1"
     print("\n结果：失败 %d 项 %s" % (len(FAILS), FAILS if FAILS else ""))
     rc = 0 if not FAILS else 1
     if is_child:

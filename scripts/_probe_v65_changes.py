@@ -18,7 +18,7 @@ import sys
 import httpx
 import pymysql
 
-BASE = os.environ.get("AIOA_BASE", "http://127.0.0.1:8080")
+BASE = os.environ.get("AIOS_BASE", "http://127.0.0.1:8080")
 PWD_PLATFORM = "Admin@123"
 PWD_TENANT = "User@123"
 
@@ -184,7 +184,7 @@ def main():
         并在 finally 里按原字节还原。这**不降低断言强度** —— 过滤行为仍然必须真实成立。
         """
         c = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                            database="aioa", charset="utf8mb4",
+                            database="aios", charset="utf8mb4",
                             cursorclass=pymysql.cursors.DictCursor)
         try:
             with c.cursor() as cur:
@@ -221,7 +221,7 @@ def main():
         c1c, c2c = catalog_keys(mem1), catalog_keys(mem2)
         chk("P5 还原后两位成员都恢复可见", KEY in c1c and KEY in c2c, (c1c, c2c))
         c = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                            database="aioa", charset="utf8mb4",
+                            database="aios", charset="utf8mb4",
                             cursorclass=pymysql.cursors.DictCursor)
         try:
             with c.cursor() as cur:

@@ -47,7 +47,7 @@ def main():
     args = ap.parse_args()
 
     conn = pymysql.connect(host="127.0.0.1", user="root", password="",
-                           database="aioa", charset="utf8mb4", autocommit=False)
+                           database="aios", charset="utf8mb4", autocommit=False)
     cur = conn.cursor()
 
     q = ("SELECT id,tenant_id,gitee_owner,gitee_repo,gitee_html_url,gitee_ssh_url,gitee_https_url "

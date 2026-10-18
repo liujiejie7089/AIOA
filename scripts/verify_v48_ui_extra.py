@@ -58,7 +58,7 @@ def ensure_upload_project(tok):
 
 def seed(ctx, tok, user, refresh=""):
     ctx.add_init_script(
-        "localStorage.setItem('aioa.token', %s);localStorage.setItem('aioa.refreshToken', %s);localStorage.setItem('aioa.user', %s);"
+        "localStorage.setItem('aios.token', %s);localStorage.setItem('aios.refreshToken', %s);localStorage.setItem('aios.user', %s);"
         % (json.dumps(tok), json.dumps(refresh), json.dumps(json.dumps(user, ensure_ascii=False)))
     )
 

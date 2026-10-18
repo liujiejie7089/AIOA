@@ -9,7 +9,7 @@ _gen_oa_form_seed.py — docs/52 · P5 首批 43 个 OA 模块表单定义种子
 把每个模块映射到 agent_worker.worker_type 的稳定码（module_code），为每个模块设计
 3–6 个字段的 JSON Schema（Draft 2020-12），生成**幂等、可复跑**的迁移 SQL：
 
-    server/aioa-boot/src/main/resources/db/migration/V86__oa_module_forms.sql
+    server/aios-boot/src/main/resources/db/migration/V86__oa_module_forms.sql
 
 设计口径（与 docs/52 §3.2 / §3.3 / V85 契约一致）
 -------------------------------------------------
@@ -55,7 +55,7 @@ REPO = os.path.dirname(HERE)
 XLSX = r"C:\Users\刘尖尖\Desktop\OA系统功能清单_功能描述补充版.xlsx"
 OUT_SQL = os.path.join(
     REPO,
-    "server", "aioa-boot", "src", "main", "resources", "db", "migration",
+    "server", "aios-boot", "src", "main", "resources", "db", "migration",
     "V86__oa_module_forms.sql",
 )
 

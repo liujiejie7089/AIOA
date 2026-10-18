@@ -30,7 +30,7 @@ session = json.dumps({"token": tok, "user": me}, ensure_ascii=False)
 with sync_playwright() as pw:
     b = pw.chromium.launch(channel="msedge", headless=True)
     ctx = b.new_context(viewport={"width": 390, "height": 844})
-    ctx.add_init_script(f"localStorage.setItem('aioa_session', {json.dumps(session)})")
+    ctx.add_init_script(f"localStorage.setItem('aios_session', {json.dumps(session)})")
     page = ctx.new_page()
     errs = []
     page.on("pageerror", lambda e: errs.append(str(e)))

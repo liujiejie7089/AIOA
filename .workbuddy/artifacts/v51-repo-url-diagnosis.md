@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 1 | 四个地址全是 `127.0.0.1` | **配置问题** —— 本机后端被指向了本地 Gitee 桩 | **对照实验**：把 Gitee 侧改为返回 `gitee.com`，四个地址**即刻全部变成公网形态，零代码改动** |
 | 2 | 点击后跳不到 Gitee | **配置问题的必然结果**（跳转实现本身是对的） | **真点击取证**：本地地址 → 新标签页落在 `127.0.0.1:8090`；公网地址 → 新标签页落在 `https://gitee.com/...` |
-| 3 | `aioa.gitee.web-base-url` 配置了却没用 | **代码缺陷（轻微）· 死配置** | 该字段全代码库**零引用**（只在 `GiteeProperties` 声明 + yml 绑定） |
+| 3 | `aios.gitee.web-base-url` 配置了却没用 | **代码缺陷（轻微）· 死配置** | 该字段全代码库**零引用**（只在 `GiteeProperties` 声明 + yml 绑定） |
 | 4 | 地址是建仓时的快照，**无刷新路径** | **设计缺口** | 全库仅 `GiteeRepoTaskHandler:98-100` 一处赋值；快照不变性实验证明改配置不会修复存量行 |
 | 5 | Webhook 回调地址注册成了 `127.0.0.1` | **配置问题，且会静默失效** | 桩侧钩子 URL 取证：`http://127.0.0.1:8080/api/v1/gitee/webhook/{id}` |
 
@@ -41,7 +41,7 @@ gitee_project.gitee_html_url / gitee_ssh_url / gitee_https_url
 
 ### 1.2 那"Gitee"是谁？—— 本机的桩服务
 
-本机后端的 `aioa.gitee.base-url` 被指向了本地 Gitee 桩（`http://127.0.0.1:8090/api/v5`，用于无凭证做端到端回归）。而桩在 `scripts/gitee_stub.py:117-119`（`_repo_urls`，默认分支）**自己编造**了三个地址：
+本机后端的 `aios.gitee.base-url` 被指向了本地 Gitee 桩（`http://127.0.0.1:8090/api/v5`，用于无凭证做端到端回归）。而桩在 `scripts/gitee_stub.py:117-119`（`_repo_urls`，默认分支）**自己编造**了三个地址：
 
 ```python
 "html_url":  f"http://127.0.0.1:{PORT}/{owner}/{path}",
@@ -61,9 +61,9 @@ POST /_stub/public-base  {"base": "https://gitee.com"}    # 让桩按公网域�
 
 | 断言 | 桩返回本机地址（基线） | 桩返回公网地址（对照） |
 |---|---|---|
-| Gitee 网页 | `http://127.0.0.1:8090/aioa-demo-org/dept101-url-…` | `https://gitee.com/aioa-demo-org/dept101-url-…` |
-| SSH | `git@127.0.0.1:aioa-demo-org/….git` | `git@gitee.com:aioa-demo-org/….git` |
-| HTTPS | `http://127.0.0.1:8090/aioa-demo-org/….git` | `https://gitee.com/aioa-demo-org/….git` |
+| Gitee 网页 | `http://127.0.0.1:8090/aios-demo-org/dept101-url-…` | `https://gitee.com/aios-demo-org/dept101-url-…` |
+| SSH | `git@127.0.0.1:aios-demo-org/….git` | `git@gitee.com:aios-demo-org/….git` |
+| HTTPS | `http://127.0.0.1:8090/aios-demo-org/….git` | `https://gitee.com/aios-demo-org/….git` |
 | 克隆命令 | `git clone git@127.0.0.1:…` | `git clone git@gitee.com:…` |
 
 **零代码改动、只换接口返回，四项全部随动** → 地址生成环节**代码无缺陷**。
@@ -92,8 +92,8 @@ POST /_stub/public-base  {"base": "https://gitee.com"}    # 让桩按公网域�
 
 | 项目 | 点击「Gitee 网页」后新标签页的 URL | 判定 |
 |---|---|---|
-| 本地地址项目 | `http://127.0.0.1:8090/aioa-demo-org/dept101-url-1789554921` | **复现投诉**：跳到桩，不是 Gitee |
-| 公网地址项目 | `https://gitee.com/aioa-demo-org/dept101-url-1789554925` | **证明**：配置对了，跳转就对 |
+| 本地地址项目 | `http://127.0.0.1:8090/aios-demo-org/dept101-url-1789554921` | **复现投诉**：跳到桩，不是 Gitee |
+| 公网地址项目 | `https://gitee.com/aios-demo-org/dept101-url-1789554925` | **证明**：配置对了，跳转就对 |
 
 同时断言：三链接 `href` 与接口值**逐字一致**、`target` 均为 `_blank`、克隆命令输入框值 == 接口 `cloneCommand`、无控制台错误、无 5xx。
 
@@ -107,15 +107,15 @@ POST /_stub/public-base  {"base": "https://gitee.com"}    # 让桩按公网域�
 
 | 配置项 | 作用 | 本机现值 | 生产要求 | 判定 |
 |---|---|---|---|---|
-| `aioa.gitee.base-url` | **API 基址**（地址的唯一来源） | `http://127.0.0.1:8090/api/v5`（桩） | `https://gitee.com/api/v5`（**默认值本来就是它**） | 本机为回归而改，生产用默认即可 |
-| `aioa.gitee.web-base-url` | 原设计意图：网页域 | `http://127.0.0.1:8090` | —— | ❌ **死配置：配了不生效**（零引用） |
-| `aioa.gitee.redirect-uri` | OAuth 回调 | `http://127.0.0.1:8080/api/v1/gitee/bind/callback` | 公网域名，且须与 Gitee 应用登记**完全一致** | 生产必改 |
-| `aioa.gitee.webhook-base-url` | Webhook 回调基址 | `http://127.0.0.1:8080` | **必须公网可达** | ⚠️ 生产必改，否则静默失效 |
-| `aioa.gitee.bind-return-url` | 授权后前端回跳 | `http://127.0.0.1:5173/gitee/projects` | 前端公网域名 | 生产必改 |
+| `aios.gitee.base-url` | **API 基址**（地址的唯一来源） | `http://127.0.0.1:8090/api/v5`（桩） | `https://gitee.com/api/v5`（**默认值本来就是它**） | 本机为回归而改，生产用默认即可 |
+| `aios.gitee.web-base-url` | 原设计意图：网页域 | `http://127.0.0.1:8090` | —— | ❌ **死配置：配了不生效**（零引用） |
+| `aios.gitee.redirect-uri` | OAuth 回调 | `http://127.0.0.1:8080/api/v1/gitee/bind/callback` | 公网域名，且须与 Gitee 应用登记**完全一致** | 生产必改 |
+| `aios.gitee.webhook-base-url` | Webhook 回调基址 | `http://127.0.0.1:8080` | **必须公网可达** | ⚠️ 生产必改，否则静默失效 |
+| `aios.gitee.bind-return-url` | 授权后前端回跳 | `http://127.0.0.1:5173/gitee/projects` | 前端公网域名 | 生产必改 |
 
 另有两项与安全/开关相关，同样**必须在生产覆盖**：
-- `aioa.gitee.client-id` / `client-secret`：本机为回归假值（`aioa-e2e-client` / `aioa-e2e-secret`）。
-- `aioa.gitee.token-enc-key`：默认值 `aioa-dev-gitee-token-key-please-change` **可离线解密已授权的 Gitee 令牌**，生产必须替换。
+- `aios.gitee.client-id` / `client-secret`：本机为回归假值（`aios-e2e-client` / `aios-e2e-secret`）。
+- `aios.gitee.token-enc-key`：默认值 `aios-dev-gitee-token-key-please-change` **可离线解密已授权的 Gitee 令牌**，生产必须替换。
 
 ### 3.1 关于 Webhook 的"静默失效"（值得单独强调）
 
@@ -145,20 +145,20 @@ POST /_stub/public-base  {"base": "https://gitee.com"}    # 让桩按公网域�
 
 ```bash
 # 通常无需设置（默认已是生产值）
-AIOA_GITEE_BASE_URL=https://gitee.com/api/v5
-AIOA_GITEE_ORG=<全局默认组织，或留空由各租户自行配置>
+AIOS_GITEE_BASE_URL=https://gitee.com/api/v5
+AIOS_GITEE_ORG=<全局默认组织，或留空由各租户自行配置>
 
 # 必须按实际公网域名设置
-AIOA_GITEE_CLIENT_ID=<Gitee 第三方应用 client_id>
-AIOA_GITEE_CLIENT_SECRET=<对应 secret>
-AIOA_GITEE_REDIRECT_URI=https://<平台域名>/api/v1/gitee/bind/callback
-AIOA_GITEE_WEBHOOK_BASE_URL=https://<平台域名>          # 必须公网可达，否则 webhook 静默失效
-AIOA_GITEE_BIND_RETURN_URL=https://<前端域名>/gitee/projects
+AIOS_GITEE_CLIENT_ID=<Gitee 第三方应用 client_id>
+AIOS_GITEE_CLIENT_SECRET=<对应 secret>
+AIOS_GITEE_REDIRECT_URI=https://<平台域名>/api/v1/gitee/bind/callback
+AIOS_GITEE_WEBHOOK_BASE_URL=https://<平台域名>          # 必须公网可达，否则 webhook 静默失效
+AIOS_GITEE_BIND_RETURN_URL=https://<前端域名>/gitee/projects
 
 # 安全：必须替换默认值
-AIOA_GITEE_TOKEN_ENC_KEY=<32 字节随机串>
+AIOS_GITEE_TOKEN_ENC_KEY=<32 字节随机串>
 
-# 不要设置 AIOA_GITEE_WEB_URL —— 当前是死配置，设了无效（待清理）
+# 不要设置 AIOS_GITEE_WEB_URL —— 当前是死配置，设了无效（待清理）
 ```
 
 配套检查：Gitee「设置 → 第三方应用」里登记的**回调地址必须与 `redirect-uri` 逐字一致**；平台域名需能从公网访问到 Webhook 路径。

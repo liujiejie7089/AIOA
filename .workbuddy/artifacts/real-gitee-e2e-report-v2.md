@@ -9,7 +9,7 @@
 ## 0. 一句话结论
 
 用你提供的私人令牌，在真实 Gitee 组织 `yjiud` 下**真的建出了仓库**
-`https://gitee.com/yjiud/dept11-aioa-1789630096`，并完成了写文件、提交、URL 校验、删仓的完整闭环。
+`https://gitee.com/yjiud/dept11-aios-1789630096`，并完成了写文件、提交、URL 校验、删仓的完整闭环。
 **浏览器跳转授权**这条路仍未跑（缺 OAuth 应用的 Client ID/Secret，见 §6）。
 
 ---
@@ -20,11 +20,11 @@
 |---|---|
 | 真实接线生效 | 启动自检 `api=https://gitee.com/api/v5 授权跳转=https://gitee.com`，无桩警告 |
 | 令牌真实性 | `GET /user` → 200，`login=liu-yang20` |
-| 组织真实性 | `GET /orgs/yjiud` → 200，`type=Group`，`description=aioa` |
+| 组织真实性 | `GET /orgs/yjiud` → 200，`type=Group`，`description=aios` |
 | 初始化只校验不落库 | `POST /gitee/init/verify` 6 步全 ok，且**复核库中无 tenant 2 行** |
 | 初始化正式落库 | `POST /gitee/init` 7 步全 ok（含 PERSIST）→ `initStatus=ACTIVE`、`tokenOwner=liu-yang20`、`orgVerified=true` |
 | 初始化幂等 | 重复初始化后 tenant 2 **仍为 1 行** |
-| **真实建仓** | `CREATE_REPO` 任务 DONE；`gitee_repo_id=50369702`；`GET /repos/yjiud/dept11-aioa-1789630096` → **HTTP 200** |
+| **真实建仓** | `CREATE_REPO` 任务 DONE；`gitee_repo_id=50369702`；`GET /repos/yjiud/dept11-aios-1789630096` → **HTTP 200** |
 | 真实写文件 | 平台 `POST /contents` 写 `docs/README.md` → 真站 `GET /contents/docs/README.md` 返回**同一内容**，sha 一致 |
 | 真实提交历史 | 真站 `GET /commits` → `b950f1b add readme 刘尖尖` + `866f294 Initial commit` |
 | 文件链接正确性 | 平台返回 `https://gitee.com/yjiud/.../blob/master/docs/README.md`，与 **Gitee 自身 API 返回的 `html_url` 逐字符一致** |
@@ -96,7 +96,7 @@
 
 | 限制 | 说明 |
 |---|---|
-| **Webhook 无法真实收事件** | `aioa.gitee.webhook-base-url` 无公网地址（Gitee 回调不到本机）。**这不是静默失效**：`callbackUrl()` 抛清晰异常，任务 `FAILED` 且 `last_error` 写明原因，项目停在 `CREATING`（`CONFIGURE_WEBHOOK` 未成功时不置 `ACTIVE`）。如需完整验证 Webhook，需要一个 Gitee 可达的公网地址（内网穿透）。 |
+| **Webhook 无法真实收事件** | `aios.gitee.webhook-base-url` 无公网地址（Gitee 回调不到本机）。**这不是静默失效**：`callbackUrl()` 抛清晰异常，任务 `FAILED` 且 `last_error` 写明原因，项目停在 `CREATING`（`CONFIGURE_WEBHOOK` 未成功时不置 `ACTIVE`）。如需完整验证 Webhook，需要一个 Gitee 可达的公网地址（内网穿透）。 |
 | 出口 IP 限流 | 未认证请求实测 `403 Rate Limit Exceeded`；**带令牌请求全程未受影响**。 |
 | 授权跳转授权 | 需先在 gitee.com 注册第三方应用（缺 Client ID/Secret），见 §6。 |
 
@@ -106,11 +106,11 @@
 
 | 文件 | 改动 |
 |---|---|
-| `aioa-gitee/.../config/GiteeProperties.java` | 默认 scope 补 `hook`，并写清"两个独立 scope"的理由 |
-| `aioa-boot/src/main/resources/application.yml` | 同上 |
-| `aioa-gitee/.../config/GiteeConfig.java` | 新增 `selfCheck()`：启动打印接线/scope，缺项 WARN |
-| `aioa-gitee/.../service/GiteeRepoTaskHandler.java` | 新增 `webUrl()`/`cloneUrl()`；`deleteRepo()` 改从 payload 取值、信息不全抛错 |
-| `aioa-gitee/.../service/GiteeProjectService.java` | `softDelete()` 入队 `DELETE_REPO` 时带上 owner/repo/createdBy |
+| `aios-gitee/.../config/GiteeProperties.java` | 默认 scope 补 `hook`，并写清"两个独立 scope"的理由 |
+| `aios-boot/src/main/resources/application.yml` | 同上 |
+| `aios-gitee/.../config/GiteeConfig.java` | 新增 `selfCheck()`：启动打印接线/scope，缺项 WARN |
+| `aios-gitee/.../service/GiteeRepoTaskHandler.java` | 新增 `webUrl()`/`cloneUrl()`；`deleteRepo()` 改从 payload 取值、信息不全抛错 |
+| `aios-gitee/.../service/GiteeProjectService.java` | `softDelete()` 入队 `DELETE_REPO` 时带上 owner/repo/createdBy |
 | `db/migration/V53__gitee_repo_url_normalize.sql` | **新增**：回填存量行的仓库地址 |
 | `scripts/gitee_stub.py` | 令牌响应的 scope 同步为含 `hook`，并注明"桩不校验 scope" |
 | `scripts/SMOKE_v48.py` | 自摆前置条件（解绑）+ 修正假阳性断言 |
@@ -120,7 +120,7 @@
 
 ## 5. 交付状态与还原
 
-- **Gitee 真站**：`yjiud` 组织下 **仅 1 个仓库** = `yjiud/dept11-aioa-1789630096`（私有，含 `docs/README.md` 与 2 次提交）。被中断那次产生的重复仓库 `...1789629970` 已删除。
+- **Gitee 真站**：`yjiud` 组织下 **仅 1 个仓库** = `yjiud/dept11-aios-1789630096`（私有，含 `docs/README.md` 与 2 次提交）。被中断那次产生的重复仓库 `...1789629970` 已删除。
 - **平台**：项目 69 保留为该仓库的对应记录（状态 `CREATING` —— 因 Webhook 未配置，符合设计）。测试用的项目 67/68 已删除。
 - **配置**：租户 2 的 `gitee_tenant_config` 行已删除，回到"未配置"态；后端当前为**桩接线**（演示默认）。
 - **待办风险**：库中仍有桩时代的假绑定（`gitee_account`，含 `dsj_admin`）。真实接线下这些账号会 401。清理入口：`DELETE /api/v1/gitee/bind`（按账号），或直接清 `gitee_account` 的存活行。
@@ -135,11 +135,11 @@
 |---|---|
 | 应用主页 | `http://localhost:5173/` |
 | **应用回调地址** | `http://localhost:8080/api/v1/gitee/bind/callback`（**用 localhost、勿加尾斜杠、须逐字符一致**） |
-| Logo | 已生成：`.workbuddy/artifacts/gitee-real-creation/aioa-logo.png`（512×512，19.8KB） |
+| Logo | 已生成：`.workbuddy/artifacts/gitee-real-creation/aios-logo.png`（512×512，19.8KB） |
 | 权限勾选 | 必须含 **`projects` + `hook`**（及 `user_info`、`pull_requests`、`issues`、`notes`） |
 | 需回传给我 | **Client ID** 与 **Client Secret**（Secret 只显示一次） |
 
-拿到后：停服 → 用真实接线重启（含 client 三件套与 `AIOA_GITEE_ORG=yjiud`）→ 触发 `/gitee/bind/authorize` → 真实浏览器完成 gitee.com 授权同意页 → 回调绑定 → 用个人身份再建一次仓库。
+拿到后：停服 → 用真实接线重启（含 client 三件套与 `AIOS_GITEE_ORG=yjiud`）→ 触发 `/gitee/bind/authorize` → 真实浏览器完成 gitee.com 授权同意页 → 回调绑定 → 用个人身份再建一次仓库。
 
 ---
 
@@ -196,7 +196,7 @@
 
 ### 8.1 根因：Client ID 抄错 1 个字符
 
-用户发来 Gitee 应用详情页截图（应用名 `AIOA`，**今日请求次数 0 次**）。逐字符 diff：
+用户发来 Gitee 应用详情页截图（应用名 `AIOS`，**今日请求次数 0 次**）。逐字符 diff：
 
 | | Client ID 第 29–40 位 |
 |---|---|
@@ -210,7 +210,7 @@
 
 ### 8.2 成功证据链
 
-修正 `.env.gitee-real` 的 `AIOA_GITEE_CLIENT_ID` 后重启（自校验 URL 中的 client_id 与截图**逐字一致**、第 34 位 = `b`），用户在浏览器点「同意授权」，回调落库：
+修正 `.env.gitee-real` 的 `AIOS_GITEE_CLIENT_ID` 后重启（自校验 URL 中的 client_id 与截图**逐字一致**、第 34 位 = `b`），用户在浏览器点「同意授权」，回调落库：
 
 | 项 | 值 | 说明 |
 |---|---|---|
@@ -232,10 +232,10 @@
 | 环节 | 结果 |
 |---|---|
 | `CREATE_REPO` 任务 | **DONE** |
-| 平台项目 | `id=77`、`repo_name=dept11-aioa-1789636649`、`gitee_repo_id=**50373399**`、`gitee_owner=yjiud` |
-| **真站独立复核** | `GET /repos/yjiud/dept11-aioa-1789636649` → **HTTP 200**，`private=true`，`created_at=2026-09-17T17:17:31+08:00`（紧接 17:16:32 的绑定之后） |
-| 平台存的地址 | `https://gitee.com/yjiud/dept11-aioa-1789636649`（**无 `.git`** —— §2 缺陷 3 的修复再次生效；真站 API 返回的是带 `.git` 的） |
-| `CONFIGURE_WEBHOOK` | **FAILED**，`last_error="未配置 aioa.gitee.webhook-base-url，Gitee 无法回调本机地址；请填写平台对 Gitee 可见的公网地址"` |
+| 平台项目 | `id=77`、`repo_name=dept11-aios-1789636649`、`gitee_repo_id=**50373399**`、`gitee_owner=yjiud` |
+| **真站独立复核** | `GET /repos/yjiud/dept11-aios-1789636649` → **HTTP 200**，`private=true`，`created_at=2026-09-17T17:17:31+08:00`（紧接 17:16:32 的绑定之后） |
+| 平台存的地址 | `https://gitee.com/yjiud/dept11-aios-1789636649`（**无 `.git`** —— §2 缺陷 3 的修复再次生效；真站 API 返回的是带 `.git` 的） |
+| `CONFIGURE_WEBHOOK` | **FAILED**，`last_error="未配置 aios.gitee.webhook-base-url，Gitee 无法回调本机地址；请填写平台对 Gitee 可见的公网地址"` |
 | 项目状态 | `CREATING` —— **符合设计**：Webhook 未配置成功就不置 `ACTIVE`（且是 fail-loud，有可执行中文指引） |
 
 ### 8.4 对「缺陷 1（scope 缺 hook）」结论的精化 ★
@@ -252,7 +252,7 @@ user_info projects pull_requests issues notes keys hook groups gists enterprises
 因此对缺陷 1 的结论要修正为：**决定性的那一环是「登记应用时勾没勾 `hook`」**；
 代码里默认 scope 补 `hook` 是**必要的防御**（保证登记口径与调用口径一致、且不会因参数缺项而误导排障），
 但**它单独不足以**让 Webhook 可用 —— 必须两边都到位。检查清单应为：
-① 应用登记页勾选 `projects` + `hook`；② `aioa.gitee.scope` 含 `hook`；③ 换回的令牌 `scope` 里确认有 `hook`（本次已确认 ✅）。
+① 应用登记页勾选 `projects` + `hook`；② `aios.gitee.scope` 含 `hook`；③ 换回的令牌 `scope` 里确认有 `hook`（本次已确认 ✅）。
 
 ### 8.5 新发现的运维陷阱 ★（代码确证，**未实测**）
 
@@ -270,5 +270,5 @@ user_info projects pull_requests issues notes keys hook groups gists enterprises
 
 - 后端运行在**真实接线**（`.env.gitee-real`，已判入 `.gitignore` 的 `.env.*`，不入库）：`logs/boot-oauth-real2.log`。
 - **保留**真实绑定 `gitee_account.id=59`（`dsj_admin` ← `liu-yang20`）。
-- 真站 `yjiud` 组织现有 **2 个仓库**：`dept11-aioa-1789630096`（企业令牌路径）、`dept11-aioa-1789636649`（个人令牌路径）。
+- 真站 `yjiud` 组织现有 **2 个仓库**：`dept11-aios-1789630096`（企业令牌路径）、`dept11-aios-1789636649`（个人令牌路径）。
   如需只留一个，可对平台项目 `DELETE /api/v1/gitee/projects/{id}?purgeRepo=true`（⚠ 该动作现已修复，会真删真站仓库）。

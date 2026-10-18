@@ -1,15 +1,15 @@
 openapi: 3.0.3
 info:
-  title: AIOA 内部接口契约（Java aioa-server ⇄ Python aioa-agent）
+  title: AIOS 内部接口契约（Java aios-server ⇄ Python aios-agent）
   version: "1.0"
   description: |
     仅容器内网可达（nginx 不暴露 /internal/**）。
     鉴权：Authorization: Bearer <service JWT（RS256，5min，claim svc=server|agent）>。
     M1 范围：/internal/v1/runs（回声模式 SSE）；M2+：tools/invoke、runs/{id}/resume、kb/search。
 servers:
-  - url: http://aioa-agent:8000
+  - url: http://aios-agent:8000
     description: Python agent 服务
-  - url: http://aioa-server:8080
+  - url: http://aios-server:8080
     description: Java 业务后端（agent 回调用）
 paths:
   /health:

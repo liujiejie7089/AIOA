@@ -1,4 +1,4 @@
-# AIOA 长期记忆（索引 + 铁律）
+# AIOS 长期记忆（索引 + 铁律）
 
 > 只放「每次都要遵守的」+ 索引。明细在 `topics/`（功能域要点 `topics/features.md`），故事 `YYYY-MM-DD.md`。
 
@@ -38,7 +38,7 @@
 15. 跑套件前先验 fixture；环境漂移不许换账号硬跑，如实记「本环境跑不起来」。
 16. JDK `HttpClient` 默认 HTTP/2，对明文 http 会发 h2c 升级 ⇒ 明文客户端必须钉 HTTP/1.1。
 17. 共享消费者对可选回调必须逐一守存在（`if(h.onXxx)`）。
-18. **「源码里有」≠「运行实例里有」**：判据看 jar 内嵌 class / `/openapi.json` / `flyway_schema_history`。就绪判据不得用 `/aioa/actuator/health`（恒 401）。
+18. **「源码里有」≠「运行实例里有」**：判据看 jar 内嵌 class / `/openapi.json` / `flyway_schema_history`。就绪判据不得用 `/aios/actuator/health`（恒 401）。
 19. 元素改成默认隐藏 ⇒ 只挑可见元素的测试会静默缩水；`el.click()` 证明不了「用户点得到」。
 20. 推 github 先探 HTTPS / SSH22 / ssh.github.com:443；`ls-remote` 通 ≠ 能 push；按 SHA 比对。
 21. **「兜底写在 `isEmpty()` 上而容器永远非空 ⇒ 永不触发」**是高频反模式；同族：**显式传空串覆盖字段默认值**（`os.getenv(K,"")` ⇒ 默认密钥永不生效 ⇒ 全站 401）。断言须落到键级。
@@ -48,7 +48,7 @@
 25. 「缓存+复用」必须带失效条件（以当初绑定的 worker/项目为条件），并固化成静态指纹。
 26. PowerShell 工具在本机可能恒返回空输出 ⇒ 别用它杀进程（用 `python -c "os.kill(pid,SIGTERM)"`）；腾端口优先换端口。
 27. ★禁用 `git commit --amend`/`rebase`/`reset --hard`/`gc`/`stash`/`git add -A`；证「测试会红」→ 改临时拷贝。
-28. **`agent/aioa_ai/` 是 AI 唯一归属地，单向 `app → aioa_ai`**；只有 `graph/` 可 import langgraph；判据 `_check_aioa_ai_boundary.py`。
+28. **`agent/aios_ai/` 是 AI 唯一归属地，单向 `app → aios_ai`**；只有 `graph/` 可 import langgraph；判据 `_check_aios_ai_boundary.py`。
 29. 改 `graph/` 时运行期对象绝不进图状态（httpx/WallClock/ToolClient）；**`clarify` 必须独立节点**（恢复时整节点重跑）。
 30. 跑 agent 侧 pytest/哨兵**必须用 `agent/.venv/Scripts/python.exe`**（托管 venv 没 langgraph ⇒ 假性全红）。
 31. 新增 `settings.X` 前先查有没有哨兵把 `settings` 换成 shim；双管：shim 补字段 + `getattr(settings,"X",默认)`。

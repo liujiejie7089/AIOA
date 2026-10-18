@@ -42,9 +42,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
 
-SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                    "org", "service", "OnboardingService.java")
-CTRL = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+CTRL = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                     "org", "controller", "OnboardingController.java")
 VIEW = os.path.join(SHELL, "views", "OnboardingView.vue")
 ROUTER = os.path.join(SHELL, "router", "index.ts")

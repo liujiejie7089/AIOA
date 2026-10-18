@@ -41,7 +41,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-SHELL = "http://127.0.0.1:8080/aioa/web"
+SHELL = "http://127.0.0.1:8080/aios/web"
 PROOF = Path(__file__).resolve().parent.parent / "logs" / "proof"
 PROOF.mkdir(parents=True, exist_ok=True)
 

@@ -24,7 +24,7 @@ import sys
 import pymysql
 
 DB = dict(host="127.0.0.1", port=3306, user="root", password="",
-          database="aioa", charset="utf8mb4")
+          database="aios", charset="utf8mb4")
 
 PASS, FAIL = [], []
 

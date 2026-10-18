@@ -54,7 +54,7 @@ function oaToggleKB(){
 /* 当前项目 id 的唯一读取入口：不在别处散读 S.projects / S.currentProject 推断。
    无项目时返回 0（与后端「projectId=0 = 只要无项目会话」口径对齐）。 */
 function currentProjectId(){ return S.currentProject ? Number(S.currentProject.id) : 0; }
-var LS_MODE = 'aioa_mode';
+var LS_MODE = 'aios_mode';
 /* 默认形态：全新访客（以及登出之后）进入新版。
    只有用户显式点过「切换布局」并留下记忆时，才尊重那份记忆 ——
    否则「默认展示新版」会被一条陈旧的 localStorage 值悄悄推翻。 */
@@ -130,7 +130,7 @@ function syncLayoutBtns(){
 /* ---------------------------------------------------------------- 2. OA 导航 */
 var META = {
   home:    {t:'工作助手',      tab:'home'},
-  collab:  {t:'AIOA 办公协同', tab:'collab'},
+  collab:  {t:'AIOS 办公协同', tab:'collab'},
   kb:      {t:'知识库',        tab:'kb'},
   modules: {t:'OA 模块',       tab:null, sub:1},
   org:     {t:'部门',          tab:'org'},
@@ -426,7 +426,7 @@ async function enterProject(p){
   var convId = S.projectConvId[id];
   if(!convId){
     try{
-      var c = await oaCreateConversation('项目 · ' + S.currentProject.name, 'aioa-client', null, id);
+      var c = await oaCreateConversation('项目 · ' + S.currentProject.name, 'aios-client', null, id);
       convId = c && (c.id || c.conversationId);
       if(convId){ S.projectConvId[id] = convId; S.projectConvWorker[id] = null; }
     }catch(e){ convId = null; }
@@ -1638,12 +1638,12 @@ async function oaEnsureConv(){
     if(existing && String(S.projectConvWorker[pid] || '') === String(wantWorker || '')){
       S.convId = existing; return existing;
     }
-    c = await oaCreateConversation(title, 'aioa-client', wantWorker, pid);
+    c = await oaCreateConversation(title, 'aios-client', wantWorker, pid);
     S.convId = c && (c.id || c.conversationId);
     if(S.convId){ S.projectConvId[pid] = S.convId; S.projectConvWorker[pid] = wantWorker; }
   } else {
     // 无项目：保持旧行为（不带 projectId，后端不追加过滤）
-    c = await API.createConversation(title, 'aioa-client', S.worker ? S.worker.id : null);
+    c = await API.createConversation(title, 'aios-client', S.worker ? S.worker.id : null);
     S.convId = c && (c.id || c.conversationId);
   }
   if(!S.convId) throw new Error('会话创建失败');
@@ -1653,7 +1653,7 @@ async function oaEnsureConv(){
 /* 建会话的统一入口（需求一）：可带 projectId；仅当 projectId>0 才写入 projectId，
    与后端「projectId 省略 = 不加过滤」口径对齐，确保「无项目」形态完全向后兼容。 */
 async function oaCreateConversation(title, appCode, workerId, projectId){
-  var body = {title: title, appCode: appCode || 'aioa-client', workerId: workerId || null};
+  var body = {title: title, appCode: appCode || 'aios-client', workerId: workerId || null};
   if(projectId && Number(projectId) > 0) body.projectId = Number(projectId);
   return API.req('/v1/conversations', {method:'POST', body: JSON.stringify(body)});
 }

@@ -21,13 +21,13 @@ defineProps<{
 .ph-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--aioa-text);
+  color: var(--aios-text);
   margin-bottom: 6px;
 }
 
 .ph-desc {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
   margin-bottom: 8px;
 }
 </style>

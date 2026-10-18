@@ -43,13 +43,13 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
-MIGRATION = os.path.join(SERVER, "aioa-boot", "src", "main", "resources", "db", "migration")
+MIGRATION = os.path.join(SERVER, "aios-boot", "src", "main", "resources", "db", "migration")
 
-MA_SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+MA_SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                       "org", "service", "MemberAccountService.java")
-TREE_SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+TREE_SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                         "org", "service", "OrgTreeService.java")
-ORG_CTRL = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+ORG_CTRL = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                         "org", "controller", "OrgAdminController.java")
 VIEW = os.path.join(SHELL, "views", "OrgStructureView.vue")
 API_ORG = os.path.join(SHELL, "api", "org.ts")
@@ -249,7 +249,7 @@ def selftest():
          lambda t: dict(t, ctrl=t["ctrl"].replace(
              '        AuthUser u = guard.requireOrgUser();\n'
              '        return ApiResponse.ok(memberAccountService.candidates(',
-             '        AuthUser u = cn.aioa.security.AuthUserContext.require();\n'
+             '        AuthUser u = cn.aios.security.AuthUserContext.require();\n'
              '        return ApiResponse.ok(memberAccountService.candidates(')),
          ["M7"]),
         ("M8 前端只 import 不调用",

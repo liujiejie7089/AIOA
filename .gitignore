@@ -37,7 +37,7 @@ venv/
 .ruff_cache/
 *.egg-info/
 # 语音识别（ASR）离线模型：几百 MB，绝不能入库；由部署时预下载到该目录
-# （或用 AIOA_ASR_MODEL / AIOA_ASR_MODEL_DIR 指到别处）
+# （或用 AIOS_ASR_MODEL / AIOS_ASR_MODEL_DIR 指到别处）
 agent/.models/
 # HITL 挂起态的本地 SQLite 落盘（本地默认用内存，此项只在显式配 sqlite:// 时产生）
 agent/.checkpoints/
@@ -68,8 +68,8 @@ deploy/*.tar.gz
 deploy/.ollama-export-tmp/
 deploy/.ollama-import-tmp/
 
-# ---- AIOA 本地临时产物 / 密钥（一律不入库）----
-.aioa_login.json
+# ---- AIOS 本地临时产物 / 密钥（一律不入库）----
+.aios_login.json
 .diag.txt
 .docx_extract/
 .workbuddy/_check.js
@@ -104,7 +104,7 @@ start-backend.bat
 .proxy.pid
 .backend.pid
 .smoke_*.py
-.aioa_check.js
+.aios_check.js
 proxy-run*.log
 
 # ---- WorkBuddy 工作区临时产物（截图/调试/文档抽取，不入库）----

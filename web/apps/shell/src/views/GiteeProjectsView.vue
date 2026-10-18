@@ -570,7 +570,7 @@ const moduleEnabled = ref(true)
  * <p>与 `moduleEnabled=false` 是**两个不同的状态**，必须分开表达：
  * 前者是「服务/网络拿不到配置」，后者是「服务明确回：没有配置」。
  * 合并的代价在 2026-09-18 实测过：后端重启期间前端报的是
- * 「后端尚未配置 aioa.gitee.*…请联系系统管理员开启配置」——把用户和运维一起
+ * 「后端尚未配置 aios.gitee.*…请联系系统管理员开启配置」——把用户和运维一起
  * 引向一个**根本不存在的配置问题**。</p>
  */
 const configError = ref('')
@@ -581,7 +581,7 @@ const cfgLoading = ref(false)
  * 托管方展示名。本页所有面向用户的文案（页头、「我的 xx 账号」、对话框标题、提示消息）
  * 都必须走它 —— 写死「Gitee」会让 gitea 接线下的页面谎报托管方。
  *
- * 回落 'Gitee' 有两个理由：与后端 `aioa.repo.provider` 的默认值一致；
+ * 回落 'Gitee' 有两个理由：与后端 `aios.repo.provider` 的默认值一致；
  * 且 config 不可达时至少不偏离历史表现（此时也无从得知真实托管方）。
  */
 const pName = computed(() => config.value?.providerLabel || 'Gitee')
@@ -625,8 +625,8 @@ const headerDesc = computed(() => {
     ? `平台管理业务（项目、部门、成员、权限），${pName.value} 作为底层代码仓库；此处只显示你有权查看的部门项目。`
     : '平台管理业务（项目、部门、成员、权限）；此处只显示你有权查看的部门项目。'
 })
-/** 该托管方的后端配置前缀（aioa.gitee / aioa.gitea），让「未启用」提示指向真正生效的配置段。 */
-const cfgKey = computed(() => config.value?.configKey || 'aioa.gitee')
+/** 该托管方的后端配置前缀（aios.gitee / aios.gitea），让「未启用」提示指向真正生效的配置段。 */
+const cfgKey = computed(() => config.value?.configKey || 'aios.gitee')
 /** 企业初始化的令牌权限要求（整句，随托管方）：回落 Gitee 的说法，与后端默认 provider 一致。 */
 const tokenHint = computed(
   () => config.value?.tokenRequirementHint || '令牌需具备 projects 权限，且账号须为目标组织成员。'

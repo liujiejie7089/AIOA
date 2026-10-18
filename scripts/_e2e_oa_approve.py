@@ -45,7 +45,7 @@ async def login(page, user, pwd, label):
     await page.click('#lgBtn')
     await page.wait_for_selector('body.auth', timeout=15000)
     chk('%s 登录成功' % label, True)
-    await page.evaluate("() => localStorage.setItem('aioa_mode','oa')")
+    await page.evaluate("() => localStorage.setItem('aios_mode','oa')")
     await page.reload(wait_until='domcontentloaded')
     await page.wait_for_timeout(3200)
     return page

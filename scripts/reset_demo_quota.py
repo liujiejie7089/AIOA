@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover
     sys.exit("缺少依赖：请 pip install pymysql")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa", charset="utf8mb4")
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios", charset="utf8mb4")
 
 DEFAULT_TARGET = 1_000_000   # 补到剩余 100 万词元
 DEFAULT_THRESHOLD = 50_000   # 剩余低于 5 万才算「需要补」

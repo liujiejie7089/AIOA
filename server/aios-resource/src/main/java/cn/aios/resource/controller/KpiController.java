@@ -1,0 +1,113 @@
+package cn.aios.resource.controller;
+
+import cn.aios.common.resp.ApiResponse;
+import cn.aios.resource.entity.BizKpi;
+import cn.aios.resource.entity.BizKpiInsight;
+import cn.aios.resource.entity.BizKpiTrend;
+import cn.aios.resource.mapper.BizKpiInsightMapper;
+import cn.aios.resource.mapper.BizKpiMapper;
+import cn.aios.resource.mapper.BizKpiTrendMapper;
+import cn.aios.resource.service.KpiInsightService;
+import cn.aios.security.AuthUser;
+import cn.aios.security.AuthUserContext;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 经营数据看板（V1.2 新增；V33 增加按需 AI 解读）：
+ *   GET  /api/v1/kpi/board?period=month|quarter
+ *     → {period, metrics[], trend[], insight, source}
+ *   POST /api/v1/kpi/board/insight?period=month|quarter
+ *     → {insight, source, model, period, generatedAt}  ← 真实调用模型生成并落库
+ *
+ * <p>数据由管理端「经营数据」页维护（/api/v1/admin/kpi/**）；
+ * 「AI 解读」由 {@link KpiInsightService} 真实调模型，不使用任何写死文案。</p>
+ */
+@RestController
+@RequestMapping("/api/v1/kpi")
+@RequiredArgsConstructor
+public class KpiController {
+
+    private final BizKpiMapper kpiMapper;
+    private final BizKpiTrendMapper trendMapper;
+    private final BizKpiInsightMapper insightMapper;
+    private final KpiInsightService kpiInsightService;
+
+    public record MetricView(Long id, String label, String value, String delta, boolean up, String compare) {
+    }
+
+    public record TrendView(Long id, String label, double value, boolean hot) {
+    }
+
+    @GetMapping("/board")
+    public ApiResponse<Map<String, Object>> board(
+            @RequestParam(name = "period", defaultValue = BizKpi.PERIOD_MONTH) String period) {
+        AuthUser user = AuthUserContext.require();
+        Long tid = user.getTenantId();
+        String p = normalizePeriod(period);
+
+        List<MetricView> metrics = kpiMapper.selectList(new LambdaQueryWrapper<BizKpi>()
+                        .eq(BizKpi::getTenantId, tid)
+                        .eq(BizKpi::getPeriod, p)
+                        .orderByAsc(BizKpi::getSortNo)
+                        .orderByAsc(BizKpi::getId))
+                .stream()
+                .map(k -> new MetricView(k.getId(), k.getLabel(), k.getValueText(), k.getDeltaText(),
+                        Integer.valueOf(1).equals(k.getUp()), k.getCompareLabel()))
+                .toList();
+
+        List<TrendView> trend = trendMapper.selectList(new LambdaQueryWrapper<BizKpiTrend>()
+                        .eq(BizKpiTrend::getTenantId, tid)
+                        .eq(BizKpiTrend::getPeriod, p)
+                        .orderByAsc(BizKpiTrend::getSortNo)
+                        .orderByAsc(BizKpiTrend::getId))
+                .stream()
+                .map(t -> new TrendView(t.getId(), t.getPointLabel(),
+                        t.getNumValue() == null ? 0d : t.getNumValue().doubleValue(),
+                        Integer.valueOf(1).equals(t.getHot())))
+                .toList();
+
+        BizKpiInsight ins = insightMapper.selectOne(new LambdaQueryWrapper<BizKpiInsight>()
+                .eq(BizKpiInsight::getTenantId, tid)
+                .eq(BizKpiInsight::getPeriod, p)
+                .last("LIMIT 1"));
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("period", p);
+        data.put("metrics", metrics);
+        data.put("trend", trend);
+        data.put("insight", ins == null ? "" : nvl(ins.getContent()));
+        data.put("source", ins == null ? "" : nvl(ins.getSourceText()));
+        return ApiResponse.ok(data);
+    }
+
+    /**
+     * 按需生成「AI 解读」：把当前期间的指标与趋势交给模型，返回生成的解读并落库。
+     *
+     * <p>为什么是 POST：它会产生真实模型调用与词元消耗，且会写库（非幂等读取）。
+     * 与看板同口径（本租户 + 期间），任何可见看板的登录用户都可用。</p>
+     */
+    @PostMapping("/board/insight")
+    public ApiResponse<Map<String, Object>> generateInsight(
+            @RequestParam(name = "period", defaultValue = BizKpi.PERIOD_MONTH) String period) {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(kpiInsightService.generate(user.getTenantId(), normalizePeriod(period)));
+    }
+
+    private static String normalizePeriod(String period) {
+        return BizKpi.PERIOD_QUARTER.equals(period) ? BizKpi.PERIOD_QUARTER : BizKpi.PERIOD_MONTH;
+    }
+
+    private static String nvl(String s) {
+        return s == null ? "" : s;
+    }
+}

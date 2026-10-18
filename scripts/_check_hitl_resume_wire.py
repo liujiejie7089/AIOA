@@ -20,12 +20,12 @@ import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-AGENT_RUN = os.path.join(REPO, "server", "aioa-chat", "src", "main", "java",
-                         "cn", "aioa", "chat", "entity", "AgentRun.java")
-RUN_SERVICE = os.path.join(REPO, "server", "aioa-chat", "src", "main", "java",
-                           "cn", "aioa", "chat", "service", "RunService.java")
-RUN_CTRL = os.path.join(REPO, "server", "aioa-chat", "src", "main", "java",
-                        "cn", "aioa", "chat", "controller", "RunController.java")
+AGENT_RUN = os.path.join(REPO, "server", "aios-chat", "src", "main", "java",
+                         "cn", "aios", "chat", "entity", "AgentRun.java")
+RUN_SERVICE = os.path.join(REPO, "server", "aios-chat", "src", "main", "java",
+                           "cn", "aios", "chat", "service", "RunService.java")
+RUN_CTRL = os.path.join(REPO, "server", "aios-chat", "src", "main", "java",
+                        "cn", "aios", "chat", "controller", "RunController.java")
 
 fails = []
 

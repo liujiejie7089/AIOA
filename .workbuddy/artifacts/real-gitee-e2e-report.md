@@ -10,7 +10,7 @@
 |---|---|---|
 | 浏览器授权跳转 → 真实 gitee.com | ✅ **已证实** | 真实浏览器最终落 `gitee.com/login`，标题「登录 - Gitee.com」 |
 | 管理端 UI 点击「绑定 Gitee 账号」→ 真站 | ✅ **已证实** | 未绑定账号真机点击，新标签落 `gitee.com`（10/10） |
-| 服务端建仓外呼 → 真实 Gitee API | ✅ **已证实打到真站** | 日志 `POST /api/v5/orgs/aioa-demo-org/repos -> HTTP 401`，Gitee 英文原文错误 |
+| 服务端建仓外呼 → 真实 Gitee API | ✅ **已证实打到真站** | 日志 `POST /api/v5/orgs/aios-demo-org/repos -> HTTP 401`，Gitee 英文原文错误 |
 | **在 Gitee 上真正建出仓库** | ❌ **未达成** | 缺真实凭据（无 OAuth 应用、无令牌）＋ 出口 IP 被 Gitee 限流 |
 | 未配置 OAuth 应用时的降级 | ✅ 通过 | `code=400` + 明确文案，未落 500 |
 | 测试后环境还原 | ✅ 通过 | 切回桩接线：`SMOKE_v48` 32/32、`e2e_v48_gitee` 116/116 |
@@ -25,7 +25,7 @@
    - `gitee_tenant_config` 仅 1 行（tenant 9）：`access_token = NULL`、`init_status = PENDING` —— 从未配置过企业令牌。
    - `gitee_account` 里的 OAuth 令牌全部是**桩签发的假身份**（`gitee_uid` 42083/42279/42366/42489/42511，用户名形如 `gitee_dev_212`），不是真 Gitee 的令牌。
 2. **没有在真站注册的 OAuth 应用**
-   - 生产默认 `aioa.gitee.client-id` 为**空**；本次测试用占位值 `aioa-e2e-client` 才能生成授权 URL。真站会在登录后拒绝该 client_id。
+   - 生产默认 `aios.gitee.client-id` 为**空**；本次测试用占位值 `aios-e2e-client` 才能生成授权 URL。真站会在登录后拒绝该 client_id。
 3. **本机出口 IP 已被 Gitee 限流**
    - `GET https://gitee.com/api/v5/version` → `403 Forbidden (Rate Limit Exceeded)`
    - 无令牌建仓 `POST https://gitee.com/api/v5/user/repos` → 同样 `403 Forbidden (Rate Limit Exceeded)`
@@ -37,12 +37,12 @@
 
 ### 3.1 授权跳转（生产接线）
 
-启动后端时**不设** `AIOA_GITEE_BASE_URL / WEB_URL / OAUTH_AUTHORIZE_URL`（即全部取默认真站），仅设 client-id/secret/redirect-uri/org：
+启动后端时**不设** `AIOS_GITEE_BASE_URL / WEB_URL / OAUTH_AUTHORIZE_URL`（即全部取默认真站），仅设 client-id/secret/redirect-uri/org：
 
 ```
 POST /api/v1/gitee/bind/authorize  → HTTP 200
 {
-  "url": "https://gitee.com/oauth/authorize?client_id=aioa-e2e-client
+  "url": "https://gitee.com/oauth/authorize?client_id=aios-e2e-client
           &redirect_uri=http%3A%2F%2F127.0.0.1%3A8080%2Fapi%2Fv1%2Fgitee%2Fbind%2Fcallback
           &response_type=code&state=…&scope=user_info+projects+pull_requests+issues+notes",
   "authorizeHost": "gitee.com",  "sandbox": false,  "warning": null
@@ -82,11 +82,11 @@ POST /api/v1/gitee/bind/authorize  → HTTP 200
 
 ### 3.4 服务端建仓：真实外呼（关键日志）
 
-以 tenant 9 已绑定账号 `znkj_admin` 建项目（dept 101，组织 `aioa-demo-org`）：
+以 tenant 9 已绑定账号 `znkj_admin` 建项目（dept 101，组织 `aios-demo-org`）：
 
 ```
 项目已创建（待建仓）id=63 repo=dept101-1789621559
-WARN GiteeClient - Gitee API POST /api/v5/orgs/aioa-demo-org/repos -> HTTP 401 code=0 msg=401 Unauthorized: Access token does not exist
+WARN GiteeClient - Gitee API POST /api/v5/orgs/aios-demo-org/repos -> HTTP 401 code=0 msg=401 Unauthorized: Access token does not exist
 WARN GiteeTaskService - Gitee 任务失败 id=404 type=CREATE_REPO err=401 Unauthorized: Access token does not exist
 ```
 
@@ -99,7 +99,7 @@ WARN GiteeTaskService - Gitee 任务失败 id=404 type=CREATE_REPO err=401 Unaut
 - **同步返回毫秒级**：建仓接口立即返回 `status=CREATING`，真实外网调用走后台任务，不阻塞请求。
 - **401 不重试**：`GiteeTaskService` 用 `e.isRetryable()` 判定，`attempts=1` 即终止 —— 认证类错误不重复重试，正确。
 - **失败可见**：上游原始错误同时落到项目 `errorMsg` 与 `gitee_task.last_error`，管理端可查，不是静默失败。
-- **未配置 OAuth 应用的降级**：纯生产默认（client-id 为空）下 `bind/authorize` 返回 HTTP 200 + `code=400`、`Gitee OAuth 应用未配置（缺 aioa.gitee.client-id / client-secret）`，未落 500。
+- **未配置 OAuth 应用的降级**：纯生产默认（client-id 为空）下 `bind/authorize` 返回 HTTP 200 + `code=400`、`Gitee OAuth 应用未配置（缺 aios.gitee.client-id / client-secret）`，未落 500。
 
 ---
 
@@ -109,7 +109,7 @@ WARN GiteeTaskService - Gitee 任务失败 id=404 type=CREATE_REPO err=401 Unaut
 回显字段只有 `enabled / orgConfigured / webhookBaseUrlConfigured / syncEnabled / purgeRepoOnDelete / roleOptions`，**唯独没有 client-id/secret 是否配置**。后果：管理端无法在点击前预判，管理员点了「绑定 Gitee 账号」才拿到 400。建议增加 `oauthConfigured`，未配置时在绑定卡片上直接给出「去配置」指引。
 
 ### P1 · 演示库残留 61 个「桩项目」，生产接线下一屏死链
-`gitee_project` 现存 61 条（本次测试行已清理），地址全部是 `http://127.0.0.1:8090/aioa-demo-org/…`（另有 id=58 一条 `https://gitee.com/…`，是桩用 `/_stub/public-base` 造出的**展示值**，并非真实仓库）。切到生产接线后，一进「项目与仓库」就是一屏打不开的链接，且**真假混排无从分辨**。建议：演示数据复位脚本里一并重置 Gitee 项目，或对「地址与当前授权域不一致」的历史项目加显式标记。
+`gitee_project` 现存 61 条（本次测试行已清理），地址全部是 `http://127.0.0.1:8090/aios-demo-org/…`（另有 id=58 一条 `https://gitee.com/…`，是桩用 `/_stub/public-base` 造出的**展示值**，并非真实仓库）。切到生产接线后，一进「项目与仓库」就是一屏打不开的链接，且**真假混排无从分辨**。建议：演示数据复位脚本里一并重置 Gitee 项目，或对「地址与当前授权域不一致」的历史项目加显式标记。
 
 ### P1 · `webhook-base-url` 生产默认为空 ⇒ Webhook 链路不可能真实联通
 本次实测 `webhookBaseUrlConfigured = false`。Webhook 是「Gitee → 平台」的反向回调，必须公网可达；配 localhost 或不配都**静默失效**（不报错）。当前演示环境等于从未真实验证过 Webhook 链路。建议在配置页显式标注「需公网可达，否则 Webhook 静默失效」。
@@ -134,11 +134,11 @@ WARN GiteeTaskService - Gitee 任务失败 id=404 type=CREATE_REPO err=401 Unaut
 
 ```bash
 # 真机（生产接线）：只设应用凭据，三个域名变量都不设 ⇒ 全取默认真站
-AIOA_GITEE_SYNC_ENABLED=false \
-AIOA_GITEE_CLIENT_ID=aioa-e2e-client AIOA_GITEE_CLIENT_SECRET=aioa-e2e-secret \
-AIOA_GITEE_REDIRECT_URI=http://127.0.0.1:8080/api/v1/gitee/bind/callback \
-AIOA_GITEE_ORG=aioa-demo-org AIOA_GITEE_BIND_RETURN_URL=http://127.0.0.1:5173/gitee/projects \
-  C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java -jar server/aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar
+AIOS_GITEE_SYNC_ENABLED=false \
+AIOS_GITEE_CLIENT_ID=aios-e2e-client AIOS_GITEE_CLIENT_SECRET=aios-e2e-secret \
+AIOS_GITEE_REDIRECT_URI=http://127.0.0.1:8080/api/v1/gitee/bind/callback \
+AIOS_GITEE_ORG=aios-demo-org AIOS_GITEE_BIND_RETURN_URL=http://127.0.0.1:5173/gitee/projects \
+  C:/Users/刘尖尖/.jdks/ms-21.0.8/bin/java -jar server/aios-boot/target/aios-boot-0.1.0-SNAPSHOT.jar
 
 # 桩接线（回归基线）：source 脚本里的 9 个变量，授权域一并指向 :8090
 cd "C:/Users/刘尖尖/WorkBuddy/aioa" && . scripts/gitee-e2e-env.sh && <启动后端>

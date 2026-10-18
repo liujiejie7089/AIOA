@@ -1,6 +1,6 @@
 # scfy 端到端只读矩阵报告（契约全部可用接口逐个真实调用）
 
-> 生成方式：`server/aioa-integration-scfy` 的 `ScfyMatrixTest`，`mvn -pl aioa-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true`。
+> 生成方式：`server/aios-integration-scfy` 的 `ScfyMatrixTest`，`mvn -pl aios-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true`。
 > 环境：`https://szbhpt.tsichuan.com/scfy`。只发 GET，无写操作。
 
 状态口径：`OK_DATA` 调用成功且返回非空 ｜ `OK_EMPTY` 调用成功但该筛选条件下无数据 ｜ `FAIL` 调用失败（含对方系统缺陷） ｜ `MISSING_REQUIRED` 矩阵参数没备齐（矩阵自身问题）

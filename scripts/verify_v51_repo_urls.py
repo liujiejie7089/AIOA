@@ -116,7 +116,7 @@ def db_project_urls(pid):
     """直连库读三列 —— 用来证明「接口值 == 库值」，排除接口层二次加工。"""
     import pymysql
     c = pymysql.connect(host="127.0.0.1", user="root", password="",
-                        database="aioa", charset="utf8mb4")
+                        database="aios", charset="utf8mb4")
     try:
         with c.cursor() as cur:
             cur.execute("SELECT gitee_html_url,gitee_ssh_url,gitee_https_url "
@@ -199,7 +199,7 @@ def ur2_public_shape(tok):
         return None
     proj, repo = p["project"], p["repository"]
     owner, rname = proj.get("giteeOwner"), proj.get("repoName")
-    chk("UR-2.2 项目建仓完成（组织 aioa-demo-org）", proj.get("status") == "ACTIVE" and owner == "aioa-demo-org",
+    chk("UR-2.2 项目建仓完成（组织 aios-demo-org）", proj.get("status") == "ACTIVE" and owner == "aios-demo-org",
         (proj.get("status"), owner))
 
     want_html = f"https://gitee.com/{owner}/{rname}"

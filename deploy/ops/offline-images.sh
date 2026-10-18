@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AIOA · 离线镜像搬运（deploy/ops/offline-images.sh）
+# AIOS · 离线镜像搬运（deploy/ops/offline-images.sh）
 # ------------------------------------------------------------------------------
 # 场景：目标机（10.0.0.3）**拉不到 Docker Hub**（`dial tcp …:443: i/o timeout`），
 #       而 compose 需要应用镜像 → 在**能上外网的机器**上导出成一个包，搬到目标机导入。
 #
 # ★ 单端口部署（docs/33）后，需要搬的镜像**只有 2 张**，而且全是本地构建：
-#       aioa-server   （同时提供 H5 / 管理端 / 接口，见 deploy/Dockerfile.server）
-#       aioa-agent
+#       aios-server   （同时提供 H5 / 管理端 / 接口，见 deploy/Dockerfile.server）
+#       aios-agent
 #   必需的就是这 2 张；此外 **可选** 1 张：nginx:1.27-alpine
 #   （只在要 /web、/user 短路径入口时才需要 → 导出时加 `--with-nginx`）。
-#   已彻底不需要：aioa-web（静态已打进 server 镜像）、
+#   已彻底不需要：aios-web（静态已打进 server 镜像）、
 #                ollama/ollama（知识库走 provider=local，零外部依赖）、minio（应用代码不读它）。
 #   ⇒ 目标机无需能上外网，也无需任何基础镜像。
 #
-# ⚠️ 关键前提：`deploy/docker-compose.yml` 顶层写了 `name: aioa`，
-#    因此两台机器构建出来的**镜像名完全一致**（aioa-server / aioa-agent），
+# ⚠️ 关键前提：`deploy/docker-compose.yml` 顶层写了 `name: aios`，
+#    因此两台机器构建出来的**镜像名完全一致**（aios-server / aios-agent），
 #    目标机 `docker load` 之后直接 `docker compose up -d server agent`（**绝不要加 `--build`**）即可命中。
 #
 # ─── 在「能上外网 + 有 Docker」的机器上 ────────────────────────────────────────
-#   git clone <仓库> && cd aioa
-#   bash deploy/ops/offline-images.sh export            # 产出 aioa-images.tar.gz
-#   scp aioa-images.tar.gz root@<目标机>:/opt/aioa/
+#   git clone <仓库> && cd aios
+#   bash deploy/ops/offline-images.sh export            # 产出 aios-images.tar.gz
+#   scp aios-images.tar.gz root@<目标机>:/opt/aios/
 #
 # ─── 在目标机 10.0.0.3 上 ────────────────────────────────────────────────────
-#   cd /opt/aioa
-#   bash deploy/ops/offline-images.sh import aioa-images.tar.gz
+#   cd /opt/aios
+#   bash deploy/ops/offline-images.sh import aios-images.tar.gz
 #   bash deploy/ops/offline-images.sh list              # 核对齐备
 #   cd deploy && docker compose up -d server agent
 #
@@ -37,11 +37,11 @@ set -uo pipefail
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="$(cd "$SELF_DIR/.." && pwd)"
 
-# 需要搬运的镜像（全部由本仓库构建；名称由 compose 的 `name: aioa` 决定）
-BUILT_IMAGES=(aioa-server aioa-agent)
+# 需要搬运的镜像（全部由本仓库构建；名称由 compose 的 `name: aios` 决定）
+BUILT_IMAGES=(aios-server aios-agent)
 # 需要构建的 compose 服务名
 BUILD_SERVICES=(server agent)
-# ★ 可选镜像：入口 nginx（deploy/nginx/aioa-entry.conf，提供 /web、/user 短路径，见手册 §0.1）。
+# ★ 可选镜像：入口 nginx（deploy/nginx/aios-entry.conf，提供 /web、/user 短路径，见手册 §0.1）。
 #   它是**外部镜像**（Docker Hub），目标机往往拉不到 ⇒ 默认不搬。
 #   要短路径入口就在导出时加 --with-nginx，把它一起打进包。
 OPTIONAL_IMAGES=(nginx:1.27-alpine)
@@ -52,9 +52,9 @@ OPTIONAL_IMAGES=(nginx:1.27-alpine)
 #   ⇒ 离线搬到目标机时必须**单独携带**，并放到目标机仓库的 agent/ 下，
 #     否则目标机 /app/.models 是空的：语音接口 503、H5 麦克风按钮置灰。
 #     （这正是手机端「模型 small 未就绪（模型目录 /app/.models）」的根因。）
-ASR_MODEL_NAME="${AIOA_ASR_MODEL:-small}"
+ASR_MODEL_NAME="${AIOS_ASR_MODEL:-small}"
 ASR_MODELS_DIR="$DEPLOY_DIR/../agent/.models"
-ASR_MODEL_ARCHIVE="aioa-asr-models.tar.gz"
+ASR_MODEL_ARCHIVE="aios-asr-models.tar.gz"
 
 # 本机是否具备 ASR 模型：✅ 就绪 / ⚠️ 目录在但缺 model.bin / ❌ 目录不存在
 asr_model_state() {
@@ -79,7 +79,7 @@ need_docker() { command -v docker >/dev/null 2>&1 || die "本机没有 docker"; 
 
 # ---------------------------------------------------------------- export
 do_export() {
-  local out="aioa-images.tar.gz" with_nginx=0 with_asr=0
+  local out="aios-images.tar.gz" with_nginx=0 with_asr=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --out) out="$2"; shift 2 ;;
@@ -97,7 +97,7 @@ do_export() {
 
   hr "1) 构建应用镜像（本机从源码构建，需外网拉 Maven / npm 依赖）"
   echo "  build ${BUILD_SERVICES[*]}"
-  # aioa-server 的构建会顺带把前端产物打进镜像（Dockerfile.server 阶段 1），
+  # aios-server 的构建会顺带把前端产物打进镜像（Dockerfile.server 阶段 1），
   # 所以这里不需要单独构建 web。
   docker compose build "${BUILD_SERVICES[@]}" || die "构建失败"
 
@@ -148,26 +148,26 @@ do_export() {
   fi
 
   hr "完成：把包拷到目标机（用隧道机 → 真实服务器那条既有通道）"
-  echo "  scp $out_abs root@10.0.0.3:/opt/aioa/"
-  [ -z "$asr_abs" ] || echo "  scp $asr_abs root@10.0.0.3:/opt/aioa/"
+  echo "  scp $out_abs root@10.0.0.3:/opt/aios/"
+  [ -z "$asr_abs" ] || echo "  scp $asr_abs root@10.0.0.3:/opt/aios/"
   echo "  目标机执行："
-  echo "    cd /opt/aioa && bash deploy/ops/offline-images.sh import $out"
+  echo "    cd /opt/aios && bash deploy/ops/offline-images.sh import $out"
   if [ -n "$asr_abs" ]; then
     echo "    # ★ 语音识别必需：放到**仓库的 agent/** 下（compose 默认挂 ../agent/.models）"
-    echo "    mkdir -p /opt/aioa/agent/.models"
-    echo "    tar -xzf /opt/aioa/$ASR_MODEL_ARCHIVE -C /opt/aioa/agent/.models"
+    echo "    mkdir -p /opt/aios/agent/.models"
+    echo "    tar -xzf /opt/aios/$ASR_MODEL_ARCHIVE -C /opt/aios/agent/.models"
   else
     echo "    # ⚠️ 未打包 ASR 模型（--with-asr-model）⇒ 目标机语音仍会 503、H5 麦克风置灰"
   fi
-  echo "    cd /opt/aioa/deploy && docker compose up -d server agent   # 不要加 --build"
+  echo "    cd /opt/aios/deploy && docker compose up -d server agent   # 不要加 --build"
   echo "  验收：curl -s http://127.0.0.1:8080/actuator/health"
-  echo "        curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/aioa/h5/"
-  echo "        curl -s http://127.0.0.1:8080/aioa/api/v1/asr/status   # 语音：期望 available=true"
+  echo "        curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/aios/h5/"
+  echo "        curl -s http://127.0.0.1:8080/aios/api/v1/asr/status   # 语音：期望 available=true"
 }
 
 # ---------------------------------------------------------------- import
 do_import() {
-  local f="${1:-}"; [ -n "$f" ] || die "用法： import <aioa-images.tar.gz>"
+  local f="${1:-}"; [ -n "$f" ] || die "用法： import <aios-images.tar.gz>"
   [ -f "$f" ] || die "找不到文件：$f"
   need_docker
   hr "导入镜像（$f）"
@@ -184,7 +184,7 @@ do_import() {
 # ---------------------------------------------------------------- list
 do_list() {
   need_docker
-  hr "镜像齐备度（单端口部署：只需 aioa-server + aioa-agent）"
+  hr "镜像齐备度（单端口部署：只需 aios-server + aios-agent）"
   local img
   for img in "${BUILT_IMAGES[@]}"; do
     if docker image inspect "$img" >/dev/null 2>&1; then printf '  ✅ %s\n' "$img"; else printf '  ❌ %s  ← 缺\n' "$img"; fi
@@ -208,24 +208,24 @@ case "${1:-}" in
   list)   shift; do_list "$@" ;;
   *) cat <<'EOF'
 用法：
-  # 在能上外网的机器上导出（必需 2 张：aioa-server + aioa-agent，均为本地构建）
+  # 在能上外网的机器上导出（必需 2 张：aios-server + aios-agent，均为本地构建）
   bash deploy/ops/offline-images.sh export [--out FILE] [--with-nginx] [--with-asr-model]
   #   --with-nginx  额外把入口 nginx（nginx:1.27-alpine）打进包，
   #                 用于 /web、/user 短路径入口（手册 §0.1）；不用短路径就别加。
   #   --with-asr-model  额外把 ASR 语音模型（agent/.models/<模型名>，约 483MB）打成
-  #                     aioa-asr-models.tar.gz。★ 目标机要做语音识别就必须带上它 ——
+  #                     aios-asr-models.tar.gz。★ 目标机要做语音识别就必须带上它 ——
   #                     模型**不在镜像里、也不在 git 里**（见脚本内 ASR_MODELS_DIR 注释）。
 
   # 在目标机上导入
-  bash deploy/ops/offline-images.sh import <aioa-images.tar.gz>
+  bash deploy/ops/offline-images.sh import <aios-images.tar.gz>
   bash deploy/ops/offline-images.sh list              # 核对镜像齐备度
 
-说明：单端口部署（docs/33）后，管理端与用户端静态已随 aioa-server 镜像一起发布，
-      aioa-web / ollama / minio 镜像都不再需要。
+说明：单端口部署（docs/33）后，管理端与用户端静态已随 aios-server 镜像一起发布，
+      aios-web / ollama / minio 镜像都不再需要。
       ★ 语音识别还额外需要一个 ASR 模型（约 483MB）：它**不在镜像里、也不在 git 里**，
         离线部署请用 --with-asr-model 一起搬，并按导出结束时打印的步骤放到目标机 agent/.models 下。
-      入口 nginx 是**可选**的：只是把 /web、/user 这两个短路径映射到 /aioa/web/、/aioa/h5/，
-      不加它也能用原生地址 http://<host>:8080/aioa/web/ 与 /aioa/h5/。
+      入口 nginx 是**可选**的：只是把 /web、/user 这两个短路径映射到 /aios/web/、/aios/h5/，
+      不加它也能用原生地址 http://<host>:8080/aios/web/ 与 /aios/h5/。
 EOF
      exit 1 ;;
 esac

@@ -5,27 +5,27 @@
 ## 这个哨兵防的具体缺陷（都真实发生过）
 
 1. **镜像丢包 ⇒ 容器起不来**（2026-10-17 实测）
-   AI 能力整体迁到 `agent/aioa_ai/` 后，`deploy/Dockerfile.agent` 仍只 `COPY app ./app`，
+   AI 能力整体迁到 `agent/aios_ai/` 后，`deploy/Dockerfile.agent` 仍只 `COPY app ./app`，
    且 `agent/pyproject.toml` 的 `packages.find.include` 仍是 `["app*"]`。
-   两者任一单独存在就足够让镜像里的 `app/main.py:14 from aioa_ai import entry` 抛
-   `ModuleNotFoundError: No module named 'aioa_ai'` → uvicorn 起不来 → 整个对话不可用。
+   两者任一单独存在就足够让镜像里的 `app/main.py:14 from aios_ai import entry` 抛
+   `ModuleNotFoundError: No module named 'aios_ai'` → uvicorn 起不来 → 整个对话不可用。
    **本地永远看不出来**：`uvicorn`/`python -m` 把 cwd（`agent/`）塞进 sys.path，
-   `aioa_ai` 恰好在 cwd 下，于是「本机好的，镜像炸的」。
+   `aios_ai` 恰好在 cwd 下，于是「本机好的，镜像炸的」。
 
 2. **HITL 开关进不了容器 ⇒ 数字人不调自定义表单**
-   `aioa_ai/config.py` 里 `agent_hitl` 默认 **False**，而 `agent/.env` 被 `.gitignore`
+   `aios_ai/config.py` 里 `agent_hitl` 默认 **False**，而 `agent/.env` 被 `.gitignore`
    和 `.dockerignore` 双重排除、进不了镜像。部署侧（compose / k8s）若不显式透传
-   `AIOA_HITL`，容器内恒为 false ⇒ `ask_user` / `request_form` 不进模型工具表
+   `AIOS_HITL`，容器内恒为 false ⇒ `ask_user` / `request_form` 不进模型工具表
    ⇒ 数字人只会写操作步骤、永远不弹表单。**本地改 .env 修不好生产。**
 
 ## 判据设计（正反都有）
 
-- L1/L2 静态：打包清单与 Dockerfile 必须覆盖 `aioa_ai`。
+- L1/L2 静态：打包清单与 Dockerfile 必须覆盖 `aios_ai`。
 - L3 动态：在临时目录里**按 Dockerfile 的拷贝结果**重建布局，真跑 `import app.main`。
-- **L4 是 L3 的负向对照**：同一套逻辑，只拷 `app/` 不拷 `aioa_ai/`，必须**失败**。
+- **L4 是 L3 的负向对照**：同一套逻辑，只拷 `app/` 不拷 `aios_ai/`，必须**失败**。
   如果 L4 也「成功」，说明 L3 其实没在检验隔离布局（比如误用了 agent/ 的 cwd），
   L3 的绿灯不算数 —— 这条防「测试自己骗自己」。
-- L5–L7 部署面：compose / k8s / .env.example 三处都得有 AIOA_HITL。
+- L5–L7 部署面：compose / k8s / .env.example 三处都得有 AIOS_HITL。
 
 用法：
     python scripts/_check_agent_image_layout.py
@@ -93,30 +93,30 @@ def l1_pyproject_include() -> None:
         bad("L1 pyproject 打包清单", "include 不是列表字面量，无法静态判定")
         return
     items = re.findall(r"[\"']([^\"']+)[\"']", inc.group(1))
-    if any(i.rstrip("*") .startswith("aioa_ai") for i in items):
-        ok("L1 pyproject 打包清单含 aioa_ai", f"include={items}")
+    if any(i.rstrip("*") .startswith("aios_ai") for i in items):
+        ok("L1 pyproject 打包清单含 aios_ai", f"include={items}")
     else:
-        bad("L1 pyproject 打包清单缺 aioa_ai",
+        bad("L1 pyproject 打包清单缺 aios_ai",
             f"include={items}；`pip install .`（非 editable，即镜像构建）产出的 wheel 里"
-            "没有 aioa_ai，容器 import 必失败")
+            "没有 aios_ai，容器 import 必失败")
 
 
 # ---------------------------------------------------------------- L2 Dockerfile
 def l2_dockerfile_copies() -> None:
     p = ROOT / "deploy" / "Dockerfile.agent"
     if not p.exists():
-        bad("L2 Dockerfile 拷贝 aioa_ai", f"找不到 {p}")
+        bad("L2 Dockerfile 拷贝 aios_ai", f"找不到 {p}")
         return
     txt = read(p)
     copies_app = re.search(r"^COPY\s+app\s+", txt, re.M) is not None
-    copies_ai = re.search(r"^COPY\s+aioa_ai\s+", txt, re.M) is not None
+    copies_ai = re.search(r"^COPY\s+aios_ai\s+", txt, re.M) is not None
     if not copies_app:
-        bad("L2 Dockerfile 拷贝 aioa_ai", "连 COPY app 都没有，Dockerfile 结构可能已变，需人工复核")
+        bad("L2 Dockerfile 拷贝 aios_ai", "连 COPY app 都没有，Dockerfile 结构可能已变，需人工复核")
     elif copies_ai:
-        ok("L2 Dockerfile 拷贝 aioa_ai", "COPY aioa_ai 存在")
+        ok("L2 Dockerfile 拷贝 aios_ai", "COPY aios_ai 存在")
     else:
-        bad("L2 Dockerfile 拷贝 aioa_ai",
-            "Dockerfile.agent 只有 COPY app，没有 COPY aioa_ai ⇒ 容器内 `from aioa_ai import entry` "
+        bad("L2 Dockerfile 拷贝 aios_ai",
+            "Dockerfile.agent 只有 COPY app，没有 COPY aios_ai ⇒ 容器内 `from aios_ai import entry` "
             "抛 ModuleNotFoundError，uvicorn 起不来")
 
 
@@ -124,8 +124,8 @@ def l2_dockerfile_copies() -> None:
 def _dockerfile_copied_pkgs() -> list[str]:
     """从 Dockerfile.agent 的 COPY 行**推导**镜像里实际有哪些顶层目录。
 
-    这一步必须推导而不是写死：写死 ["app","aioa_ai"] 的话，L3 检验的是「我猜镜像里有
-    什么」，而不是「镜像里真的有什么」—— 那正是当年漏掉 aioa_ai 的原因。
+    这一步必须推导而不是写死：写死 ["app","aios_ai"] 的话，L3 检验的是「我猜镜像里有
+    什么」，而不是「镜像里真的有什么」—— 那正是当年漏掉 aios_ai 的原因。
     只取 `COPY <目录> ./<目录>` 形态（复制包目录），跳过 pyproject.toml 这类单文件。
     """
     p = ROOT / "deploy" / "Dockerfile.agent"
@@ -145,7 +145,7 @@ def _dockerfile_copied_pkgs() -> list[str]:
 def _simulate(image_pkgs: list[str]) -> tuple[bool, str]:
     """在临时目录里按 Dockerfile 的拷贝结果重建，跑 `import app.main`。"""
     py = python_exe()
-    tmp = Path(tempfile.mkdtemp(prefix="aioa_imgsim_"))
+    tmp = Path(tempfile.mkdtemp(prefix="aios_imgsim_"))
     try:
         for pkg in image_pkgs:
             src = AGENT / pkg
@@ -191,12 +191,12 @@ def l4_negative_control() -> None:
     if okk:
         bad("L4 负向对照（只拷 app 应失败）",
             "只拷 app/ 竟然导入成功 ⇒ 说明 `import app.main` 没在隔离布局里跑"
-            "（很可能 aioa_ai 从别处被解析到了），L3 的结论不成立")
-    elif "aioa_ai" in tail:
+            "（很可能 aios_ai 从别处被解析到了），L3 的结论不成立")
+    elif "aios_ai" in tail:
         ok("L4 负向对照（只拷 app 应失败）", tail)
     else:
         bad("L4 负向对照（只拷 app 应失败）",
-            f"失败原因不是缺 aioa_ai，需人工复核：{tail}")
+            f"失败原因不是缺 aios_ai，需人工复核：{tail}")
 
 
 # ---------------------------------------------------------------- L5–L7 部署透传
@@ -212,38 +212,38 @@ def _compose_agent_block() -> str:
 def l5_compose_hitl() -> None:
     blk = _compose_agent_block()
     if not blk:
-        bad("L5 compose 透传 AIOA_HITL", "解析不到 docker-compose.yml 的 agent 服务块")
+        bad("L5 compose 透传 AIOS_HITL", "解析不到 docker-compose.yml 的 agent 服务块")
         return
-    if re.search(r"^\s+AIOA_HITL\s*:", blk, re.M):
-        ok("L5 compose 透传 AIOA_HITL")
+    if re.search(r"^\s+AIOS_HITL\s*:", blk, re.M):
+        ok("L5 compose 透传 AIOS_HITL")
     else:
-        bad("L5 compose 透传 AIOA_HITL",
-            "agent.environment 没有 AIOA_HITL ⇒ 容器内恒为 false ⇒ 数字人不弹自定义表单"
+        bad("L5 compose 透传 AIOS_HITL",
+            "agent.environment 没有 AIOS_HITL ⇒ 容器内恒为 false ⇒ 数字人不弹自定义表单"
             "（本地改 .env 无效，.env 被 .dockerignore 排除）")
 
 
 def l6_k8s_hitl() -> None:
     p = ROOT / "deploy" / "k8s" / "00-namespace-config.yaml"
     if not p.exists():
-        skip("L6 k8s ConfigMap 有 AIOA_HITL", f"找不到 {p}（可能未用 k8s 部署）")
+        skip("L6 k8s ConfigMap 有 AIOS_HITL", f"找不到 {p}（可能未用 k8s 部署）")
         return
-    if re.search(r"^\s+AIOA_HITL\s*:\s*[\"']?true[\"']?", read(p), re.M):
-        ok("L6 k8s ConfigMap 有 AIOA_HITL=true")
+    if re.search(r"^\s+AIOS_HITL\s*:\s*[\"']?true[\"']?", read(p), re.M):
+        ok("L6 k8s ConfigMap 有 AIOS_HITL=true")
     else:
-        bad("L6 k8s ConfigMap 有 AIOA_HITL=true",
-            "aioa-config 未设 AIOA_HITL=true，agent Pod 的 ask_user/request_form 不会注入")
+        bad("L6 k8s ConfigMap 有 AIOS_HITL=true",
+            "aios-config 未设 AIOS_HITL=true，agent Pod 的 ask_user/request_form 不会注入")
 
 
 def l7_env_example() -> None:
     p = AGENT / ".env.example"
     if not p.exists():
-        bad("L7 .env.example 记录 AIOA_HITL", "找不到 agent/.env.example")
+        bad("L7 .env.example 记录 AIOS_HITL", "找不到 agent/.env.example")
         return
-    if "AIOA_HITL" in read(p):
-        ok("L7 .env.example 记录 AIOA_HITL")
+    if "AIOS_HITL" in read(p):
+        ok("L7 .env.example 记录 AIOS_HITL")
     else:
-        bad("L7 .env.example 记录 AIOA_HITL",
-            "模板里没提 AIOA_HITL ⇒ 新克隆的人不知道有这个开关，会再次踩「数字人不弹表单」")
+        bad("L7 .env.example 记录 AIOS_HITL",
+            "模板里没提 AIOS_HITL ⇒ 新克隆的人不知道有这个开关，会再次踩「数字人不弹表单」")
 
 
 def _pip_source_ok(txt: str) -> tuple[bool, str]:

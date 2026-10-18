@@ -3,7 +3,7 @@
 import pymysql
 
 conn = pymysql.connect(host="localhost", port=3306, user="root", password="",
-                       database="aioa", charset="utf8mb4")
+                       database="aios", charset="utf8mb4")
 with conn.cursor() as c:
     c.execute("SELECT id, code, name, status, domain FROM sys_tenant ORDER BY id")
     print("== sys_tenant ==")

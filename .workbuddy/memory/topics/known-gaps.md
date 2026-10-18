@@ -117,11 +117,11 @@ return merged;   // ← 无去重
 
 ## B-4/B-5/B-6/B-7 处置（2026-10-18，均「判定不改」，附判据）
 
-- **B-4 `aioa_ai/intent/router.py` / B-5 `aioa_ai/tools/gateway_client.py`「死代码」**：
+- **B-4 `aios_ai/intent/router.py` / B-5 `aios_ai/tools/gateway_client.py`「死代码」**：
   文件**不是无引用**——`app/core/intent_router.py`、`app/tools/gateway_client.py` 是它们的
   兼容垫片（铁律 28 规定 `app/**` 只做再导出）。真正的事实是「`route()` / `invoke_tool()`
   运行期没有调用方」（真实工具调用走 `tools/client.py`）。**删文件会把垫片指向不存在的模块**，
-  制造新的坏状态；要删必须连垫片一起删并同步 `_check_aioa_ai_boundary.py`。判定：保留，
+  制造新的坏状态；要删必须连垫片一起删并同步 `_check_aios_ai_boundary.py`。判定：保留，
   清理属独立重构，不与安全修复混在一起（混做会让回归失败无法归因）。
 - **B-6 `task.planned` 已发无消费者**：Java 侧 `/agent/tasks` 是**通用帧转发**（`safeSend(event.name())`），
   帧没有丢；是 H5 没有「计划」这类 UI。要消费它需要产品定义（多任务计划如何呈现），

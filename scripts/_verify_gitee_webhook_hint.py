@@ -21,7 +21,7 @@ import httpx
 from playwright.sync_api import sync_playwright
 
 API = "http://127.0.0.1:8080/api/v1"
-SHELL = "http://127.0.0.1:8080/aioa/web"
+SHELL = "http://127.0.0.1:8080/aios/web"
 REPO_CFG = SHELL + "/settings/repo-config"
 TENANT = "某某市某某区大数据管理局"
 ADMIN, PWD = "dsj_admin", "User@123"

@@ -50,7 +50,7 @@ USER, PWD = "zhangsan", "User@123"
 MODEL_REF = "default"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = dict(host="127.0.0.1", port=3306, user="root", password="",
-          database="aioa", charset="utf8mb4", connect_timeout=10)
+          database="aios", charset="utf8mb4", connect_timeout=10)
 
 # 唯一地标：只有本脚本生成的文档才知道，AI 若回答里出现即证明真读到了文档。
 LANDMARK = "本文件的暗号是 紫罗兰-7391，审批上限 880 万元。"
@@ -99,7 +99,7 @@ def upload_doc(token, content_bytes, name):
 def create_conv(token, title):
     r = requests.post(API + "/conversations",
                       headers={"Authorization": "Bearer " + token},
-                      json={"title": title, "appCode": "aioa-client", "workerId": None},
+                      json={"title": title, "appCode": "aios-client", "workerId": None},
                       timeout=15)
     d = r.json()
     if d.get("code") != 0 or not (d.get("data") or {}).get("id"):

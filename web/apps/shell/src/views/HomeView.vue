@@ -4,7 +4,7 @@
       <div class="welcome-line">
         <div>
           <div class="welcome-title">你好，{{ auth.displayName }}</div>
-          <div class="welcome-sub">欢迎使用 AIOA 智能办公基座 · 企业智能办公一体化平台</div>
+          <div class="welcome-sub">欢迎使用 AIOS 智能办公基座 · 企业智能办公一体化平台</div>
         </div>
         <el-button type="primary" @click="assistant.openDrawer()">唤起 AI 助手</el-button>
       </div>
@@ -104,7 +104,7 @@ function openApp(appCode: string) {
 .welcome-sub {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .stat-row {
@@ -116,7 +116,7 @@ function openApp(appCode: string) {
 
 .stat-label {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .stat-value {
@@ -141,14 +141,14 @@ function openApp(appCode: string) {
   align-items: center;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--aioa-border);
+  border: 1px solid var(--aios-border);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .app-card:hover {
-  border-color: var(--aioa-primary);
+  border-color: var(--aios-primary);
   box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
 }
 
@@ -160,7 +160,7 @@ function openApp(appCode: string) {
   height: 36px;
   border-radius: 6px;
   background: #ecf5ff;
-  color: var(--aioa-primary);
+  color: var(--aios-primary);
   font-size: 18px;
 }
 
@@ -176,7 +176,7 @@ function openApp(appCode: string) {
 
 .app-desc {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

@@ -42,9 +42,9 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
-MIGRATION = os.path.join(SERVER, "aioa-boot", "src", "main", "resources", "db", "migration")
+MIGRATION = os.path.join(SERVER, "aios-boot", "src", "main", "resources", "db", "migration")
 
-PM = os.path.join(SERVER, "aioa-project", "src", "main", "java", "cn", "aioa", "project")
+PM = os.path.join(SERVER, "aios-project", "src", "main", "java", "cn", "aios", "project")
 PROJ_SVC = os.path.join(PM, "service", "PmProjectService.java")
 MEMBER_SVC = os.path.join(PM, "service", "PmProjectMemberService.java")
 TASK_SVC = os.path.join(PM, "service", "PmTaskService.java")
@@ -55,7 +55,7 @@ PROJ_CTRL = os.path.join(PM, "controller", "PmProjectController.java")
 TASK_CTRL = os.path.join(PM, "controller", "PmTaskController.java")
 REPO_MAPPER = os.path.join(PM, "mapper", "PmRepoBindMapper.java")
 
-CATALOG = os.path.join(SERVER, "aioa-security", "src", "main", "java", "cn", "aioa",
+CATALOG = os.path.join(SERVER, "aios-security", "src", "main", "java", "cn", "aios",
                        "security", "PermissionCatalog.java")
 PERMS_TS = os.path.join(SHELL, "constants", "permissions.ts")
 ROUTER = os.path.join(SHELL, "router", "index.ts")
@@ -140,7 +140,7 @@ def checks(t):
     ))
 
     # ---- P5 命名不与异步队列混淆
-    gitee_task_refs = [p for p, s in java.items() if "GiteeTask" in s and os.sep + "aioa-project" + os.sep in p]
+    gitee_task_refs = [p for p, s in java.items() if "GiteeTask" in s and os.sep + "aios-project" + os.sep in p]
     out.append((
         "P5 业务任务表为 pm_task；PM 模块不得引用 GiteeTask / GiteeTaskService",
         '@TableName("pm_task")' in t["task_entity"] and not gitee_task_refs,
@@ -305,7 +305,7 @@ def selftest():
         ("P5 PM 模块引入 GiteeTask",
          lambda t: dict(t, java_all=dict(t["java_all"], **{
              os.path.join(PM, "synthetic", "X.java"):
-                 "import cn.aioa.gitee.entity.GiteeTask;\nclass X { GiteeTask t; }"})),
+                 "import cn.aios.gitee.entity.GiteeTask;\nclass X { GiteeTask t; }"})),
          ["P5"]),
         ("P6 前端漏登记权限常量",
          lambda t: dict(t, perms_ts=t["perms_ts"].replace("PM_VIEW_ROLES", "PMVIEWROLES")),

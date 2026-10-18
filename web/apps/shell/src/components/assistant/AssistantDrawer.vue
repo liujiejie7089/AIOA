@@ -118,7 +118,7 @@ function onStop() {
 }
 
 .ad-input {
-  border-top: 1px solid var(--aioa-border);
+  border-top: 1px solid var(--aios-border);
   padding: 8px 12px 10px;
 }
 

@@ -542,7 +542,7 @@ async function submitMember() {
         ElMessageBox.alert(
           `登录账号：${memberForm.value.username}\n初始口令：${created.initialPassword}\n\n请立即留档：服务端只保存口令哈希，关闭后无法再回读明文。`,
           '员工已新增并开通账号',
-          { confirmButtonText: '已记下', type: 'success', customClass: 'aioa-pwd-alert' }
+          { confirmButtonText: '已记下', type: 'success', customClass: 'aios-pwd-alert' }
         ).catch(() => {})
       } else {
         ElMessage.success(`员工已新增；登录账号 ${memberForm.value.username} 此前已存在，口令未变更`)
@@ -615,7 +615,7 @@ async function resetPwd(row: OrgMember) {
     ElMessageBox.alert(
       `登录账号：${row.username}\n新口令：${res.initialPassword}\n\n请立即留档：服务端只保存口令哈希，关闭后无法再回读明文。`,
       '口令已重置',
-      { confirmButtonText: '已记下', type: 'success', customClass: 'aioa-pwd-alert' }
+      { confirmButtonText: '已记下', type: 'success', customClass: 'aios-pwd-alert' }
     ).catch(() => {})
   } catch (e: unknown) {
     ElMessage.error(apiMsg(e, '重置失败'))
@@ -722,14 +722,14 @@ async function submitImport() {
       ElMessageBox.alert(
         `本次新建账号：${r.newAccounts ?? 0} 个\n统一初始口令：${r.initialPassword}\n\n请立即留档：服务端只保存口令哈希，关闭后无法再回读明文。\n（已存在的账号口令未变更，不在此列。）`,
         '导入完成 · 初始口令',
-        { confirmButtonText: '已记下', type: 'success', customClass: 'aioa-pwd-alert' }
+        { confirmButtonText: '已记下', type: 'success', customClass: 'aios-pwd-alert' }
       ).catch(() => {})
     }
     if (failed.length) {
       ElMessageBox.alert(
         failed.slice(0, 20).map((f) => JSON.stringify(f)).join('\n'),
         '失败明细（最多 20 条）',
-        { confirmButtonText: '关闭', customClass: 'aioa-pwd-alert' }
+        { confirmButtonText: '关闭', customClass: 'aios-pwd-alert' }
       )
     }
     importDlg.value = false
@@ -781,6 +781,6 @@ async function submitBalance() {
 
 <!-- 非 scoped：MessageBox 被 teleport 到 body，scoped 选择器够不着。 -->
 <style>
-.aioa-pwd-alert .el-message-box__message { white-space: pre-line; }
-.aioa-pwd-alert .el-message-box__message p { line-height: 1.7; }
+.aios-pwd-alert .el-message-box__message { white-space: pre-line; }
+.aios-pwd-alert .el-message-box__message p { line-height: 1.7; }
 </style>

@@ -7,11 +7,11 @@
 **模式**：本地 `.venv` 是**手工** `pip install xxx` 出来的，而镜像走的是 `pip install .`
 —— 只装 `pyproject.toml` 里声明的那些。于是「本地全绿、镜像起不来」。
 
-1. **2026-10-17**：`packages.find.include` 只有 `["app*"]` ⇒ 打出的 wheel 里没有 `aioa_ai`，
-   容器 `from aioa_ai import entry` 直接 ModuleNotFoundError。
+1. **2026-10-17**：`packages.find.include` 只有 `["app*"]` ⇒ 打出的 wheel 里没有 `aios_ai`，
+   容器 `from aios_ai import entry` 直接 ModuleNotFoundError。
    （由 `_check_agent_image_layout.py` 的 L1/L2/L3 钉住）
-2. **2026-10-18**：`dependencies` 里**没有 `langgraph`**。`aioa_ai/graph/*` 全靠它，
-   而它只存在于本地 venv 里 ⇒ 生产 `aioa-agent` 无限
+2. **2026-10-18**：`dependencies` 里**没有 `langgraph`**。`aios_ai/graph/*` 全靠它，
+   而它只存在于本地 venv 里 ⇒ 生产 `aios-agent` 无限
    `Restarting`，日志 `ModuleNotFoundError: No module named 'langgraph'` +
    `ERROR: Application startup failed. Exiting.`（用户看到的是「本次未返回内容」）。
 
@@ -21,7 +21,7 @@
 
 ## 判据
 
-- D1：`agent/{app,aioa_ai}/**/*.py` 里所有**顶层**第三方 import，其发行包名必须出现在
+- D1：`agent/{app,aios_ai}/**/*.py` 里所有**顶层**第三方 import，其发行包名必须出现在
       `pyproject.toml` 的 `[project].dependencies` 中（或属于显式登记的传递依赖）。
 - D2：**负向对照**：喂一个凭空造出的模块名给同一判定函数，必须被判为「缺声明」。
       否则分不清「真的都声明了」与「判据根本没在工作」。
@@ -46,8 +46,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AGENT = ROOT / "agent"
 PYPROJECT = AGENT / "pyproject.toml"
-SCAN_DIRS = [AGENT / "app", AGENT / "aioa_ai"]
-LOCAL_PKGS = {"app", "aioa_ai", "tests"}
+SCAN_DIRS = [AGENT / "app", AGENT / "aios_ai"]
+LOCAL_PKGS = {"app", "aios_ai", "tests"}
 
 # import 名 ≠ 发行包名的少数情况。**只登记确实需要的**，别为了转绿乱加。
 IMPORT_TO_DIST = {
@@ -154,7 +154,7 @@ def main() -> int:
         results.append(("FAIL", "D3 能解析出依赖清单", "解析结果为空 —— 判据会退化成恒真"))
 
     imports = scan_imports()
-    results.append(("OK", "扫描到第三方 import", f"{len(imports)} 个模块，来自 app/ 与 aioa_ai/"))
+    results.append(("OK", "扫描到第三方 import", f"{len(imports)} 个模块，来自 app/ 与 aios_ai/"))
 
     # D1：逐条比对
     missing = missing_of(imports, dists)

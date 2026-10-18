@@ -3,7 +3,7 @@ import { http, unwrap } from './index'
 /**
  * 机构参数配置（需求二 / docs/44 §2.4）。
  *
- * <p>本文件是「后端 {@code aioa-admin} 模块 `/admin/org-configs` 契约」在前端的唯一映射入口，
+ * <p>本文件是「后端 {@code aios-admin} 模块 `/admin/org-configs` 契约」在前端的唯一映射入口，
  * 字段名与后端返回体**逐字对应**，不在视图里另起一套字面量。</p>
  *
  * <p>三层同源：菜单（MainLayout.showOrgConfigMenu）→ 路由 meta.allowRoles（ORG_CONFIG_ROLES）

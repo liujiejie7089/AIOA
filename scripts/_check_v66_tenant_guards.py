@@ -39,27 +39,27 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
-MIGRATION = os.path.join(SERVER, "aioa-boot", "src", "main", "resources", "db", "migration")
+MIGRATION = os.path.join(SERVER, "aios-boot", "src", "main", "resources", "db", "migration")
 
 # ---- 已移除产物（R1：这两个文件必须不存在）
-SUB_SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+SUB_SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                        "org", "service", "SubTenantService.java")
-SUB_CTRL = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+SUB_CTRL = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                         "org", "controller", "SubTenantController.java")
 # ---- 已移除的前端产物（R6）
 SUB_API = os.path.join(SHELL, "api", "subTenant.ts")
 SUB_VIEW = os.path.join(SHELL, "views", "SubTenantView.vue")
 
 # ---- 保留能力的实现点
-QUOTA_CTRL = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+QUOTA_CTRL = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                           "org", "controller", "PlatformTenantQuotaController.java")
-TENANT_CTRL = os.path.join(SERVER, "aioa-admin", "src", "main", "java", "cn", "aioa",
+TENANT_CTRL = os.path.join(SERVER, "aios-admin", "src", "main", "java", "cn", "aios",
                            "admin", "controller", "TenantController.java")
-TENANT_DOMAIN = os.path.join(SERVER, "aioa-common", "src", "main", "java", "cn", "aioa",
+TENANT_DOMAIN = os.path.join(SERVER, "aios-common", "src", "main", "java", "cn", "aios",
                              "common", "util", "TenantDomain.java")
-SYS_TENANT = os.path.join(SERVER, "aioa-admin", "src", "main", "java", "cn", "aioa",
+SYS_TENANT = os.path.join(SERVER, "aios-admin", "src", "main", "java", "cn", "aios",
                           "admin", "entity", "SysTenant.java")
-ORG_STAT_MAPPER = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+ORG_STAT_MAPPER = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                                "org", "mapper", "OrgStatMapper.java")
 
 PERMISSIONS = os.path.join(SHELL, "constants", "permissions.ts")
@@ -163,8 +163,8 @@ def checks(t):
         owners == ["TenantDomain.java"] and not foreign
         and "public static String normalize(String raw)" in domain_util
         and "public static boolean isValid(String normalized)" in domain_util
-        and "cn.aioa.common.util.TenantDomain.normalize(" in tenant_ctrl
-        and "cn.aioa.common.util.TenantDomain.isValid(" in tenant_ctrl,
+        and "cn.aios.common.util.TenantDomain.normalize(" in tenant_ctrl
+        and "cn.aios.common.util.TenantDomain.isValid(" in tenant_ctrl,
         "域名判定出现了第二份实现：%s" % (foreign or "（或平台侧绕开了 TenantDomain）"),
     ))
 

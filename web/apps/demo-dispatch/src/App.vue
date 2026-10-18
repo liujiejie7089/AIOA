@@ -32,7 +32,7 @@
     </table>
 
     <p class="legacy-note">
-      本系统为遗留应用，未接入 @aioa/sdk，因此不会向工作台上报页面上下文（AI 助手上下文栏将显示「未在子应用中」）。
+      本系统为遗留应用，未接入 @aios/sdk，因此不会向工作台上报页面上下文（AI 助手上下文栏将显示「未在子应用中」）。
     </p>
 
     <div v-if="dialogVisible" class="modal-mask" @click.self="closeDialog">

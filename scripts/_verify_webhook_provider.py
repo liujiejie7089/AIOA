@@ -29,7 +29,7 @@ import httpx
 import pymysql
 
 BASE = "http://127.0.0.1:8080"
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa", charset="utf8mb4")
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios", charset="utf8mb4")
 
 # trust_env=False：本机存在代理环境变量，交给 httpx 读环境会拿到代理的错误页
 client = httpx.Client(trust_env=False, timeout=20.0)

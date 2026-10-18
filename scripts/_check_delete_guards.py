@@ -44,9 +44,9 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
-MIGRATION = os.path.join(SERVER, "aioa-boot", "src", "main", "resources", "db", "migration")
-ORG = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org")
-ADMIN = os.path.join(SERVER, "aioa-admin", "src", "main", "java", "cn", "aioa", "admin")
+MIGRATION = os.path.join(SERVER, "aios-boot", "src", "main", "resources", "db", "migration")
+ORG = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org")
+ADMIN = os.path.join(SERVER, "aios-admin", "src", "main", "java", "cn", "aios", "admin")
 
 ORG_GUARD = os.path.join(ORG, "support", "OrgGuard.java")
 

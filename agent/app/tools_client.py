@@ -1,4 +1,4 @@
-"""兼容垫片（deprecation shim）：实现已搬迁到 ``aioa_ai.tools.client``。
+"""兼容垫片（deprecation shim）：实现已搬迁到 ``aios_ai.tools.client``。
 
 本模块不再包含实现，仅做再导出；历史 import 路径
 ``from app.tools_client import ToolClient`` 继续可用。
@@ -8,5 +8,5 @@
 """
 from __future__ import annotations
 
-from aioa_ai.tools.client import *  # noqa: F401,F403
-from aioa_ai.tools.client import MAX_TOOL_ROUNDS, ToolClient, ToolOutcome  # noqa: F401
+from aios_ai.tools.client import *  # noqa: F401,F403
+from aios_ai.tools.client import MAX_TOOL_ROUNDS, ToolClient, ToolOutcome  # noqa: F401

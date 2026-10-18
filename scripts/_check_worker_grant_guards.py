@@ -46,11 +46,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
 
-ENTITY = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+ENTITY = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                       "org", "entity", "ResourceGrant.java")
-SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                    "org", "service", "ResourceGrantService.java")
-MAPPER = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+MAPPER = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                       "org", "mapper", "OrgStatMapper.java")
 VIEW = os.path.join(SHELL, "views", "ResourceGrantView.vue")
 API_ORG = os.path.join(SHELL, "api", "org.ts")

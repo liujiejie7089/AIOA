@@ -1,8 +1,8 @@
 """专家人设（V88 链路补齐）注入系统提示的单测。
 
-覆盖 aioa_ai.prompt.builder.build_messages 对 RunRequest.expert 的消费：
-  E1 有 expert+prompt → 系统提示含「你是 AIOA 智能办公平台上的「公文写作专家」专家 AI」与提示词正文，
-     且不含通用助手那句「你是 AIOA 智能办公基座（AI Office Agent）的对话助手」；
+覆盖 aios_ai.prompt.builder.build_messages 对 RunRequest.expert 的消费：
+  E1 有 expert+prompt → 系统提示含「你是 AIOS 智能办公平台上的「公文写作专家」专家 AI」与提示词正文，
+     且不含通用助手那句「你是 AIOS 智能办公基座（AI Office Agent）的对话助手」；
   E2 无 expert → 仍含通用助手那句（逐字回归）；
   E3 scope + expert 同时给 → 出现「你的职责边界」，且不含专家那句（worker 优先）；
   E4 expert 有 name 无 prompt → 仍是通用助手 + 追加「本次会话用户选择了「X」专家」；
@@ -15,14 +15,14 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from aioa_ai.contracts import RunRequest, UserContext
-from aioa_ai.graph.nodes import filter_expert_tools
-from aioa_ai.llm import Provider
-from aioa_ai.prompt import builder
-from aioa_ai.tools.client import ToolClient
+from aios_ai.contracts import RunRequest, UserContext
+from aios_ai.graph.nodes import filter_expert_tools
+from aios_ai.llm import Provider
+from aios_ai.prompt import builder
+from aios_ai.tools.client import ToolClient
 
 FAKE = Provider(key="fake", driver="openai_compatible", base_url="http://fake.invalid",
-                model="fake-1", api_key_env="AIOA_TEST_FAKE_KEY")
+                model="fake-1", api_key_env="AIOS_TEST_FAKE_KEY")
 
 
 def _make_req(expert=None, scope=None) -> RunRequest:
@@ -42,7 +42,7 @@ def _system(messages: list[dict]) -> str:
     return messages[0]["content"]
 
 
-GENERAL_ASSISTANT = "你是 AIOA 智能办公基座（AI Office Agent）的对话助手"
+GENERAL_ASSISTANT = "你是 AIOS 智能办公基座（AI Office Agent）的对话助手"
 
 
 def test_expert_with_prompt_replaces_general():
@@ -53,7 +53,7 @@ def test_expert_with_prompt_replaces_general():
         "system_prompt": "请按公文规范撰写，结构清晰、用语正式。",
     })
     sys_text = _system(builder.build_messages(req))
-    assert "你是 AIOA 智能办公平台上的「公文写作专家」专家 AI" in sys_text, sys_text
+    assert "你是 AIOS 智能办公平台上的「公文写作专家」专家 AI" in sys_text, sys_text
     assert "请按公文规范撰写，结构清晰、用语正式。" in sys_text, sys_text
     assert GENERAL_ASSISTANT not in sys_text, "专家会话不应出现通用助手身份句"
 
@@ -74,7 +74,7 @@ def test_scope_beats_expert_worker_priority():
     )
     sys_text = _system(builder.build_messages(req))
     assert "你的职责边界" in sys_text, "scope 应优先，出现职责边界"
-    assert "你是 AIOA 智能办公平台上的「公文写作专家」专家 AI" not in sys_text, \
+    assert "你是 AIOS 智能办公平台上的「公文写作专家」专家 AI" not in sys_text, \
         "worker 优先，不应出现专家身份句"
 
 
@@ -144,7 +144,7 @@ def _req(text: str = "你好", **kw) -> RunRequest:
 
 
 async def _collect(req: RunRequest) -> list[tuple]:
-    from aioa_ai import entry
+    from aios_ai import entry
     out: list[tuple] = []
     async for event in entry.run(req):
         out.append((event.seq, event.type, event.data))
@@ -153,15 +153,15 @@ async def _collect(req: RunRequest) -> list[tuple]:
 
 def _stub(stream_stub, *extra):
     return [
-        patch("aioa_ai.entry.resolve", return_value=FAKE),
-        patch("aioa_ai.graph.nodes.gateway.resolve", return_value=FAKE),
-        patch("aioa_ai.graph.nodes._post_stream", stream_stub),
+        patch("aios_ai.entry.resolve", return_value=FAKE),
+        patch("aios_ai.graph.nodes.gateway.resolve", return_value=FAKE),
+        patch("aios_ai.graph.nodes._post_stream", stream_stub),
     ] + list(extra)
 
 
 def test_expert_session_gate_wired_in_graph(monkeypatch):
     """接线证明：专家会话（expert 无 scope）实际下发给模型的工具里不含 request_form，且仍含 ask_user。"""
-    monkeypatch.setenv("AIOA_TEST_FAKE_KEY", "k")
+    monkeypatch.setenv("AIOS_TEST_FAKE_KEY", "k")
     seen: list[list[str]] = []
 
     async def spy_stream(http, provider, api_key, messages, tools, temperature=0.3):

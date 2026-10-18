@@ -44,7 +44,7 @@ def rnd_company():
 
 def seed(tenant, scale):
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", charset="utf8mb4")
+                           database="aios", charset="utf8mb4")
     cur = conn.cursor()
     n_customer = int(2000 * scale)
     n_product = int(300 * scale)

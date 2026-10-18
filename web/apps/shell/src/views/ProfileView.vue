@@ -115,7 +115,7 @@ onMounted(async () => {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: var(--aioa-primary);
+  background: var(--aios-primary);
   color: #fff;
   font-size: 22px;
   font-weight: 600;
@@ -129,7 +129,7 @@ onMounted(async () => {
 .sub {
   margin-top: 2px;
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .quota-line {
@@ -139,7 +139,7 @@ onMounted(async () => {
 .quota-text {
   margin-top: 8px;
   font-size: 13px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .danger {
@@ -147,11 +147,11 @@ onMounted(async () => {
 }
 
 .muted {
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .loading {
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
   font-size: 13px;
 }
 </style>

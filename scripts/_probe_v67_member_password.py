@@ -68,7 +68,7 @@ def soft_delete_accounts(usernames):
     if not usernames:
         return 0
     c = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                        database="aioa", charset="utf8mb4")
+                        database="aios", charset="utf8mb4")
     try:
         with c.cursor() as cur:
             ph = ",".join(["%s"] * len(usernames))
@@ -87,7 +87,7 @@ PROBE_PREFIXES = ("zz_pw_", "zz_v67a_", "zz_v67b_", "zz_probe_", "zz_imp_dbg_", 
 def _purge(where_sql, params):
     """软删「按给定条件命中的账号」对应的成员行、账号绑定行、账号行。返回三元组行数。"""
     c = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                        database="aioa", charset="utf8mb4")
+                        database="aios", charset="utf8mb4")
     try:
         with c.cursor() as cur:
             cur.execute("SELECT id FROM sys_user WHERE %s" % where_sql, params)
@@ -258,7 +258,7 @@ def main():
     left_mem = 0
     try:
         c = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                            database="aioa", charset="utf8mb4")
+                            database="aios", charset="utf8mb4")
         with c.cursor() as cur:
             ph = ",".join(["%s"] * len(created_usernames))
             cur.execute("SELECT COUNT(*) FROM sys_user WHERE deleted_at IS NULL AND username IN (%s)"

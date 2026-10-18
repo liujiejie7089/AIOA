@@ -5,63 +5,63 @@
 # ConfigMap（非敏感）与 Secret（敏感）两处。
 #
 # 注意：Secret 这里是**样例**，真实值请用
-#   kubectl create secret generic aioa-secrets --from-literal=... -n aioa
+#   kubectl create secret generic aios-secrets --from-literal=... -n aios
 # 或在集群里接入外部密钥管理（Vault / 云厂商 KMS），不要把明文提交进仓库。
 # =============================================================================
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: aioa
+  name: aios
   labels:
-    app.kubernetes.io/part-of: aioa
+    app.kubernetes.io/part-of: aios
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: aioa-config
-  namespace: aioa
+  name: aios-config
+  namespace: aios
 data:
   # ---- 数据库 / Redis（集群外或同集群 StatefulSet 均可，改这里即可）----
   MYSQL_HOST: "192.168.31.129"
   MYSQL_PORT: "3306"
-  MYSQL_DB: "aioa"
+  MYSQL_DB: "aios"
   MYSQL_USER: "root"
   REDIS_HOST: "192.168.31.129"
   REDIS_PORT: "6379"
 
   # ---- 服务间地址（集群内用 Service 名）----
-  AIOA_AGENT_BASE_URL: "http://aioa-agent:8000"
-  SERVER_BASE_URL: "http://aioa-server:8080"
+  AIOS_AGENT_BASE_URL: "http://aios-agent:8000"
+  SERVER_BASE_URL: "http://aios-server:8080"
 
   # ---- 对象存储 ----
-  MINIO_ENDPOINT: "http://aioa-minio:9000"
-  MINIO_ROOT_USER: "aioa"
+  MINIO_ENDPOINT: "http://aios-minio:9000"
+  MINIO_ROOT_USER: "aios"
 
   # ---- 知识库存储后端 ----
   # mysql（默认，零新增依赖）/ milvus（需同时 apply 40-milvus.yaml）
   # ⚠️ 改成 milvus 时 **Milvus 必须在线**，否则 server 启动失败（决策 D6 fail-fast，不静默降级）
-  AIOA_KB_STORE: "mysql"
+  AIOS_KB_STORE: "mysql"
   # ---- 知识库嵌入（换成语义向量才谈得上检索质量；local 是 256 维 n-gram 哈希，无语义）----
-  AIOA_KB_EMBEDDING_PROVIDER: "local"
-  AIOA_KB_EMBEDDING_FORMAT: "ollama"
-  AIOA_KB_EMBEDDING_URL: ""                # 例 http://ollama:11434/api/embeddings
-  AIOA_KB_EMBEDDING_MODEL: "bge-small-zh-v1.5"
-  AIOA_KB_EMBEDDING_DIMS: "512"            # 必须与 AIOA_MILVUS_DIMS 一致
-  AIOA_KB_EMBEDDING_TIMEOUT_MS: "15000"
-  AIOA_KB_REEMBED_ON_START: "false"        # 换 provider/模型后跑一次 true，补齐切片向量
+  AIOS_KB_EMBEDDING_PROVIDER: "local"
+  AIOS_KB_EMBEDDING_FORMAT: "ollama"
+  AIOS_KB_EMBEDDING_URL: ""                # 例 http://ollama:11434/api/embeddings
+  AIOS_KB_EMBEDDING_MODEL: "bge-small-zh-v1.5"
+  AIOS_KB_EMBEDDING_DIMS: "512"            # 必须与 AIOS_MILVUS_DIMS 一致
+  AIOS_KB_EMBEDDING_TIMEOUT_MS: "15000"
+  AIOS_KB_REEMBED_ON_START: "false"        # 换 provider/模型后跑一次 true，补齐切片向量
   # ---- Milvus（服务名与 40-milvus.yaml 一致）----
-  AIOA_MILVUS_URI: "http://milvus:19530"
-  AIOA_MILVUS_DATABASE: "default"
-  AIOA_MILVUS_COLLECTION: "kb_chunk_v1"    # 维度创建后不可改；换嵌入模型必须换集合名再回填
-  AIOA_MILVUS_DIMS: "512"
-  AIOA_MILVUS_METRIC: "COSINE"
-  AIOA_MILVUS_INDEX: "HNSW"
-  AIOA_MILVUS_HNSW_M: "16"
-  AIOA_MILVUS_HNSW_EF: "200"
-  AIOA_MILVUS_ENABLE_BM25: "true"          # 稀疏向量 + 原生混合检索
-  AIOA_MILVUS_BACKFILL: "false"            # 一次性 true：从 MySQL kb_chunk 重建索引
-  AIOA_MILVUS_TIMEOUT_MS: "10000"
-  AIOA_MILVUS_BATCH: "200"
+  AIOS_MILVUS_URI: "http://milvus:19530"
+  AIOS_MILVUS_DATABASE: "default"
+  AIOS_MILVUS_COLLECTION: "kb_chunk_v1"    # 维度创建后不可改；换嵌入模型必须换集合名再回填
+  AIOS_MILVUS_DIMS: "512"
+  AIOS_MILVUS_METRIC: "COSINE"
+  AIOS_MILVUS_INDEX: "HNSW"
+  AIOS_MILVUS_HNSW_M: "16"
+  AIOS_MILVUS_HNSW_EF: "200"
+  AIOS_MILVUS_ENABLE_BM25: "true"          # 稀疏向量 + 原生混合检索
+  AIOS_MILVUS_BACKFILL: "false"            # 一次性 true：从 MySQL kb_chunk 重建索引
+  AIOS_MILVUS_TIMEOUT_MS: "10000"
+  AIOS_MILVUS_BATCH: "200"
 
   # ---- 模型 ----
   MODEL_DEFAULT: "echo"
@@ -70,31 +70,31 @@ data:
   # ⚠️ 必须显式为 true：agent 的 config.py 默认 False，而 .env 被 .dockerignore 排除进不了镜像。
   #   为 false 时 ask_user / request_form **不会进模型工具表**，数字人只会输出操作步骤、
   #   永远不弹自定义表单（这正是「数字人不调用自定义表单」的根因）。
-  #   验：aioa-agent 日志出现 `tools=9`（为 7 即未生效）、`HITL enabled: checkpoint kind=...`。
-  AIOA_HITL: "true"
+  #   验：aios-agent 日志出现 `tools=9`（为 7 即未生效）、`HITL enabled: checkpoint kind=...`。
+  AIOS_HITL: "true"
   # HITL 挂起态存储。留空 = 进程内存：Pod 重启/漂移到别的副本后取不到挂起状态，
   # 用户回填表单或澄清会「无法恢复」。生产建议 Redis Stack（本集群已有 REDIS_HOST）。
   # 例：redis://192.168.31.129:6379/0
-  AIOA_CHECKPOINT_URL: ""
+  AIOS_CHECKPOINT_URL: ""
 
   # ---- 语音识别（ASR）----
   # 模型**不进镜像**（约 483MB，被 .gitignore 忽略）⇒ 必须由节点 / 共享存储提供，
   # 见 20-agent.yaml 的 asr-models 卷（挂到容器 /app/.models，其下须有 <模型名>/，默认 small/）。
   # 缺了会怎样：语音接口 503（ASR_UNAVAILABLE），H5 麦克风置灰并提示「语音识别服务暂不可用」。
-  # 验：curl -s http://aioa-agent:8000/internal/v1/asr/status   → "available": true
-  AIOA_ASR_MODEL_DIR: "/app/.models"
-  AIOA_ASR_MODEL: "small"
-  AIOA_ASR_ALLOW_DOWNLOAD: "0"             # 集群无外网：保持 0（离线加载，不联网下载）
+  # 验：curl -s http://aios-agent:8000/internal/v1/asr/status   → "available": true
+  AIOS_ASR_MODEL_DIR: "/app/.models"
+  AIOS_ASR_MODEL: "small"
+  AIOS_ASR_ALLOW_DOWNLOAD: "0"             # 集群无外网：保持 0（离线加载，不联网下载）
 
   # ---- 代码托管方 ----
-  AIOA_REPO_PROVIDER: "gitee"
-  AIOA_GITEE_ENABLED: "true"
-  AIOA_GITEE_BASE_URL: "https://gitee.com/api/v5"
-  AIOA_GITEE_WEB_URL: "https://gitee.com"
-  AIOA_GITEE_OAUTH_AUTHORIZE_URL: "https://gitee.com"
-  AIOA_GITEE_REDIRECT_URI: "https://aioa.example.com/api/v1/gitee/bind/callback"
-  AIOA_GITEE_SCOPE: "user_info projects hook pull_requests issues notes"
-  AIOA_GITEA_ENABLED: "false"
+  AIOS_REPO_PROVIDER: "gitee"
+  AIOS_GITEE_ENABLED: "true"
+  AIOS_GITEE_BASE_URL: "https://gitee.com/api/v5"
+  AIOS_GITEE_WEB_URL: "https://gitee.com"
+  AIOS_GITEE_OAUTH_AUTHORIZE_URL: "https://gitee.com"
+  AIOS_GITEE_REDIRECT_URI: "https://aios.example.com/api/v1/gitee/bind/callback"
+  AIOS_GITEE_SCOPE: "user_info projects hook pull_requests issues notes"
+  AIOS_GITEA_ENABLED: "false"
 
   TZ: "Asia/Shanghai"
 ---
@@ -102,8 +102,8 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: aioa-secrets
-  namespace: aioa
+  name: aios-secrets
+  namespace: aios
 type: Opaque
 stringData:
   MYSQL_PASSWORD: "change-me"
@@ -112,21 +112,21 @@ stringData:
   MINIO_ROOT_PASSWORD: "change-me"
   DEEPSEEK_API_KEY: ""
   DASHSCOPE_API_KEY: ""
-  AIOA_GITEE_CLIENT_ID: ""
-  AIOA_GITEE_CLIENT_SECRET: ""
-  AIOA_GITEE_WEBHOOK_SECRET: ""
-  AIOA_GITEE_TOKEN_ENC_KEY: "change-me"
+  AIOS_GITEE_CLIENT_ID: ""
+  AIOS_GITEE_CLIENT_SECRET: ""
+  AIOS_GITEE_WEBHOOK_SECRET: ""
+  AIOS_GITEE_TOKEN_ENC_KEY: "change-me"
   # 走 http 嵌入时可选（vLLM 网关常需）；留空即不发送 Authorization 头
-  AIOA_KB_EMBEDDING_API_KEY: ""
+  AIOS_KB_EMBEDDING_API_KEY: ""
   # Milvus 单机默认不鉴权，留空即可；接入鉴权的托管实例时填 <user>:<password>
-  AIOA_MILVUS_TOKEN: ""
+  AIOS_MILVUS_TOKEN: ""
 ---
 # 上传文件与知识库原文：多副本时必须用 ReadWriteMany 存储
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: aioa-uploads
-  namespace: aioa
+  name: aios-uploads
+  namespace: aios
 spec:
   accessModes:
     - ReadWriteMany

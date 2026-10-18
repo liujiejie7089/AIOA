@@ -5,7 +5,7 @@
 
     toast：无法获取仓库联动配置，模块可能未启用
     页头：项目与仓库（**Gitee** 联动）
-    横幅：仓库联动模块未启用 —— 后端尚未配置 **aioa.gitee.*** …请联系系统管理员开启配置
+    横幅：仓库联动模块未启用 —— 后端尚未配置 **aios.gitee.*** …请联系系统管理员开启配置
 
 三句全是**错的**：配置一切正常，只是服务当时不在。把「拿不到」说成「没配置」，
 会把用户和运维一起引向一个不存在的配置问题；页头回落成 Gitee 则在 gitea 部署上谎报托管方。
@@ -16,7 +16,7 @@
   · `fulfill(500)` ⇒ 「Request failed with status code 500」（Vite 代理在后端不在时就是这么回）
 
 断言的是**文案与状态分流**，不是实现细节：失败必须走「服务未响应 + 可重试」，
-且**不得**出现「尚未配置 / aioa.gitee / Gitee 联动」；配置恢复后点「重试」必须能自愈。
+且**不得**出现「尚未配置 / aios.gitee / Gitee 联动」；配置恢复后点「重试」必须能自愈。
 
 用法：python scripts/_check_gitea_cfg_failure_ui.py
 """
@@ -53,9 +53,9 @@ def login(name):
 
 def seed(ctx, tok, user, refresh):
     ctx.add_init_script(
-        "localStorage.setItem('aioa.token', %s);"
-        "localStorage.setItem('aioa.refreshToken', %s);"
-        "localStorage.setItem('aioa.user', %s);"
+        "localStorage.setItem('aios.token', %s);"
+        "localStorage.setItem('aios.refreshToken', %s);"
+        "localStorage.setItem('aios.user', %s);"
         % (json.dumps(tok), json.dumps(refresh), json.dumps(json.dumps(user, ensure_ascii=False)))
     )
 
@@ -70,9 +70,9 @@ def check_failure_page(page, tag):
     chk(f"{tag}.1 横幅标题为「无法获取仓库联动配置」", "无法获取仓库联动配置" in t, t[:200])
     chk(f"{tag}.2 **不得**说「尚未配置」——把不可达说成缺配置会把排查引偏",
         "尚未配置" not in t, [ln for ln in t.splitlines() if "尚未配置" in ln][:3])
-    chk(f"{tag}.3 **不得**出现具体配置键 aioa.gitee/aioa.gitea",
-        "aioa.gitee" not in t and "aioa.gitea" not in t,
-        [ln for ln in t.splitlines() if "aioa." in ln][:3])
+    chk(f"{tag}.3 **不得**出现具体配置键 aios.gitee/aios.gitea",
+        "aios.gitee" not in t and "aios.gitea" not in t,
+        [ln for ln in t.splitlines() if "aios." in ln][:3])
     chk(f"{tag}.4 页头不得自称托管方（不知道就不能说）",
         "Gitee 联动" not in t and "Gitea 联动" not in t,
         [ln for ln in t.splitlines() if "联动" in ln][:3])

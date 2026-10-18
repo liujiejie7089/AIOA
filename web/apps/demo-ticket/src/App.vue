@@ -19,28 +19,28 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getBridge, REFRESH_EVENT } from './aioa'
+import { getBridge, REFRESH_EVENT } from './aios'
 
 const router = useRouter()
 
 function onAsk() {
-  const aioa = getBridge()
-  aioa.openAssistant({ preset: '帮我总结当前筛选下的工单' })
-  aioa.notify('已唤起 AI 助手', 'info')
+  const aios = getBridge()
+  aios.openAssistant({ preset: '帮我总结当前筛选下的工单' })
+  aios.notify('已唤起 AI 助手', 'info')
 }
 
 onMounted(() => {
-  const aioa = getBridge()
+  const aios = getBridge()
 
   // 主应用要求刷新列表
-  aioa.onAction('refresh', () => {
+  aios.onAction('refresh', () => {
     console.log('[ticket] 收到 refresh 动作')
     window.dispatchEvent(new Event(REFRESH_EVENT))
     ElMessage.success('已按助手要求刷新列表')
   })
 
   // 主应用要求跳转到指定页面
-  aioa.onAction('openPage', (payload: unknown) => {
+  aios.onAction('openPage', (payload: unknown) => {
     console.log('[ticket] 收到 openPage 动作', payload)
     const path = (payload as { path?: string } | undefined)?.path
     if (!path) {

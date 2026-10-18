@@ -42,7 +42,7 @@ function onCreate() {
 
 <style scoped>
 .conv {
-  border-bottom: 1px solid var(--aioa-border);
+  border-bottom: 1px solid var(--aios-border);
   padding: 6px 12px 8px;
 }
 
@@ -54,7 +54,7 @@ function onCreate() {
 
 .conv-label {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .conv-list {
@@ -70,29 +70,29 @@ function onCreate() {
   padding: 4px 10px;
   font-size: 12px;
   line-height: 20px;
-  border: 1px solid var(--aioa-border);
+  border: 1px solid var(--aios-border);
   border-radius: 12px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--aioa-text);
+  color: var(--aios-text);
   background: #fff;
 }
 
 .conv-item:hover {
-  border-color: var(--aioa-primary);
+  border-color: var(--aios-primary);
 }
 
 .conv-item.active {
-  background: var(--aioa-primary);
-  border-color: var(--aioa-primary);
+  background: var(--aios-primary);
+  border-color: var(--aios-primary);
   color: #fff;
 }
 
 .conv-empty {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
   padding: 4px 0;
 }
 </style>

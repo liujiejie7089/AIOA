@@ -7,7 +7,7 @@
 
 本脚本把「同一份事件流」分别在两条路径上取一次，并对比 curl 的退出码：
   · 路径 A：/api/v1/runs/{id}/events      （直连，老形态）
-  · 路径 B：/aioa/api/v1/runs/{id}/events （单端口前缀剥离形态，浏览器实际走的）
+  · 路径 B：/aios/api/v1/runs/{id}/events （单端口前缀剥离形态，浏览器实际走的）
 curl 退出码 18 = "transfer closed with outstanding read data remaining"，
 即分块传输**没有正常终止块**——这正是浏览器 ERR_INCOMPLETE_CHUNKED_ENCODING 的成因。
 两条路径不一致 ⇒ 缺陷在**前缀剥离/托管层**；两条一致 ⇒ 缺陷在 **SseEmitter 收尾方式**。
@@ -70,7 +70,7 @@ def main():
     print("\n[B] 单端口形态（浏览器实际走的路径）")
     rb = make_run(tok)
     time.sleep(0.3)
-    cb, fb = stream("/aioa/api/v1/runs/%s/events" % rb, tok, "B")
+    cb, fb = stream("/aios/api/v1/runs/%s/events" % rb, tok, "B")
 
     print("\n======== 结论 ========")
     print("A 退出码=%d  事件=%s" % (ca, fa))

@@ -31,7 +31,7 @@ import traceback
 import httpx
 import pymysql
 
-BASE = os.environ.get("AIOA_BASE", "http://127.0.0.1:8080")
+BASE = os.environ.get("AIOS_BASE", "http://127.0.0.1:8080")
 PWD_TENANT = "User@123"
 PWD_PLATFORM = "Admin@123"
 T2 = 2                       # DSJ-DEMO 租户：25 个 CLOSED + 6 个在册机构（CLOSED 面最厚）
@@ -97,7 +97,7 @@ def conn():
     global CONN
     if CONN is None:
         CONN = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                               database="aioa", charset="utf8mb4", autocommit=True,
+                               database="aios", charset="utf8mb4", autocommit=True,
                                cursorclass=pymysql.cursors.DictCursor)
     return CONN
 

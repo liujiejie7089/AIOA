@@ -568,7 +568,7 @@ const config = ref<GiteeConfig | null>(null)
 /**
  * 托管方展示名。本页文案（跳转按钮、仓库地址标签、危险操作、表头、提示）都必须走它；
  * 写死「Gitee」会让 gitea 接线下的详情页谎报托管方。
- * 回落 'Gitee' 与后端 `aioa.repo.provider` 默认值一致。
+ * 回落 'Gitee' 与后端 `aios.repo.provider` 默认值一致。
  */
 const pName = computed(() => config.value?.providerLabel || 'Gitee')
 

@@ -30,7 +30,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { findTicket, STATUS_LABEL } from '@/data/tickets'
-import { getBridge } from '@/aioa'
+import { getBridge } from '@/aios'
 
 const route = useRoute()
 const router = useRouter()

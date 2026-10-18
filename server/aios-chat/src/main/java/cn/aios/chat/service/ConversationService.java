@@ -1,0 +1,233 @@
+package cn.aios.chat.service;
+
+import cn.aios.chat.entity.ChatConversation;
+import cn.aios.chat.entity.ChatMessage;
+import cn.aios.chat.mapper.ChatConversationMapper;
+import cn.aios.chat.mapper.ChatMessageMapper;
+import cn.aios.common.exception.BizException;
+import cn.aios.common.resp.PageResult;
+import cn.aios.project.port.PmAiScopePort;
+import cn.aios.resource.entity.AgentWorker;
+import cn.aios.resource.mapper.AgentWorkerMapper;
+import cn.aios.security.AuthUser;
+import cn.aios.security.AuthUserContext;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * 会话：创建 / 分页 / 详情 / 逻辑删除 / 消息游标分页。
+ */
+@Service
+@RequiredArgsConstructor
+public class ConversationService {
+
+    private final ChatConversationMapper conversationMapper;
+    private final ChatMessageMapper messageMapper;
+    private final AgentWorkerMapper workerMapper;
+    /** 项目域只读窄接口：校验「数字员工是否属于该项目」用（跨模块单向依赖 chat → project）。 */
+    private final PmAiScopePort pmAiScopePort;
+
+    /**
+     * 创建会话。
+     *
+     * @param projectId 所属项目；{@code null} 或 {@code <=0} = 非项目会话（旧行为）。
+     *                  非空且绑定 {@code workerId} 时，会**硬校验**该员工已分配到本项目且启用，
+     *                  否则 403（用户端「数字人只在所属项目可用」的服务端保证）。
+     */
+    public ChatConversation create(String title, String appCode, Long workerId, Long projectId) {
+        Long userId = AuthUserContext.requireUserId();
+        ChatConversation conversation = new ChatConversation();
+        conversation.setTenantId(AuthUserContext.tenantIdOrDefault());
+        conversation.setUserId(userId);
+        conversation.setTitle(StringUtils.hasText(title) ? title : "新会话");
+        conversation.setAppCode(appCode);
+        conversation.setAgentCode("main");
+        conversation.setProjectId(normalizeProjectId(projectId));
+        conversation.setStatus(ChatConversation.STATUS_ACTIVE);
+        conversation.setContextTurns(10);
+        conversation.setMsgCount(0L);
+        conversation.setCreatedAt(LocalDateTime.now());
+        conversation.setCreatedBy(userId);
+        if (workerId != null) {
+            bindWorker(conversation, AuthUserContext.require(), workerId);
+        }
+        conversationMapper.insert(conversation);
+        return conversation;
+    }
+
+    /** 项目 id 归一：{@code null} / {@code <=0} → null（非项目会话），避免与真实项目 id 混淆。 */
+    private static Long normalizeProjectId(Long projectId) {
+        return (projectId == null || projectId <= 0L) ? null : projectId;
+    }
+
+    /**
+     * 会话绑定数字员工：**同租户 + 未停用**即可绑定（V22）。
+     *
+     * <p>准入口径的变更理由：数字员工的**管理**操作（创建/修改/启停/立即执行/删除）已收敛为
+     * 仅租户管理员；而**使用**数字员工（例如向请假数字人提交请假申请）本属所有成员的业务需求，
+     * 不应再受权限码限制。因此这里只校验租户归属与启用状态，回答边界由
+     * {@code RunService.buildScope} 下发的职责范围（scope）约束。</p>
+     *
+     * <p>即：**能否用** = 同租户且在启用中；**能做什么** = 该员工的职责范围（越界拒答）；
+     * **能否改** = 仅租户管理员（见 WorkerController#requireAdmin）。</p>
+     */
+    private void bindWorker(ChatConversation conversation, AuthUser user, Long workerId) {
+        AgentWorker worker = workerMapper.selectById(workerId);
+        if (worker == null || !Objects.equals(worker.getTenantId(), user.getTenantId())) {
+            throw BizException.notFound("数字员工不存在：" + workerId);
+        }
+        if (Integer.valueOf(0).equals(worker.getEnabled())) {
+            throw BizException.badRequest("该数字员工已停用，无法建立会话");
+        }
+        // 项目会话（需求一）：员工必须已分配到本项目且在本项目启用，否则 403。
+        // 与用户端选择卡的候选集同源（都源自 pm_project_worker），杜绝「界面不显示却能直连建成会话」。
+        Long projectId = conversation.getProjectId();
+        if (projectId != null && !pmAiScopePort.isWorkerUsable(worker.getTenantId(), projectId, worker.getId())) {
+            throw BizException.forbidden("该数字员工未分配到本项目或已在本项目停用，无法建立会话");
+        }
+        conversation.setWorkerId(worker.getId());
+        conversation.setAgentCode("worker:" + worker.getId());
+    }
+
+    /**
+     * 会话内跨数字人转交（handoff）：把会话改绑到另一个数字人。
+     *
+     * <p><b>必须复用同一会话</b>（{@code conversationId} 不变）——{@code RunService.loadHistory}
+     * 按 conversation 查、不过滤 worker，换会话会丢历史，导致「同一句用户原话」无法被新数字人承接。
+     * 故转交只改 {@code worker_id / agent_code}，绝不新建会话、绝不重落 user 消息。</p>
+     *
+     * <p>复用 {@link #bindWorker} 的全部校验（同租户 + 未停用 + 项目可分配）与赋值逻辑，
+     * 随后 {@code updateById} 落库。若目标数字人校验不通过（不存在 / 停用 / 项目不可用），
+     * 会抛出与新建会话同源的异常，由调用方决定如何降级（通常静默不转交）。</p>
+     */
+    public void rebindWorker(ChatConversation conversation, Long workerId) {
+        bindWorker(conversation, AuthUserContext.require(), workerId);
+        conversationMapper.updateById(conversation);
+    }
+
+    public PageResult<ChatConversation> page(long page, long size, String keyword) {
+        return page(page, size, keyword, null);
+    }
+
+    /**
+     * 会话分页（可按项目过滤）。
+     *
+     * @param projectId {@code null}=不过滤（兼容旧调用）；{@code <=0}=只要「非项目会话」；
+     *                  {@code >0}=只要该项目的会话。用户端按项目分账即依赖此过滤。
+     */
+    public PageResult<ChatConversation> page(long page, long size, String keyword, Long projectId) {
+        long p = Math.max(1, page);
+        long s = Math.min(Math.max(1, size), 100);
+        long total = conversationMapper.selectCount(ownedWrapper(keyword, projectId));
+        LambdaQueryWrapper<ChatConversation> wrapper = ownedWrapper(keyword, projectId);
+        wrapper.orderByDesc(ChatConversation::getLastMsgAt)
+                .orderByDesc(ChatConversation::getId)
+                .last("limit " + s + " offset " + ((p - 1) * s));
+        List<ChatConversation> list = conversationMapper.selectList(wrapper);
+        return PageResult.of(list, total == 0 ? 0 : total, p, s);
+    }
+
+    public ChatConversation getOwned(Long conversationId) {
+        ChatConversation conversation = conversationMapper.selectById(conversationId);
+        // 已删会话等同不存在（同一处 delete 写的是 deleted_at，见 ownedWrapper 注释）
+        if (conversation == null || conversation.getDeletedAt() != null) {
+            throw BizException.notFound("会话不存在");
+        }
+        if (!Objects.equals(conversation.getUserId(), AuthUserContext.requireUserId())) {
+            throw BizException.forbidden("无权访问该会话");
+        }
+        return conversation;
+    }
+
+    public void delete(Long conversationId) {
+        getOwned(conversationId);
+        conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
+                .eq(ChatConversation::getId, conversationId)
+                .setSql("deleted_at = now()"));
+    }
+
+    /** FR-D3 会话重命名（仅本人，标题非空，长度上限 60）。 */
+    public void rename(Long conversationId, String title) {
+        getOwned(conversationId);
+        if (title == null || title.isBlank()) {
+            throw BizException.badRequest("会话标题不能为空");
+        }
+        String trimmed = title.trim();
+        if (trimmed.length() > 60) {
+            trimmed = trimmed.substring(0, 60);
+        }
+        conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
+                .eq(ChatConversation::getId, conversationId)
+                .set(ChatConversation::getTitle, trimmed));
+    }
+
+    /**
+     * 消息游标分页：beforeSeq 向前翻，返回按 seq 升序。
+     */
+    public List<ChatMessage> messages(Long conversationId, Long beforeSeq, Integer size) {
+        getOwned(conversationId);
+        long cursor = beforeSeq == null || beforeSeq <= 0 ? Long.MAX_VALUE : beforeSeq;
+        int limit = Math.min(Math.max(size == null ? 30 : size, 1), 200);
+        List<ChatMessage> list = messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationId, conversationId)
+                .lt(ChatMessage::getSeq, cursor)
+                .orderByDesc(ChatMessage::getSeq)
+                .last("limit " + limit));
+        Collections.reverse(list);
+        return list;
+    }
+
+    public long nextSeq(Long conversationId) {
+        ChatMessage last = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationId, conversationId)
+                .orderByDesc(ChatMessage::getSeq)
+                .last("limit 1"));
+        return last == null || last.getSeq() == null ? 1L : last.getSeq() + 1;
+    }
+
+    public void touchConversation(Long conversationId, long delta) {
+        ChatConversation conversation = conversationMapper.selectById(conversationId);
+        if (conversation == null) {
+            return;
+        }
+        ChatConversation patch = new ChatConversation();
+        patch.setId(conversationId);
+        patch.setMsgCount((conversation.getMsgCount() == null ? 0L : conversation.getMsgCount()) + delta);
+        patch.setLastMsgAt(LocalDateTime.now());
+        conversationMapper.updateById(patch);
+    }
+
+    /**
+     * 本人会话的查询条件（分页/计数共用，保证「列表里的条数」与「统计里的数字」同口径）。
+     *
+     * <p>{@code ChatConversation} 未挂 {@code @TableLogic}——{@link #delete(Long)} 是手写
+     * {@code deleted_at = now()}，因此这里必须显式过滤已删行；否则「删除会话」后
+     * 列表与统计都还把它算进去，删除按钮等于失灵。</p>
+     */
+    private LambdaQueryWrapper<ChatConversation> ownedWrapper(String keyword, Long projectId) {
+        LambdaQueryWrapper<ChatConversation> wrapper = new LambdaQueryWrapper<ChatConversation>()
+                .eq(ChatConversation::getUserId, AuthUserContext.requireUserId())
+                .isNull(ChatConversation::getDeletedAt);
+        if (StringUtils.hasText(keyword)) {
+            wrapper.like(ChatConversation::getTitle, keyword);
+        }
+        // 项目隔离（V79）：projectId 非空时按项目切分会话，项目间互不串扰。
+        // <=0 = 只要「非项目会话」（project_id IS NULL）；>0 = 只要该项目的会话。
+        if (projectId != null) {
+            if (projectId <= 0L) {
+                wrapper.isNull(ChatConversation::getProjectId);
+            } else {
+                wrapper.eq(ChatConversation::getProjectId, projectId);
+            }
+        }
+        return wrapper;
+    }
+}

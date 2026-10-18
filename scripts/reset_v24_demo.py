@@ -30,7 +30,7 @@ import sys
 
 import pymysql
 
-DB = dict(host='127.0.0.1', port=3306, user='root', password='', database='aioa', charset='utf8mb4')
+DB = dict(host='127.0.0.1', port=3306, user='root', password='', database='aios', charset='utf8mb4')
 
 TEST_INST_CODES = ('ORG-SCJG', 'ORG-TMP-DEMO')
 TEST_USER_PREFIX = ('scjg_admin', 'scjg_zhang', 'scjg_lin', 'tmp_admin', 'tmp_admin2')

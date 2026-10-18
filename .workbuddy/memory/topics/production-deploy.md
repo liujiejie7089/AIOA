@@ -6,7 +6,7 @@
 > ⚠️ **同日更正**：当时我推断「Milvus 随应用机」→ 写成 `10.0.0.3:19530`，**这是错的**。
 > 用户随后明确：**Milvus 一直在 `10.0.0.12`（可通）、无密码**，与应用机**不同机**。
 > 已全量改回 `http://10.0.0.12:19530`（`docs/33` 里本来就写着 10.0.0.12，可佐证）。
-> **2026-09-20 第二批：三件套全部落到已有外部实例** —— MySQL `10.0.0.5:13049`（**非默认端口**）/ 库 `aioa` / 用户 `aioa`；
+> **2026-09-20 第二批：三件套全部落到已有外部实例** —— MySQL `10.0.0.5:13049`（**非默认端口**）/ 库 `aios` / 用户 `aios`；
 > Redis `10.0.0.7:6379`（**有口令**，与早前「无口令」不同）；Milvus `19530` 无鉴权（**该行原写 10.0.0.3 有误，见上「同日更正」：Milvus 在 10.0.0.12**）。真实口令只在 `deploy/.env`。
 > **2026-09-21 第三批（定案）：五件基础设施全在外部 / 用户不用边缘 nginx / MinIO 被证实未被使用。**
 > **2026-09-24 第四批（覆盖上面那条「不用 nginx」）：用户要求短路径入口，compose 重新加入一个
@@ -66,29 +66,29 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 - 用户口径：`目前不用nginx`；`我目前有mysql,redis,milvus,nginx，但都在其他服务器上，这些就不用下载了，直接连接`。
 - ⇒ 叠加 `deploy/docker-compose.backend.yml`（**只加 ports，不改任何环境变量**）：
   `docker compose -f docker-compose.yml -f docker-compose.backend.yml up -d server agent`
-- ⇒ **只起 2 个容器、只搬 2 张镜像**（`aioa-server` + `aioa-agent`）；
-  不需要 `nginx:1.27-alpine` / `aioa-web` / `minio/minio`。
+- ⇒ **只起 2 个容器、只搬 2 张镜像**（`aios-server` + `aios-agent`）；
+  不需要 `nginx:1.27-alpine` / `aios-web` / `minio/minio`。
 - 宿主端口 **8080（后端 API）/ 8000（agent，排查用）**；**不再是 80/81**。
 - ⚠️ **代价（必须转告用户）**：80=H5、81=管理端 的静态没人托管了。解法见手册 §5.2：
   · H5 = 仓库里的 `user-client/index.html`（**单文件、零构建**）；
-  · 管理端 = `aioa-web` 镜像里的 `/usr/share/nginx/html`，**不必跑容器**：
-    `docker create _tmpweb aioa-web` + `docker cp _tmpweb:/usr/share/nginx/html/. <root>` + `docker rm _tmpweb`。
+  · 管理端 = `aios-web` 镜像里的 `/usr/share/nginx/html`，**不必跑容器**：
+    `docker create _tmpweb aios-web` + `docker cp _tmpweb:/usr/share/nginx/html/. <root>` + `docker rm _tmpweb`。
   · 宿主 nginx 把 `/api/` 反代到 `http://10.0.0.3:8080/`（抄 `deploy/nginx/api-proxy.conf`）。
 
 ## ★ 2026-09-24 入口 nginx（**覆盖** 09-21 的「不用 nginx」）
 
 - 用户口径变更：`我现在的服务器是10.0.0.3，你给我配置一下nginx，我希望用10.0.0.3/web访问管理端，
   10.0.0.3/user访问用户端`。⇒ 从「宿主自带 nginx 反代 `/api/`」升级为**compose 托管一个入口 nginx**。
-- `deploy/nginx/aioa-entry.conf`（挂成 `nginx:1.27-alpine` 的 `conf.d/default.conf`），
-  compose 服务 `nginx` / 容器 `aioa-nginx`、`ports: ["80:80"]`、`depends_on: [server]`。
+- `deploy/nginx/aios-entry.conf`（挂成 `nginx:1.27-alpine` 的 `conf.d/default.conf`），
+  compose 服务 `nginx` / 容器 `aios-nginx`、`ports: ["80:80"]`、`depends_on: [server]`。
 - ⚠️ **与 09-21 的「80=H5 / 81=管理端」不是同一套**：现在**只用 80**，两个前端**靠路径区分**
   （`81` 仍然不存在）。旧的 `deploy/nginx/nginx.conf`（双 server 块 80/81）与 `api-proxy.conf`
   是**历史文件**，只有「宿主 nginx 反代」场景还抄 `api-proxy.conf`。
 - 路由口径（**必须区分对待，否则白屏**）：
-  · `/web`、`/web/` → **302** → `/aioa/web/`（管理端是 `base=/aioa/web/` 的 SPA，地址栏必须落在 base 之下）；
-  · `/user/` → **内部 rewrite** → `/aioa/h5/`（H5 自包含单文件，API base 由 `location.pathname` 推）；
-  · `/api/`、`/aioa/` → proxy_pass；SSE `location ~ ^/(?:aioa/)?api/v1/runs/[^/]+/events$` + `proxy_buffering off`。
-- **可选**：不加该服务、`80` 不通时，`:8080/aioa/web/` 与 `:8080/aioa/h5/` **照旧直接可用**
+  · `/web`、`/web/` → **302** → `/aios/web/`（管理端是 `base=/aios/web/` 的 SPA，地址栏必须落在 base 之下）；
+  · `/user/` → **内部 rewrite** → `/aios/h5/`（H5 自包含单文件，API base 由 `location.pathname` 推）；
+  · `/api/`、`/aios/` → proxy_pass；SSE `location ~ ^/(?:aios/)?api/v1/runs/[^/]+/events$` + `proxy_buffering off`。
+- **可选**：不加该服务、`80` 不通时，`:8080/aios/web/` 与 `:8080/aios/h5/` **照旧直接可用**
   ⇒ 既有套件（44 个走 `:8080/api`）与单端口入口**零影响**。
 - 守护口径同步：`scripts/_check_single_port.py` 的 nginx 从「禁止出现」名单**移出**，
   新增 `c11_nginx_entry`；现在是 **13 项检查 + 26 项负向 mutation**（全红才算有效；见下条 ④，
@@ -96,17 +96,17 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 ## ★ 2026-09-27 生产入口实测暴露的两处（提交 `14b3449`）
 
-现场拓扑（用户截图确认）：公网 `mall.egooaicloud.com/aioa/...` → openresty(219.151.186.24)
+现场拓扑（用户截图确认）：公网 `mall.egooaicloud.com/aios/...` → openresty(219.151.186.24)
 → `proxy_pass http://10.0.0.3:8080`（**原样转发、不剥前缀**）；应用机 `server:8080` 单端口供
-`/aioa/h5|web|api`，`agent:8000` 仅内网。
+`/aios/h5|web|api`，`agent:8000` 仅内网。
 
 1. **管理端 SPA 接口全 404（根路径 vs 前缀）** —— 详见 pitfalls #73。
    `web/apps/shell/src/api/index.ts` 与 `runs.ts`（SSE）改为由 `import.meta.env.BASE_URL` 推导：
-   生产 `/aioa/web/` ⇒ `/aioa/api/v1`；dev `/` ⇒ `/api/v1`（vite 代理不变 ⇒ 本地 UI 套件零影响）。
-   ★ 关键认知：后端是**双前缀并存**（`/aioa/api/**` 剥前缀 + `/api/**` 保留），所以
-   **本地直连 `:8080` 永远测不出这个缺陷**；只有「共用域名只反代 `/aioa/`」才暴露。
+   生产 `/aios/web/` ⇒ `/aios/api/v1`；dev `/` ⇒ `/api/v1`（vite 代理不变 ⇒ 本地 UI 套件零影响）。
+   ★ 关键认知：后端是**双前缀并存**（`/aios/api/**` 剥前缀 + `/api/**` 保留），所以
+   **本地直连 `:8080` 永远测不出这个缺陷**；只有「共用域名只反代 `/aios/`」才暴露。
    用户端 H5 一直是对的（`apiBaseFromPath`），**只有管理端漏了**。
-2. **`Dockerfile.server` 漏 COPY `aioa-integration-scfy/pom.xml`** —— 详见 pitfalls #74。
+2. **`Dockerfile.server` 漏 COPY `aios-integration-scfy/pom.xml`** —— 详见 pitfalls #74。
    被 `|| true` 静默 ⇒ 只坏 `dependency:go-offline` 缓存层（每次全量下依赖）。
 3. 新增 `deploy/maven-settings.xml`（**原仓库没有此文件**，加 COPY 必须先建它）：
    Dockerfile COPY 成 `/root/.m2/settings.xml`，只把 **central** 指向阿里云公共仓库。
@@ -126,8 +126,8 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
      「⚠ 不要裸跑 up -d」→「✅ 裸跑是安全的」）。
    - 守卫：`c11` 增第 ④ 条「nginx 必须 profiles=["entry"]」（**块内**匹配，非全文件）；
      负向 mutation **21 → 22**。
-2. **agent 宿主端口可覆盖：`.env` 的 `AIOA_AGENT_HOST_PORT`（默认 8000）**
-   - compose 写 `127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000`；**容器内恒为 8000**，
+2. **agent 宿主端口可覆盖：`.env` 的 `AIOS_AGENT_HOST_PORT`（默认 8000）**
+   - compose 写 `127.0.0.1:${AIOS_AGENT_HOST_PORT:-8000}:8000`；**容器内恒为 8000**，
      server 走服务名 `agent:8000` ⇒ 改左端口不影响任何功能。
    - 起因：目标机 `0.0.0.0:8000` 已被别的容器占用 ⇒ 不改就是 `port is already allocated`。
    - **现场只在 `.env` 改**（改 compose 会在下次 `git pull` 冲突）。`ENV.md` / 手册故障表已补。
@@ -139,7 +139,7 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 - 判据：全仓 grep（不限扩展名，排除 `node_modules/.git/target/dist`）里 `minio` **只出现在 `deploy/`
   与 `.workbuddy/` 文档**；Java / Python / 前端源码**零命中**，也没有 S3 客户端
   （`S3Client|amazonaws|OSS|ObjectStorage|FileStorage` 同样零命中，仅 venv 版权注释误命中）。
-- 实际落盘：`FileController` 的 `@Value("${aioa.upload.dir:./uploads}")` + 元数据落 `sys_file` 表。
+- 实际落盘：`FileController` 的 `@Value("${aios.upload.dir:./uploads}")` + 元数据落 `sys_file` 表。
 - ⇒ ① 别处那台 MinIO（`172.16.8.249`，控制台 `:9001`）**不用接**；② `minio/minio:latest` **不用搬**；
   ③ `MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY` 是**死配置**（compose 传了但无人读）⇒ 模板里改**留空**并写明原因。
 - ⇒ `minio` 服务归入 **`profiles: ["minio"]`**（默认 `up` 不起）；**`server.depends_on: minio(healthy)` 已删**
@@ -149,9 +149,9 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 - `server` 在 compose 里 `volumes:` 为空，`./uploads` = `/app/uploads`（Dockerfile.server `WORKDIR /app`）
   **随容器重建即丢**，而 `sys_file` 记录还在 ⇒ 下载 404。
-- 已加命名卷 `serveruploads:/app/uploads` + 显式 `AIOA_UPLOAD_DIR=/app/uploads`
-  （`@Value("${aioa.upload.dir:…}")` 占位符也能被 `SystemEnvironmentPropertySource` 宽松绑定从环境变量解析）。
-- 备份口径随之从「MinIO 卷」改成 **`aioa_serveruploads` 卷**。
+- 已加命名卷 `serveruploads:/app/uploads` + 显式 `AIOS_UPLOAD_DIR=/app/uploads`
+  （`@Value("${aios.upload.dir:…}")` 占位符也能被 `SystemEnvironmentPropertySource` 宽松绑定从环境变量解析）。
+- 备份口径随之从「MinIO 卷」改成 **`aios_serveruploads` 卷**。
 
 ## 拓扑与「复用而非托管」原则
 - 单机 Docker Compose。
@@ -169,7 +169,7 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 ## 端口与配置要点（2026-09-20 更新）
 - `deploy/nginx/nginx.conf` = 两个 `server` 块：80 用 `root /usr/share/nginx/html/h5` 静态托管 H5；
-  81 `proxy_pass http://aioa_web` 托管理端。两块的 `/api/`、SSE、`/openapi/` 都来自
+  81 `proxy_pass http://aios_web` 托管理端。两块的 `/api/`、SSE、`/openapi/` 都来自
   **同一份** `deploy/nginx/api-proxy.conf`（`include`，防两端漂移）。compose 发布 `80:80` + `81:81`。
 - ⚠️ 80 的 `location /` 是 `try_files $uri /index.html` ⇒ **任意路径都回 200**，
   不能拿 200 当「页面正常」的判据，要看内容或改查容器健康。
@@ -182,36 +182,36 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 ## 关键配置值（`deploy/.env.production`）
 | 键 | 值 | 备注 |
 |---|---|---|
-| `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.5` / `13049` / `aioa` / `aioa` / （见 `.env`） | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*`。**13049 不是 3306** —— 写错端口现象是连不上/超时，不是鉴权失败 |
+| `MYSQL_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | `10.0.0.5` / `13049` / `aios` / `aios` / （见 `.env`） | **★真正生效的库键**：compose 用它们**现拼** `SPRING_DATASOURCE_*`。**13049 不是 3306** —— 写错端口现象是连不上/超时，不是鉴权失败 |
 | `REDIS_HOST` / `_PORT` + `SPRING_REDIS_PASSWORD` / `SPRING_REDIS_DATABASE` | `10.0.0.7` / `6379` / （有口令，见 `.env`） / `0` | **★真正生效的 Redis 键**。该实例**有 requirepass** ⇒ 口令漏填现象是 `NOAUTH Authentication required` |
-| `AIOA_MILVUS_URI` | `http://10.0.0.12:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
-| `AIOA_MILVUS_TOKEN` | 空 | 该 Milvus **无鉴权** ⇒ 必须留空（填了会认证失败） |
-| `AIOA_KB_STORE` | `milvus` | Milvus 不可达 ⇒ 后端**启动失败**（刻意 fail-fast） |
-| `AIOA_KB_EMBEDDING_PROVIDER` | `http` | `local`=256 维哈希无语义，生产必须 `http` |
-| `AIOA_KB_EMBEDDING_URL` | `http://ollama:11434/api/embeddings` | 容器内互访名 |
-| `AIOA_KB_EMBEDDING_MODEL` | `quentinz/bge-small-zh-v1.5` | Ollama 上真实存在的名字（含命名空间） |
-| `AIOA_KB_EMBEDDING_DIMS` | `512` | 必须与 `AIOA_MILVUS_DIMS` 一致 |
+| `AIOS_MILVUS_URI` | `http://10.0.0.12:19530` | **必须宿主 IP，不能 localhost**（容器内 localhost 指向自己）；复用现成实例 |
+| `AIOS_MILVUS_TOKEN` | 空 | 该 Milvus **无鉴权** ⇒ 必须留空（填了会认证失败） |
+| `AIOS_KB_STORE` | `milvus` | Milvus 不可达 ⇒ 后端**启动失败**（刻意 fail-fast） |
+| `AIOS_KB_EMBEDDING_PROVIDER` | `http` | `local`=256 维哈希无语义，生产必须 `http` |
+| `AIOS_KB_EMBEDDING_URL` | `http://ollama:11434/api/embeddings` | 容器内互访名 |
+| `AIOS_KB_EMBEDDING_MODEL` | `quentinz/bge-small-zh-v1.5` | Ollama 上真实存在的名字（含命名空间） |
+| `AIOS_KB_EMBEDDING_DIMS` | `512` | 必须与 `AIOS_MILVUS_DIMS` 一致 |
 | `MODEL_DEFAULT` / `MINIMAX_API_KEY` | `minimax` / **必填** | **Key 必须与 `MODEL_DEFAULT` 同名**；留空或不配对 ⇒ **静默降级 echo**（不报错，现象=回答一直回声） |
-| `AIOA_GITEE_ENABLED` / `AIOA_GITEE_SYNC_ENABLED` | `true` | **已可打通**（2026-10-09 实测，见下方「★ Gitee 公网入口」）。旧值 `false`（「私网 IP 无法被 Gitee 回调」）**已作废** |
-| `AIOA_GITEE_REDIRECT_URI` | `https://mall.egoaicloud.com/aioa/api/v1/gitee/bind/callback` | 必须与 Gitee 应用里登记的回调地址**逐字符一致**（含 `/aioa` 前缀） |
-| `AIOA_GITEE_WEBHOOK_BASE_URL` | `https://mall.egoaicloud.com/aioa` | 回调路径 = `{此值}/api/v1/gitee/webhook/{projectId}`，**已实测公网可达** |
-| `AIOA_GITEE_BIND_RETURN_URL` | `https://mall.egoaicloud.com/aioa/web/` | 绑定完成回跳的 H5 地址 |
-| `AIOA_GITEE_CLIENT_ID` / `_CLIENT_SECRET` / `AIOA_GITEE_TOKEN_ENC_KEY` | `CHANGE_ME__…` 占位 | **只能填 `deploy/.env`**（`.env.production` 入库，填真值=把密钥提交） |
+| `AIOS_GITEE_ENABLED` / `AIOS_GITEE_SYNC_ENABLED` | `true` | **已可打通**（2026-10-09 实测，见下方「★ Gitee 公网入口」）。旧值 `false`（「私网 IP 无法被 Gitee 回调」）**已作废** |
+| `AIOS_GITEE_REDIRECT_URI` | `https://mall.egoaicloud.com/aios/api/v1/gitee/bind/callback` | 必须与 Gitee 应用里登记的回调地址**逐字符一致**（含 `/aios` 前缀） |
+| `AIOS_GITEE_WEBHOOK_BASE_URL` | `https://mall.egoaicloud.com/aios` | 回调路径 = `{此值}/api/v1/gitee/webhook/{projectId}`，**已实测公网可达** |
+| `AIOS_GITEE_BIND_RETURN_URL` | `https://mall.egoaicloud.com/aios/web/` | 绑定完成回跳的 H5 地址 |
+| `AIOS_GITEE_CLIENT_ID` / `_CLIENT_SECRET` / `AIOS_GITEE_TOKEN_ENC_KEY` | `CHANGE_ME__…` 占位 | **只能填 `deploy/.env`**（`.env.production` 入库，填真值=把密钥提交） |
 
 ### ★ Gitee 公网入口（2026-10-09 实测确认，推翻了旧「私网无法回调」结论）
 - **域名拼写是 `mall.egoaicloud.com`（ego**ai**，单 `o` 后接 `ai`）** —— 双 `o` 的
   `mall.egooaicloud.com` **不存在**（DoH 解析失败）。拼错 ⇒ DNS 失败 + 证书 CN 不匹配 ⇒ 授权/webhook
   **静默失败**。全库 grep `egooaicloud` = 0 命中 ⇒ 正字无误，勿再造错拼。
 - 链路：`mall.egoaicloud.com` → A 记录 `219.151.186.24`（隧道机/入口机）→ 其 `:443` 终结 TLS
-  （证书 SAN = `mall.egoaicloud.com`，实测 SNI 匹配）→ openresty **原样**（**不剥前缀**）转发 `/aioa/...`
+  （证书 SAN = `mall.egoaicloud.com`，实测 SNI 匹配）→ openresty **原样**（**不剥前缀**）转发 `/aios/...`
   到 `10.0.0.3:8080`。
-- 探活（走公网域名）：`GET /aioa/api/v1/pm/projects` → **401**（后端确实可达）·
-  `GET /aioa/api/v1/gitee/webhook/1` → **405**（路由存在，仅 POST）⇒ webhook 回调面**已就绪**。
-- **`10.0.0.3` 能访问外网 = 只有出方向**（AIOA→Gitee API 的建仓/同步够用）；**入方向**（Gitee 回调我们的
+- 探活（走公网域名）：`GET /aios/api/v1/pm/projects` → **401**（后端确实可达）·
+  `GET /aios/api/v1/gitee/webhook/1` → **405**（路由存在，仅 POST）⇒ webhook 回调面**已就绪**。
+- **`10.0.0.3` 能访问外网 = 只有出方向**（AIOS→Gitee API 的建仓/同步够用）；**入方向**（Gitee 回调我们的
   webhook）不走 10.0.0.3，走上面这个公网入口。二者别混为一谈。
-- 结论：**webhook 唯一的旧阻塞项 `AIOA_GITEE_WEBHOOK_BASE_URL` 在生产已有真实值**
-  （`https://mall.egoaicloud.com/aioa`），无需内网穿透。剩余只欠 Gitee OAuth 的
-  `client_id`/`client_secret`（已绑 `liu-yang20` 账号）与 `AIOA_GITEE_TOKEN_ENC_KEY`（真值填 `deploy/.env`）。
+- 结论：**webhook 唯一的旧阻塞项 `AIOS_GITEE_WEBHOOK_BASE_URL` 在生产已有真实值**
+  （`https://mall.egoaicloud.com/aios`），无需内网穿透。剩余只欠 Gitee OAuth 的
+  `client_id`/`client_secret`（已绑 `liu-yang20` 账号）与 `AIOS_GITEE_TOKEN_ENC_KEY`（真值填 `deploy/.env`）。
 
 ### ★ 含特殊字符的口令必须用单引号（2026-09-20 实测）
 - MySQL 口令末尾是 `$`，而 `$` 是 **compose 插值字符** ⇒ 双引号/裸写会被吃掉尾部（现象：口令长度少 1、`Access denied`）。
@@ -221,7 +221,7 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 ## 哪些文件要改、哪些不用改（★真实值只写 `.env`）
 - **真实密钥只写 `deploy/.env`** —— 实测 `git check-ignore deploy/.env` = IGNORED（`.gitignore:33 .env`）。
-  本机路径 `C:\Users\刘尖尖\WorkBuddy\aioa\deploy\.env`；服务器路径 `/opt/aioa/deploy/.env`（`cp .env.production .env` 生成）。
+  本机路径 `C:\Users\刘尖尖\WorkBuddy\aioa\deploy\.env`；服务器路径 `/opt/aios/deploy/.env`（`cp .env.production .env` 生成）。
 - ⚠️ **`deploy/.env.production` 不被 git 忽略**：`.gitignore` 有 `!deploy/.env.production` 反选，
   实测 `git check-ignore` 判 **NOT ignored**，且**已入库**（2026-09-20 起跟踪）。
   ⇒ 它只允许放 `CHANGE_ME__` 占位，**填真实密钥等于把密码提交进仓库**。
@@ -243,10 +243,10 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 - ★ **防这类「空转」的哨兵（2026-10-09 新增）**：`python scripts/_check_compose_env_wiring.py`
   —— 判据是「`application.yml` 引用的每个 `${VAR}` 要么被 compose 透传，要么在 BENIGN 白名单里写明理由」，
   带反恒真下限与 `--selftest`（7 项）。已登记进 `_run_all_regression.sh`。
-  **实例**：`AIOA_GITEE_SYNC_ENABLED` / `_SYNC_CRON` 曾未透传 ⇒ 在 `.env` 里关 sync 是空转（2026-10-09 已修）。
-  ⚠️ 白名单里的 `AIOA_GITEA_*_TRUST_STORE*` / `_INSECURE_SKIP_VERIFY`：**启用 Gitea 前必须一并透传**。
+  **实例**：`AIOS_GITEE_SYNC_ENABLED` / `_SYNC_CRON` 曾未透传 ⇒ 在 `.env` 里关 sync 是空转（2026-10-09 已修）。
+  ⚠️ 白名单里的 `AIOS_GITEA_*_TRUST_STORE*` / `_INSECURE_SKIP_VERIFY`：**启用 Gitea 前必须一并透传**。
 - 遗留隐患已清：compose 中曾有旧机默认值 `${MYSQL_HOST:-192.168.31.129}`、`${MYSQL_PASSWORD:-yjiud}`
-  —— **缺键时会静默连到别的机器**，已改为 `:-10.0.0.5` / `:-13049` / `:-aioa` / `:-10.0.0.7`（口令默认留空，缺了就明确报鉴权失败）。
+  —— **缺键时会静默连到别的机器**，已改为 `:-10.0.0.5` / `:-13049` / `:-aios` / `:-10.0.0.7`（口令默认留空，缺了就明确报鉴权失败）。
 - 仍未改的两处旧值（**已声明冻结/非本路径**，别照抄）：`deploy/.env.example`（文件头自称
   「已被 .env.development / .env.production 取代，勿再加变量」）与 `deploy/k8s/00-namespace-config.yaml`
   （本部署走 compose，不走 k8s），仍写着 `192.168.31.129`。
@@ -302,10 +302,10 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
   `ping baidu.com` 100% 丢包；`docker run --rm mysql:8.0 …` 卡在 `Unable to find image … locally`。
   ⚠️ 解到的 `31.13.94.41` 是 **Facebook 段** = 典型 **DNS 污染**，**不等于没有外网** ⇒
   必须分开探测「国内站点 / 各加速器」（`deploy/ops/host-check.sh` §⑤ 就是干这个的）。
-- **本次后端档只需 2 个镜像**：`aioa-server` + `aioa-agent`（都是本地构建产物）。
-  完整档才需 `minio/minio:latest` + `nginx:1.27-alpine` + `aioa-web`。
-  可选 `ollama/ollama:latest`（**KB 语义嵌入必需**，模型 `quentinz/bge-small-zh-v1.5`，卷 `aioa_ollamadata`）。
-- ★ `docker-compose.yml` 顶层有 **`name: aioa`** ⇒ 任意机器上构建出的应用镜像名**完全一致**
+- **本次后端档只需 2 个镜像**：`aios-server` + `aios-agent`（都是本地构建产物）。
+  完整档才需 `minio/minio:latest` + `nginx:1.27-alpine` + `aios-web`。
+  可选 `ollama/ollama:latest`（**KB 语义嵌入必需**，模型 `quentinz/bge-small-zh-v1.5`，卷 `aios_ollamadata`）。
+- ★ `docker-compose.yml` 顶层有 **`name: aios`** ⇒ 任意机器上构建出的应用镜像名**完全一致**
   ⇒ 离线 `docker load` 之后直接 `docker compose up -d`，**绝不要加 `--build`**
   （加了会重新构建，而目标机拉不到基础镜像，必然失败）。
 - 构建应用镜像需要 `maven:3.9-eclipse-temurin-21` / `node:22-alpine` / `python:3.13-slim` /
@@ -317,7 +317,7 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
   一律先判 `[ ${#arr[@]} -gt 0 ]` 再展开，**不写** `("${A[@]}" "${B[@]}")` 混合形式。
 - ② `--with-ollama` 曾用 `${EXT_IMAGES[1]}`（取 nginx）当搬运容器 ⇒ 后端档下**越界崩**：
   改为 `docker cp` + **宿主 `tar`**；`import-ollama` 直接写 `${DockerRootDir}/volumes/<vol>/_data`。
-- ③ `list --backend-only` **只改了标题、清单仍取完整档** ⇒ 把 nginx/aioa-web 报成「缺」（误导）：
+- ③ `list --backend-only` **只改了标题、清单仍取完整档** ⇒ 把 nginx/aios-web 报成「缺」（误导）：
   改为按模式选数组；`import` 支持透传 `--backend-only`。
 - **可复用测法**：临时目录放一个 `docker` 桩脚本（记调用日志 + 按子命令返回桩值），
   `PATH="$TMP:$PATH" bash deploy/ops/offline-images.sh ...`。五条链路（export / export --with-ollama /
@@ -341,7 +341,7 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 - 公网直连 `10.0.0.3:22` **不通**；隧道 `219.151.186.24:22` —— 用户给的写法（`root/Ego2025` 等 5 种变体 ×
   3 个用户名 × password/keyboard-interactive）**全部认证被拒**，其余 7 个常见转发端口也不通
   （仅 22 是 SSH，`OpenSSH_8.9p1 Ubuntu`）⇒ **agent 无法直连该机，只能把脚本交给用户在服务器上跑**。
-- `origin` = **Gitea `http://172.16.8.249:3000/liujiejie/AIOA_System.git`**（不是 GitHub），
+- `origin` = **Gitea `http://172.16.8.249:3000/liujiejie/AIOS_System.git`**（不是 GitHub），
   与本地 `main` **已分叉**：本地领先 92 个提交，`origin/main` 另有 `179547e 删除目录「.workbuddy」`。
   ⇒ 必须确认服务器代码是**从 Gitea 拉**还是**本地直传**；从 Gitea 拉会拿到旧树。
 
@@ -358,10 +358,10 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
    ⇒ **缺 Ollama 时后端照常启动、上传照常成功，只是没有向量、检索不命中**（预期，非缺陷）。
 
 **搬运分两包**（`deploy/ops/offline-images.sh`）：
-- 包 1 `aioa-images-backend.tar.gz`（`export --backend-only`）= **只有 `aioa-server` + `aioa-agent`**
+- 包 1 `aios-images-backend.tar.gz`（`export --backend-only`）= **只有 `aios-server` + `aios-agent`**
   ⇒ 先导入先起，跑 §6 验收。
 - 包 2 `ollama-image.tar.gz`（约 1.5G，**比包 1 还大**）+ `ollama-models.tar.gz` ⇒ 验收后再补。
-- （完整档才需 `aioa-images.tar.gz` = minio + nginx + aioa-server/agent/web）
+- （完整档才需 `aios-images.tar.gz` = minio + nginx + aios-server/agent/web）
 
 **先探内网，可能白搬**：`host-check.sh` 会把 `daemon.json` 里的 `registry-mirrors` /
 `insecure-registries` 逐个探通断，并读 `docker info` 的生效镜像源、探内网 Gitea（`172.16.8.249:3000`）。
@@ -369,17 +369,17 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 ## ★ 真实服务器已有容器（2026-09-21 `docker ps` 实测）
 
-| 容器 | 镜像 | 对 AIOA |
+| 容器 | 镜像 | 对 AIOS |
 |---|---|---|
-| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（在 **10.0.0.12**，`AIOA_MILVUS_URI=http://10.0.0.12:19530`；应用机 10.0.0.3 上**只有 `milvus-attu` 控制台**，没有 19530 在听）；`≥2.5` ⇒ BM25 可开 |
+| `milvus-standalone` | `milvusdb/milvus:v2.6.14` | ✅ **外挂复用**（在 **10.0.0.12**，`AIOS_MILVUS_URI=http://10.0.0.12:19530`；应用机 10.0.0.3 上**只有 `milvus-attu` 控制台**，没有 19530 在听）；`≥2.5` ⇒ BM25 可开 |
 | `milvus-etcd` | `etcd:v3.5.25` | ➖ Milvus 配套，不用单独连 |
 | `mongodb` | `mongo:latest` | ❌ 别的系统 |
 | `rmqbroker` / `rmqnamesrv` | `apache/rocketmq:4.9.6` | ❌ 别的系统 |
 
-- **已核实 AIOA 不用 Mongo/RocketMQ**：`server/*/pom.xml`、`server/pom.xml`、`agent/requirements*.txt`、
+- **已核实 AIOS 不用 Mongo/RocketMQ**：`server/*/pom.xml`、`server/pom.xml`、`agent/requirements*.txt`、
   `deploy/docker-compose.yml` 里搜 `mongo|rocketmq|kafka|amqp|rabbit` **全部零命中**。别去动它们。
 - 端口：已有容器占 `10909/10911/9876/19530/2379/2380/27017`；**后端档要 `8080/8000`（+可选 11434）** ⇒ **不冲突**。
-- **仍然要构建/搬运**：这 5 个容器一个都不是本项目要的（`aioa-server/agent` 是本项目构建产物）。
+- **仍然要构建/搬运**：这 5 个容器一个都不是本项目要的（`aios-server/agent` 是本项目构建产物）。
   但 `minio/minio` 与 `nginx` **本次不需要**（MinIO 代码不读、边缘 nginx 用户已有）。
 - ★ **`docker ps` ≠ 镜像清单**：它只列运行中容器，机器上可能有没在跑的 `nginx`/`minio` 镜像；
   用 `docker ps` 判断齐备会误判成「什么都没有」而白搬整个包。**判断只能用 `docker images`。**

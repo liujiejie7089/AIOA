@@ -17,13 +17,13 @@
 
 ## 三层现状（刚改完，被本脚本钉住）
 
-  - Java 出站：`server/aioa-chat/.../dto/AgentRunRequest.java`
+  - Java 出站：`server/aios-chat/.../dto/AgentRunRequest.java`
         @JsonProperty("available_forms") private List<...> availableForms;
-  - Python 入站：`agent/aioa_ai/contracts.py`
+  - Python 入站：`agent/aios_ai/contracts.py`
         RunRequest.available_forms: list[dict[str, Any]] | None = None
-        注入点 `agent/aioa_ai/prompt/builder.py` 的 build_messages，产出
+        注入点 `agent/aios_ai/prompt/builder.py` 的 build_messages，产出
         【可用表单清单】…【以上为可用表单清单】段，行格式 `- code｜name｜模块=module_code`。
-  - Java 规则命中响应：`server/aioa-resource/.../controller/FormRuleExceptionHandler.java`
+  - Java 规则命中响应：`server/aios-resource/.../controller/FormRuleExceptionHandler.java`
         返回 HTTP 200 + code=40090 + data.rule_violation.{rule_id,field,target_field,message,options}。
   - H5 消费：`user-client/_backup_index_pre_oa.html`（基线；产物 index.html 由它构建）
         mountFormCard 读 err.code === 40090、err.data.rule_violation、rv.message、
@@ -66,14 +66,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# aioa_ai 包位于 agent/ 目录下，需加入导入路径（与 agent venv 配合）。
+# aios_ai 包位于 agent/ 目录下，需加入导入路径（与 agent venv 配合）。
 AGENT_DIR = ROOT / "agent"
 
-JAVA_DTO = "server/aioa-chat/src/main/java/cn/aioa/chat/dto/AgentRunRequest.java"
-PY_CONTRACTS = "agent/aioa_ai/contracts.py"
-PY_BUILDER = "agent/aioa_ai/prompt/builder.py"
-PY_TOOL = "agent/aioa_ai/tools/request_form.py"
-JAVA_RULE = "server/aioa-resource/src/main/java/cn/aioa/resource/controller/FormRuleExceptionHandler.java"
+JAVA_DTO = "server/aios-chat/src/main/java/cn/aios/chat/dto/AgentRunRequest.java"
+PY_CONTRACTS = "agent/aios_ai/contracts.py"
+PY_BUILDER = "agent/aios_ai/prompt/builder.py"
+PY_TOOL = "agent/aios_ai/tools/request_form.py"
+JAVA_RULE = "server/aios-resource/src/main/java/cn/aios/resource/controller/FormRuleExceptionHandler.java"
 H5_BACKUP = "user-client/_backup_index_pre_oa.html"
 
 oks = 0
@@ -139,7 +139,7 @@ def k2_camelcase_not_received():
     证明 K1 不是恒真：如果 pydantic 把驼峰也当 available_forms 收下，说明两端的契约其实没对齐
     （或有人加了 alias），这条会红，提示「键名写错也能收到」的隐患。
     """
-    from aioa_ai.contracts import RunRequest
+    from aios_ai.contracts import RunRequest
     payload = {
         "run_id": "r-camel-1",
         "conversation_id": 1,
@@ -163,8 +163,8 @@ def k3_keyname_to_prompt():
 
     改动 Java 的 available_forms 键名 / Python 的字段名 / builder 注入块任一，都会让它红。
     """
-    from aioa_ai.contracts import RunRequest
-    from aioa_ai.prompt.builder import build_messages
+    from aios_ai.contracts import RunRequest
+    from aios_ai.prompt.builder import build_messages
     payload = {
         "run_id": "r-e2e-1",
         "conversation_id": 1,
@@ -200,8 +200,8 @@ def k4_empty_list_no_inject():
 
     证明 K3 的命中不是恒真：若 builder 永远注入（或键名错配导致常驻），这里会红。
     """
-    from aioa_ai.contracts import RunRequest
-    from aioa_ai.prompt.builder import build_messages
+    from aios_ai.contracts import RunRequest
+    from aios_ai.prompt.builder import build_messages
     payload = {
         "run_id": "r-empty-1",
         "conversation_id": 1,
@@ -312,7 +312,7 @@ def k8_no_bad_jsonproperty(java_src: str):
 
 
 def main():
-    # 让 aioa_ai 可被导入（仅 K2/K3/K4 需要；K1/K5/K6/K7/K8 只做静态抓取）。
+    # 让 aios_ai 可被导入（仅 K2/K3/K4 需要；K1/K5/K6/K7/K8 只做静态抓取）。
     if str(AGENT_DIR) not in sys.path:
         sys.path.insert(0, str(AGENT_DIR))
 

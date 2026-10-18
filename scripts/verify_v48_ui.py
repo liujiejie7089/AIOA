@@ -6,7 +6,7 @@
       而该租户已不在本库 —— `SELECT COUNT(*) FROM sys_user WHERE username LIKE 'znkj%'` = 0，
       登录直接 `用户名或密码错误`；
    2. 入口写死 **dev server `http://127.0.0.1:5173`**（需先 `pnpm dev`），而当前形态是
-      单端口产物 `http://127.0.0.1:8080/aioa/web`（docs/33）。
+      单端口产物 `http://127.0.0.1:8080/aios/web`（docs/33）。
    要在本环境复跑，需先把 ROLES 换成当前租户的三档账号（如 `dsj_admin` /
    `fagai_admin` / `fagai_li`），并把 `SHELL` 指到 8080 的产物路径。
    覆盖同类能力的**可跑**替代：`scripts/_verify_repo_menu_merge.py`（19 项）、
@@ -81,9 +81,9 @@ def ensure_upload_project(tok):
 
 def seed(ctx, tok, user, refresh=""):
     ctx.add_init_script(
-        "localStorage.setItem('aioa.token', %s);"
-        "localStorage.setItem('aioa.refreshToken', %s);"
-        "localStorage.setItem('aioa.user', %s);"
+        "localStorage.setItem('aios.token', %s);"
+        "localStorage.setItem('aios.refreshToken', %s);"
+        "localStorage.setItem('aios.user', %s);"
         % (json.dumps(tok), json.dumps(refresh), json.dumps(json.dumps(user, ensure_ascii=False)))
     )
 

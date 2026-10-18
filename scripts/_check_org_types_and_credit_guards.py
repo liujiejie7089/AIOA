@@ -40,13 +40,13 @@ SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
 SCRIPTS = os.path.join(ROOT, "scripts")
 
-ENTITY = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+ENTITY = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                       "org", "entity", "OrgInstitution.java")
-SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                    "org", "service", "InstitutionService.java")
-CREDIT = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+CREDIT = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                       "org", "support", "CreditCode.java")
-TENANT_CTRL = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+TENANT_CTRL = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                            "org", "controller", "TenantAdminController.java")
 VIEW = os.path.join(SHELL, "views", "InstitutionView.vue")
 API_ORG = os.path.join(SHELL, "api", "org.ts")

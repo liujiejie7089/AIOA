@@ -19,7 +19,7 @@ def call(method, path, data=None, timeout=10, follow=True):
     url = BASE + path
     body = data.encode("utf-8") if isinstance(data, str) else data
     req = urllib.request.Request(url, data=body, method=method,
-                                 headers={"User-Agent": "aioa-probe/1.0",
+                                 headers={"User-Agent": "aios-probe/1.0",
                                           "Accept": "application/json, text/html, */*"})
     opener = urllib.request.build_opener() if follow else urllib.request.build_opener(NoRedirect)
     try:

@@ -3,7 +3,7 @@
 _dryrun_oa_module_forms.py — V86 迁移 dry-run 校验（docs/52 P5）
 ================================================================================
 
-在真实库 aioa 上**只读式**校验 V86 是否可正确执行并产出预期计数：
+在真实库 aios 上**只读式**校验 V86 是否可正确执行并产出预期计数：
   - 若 V85 四张表尚未存在（本机后端未重启，符合预期），则在**事务内**按 V85 的 DDL 建表；
   - 跑 V86 全部 INSERT；
   - 查出三个计数：43 个平台模板 / 43 个平台版本 / worker_capability 覆盖 43 个模块；
@@ -28,8 +28,8 @@ import pymysql
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-V85 = os.path.join(REPO, "server", "aioa-boot", "src", "main", "resources", "db", "migration", "V85__form_domain.sql")
-V86 = os.path.join(REPO, "server", "aioa-boot", "src", "main", "resources", "db", "migration", "V86__oa_module_forms.sql")
+V85 = os.path.join(REPO, "server", "aios-boot", "src", "main", "resources", "db", "migration", "V85__form_domain.sql")
+V86 = os.path.join(REPO, "server", "aios-boot", "src", "main", "resources", "db", "migration", "V86__oa_module_forms.sql")
 
 FORM_TABLES = ["form_template", "form_template_version", "form_submission", "worker_capability"]
 
@@ -68,14 +68,14 @@ def main():
         v86_sql = fh.read()
 
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", autocommit=False, connect_timeout=10)
+                           database="aios", autocommit=False, connect_timeout=10)
     cur = conn.cursor()
 
     try:
         # 0) 安全检查：V85 表是否已存在
         cur.execute(
             "SELECT TABLE_NAME FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA='aioa' AND TABLE_NAME IN %s", (FORM_TABLES,)
+            "WHERE TABLE_SCHEMA='aios' AND TABLE_NAME IN %s", (FORM_TABLES,)
         )
         existing = sorted(r[0] for r in cur.fetchall())
         if existing:
@@ -131,7 +131,7 @@ def main():
         # 6) 最终确认：V85 表应已不存在
         cur.execute(
             "SELECT TABLE_NAME FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA='aioa' AND TABLE_NAME IN %s", (FORM_TABLES,)
+            "WHERE TABLE_SCHEMA='aios' AND TABLE_NAME IN %s", (FORM_TABLES,)
         )
         leftover = sorted(r[0] for r in cur.fetchall())
 

@@ -38,7 +38,7 @@ STUB = "http://127.0.0.1:8090"
 TENANT = "某某市某某区大数据管理局"
 USER, PWD = "fagai_admin", "User@123"   # 企业管理员，机构 1 / 部门 11，无 Gitee 绑定
 STUB_MARK = "http://127.0.0.1:8090"
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa",
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios",
           charset="utf8mb4", autocommit=True)
 
 C = httpx.Client(timeout=90, trust_env=False)
@@ -169,7 +169,7 @@ def main():
         pm_col = q("SELECT pm_project_id FROM gitee_project WHERE id=%s", (pid,))
         chk("R3.1 ★回库核对：新建行的 pm_project_id 为 NULL（新列默认语义正确）",
             bool(pm_col) and pm_col[0][0] is None, pm_col)
-        # 本行的 status 由异步建仓决定（AIOA_GITEE_SYNC_ENABLED=false 时停在 CREATING），
+        # 本行的 status 由异步建仓决定（AIOS_GITEE_SYNC_ENABLED=false 时停在 CREATING），
         # 因此**不得**出现在 PM 可绑清单里 —— PM 只收 ACTIVE 仓库。
         st = q("SELECT status FROM gitee_project WHERE id=%s", (pid,))[0][0]
         bindable = C.get(API + "/pm/repos/bindable", headers=h).json()

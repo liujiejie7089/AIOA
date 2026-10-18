@@ -90,7 +90,7 @@
           <el-input v-model="form.code" :disabled="!!form.id" placeholder="如：CTJT-DEMO（全局唯一）" />
         </el-form-item>
         <el-form-item label="登录域名">
-          <el-input v-model="form.domain" placeholder="如：xxx.aioa.cn（留空则未分配）" />
+          <el-input v-model="form.domain" placeholder="如：xxx.aios.cn（留空则未分配）" />
         </el-form-item>
         <template v-if="!form.id">
           <el-divider content-position="left">开通管理员账号</el-divider>

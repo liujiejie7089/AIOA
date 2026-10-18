@@ -32,7 +32,7 @@ import pymysql
 import requests
 
 BASE = "http://127.0.0.1:8080/api/v1"
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa")
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios")
 USER, PWD = "wjj_xu", "User@123"          # 租户 3 普通成员（有 LEAVE 审批流配置）
 APPROVER_PWD = "User@123"
 MARK = "E2E-FORM-"                         # 本套件数据前缀，便于人工复查/兜底清理

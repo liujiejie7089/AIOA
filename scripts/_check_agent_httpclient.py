@@ -16,12 +16,12 @@
     所以任何新加入的「后端 -> agent」调用点都会静默重犯。用静态守卫把它锁住。
 
 判定口径：
-    判定对象 = 既出现「访问 agent 的痕迹（aioa.agent.base-url 配置键，或 /internal/v1/
+    判定对象 = 既出现「访问 agent 的痕迹（aios.agent.base-url 配置键，或 /internal/v1/
     路径字面量）」、**又自己创建了 java.net.http.HttpClient** 的 .java 文件
     （即出现 HttpClient.newBuilder() / newHttpClient() / AgentHttpClient.agentBuilder()）。
 
     这类文件不得出现**裸** HttpClient.newBuilder() / newHttpClient()，必须改用
-    cn.aioa.common.http.AgentHttpClient.agentBuilder()。
+    cn.aios.common.http.AgentHttpClient.agentBuilder()。
 
     只做 HTTP 服务端（controller）或只用 Spring WebClient（明文默认 HTTP/1.1，无此问题）
     的文件不受约束 —— 判据是「是否由本文件创建 java.net.http.HttpClient」，不是「有没有
@@ -42,22 +42,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "server"
 
-FACTORY_REL = "aioa-common/src/main/java/cn/aioa/common/http/AgentHttpClient.java"
+FACTORY_REL = "aios-common/src/main/java/cn/aios/common/http/AgentHttpClient.java"
 FACTORY_CLASS = "AgentHttpClient"
 FACTORY_CALL = "AgentHttpClient.agentBuilder()"
 PIN = "HttpClient.Version.HTTP_1_1"
 BARE = re.compile(r"HttpClient\s*\.\s*(newBuilder|newHttpClient)\s*\(\s*\)")
 
 # 访问 agent 的痕迹：配置键 or 内部端点路径
-AGENT_TRACE = ("aioa.agent.base-url", "/internal/v1/")
+AGENT_TRACE = ("aios.agent.base-url", "/internal/v1/")
 
 # 明确**不能**用 AgentHttpClient 的（外网/第三方客户端：要保留 HTTP/2 与 ALPN 能力）
 MUST_NOT_USE_FACTORY = (
-    "aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteeClient.java",
-    "aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteaProviderClient.java",
-    "aioa-resource/src/main/java/cn/aioa/resource/service/notify/HttpGatewayChannel.java",
-    "aioa-resource/src/main/java/cn/aioa/resource/service/HttpEmbeddingProvider.java",
-    "aioa-bridge/src/main/java/cn/aioa/bridge/service/ToolDispatcher.java",
+    "aios-gitee/src/main/java/cn/aios/gitee/client/GiteeClient.java",
+    "aios-gitee/src/main/java/cn/aios/gitee/client/GiteaProviderClient.java",
+    "aios-resource/src/main/java/cn/aios/resource/service/notify/HttpGatewayChannel.java",
+    "aios-resource/src/main/java/cn/aios/resource/service/HttpEmbeddingProvider.java",
+    "aios-bridge/src/main/java/cn/aios/bridge/service/ToolDispatcher.java",
 )
 
 # selftest 用：rel -> 替换后的文本
@@ -151,19 +151,19 @@ def selftest() -> int:
     }, "工厂把客户端版本钉在 HTTP_1_1"))
 
     # 2) 把 WorkerScheduleService 改回裸 newBuilder -> C2 必须红
-    ws = "aioa-resource/src/main/java/cn/aioa/resource/service/WorkerScheduleService.java"
+    ws = "aios-resource/src/main/java/cn/aios/resource/service/WorkerScheduleService.java"
     cases.append(("定时员工服务回落裸 newBuilder", {
         ws: read(ws).replace(FACTORY_CALL, "HttpClient.newBuilder()"),
     }, "访问 agent 的类一律不得直接 HttpClient.newBuilder()"))
 
     # 3) 把 agent 工厂用到 GiteeClient 上 -> C4 必须红
-    gitee = "aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteeClient.java"
+    gitee = "aios-gitee/src/main/java/cn/aios/gitee/client/GiteeClient.java"
     cases.append(("外网客户端被套上 agent 工厂", {
         gitee: read(gitee).replace("HttpClient.newBuilder()", FACTORY_CALL),
     }, "外网/第三方客户端未被套上 agent 专用工厂"))
 
     # 4) 把某个 agent 调用点显式改回 HTTP_2 -> C5 必须红
-    kpi = "aioa-resource/src/main/java/cn/aioa/resource/service/KpiInsightService.java"
+    kpi = "aios-resource/src/main/java/cn/aios/resource/service/KpiInsightService.java"
     cases.append(("agent 调用点被改回 HTTP_2", {
         kpi: read(kpi).replace(FACTORY_CALL, "HttpClient.newBuilder().version(HttpClient.Version.HTTP_2)"),
     }, "访问 agent 的类没有被显式改回 HTTP_2"))

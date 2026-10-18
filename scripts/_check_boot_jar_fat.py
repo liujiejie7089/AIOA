@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""可执行产物哨兵：`aioa-boot` 的 jar 必须是**胖 jar**（含 BOOT-INF/lib）。
+"""可执行产物哨兵：`aios-boot` 的 jar 必须是**胖 jar**（含 BOOT-INF/lib）。
 
 为什么必须有这一条 —— 2026-10-11 实际踩到的缺陷，现象与成因：
   为了隔离验证，构建时用过 `-Dspring-boot.repackage.skip=true`，
-  于是 `server/aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar` 被换成了一个
+  于是 `server/aios-boot/target/aios-boot-0.1.0-SNAPSHOT.jar` 被换成了一个
   **170KB 的「瘦 jar」**（只有本工程的 classes，没有 BOOT-INF/lib）。
   更糟的是：当时已有一个**更早启动**的后端进程在跑。JVM 是**按需加载** class 的 ——
   启动时已加载的类照常工作，**尚未加载**的类则再也读不到。于是：
 
     POST /api/v1/conversations/{id}/runs  →  500
-    java.lang.NoClassDefFoundError: cn/aioa/chat/dto/RunCreatedResponse
+    java.lang.NoClassDefFoundError: cn/aios/chat/dto/RunCreatedResponse
     GET  /api/v1/admin/org-configs        →  500
     java.lang.NoClassDefFoundError: org/springframework/web/servlet/mvc/LastModified
 
@@ -21,11 +21,11 @@
   J1  目标 jar 存在（缺失 ⇒ SKIP 且非 0，不伪装 PASS）
   J2  ★含 `BOOT-INF/lib/` 且内嵌 jar 数 ≥ 50（胖 jar 的判据）
   J3  MANIFEST 的 Main-Class 指向 Spring Boot loader、
-      Start-Class = cn.aioa.boot.AioaBootApplication（否则 jar 不可执行）
-  J4  `BOOT-INF/classes/cn/aioa/boot/AioaBootApplication.class` 在包内（本工程代码确实进了包）
-  J5  关键模块 jar 内嵌**且各自非空**：aioa-chat / aioa-project / aioa-resource / aioa-security
-  J6  ★定点回归：本次故障类 `cn/aioa/chat/dto/RunCreatedResponse`
-      必须能在**内嵌的 aioa-chat jar 内部**解析出来（J2/J5 的「到位写法」）
+      Start-Class = cn.aios.boot.AiosBootApplication（否则 jar 不可执行）
+  J4  `BOOT-INF/classes/cn/aios/boot/AiosBootApplication.class` 在包内（本工程代码确实进了包）
+  J5  关键模块 jar 内嵌**且各自非空**：aios-chat / aios-project / aios-resource / aios-security
+  J6  ★定点回归：本次故障类 `cn/aios/chat/dto/RunCreatedResponse`
+      必须能在**内嵌的 aios-chat jar 内部**解析出来（J2/J5 的「到位写法」）
 
 负向对照（证明判据有区分力，不是恒真）：
   N1  合成的「只有 MANIFEST、无 BOOT-INF/lib」的瘦 jar ⇒ 必须判**不是胖 jar**
@@ -44,15 +44,15 @@ import tempfile
 import zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BOOT_TARGET = os.path.join(REPO, 'server', 'aioa-boot', 'target')
-DEFAULT_JAR = os.path.join(BOOT_TARGET, 'aioa-boot-0.1.0-SNAPSHOT.jar')
+BOOT_TARGET = os.path.join(REPO, 'server', 'aios-boot', 'target')
+DEFAULT_JAR = os.path.join(BOOT_TARGET, 'aios-boot-0.1.0-SNAPSHOT.jar')
 
 # 内嵌模块 jar -> 该 jar 内必须能解析出的一个类（证明它不是一个空壳）
 REQUIRED_MODULE_CLASSES = [
-    ('aioa-chat', 'cn/aioa/chat/dto/RunCreatedResponse.class'),          # ★ 本次故障类
-    ('aioa-project', 'cn/aioa/project/controller/PmDigitalWorkerController.class'),
-    ('aioa-resource', 'cn/aioa/resource/support/SysConfigGroups.class'),
-    ('aioa-security', 'cn/aioa/security/PermissionCatalog.class'),
+    ('aios-chat', 'cn/aios/chat/dto/RunCreatedResponse.class'),          # ★ 本次故障类
+    ('aios-project', 'cn/aios/project/controller/PmDigitalWorkerController.class'),
+    ('aios-resource', 'cn/aios/resource/support/SysConfigGroups.class'),
+    ('aios-security', 'cn/aios/security/PermissionCatalog.class'),
 ]
 MIN_LIBS = 50
 
@@ -89,7 +89,7 @@ def inspect(jar_path):
         with zipfile.ZipFile(jar_path) as z:
             names = z.namelist()
             out['libs'] = len([n for n in names if n.startswith('BOOT-INF/lib/') and n.endswith('.jar')])
-            out['classes'] = 'BOOT-INF/classes/cn/aioa/boot/AioaBootApplication.class' in names
+            out['classes'] = 'BOOT-INF/classes/cn/aios/boot/AiosBootApplication.class' in names
             try:
                 out['manifest'] = z.read('META-INF/MANIFEST.MF').decode('utf-8', 'ignore')
             except KeyError:
@@ -117,7 +117,7 @@ def is_fat(info):
     man = info.get('manifest') or ''
     loader_ok = ('Main-Class: org.springframework.boot.loader.launch.JarLauncher' in man
                  or 'Main-Class: org.springframework.boot.loader.JarLauncher' in man)
-    start_ok = 'Start-Class: cn.aioa.boot.AioaBootApplication' in man
+    start_ok = 'Start-Class: cn.aios.boot.AiosBootApplication' in man
     return (info.get('available') and info.get('libs', 0) >= MIN_LIBS
             and info.get('classes') and loader_ok and start_ok), {
         'libs': info.get('libs'), 'classes': info.get('classes'),
@@ -131,7 +131,7 @@ def negative_controls(target_jar):
     try:
         with zipfile.ZipFile(tmp, 'w') as z:
             z.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\n\r\n')
-            z.writestr('cn/aioa/boot/AioaBootApplication.class', b'\xca\xfe\xba\xbe')
+            z.writestr('cn/aios/boot/AiosBootApplication.class', b'\xca\xfe\xba\xbe')
         fat, det = is_fat(inspect(tmp))
         chk('N1 ★负向对照：合成瘦 jar（无 BOOT-INF/lib、无 Start-Class）必须被判「不是胖 jar」',
             not fat, det)
@@ -158,13 +158,13 @@ def negative_controls(target_jar):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--jar', default=None, help='指定要检查的 jar（默认 server/aioa-boot/target 下的产物）')
+    ap.add_argument('--jar', default=None, help='指定要检查的 jar（默认 server/aios-boot/target 下的产物）')
     args = ap.parse_args()
 
-    print('[可执行产物哨兵 · aioa-boot 必须是胖 jar]')
+    print('[可执行产物哨兵 · aios-boot 必须是胖 jar]')
     jar = locate_jar(args.jar)
     if not jar:
-        print('  [SKIP] 未找到 aioa-boot 产物（%s）' % (args.jar or BOOT_TARGET))
+        print('  [SKIP] 未找到 aios-boot 产物（%s）' % (args.jar or BOOT_TARGET))
         print('         前置不满足：先构建 —— cd server && bash mvnw -DskipTests -q package')
         print('\n合计：0 通过 / 1 失败（前置不满足，不伪装 PASS）')
         return 1
@@ -180,15 +180,15 @@ def main():
     man = info['manifest']
     loader_ok = ('Main-Class: org.springframework.boot.loader.launch.JarLauncher' in man
                  or 'Main-Class: org.springframework.boot.loader.JarLauncher' in man)
-    start_ok = 'Start-Class: cn.aioa.boot.AioaBootApplication' in man
+    start_ok = 'Start-Class: cn.aios.boot.AiosBootApplication' in man
 
     chk('J2 ★含 BOOT-INF/lib 且内嵌 jar ≥ %d（瘦 jar 只有本工程 classes）' % MIN_LIBS,
         info['libs'] >= MIN_LIBS, '实际 %d 个内嵌 jar' % info['libs'])
     chk('J3 MANIFEST 可执行：Main-Class 指向 Spring Boot loader', loader_ok,
         man[:200].replace('\n', ' | '))
-    chk('J3b MANIFEST 可执行：Start-Class = cn.aioa.boot.AioaBootApplication', start_ok,
+    chk('J3b MANIFEST 可执行：Start-Class = cn.aios.boot.AiosBootApplication', start_ok,
         man[:200].replace('\n', ' | '))
-    chk('J4 本工程入口类已进包（BOOT-INF/classes/.../AioaBootApplication.class）',
+    chk('J4 本工程入口类已进包（BOOT-INF/classes/.../AiosBootApplication.class）',
         info['classes'])
 
     for mod, cls in REQUIRED_MODULE_CLASSES:
@@ -201,9 +201,9 @@ def main():
             '内嵌条目数=%s' % n)
 
     # J6：把「到位」写成对故障本身的定点断言
-    got = info['embedded'].get('aioa-chat')
-    chk('J6 ★定点回归：故障类 RunCreatedResponse 可在内嵌 aioa-chat jar 内解析（否则 /runs 必 500）',
-        bool(got and got[0]), 'aioa-chat 内嵌状态=%s' % (got,))
+    got = info['embedded'].get('aios-chat')
+    chk('J6 ★定点回归：故障类 RunCreatedResponse 可在内嵌 aios-chat jar 内解析（否则 /runs 必 500）',
+        bool(got and got[0]), 'aios-chat 内嵌状态=%s' % (got,))
 
     negative_controls(jar)
 

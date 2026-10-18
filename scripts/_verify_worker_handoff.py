@@ -23,7 +23,7 @@
     agent/.venv/Scripts/python.exe scripts/_verify_worker_handoff.py
     ... --tenant 3 --user wjj_xu --pwd User@123
 
-前置：后端 :8080、agent :8000、本地 MySQL（127.0.0.1:3306 root 空密码 库 aioa）。
+前置：后端 :8080、agent :8000、本地 MySQL（127.0.0.1:3306 root 空密码 库 aios）。
 前置不满足 ⇒ 打印 SKIP 并 exit 2（与全仓矩阵同口径，不伪装 PASS）。
 """
 from __future__ import annotations
@@ -102,7 +102,7 @@ def load_caps(tenant: int) -> list[dict]:
     import pymysql
 
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", charset="utf8mb4",
+                           database="aios", charset="utf8mb4",
                            cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
@@ -121,7 +121,7 @@ def conv_worker_id(conv_id: int) -> int | None:
     import pymysql
 
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", charset="utf8mb4",
+                           database="aios", charset="utf8mb4",
                            cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
@@ -136,7 +136,7 @@ def user_msg_count(conv_id: int, text: str) -> int:
     import pymysql
 
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", charset="utf8mb4",
+                           database="aios", charset="utf8mb4",
                            cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
@@ -273,7 +273,7 @@ def main() -> int:
     try:
         caps = load_caps(args.tenant)
     except Exception as exc:  # noqa: BLE001
-        log(f"[SKIP] 读库失败（需要本地 MySQL 3306 / root 空密码 / 库 aioa）：{exc}")
+        log(f"[SKIP] 读库失败（需要本地 MySQL 3306 / root 空密码 / 库 aios）：{exc}")
         return 2
 
     pair = pick_pair(caps)

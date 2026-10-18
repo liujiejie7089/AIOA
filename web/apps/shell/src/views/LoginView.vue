@@ -4,7 +4,7 @@
       <div class="login-brand">
         <el-icon class="login-icon"><Platform /></el-icon>
         <div>
-          <div class="login-title">AIOA 智能办公基座</div>
+          <div class="login-title">AIOS 智能办公基座</div>
           <div class="login-sub">统一身份登录</div>
         </div>
       </div>
@@ -37,7 +37,7 @@ const auth = useAuthStore()
 
 const formRef = ref<FormInstance>()
 /** 上次登录成功的租户名称：同一个租户反复登录时不用每次重敲。 */
-const LAST_TENANT_KEY = 'aioa.lastTenant'
+const LAST_TENANT_KEY = 'aios.lastTenant'
 const form = reactive({
   username: '',
   password: '',
@@ -108,7 +108,7 @@ async function onSubmit() {
 
 .login-icon {
   font-size: 32px;
-  color: var(--aioa-primary);
+  color: var(--aios-primary);
 }
 
 .login-title {
@@ -118,7 +118,7 @@ async function onSubmit() {
 
 .login-sub {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .login-btn {

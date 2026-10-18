@@ -47,7 +47,7 @@ async def main():
 
         await page.goto(BASE, wait_until='domcontentloaded')
         await page.wait_for_timeout(900)
-        await page.evaluate("() => localStorage.setItem('aioa_mode','oa')")
+        await page.evaluate("() => localStorage.setItem('aios_mode','oa')")
         await page.reload(wait_until='domcontentloaded')
         await page.wait_for_timeout(900)
         if not await page.query_selector('body.auth'):

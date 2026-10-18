@@ -5,10 +5,10 @@
 ``environment:`` 块中**显式列出**的那些 —— 本 compose **没有 env_file**，``deploy/.env``
 只作为 ``${}`` 插值源，不会整份塞进容器。于是存在一整类**静默空转**：
 
-    application.yml 里写了 ``${AIOA_XXX:default}``，``.env`` 里也老老实实填了值，
+    application.yml 里写了 ``${AIOS_XXX:default}``，``.env`` 里也老老实实填了值，
     但 compose 没透传 ⇒ 容器拿不到 ⇒ 只有 yml 的 default 生效，而且**不报任何错**。
 
-真实实例（2026-10-09，已修）：``AIOA_GITEE_SYNC_ENABLED`` / ``AIOA_GITEE_SYNC_CRON``
+真实实例（2026-10-09，已修）：``AIOS_GITEE_SYNC_ENABLED`` / ``AIOS_GITEE_SYNC_CRON``
 未透传 ⇒ 在 .env 里把 sync 关掉是空转（容器永远按 yml 默认 ``true`` 跑）。
 同类历史实例见 ``.workbuddy/memory/topics/production-deploy.md`` 的
 「★ 环境变量注入路径」一节（``SPRING_DATASOURCE_*`` 同名键被 compose 现拼覆盖）。
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 COMPOSE = "deploy/docker-compose.yml"
-APP_YML = "server/aioa-boot/src/main/resources/application.yml"
+APP_YML = "server/aios-boot/src/main/resources/application.yml"
 DOTENV = "deploy/.env"
 SERVICE = "server"
 
@@ -51,16 +51,16 @@ BENIGN = {
         "⇒ 无论激活哪个 profile 都只加载同一份配置，不改任何行为"
         "（仅 `java -jar` 直跑时可选设）"
     ),
-    "AIOA_SCFY_BASE_URL": "SCfy（四川法院）集成未纳入本部署，enabled 默认 false",
-    "AIOA_SCFY_ENABLED": "同上：SCfy 集成未纳入本部署",
-    "AIOA_SCFY_USERNAME": "同上：SCfy 集成未纳入本部署（且 yml 中该行为注释）",
-    "AIOA_SCFY_PASSWORD": "同上：SCfy 集成未纳入本部署（且 yml 中该行为注释）",
-    "AIOA_GITEA_INSECURE_SKIP_VERIFY": (
+    "AIOS_SCFY_BASE_URL": "SCfy（四川法院）集成未纳入本部署，enabled 默认 false",
+    "AIOS_SCFY_ENABLED": "同上：SCfy 集成未纳入本部署",
+    "AIOS_SCFY_USERNAME": "同上：SCfy 集成未纳入本部署（且 yml 中该行为注释）",
+    "AIOS_SCFY_PASSWORD": "同上：SCfy 集成未纳入本部署（且 yml 中该行为注释）",
+    "AIOS_GITEA_INSECURE_SKIP_VERIFY": (
         "Gitea 段默认 disabled；**启用 Gitea 前必须把这 4 个 TLS 键一并加进 compose**（待办）"
     ),
-    "AIOA_GITEA_TRUST_STORE": "同上：Gitea 未启用；启用前需透传",
-    "AIOA_GITEA_TRUST_STORE_PASSWORD": "同上：Gitea 未启用；启用前需透传",
-    "AIOA_GITEA_TRUST_STORE_TYPE": "同上：Gitea 未启用；启用前需透传",
+    "AIOS_GITEA_TRUST_STORE": "同上：Gitea 未启用；启用前需透传",
+    "AIOS_GITEA_TRUST_STORE_PASSWORD": "同上：Gitea 未启用；启用前需透传",
+    "AIOS_GITEA_TRUST_STORE_TYPE": "同上：Gitea 未启用；启用前需透传",
 }
 
 REF_RE = re.compile(r"\$\{([A-Z0-9_]+)(?::([^}]*))?\}")
@@ -202,21 +202,21 @@ def run_selftest() -> int:
             bad += 1
 
     print("[SELFTEST] 判据可证伪性")
-    fake_yml = 'spring:\n  x: ${AIOA_FAKE_MISSING_VAR:}\n'
+    fake_yml = 'spring:\n  x: ${AIOS_FAKE_MISSING_VAR:}\n'
     fake_compose = "services:\n  server:\n    environment:\n      OTHER_KEY: ${OTHER_KEY:-}\n"
 
     r = extract_refs(fake_yml)
-    chk("S1 能抽出真实引用（非空）", r.get("AIOA_FAKE_MISSING_VAR") == "", repr(r))
+    chk("S1 能抽出真实引用（非空）", r.get("AIOS_FAKE_MISSING_VAR") == "", repr(r))
 
     fails, warns = classify(r, compose_env_keys(fake_compose), BENIGN)
-    chk("S2 未透传且非白名单 => FAIL", fails == ["AIOA_FAKE_MISSING_VAR"], repr(fails))
+    chk("S2 未透传且非白名单 => FAIL", fails == ["AIOS_FAKE_MISSING_VAR"], repr(fails))
     chk("S2b 此时不应有 WARN", warns == [], repr(warns))
 
     benign2 = dict(BENIGN)
-    benign2["AIOA_FAKE_MISSING_VAR"] = "自检占位"
+    benign2["AIOS_FAKE_MISSING_VAR"] = "自检占位"
     fails2, warns2 = classify(r, compose_env_keys(fake_compose), benign2)
     chk("S3 白名单内的豁免 => 降为 WARN",
-        fails2 == [] and warns2 == ["AIOA_FAKE_MISSING_VAR"], repr((fails2, warns2)))
+        fails2 == [] and warns2 == ["AIOS_FAKE_MISSING_VAR"], repr((fails2, warns2)))
 
     passed_real = compose_env_keys(Path(ROOT / COMPOSE).read_text(encoding="utf-8"))
     chk("S4 真实 compose 能解析出 environment 键（>50）", len(passed_real) > 50,
@@ -226,9 +226,9 @@ def run_selftest() -> int:
     chk("S5 真实 application.yml 能抽出引用（>60）", len(refs_real) > 60, "refs=%d" % len(refs_real))
 
     fake_refs = dict(refs_real)
-    fake_refs["AIOA_GITEE_SYNC_ENABLED"] = ""
-    f3, _ = classify(fake_refs, passed_real - {"AIOA_GITEE_SYNC_ENABLED"}, BENIGN)
-    chk("S6 把真实键从透传里摘掉 => 必须报 FAIL", "AIOA_GITEE_SYNC_ENABLED" in f3, repr(f3))
+    fake_refs["AIOS_GITEE_SYNC_ENABLED"] = ""
+    f3, _ = classify(fake_refs, passed_real - {"AIOS_GITEE_SYNC_ENABLED"}, BENIGN)
+    chk("S6 把真实键从透传里摘掉 => 必须报 FAIL", "AIOS_GITEE_SYNC_ENABLED" in f3, repr(f3))
 
     chk("S7a 插值：未设 => 取 default", resolve("${A:-xyz}", {}) == "xyz")
     chk("S7b 插值：已设 => 取已设值", resolve("${A:-xyz}", {"A": "v"}) == "v")

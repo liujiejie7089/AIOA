@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>AIOA 智能工作台 · 客户端 V1.2</title>
+<title>AIOS 智能工作台 · 客户端 V1.2</title>
 <!-- 内联 SVG 图标：避免浏览器默认探测 /favicon.ico 而每次 404（已知缺口 D-4）。
      单文件 H5 无法附带静态资源，data URI 是唯一不引入外部依赖的做法。 -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232f6bff'/%3E%3Cpath d='M20 46 32 18l12 28' stroke='%23fff' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -1913,7 +1913,7 @@
   </div>
 
   <div class="mp-header">
-    <span class="mp-title" id="pageTitle">AIOA 智能工作台<span class="ver">V1.2</span></span>
+    <span class="mp-title" id="pageTitle">AIOS 智能工作台<span class="ver">V1.2</span></span>
     <div class="capsule"><span class="dots"><i></i><i></i><i></i></span><span class="dot"></span></div>
   </div>
 
@@ -1924,7 +1924,7 @@
         <div class="gate-brand">
           <div class="logo"><svg class="ic"><use href="#i-cube"/></svg></div>
           <div>
-            <h1>AIOA 智能工作台</h1>
+            <h1>AIOS 智能工作台</h1>
             <div class="muted" style="font-size:11px">企业 AI 办公基座 · 客户端 V1.2</div>
           </div>
         </div>
@@ -2188,7 +2188,7 @@
         </div>
         <div class="row">
           <span style="display:flex;align-items:center;gap:8px"><svg class="ic" style="width:15px;height:15px;color:var(--text-2)"><use href="#i-gear"/></svg>关于</span>
-          <span class="muted">AIOA 智能工作台 V1.2</span>
+          <span class="muted">AIOS 智能工作台 V1.2</span>
         </div>
         <div class="row click" onclick="doLogout()">
           <span style="display:flex;align-items:center;gap:8px;color:var(--red)"><svg class="ic" style="width:15px;height:15px"><use href="#i-chevron"/></svg>退出登录</span>
@@ -2439,7 +2439,7 @@
     <!-- ② 任务 = 办公协同：左导轨 任务 / 项目 / 审批 / 日程 -->
     <section class="view flush" id="v-collab">
       <div class="collab-head">
-        <div class="ct">AIOA 办公协同</div>
+        <div class="ct">AIOS 办公协同</div>
         <button class="newtask" id="oaNewTask">新建任务</button>
       </div>
       <div class="collab-body">
@@ -2737,7 +2737,7 @@ function workerRoleText(roles){
 
 /* ============================================================================
    2. API 适配层（经 serve.py 同域代理到 :8080，规避 CORS）
-   接口基址不写死：生产入口带前缀（https://host/aioa/h5/ ⇒ 接口在 /aioa/api），
+   接口基址不写死：生产入口带前缀（https://host/aios/h5/ ⇒ 接口在 /aios/api），
    本地直连是 http://127.0.0.1:5181/ ⇒ 接口在 /api。由 pathname 推导，见 apiBaseFromPath()。
    ============================================================================ */
 const API = {
@@ -2901,7 +2901,7 @@ const API = {
     if(state.conversationId) return state.conversationId;
     // 数字员工会话：带上 workerId → 后端把会话与该员工绑定，Agent 侧限定回答边界
     const workerId = (state.chatWorker && state.chatWorker.id) ? state.chatWorker.id : null;
-    const c = await this.createConversation((state.chatExpert ? state.chatExpert.name : '会话')+' · 对话','aioa-client', workerId);
+    const c = await this.createConversation((state.chatExpert ? state.chatExpert.name : '会话')+' · 对话','aios-client', workerId);
     state.conversationId = c && (c.id || c.conversationId);
     if(!state.conversationId) throw new Error('会话创建失败');
     return state.conversationId;
@@ -3070,12 +3070,12 @@ function go(id){
   });
 }
 const TITLES = {
-  'page-home':'AIOA 智能工作台','page-todo':'待办','page-agent':'专家与员工','page-chat':'会话',
+  'page-home':'AIOS 智能工作台','page-todo':'待办','page-agent':'专家与员工','page-chat':'会话',
   'page-me':'我的','page-bill':'用量账单','page-buy':'购买词元包','page-log':'我的操作记录','page-result':'成果详情',
   'page-perm':'权限申请','page-feedback':'投诉与建议'
 };
 function setTitle(pid){
-  const name = (pid === 'page-chat' && state.chatExpert) ? state.chatExpert.name : (TITLES[pid] || 'AIOA 智能工作台');
+  const name = (pid === 'page-chat' && state.chatExpert) ? state.chatExpert.name : (TITLES[pid] || 'AIOS 智能工作台');
   $('pageTitle').innerHTML = esc(name) + '<span class="ver">V1.2</span>';
 }
 function switchTab(el){
@@ -3142,7 +3142,7 @@ async function doLogin(){
     state.token = d.accessToken;
     state.user = d.user || {username:u, nickname:d.nickname || u};
     applyRoles((state.user && state.user.roles) || []);
-    try{ localStorage.setItem('aioa_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
+    try{ localStorage.setItem('aios_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
     document.body.classList.add('auth');
     go('page-home'); setTitle('page-home');
     await loadLiveData();
@@ -3153,7 +3153,7 @@ async function doLogin(){
   }
 }
 function doLogout(){
-  try{ localStorage.removeItem('aioa_session'); }catch(e){}
+  try{ localStorage.removeItem('aios_session'); }catch(e){}
   state.token = null; state.user = null;
   document.body.classList.remove('auth');
   go('page-login');
@@ -3665,7 +3665,7 @@ function exportBill(){
   const csv = '\uFEFF' + rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download = 'AIOA用量账单.csv'; a.click();
+  a.download = 'AIOS用量账单.csv'; a.click();
   toast('账单明细已导出');
 }
 /* 操作留痕口径（纯函数，唯一入口）：OA 形态的「我的操作记录」与本页同源。
@@ -5571,7 +5571,7 @@ function stripDeepLinkParams(){
 /* 纯函数：由「当前页所在目录」推导接口基址。
    为什么与 h5BaseUrl() 放在一起：两者都是「本页地址 → 对外地址」的推导，同一处维护不易漂移。
    形态：
-     生产  .../aioa/h5/  或 .../aioa/h5   → /aioa/api
+     生产  .../aios/h5/  或 .../aios/h5   → /aios/api
      本地  /  或 /index.html              → /api（serve.py 把 /api 代理到 :8080）
    规则：把路径里最后出现的 h5 段换成 api；找不到 h5 段就退回 /api。
    稳定性：不依赖 origin / 端口 / 是否有尾斜杠；末段含扩展名（如 index.html）按文件名丢弃。 */
@@ -5585,7 +5585,7 @@ function apiBaseFromPath(pathname){
   return '/api';
 }
 /* 当前页所在目录，用于拼「链接地址」：
-   生产是 https://host/aioa/h5/，本地直连是 http://127.0.0.1:5181/ —— 都由 pathname 推导，
+   生产是 https://host/aios/h5/，本地直连是 http://127.0.0.1:5181/ —— 都由 pathname 推导，
    不写死前缀，避免测试环境与生产环境各写一份。 */
 function h5BaseUrl(){
   let p = location.pathname || '/';
@@ -5754,7 +5754,7 @@ function modelTier(model){
 var VoiceInput = (function(){
   var stream = null, rec = null, chunks = [], t0 = 0, tick = null;
   var hooks = null, cancelled = false, stopping = false, why = null;
-  /* 兜底上限：后端 AIOA_ASR_MAX_SECONDS=60，这里留 5s 余量，
+  /* 兜底上限：后端 AIOS_ASR_MAX_SECONDS=60，这里留 5s 余量，
      避免「录满 60s 反被后端按超长拒掉」。任何情况下录音都不会超过它。 */
   var MAX_MS = 55000;
   /* 最短有效录音：小于此值视为误触，不发送（对标微信长按说话） */
@@ -7249,7 +7249,7 @@ function tickClock(){
 (async function init(){
   tickClock(); setInterval(tickClock, 30000);
   try{
-    const saved = JSON.parse(localStorage.getItem('aioa_session') || 'null');
+    const saved = JSON.parse(localStorage.getItem('aios_session') || 'null');
     if(saved && saved.token){
       state.token = saved.token; state.user = saved.user;
       // 用 /auth/me 判断角色
@@ -7264,7 +7264,7 @@ function tickClock(){
       startNotifPolling();
     }
   }catch(e){
-    try{ localStorage.removeItem('aioa_session'); }catch(_){}
+    try{ localStorage.removeItem('aios_session'); }catch(_){}
     state.token = null;
     go('page-login');
   }
@@ -7327,7 +7327,7 @@ function oaToggleKB(){
 /* 当前项目 id 的唯一读取入口：不在别处散读 S.projects / S.currentProject 推断。
    无项目时返回 0（与后端「projectId=0 = 只要无项目会话」口径对齐）。 */
 function currentProjectId(){ return S.currentProject ? Number(S.currentProject.id) : 0; }
-var LS_MODE = 'aioa_mode';
+var LS_MODE = 'aios_mode';
 /* 默认形态：全新访客（以及登出之后）进入新版。
    只有用户显式点过「切换布局」并留下记忆时，才尊重那份记忆 ——
    否则「默认展示新版」会被一条陈旧的 localStorage 值悄悄推翻。 */
@@ -7403,7 +7403,7 @@ function syncLayoutBtns(){
 /* ---------------------------------------------------------------- 2. OA 导航 */
 var META = {
   home:    {t:'工作助手',      tab:'home'},
-  collab:  {t:'AIOA 办公协同', tab:'collab'},
+  collab:  {t:'AIOS 办公协同', tab:'collab'},
   kb:      {t:'知识库',        tab:'kb'},
   modules: {t:'OA 模块',       tab:null, sub:1},
   org:     {t:'部门',          tab:'org'},
@@ -7699,7 +7699,7 @@ async function enterProject(p){
   var convId = S.projectConvId[id];
   if(!convId){
     try{
-      var c = await oaCreateConversation('项目 · ' + S.currentProject.name, 'aioa-client', null, id);
+      var c = await oaCreateConversation('项目 · ' + S.currentProject.name, 'aios-client', null, id);
       convId = c && (c.id || c.conversationId);
       if(convId){ S.projectConvId[id] = convId; S.projectConvWorker[id] = null; }
     }catch(e){ convId = null; }
@@ -8911,12 +8911,12 @@ async function oaEnsureConv(){
     if(existing && String(S.projectConvWorker[pid] || '') === String(wantWorker || '')){
       S.convId = existing; return existing;
     }
-    c = await oaCreateConversation(title, 'aioa-client', wantWorker, pid);
+    c = await oaCreateConversation(title, 'aios-client', wantWorker, pid);
     S.convId = c && (c.id || c.conversationId);
     if(S.convId){ S.projectConvId[pid] = S.convId; S.projectConvWorker[pid] = wantWorker; }
   } else {
     // 无项目：保持旧行为（不带 projectId，后端不追加过滤）
-    c = await API.createConversation(title, 'aioa-client', S.worker ? S.worker.id : null);
+    c = await API.createConversation(title, 'aios-client', S.worker ? S.worker.id : null);
     S.convId = c && (c.id || c.conversationId);
   }
   if(!S.convId) throw new Error('会话创建失败');
@@ -8926,7 +8926,7 @@ async function oaEnsureConv(){
 /* 建会话的统一入口（需求一）：可带 projectId；仅当 projectId>0 才写入 projectId，
    与后端「projectId 省略 = 不加过滤」口径对齐，确保「无项目」形态完全向后兼容。 */
 async function oaCreateConversation(title, appCode, workerId, projectId){
-  var body = {title: title, appCode: appCode || 'aioa-client', workerId: workerId || null};
+  var body = {title: title, appCode: appCode || 'aios-client', workerId: workerId || null};
   if(projectId && Number(projectId) > 0) body.projectId = Number(projectId);
   return API.req('/v1/conversations', {method:'POST', body: JSON.stringify(body)});
 }

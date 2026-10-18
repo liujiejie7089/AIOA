@@ -35,7 +35,7 @@ USER, PWD = "dsj_admin", "User@123"
 LOW_USER = "fagai_chen"
 LOW_MEMBER_ID = 4
 
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa",
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios",
           charset="utf8mb4", autocommit=True)
 
 C = httpx.Client(timeout=60, trust_env=False)

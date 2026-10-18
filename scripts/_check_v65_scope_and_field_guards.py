@@ -46,17 +46,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
 
-ADMIN_CTRL = os.path.join(SERVER, "aioa-admin", "src", "main", "java", "cn", "aioa",
+ADMIN_CTRL = os.path.join(SERVER, "aios-admin", "src", "main", "java", "cn", "aios",
                           "admin", "controller", "AdminController.java")
-ORG_TREE = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+ORG_TREE = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                         "org", "service", "OrgTreeService.java")
-EXPERT_CTRL = os.path.join(SERVER, "aioa-resource", "src", "main", "java", "cn", "aioa",
+EXPERT_CTRL = os.path.join(SERVER, "aios-resource", "src", "main", "java", "cn", "aios",
                            "resource", "controller", "ExpertConfigController.java")
-EXPERT_SETTINGS = os.path.join(SERVER, "aioa-resource", "src", "main", "java", "cn", "aioa",
+EXPERT_SETTINGS = os.path.join(SERVER, "aios-resource", "src", "main", "java", "cn", "aios",
                                "resource", "model", "ExpertSettings.java")
-CATALOG_SVC = os.path.join(SERVER, "aioa-resource", "src", "main", "java", "cn", "aioa",
+CATALOG_SVC = os.path.join(SERVER, "aios-resource", "src", "main", "java", "cn", "aios",
                            "resource", "service", "CatalogService.java")
-ORG_STATS = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+ORG_STATS = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                          "org", "service", "OrgScopeStatsService.java")
 TENANT_SCOPE = os.path.join(SHELL, "api", "tenantScope.ts")
 MAIN_LAYOUT = os.path.join(SHELL, "layouts", "MainLayout.vue")
@@ -111,7 +111,7 @@ def checks(t):
     # ---- B5 可见范围判定的实现必须只在一处（ExpertSettings.visibleTo），且按目标清单命中
     out.append((
         "B5 可见范围判定落在 ExpertSettings.visibleTo 且按清单命中",
-        "public boolean visibleTo(cn.aioa.security.AuthUser user)" in settings_txt
+        "public boolean visibleTo(cn.aios.security.AuthUser user)" in settings_txt
         and 'case "INSTITUTION"' in settings_txt
         and "t.contains(user.getInstitutionId())" in settings_txt
         and "return false;" in settings_txt.split('case "USER"', 1)[-1][:400],
@@ -277,8 +277,8 @@ def selftest():
          ["B4"]),
         ("B5 判定实现挪出 ExpertSettings（退回「只判有无归属」）",
          lambda t: dict(t, settings=t["settings"].replace(
-             "public boolean visibleTo(cn.aioa.security.AuthUser user)",
-             "public boolean visibleToLegacy(cn.aioa.security.AuthUser user)")),
+             "public boolean visibleTo(cn.aios.security.AuthUser user)",
+             "public boolean visibleToLegacy(cn.aios.security.AuthUser user)")),
          ["B5"]),
         ("B5b INSTITUTION 退回「凡有机构归属者可见」",
          lambda t: dict(t, settings=t["settings"].replace(

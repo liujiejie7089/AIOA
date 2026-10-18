@@ -28,8 +28,8 @@
    否则真实密钥被覆盖成 `****`。
 4. **agent 侧「禁用集合」与「规格注册」解耦**：`apply_overrides` 遇 `enabled=false` 也要注册规格，
    否则「保存（停用）→ 点启动」会因模型未注册而永远失败。下发是全量的，不在列表且非内置键 = 已删除，要清规格+内存 Key。
-5. `apiKey` 落库用 `ModelKeyCodec`（AES-256-GCM），密钥 `AIOA_MODEL_KEY_ENC_KEY` →
-   `AIOA_GITEE_TOKEN_ENC_KEY` → 内置（启动 WARN，生产必须配）。**明文只出现在保存请求体与推送 agent 的内网链路**。
+5. `apiKey` 落库用 `ModelKeyCodec`（AES-256-GCM），密钥 `AIOS_MODEL_KEY_ENC_KEY` →
+   `AIOS_GITEE_TOKEN_ENC_KEY` → 内置（启动 WARN，生产必须配）。**明文只出现在保存请求体与推送 agent 的内网链路**。
 
 ## 调用链路一致性的落点
 - 温度：专家配置（`expert_settings.temperature`）> 模型配置（`provider.temperature`）> 0.3。

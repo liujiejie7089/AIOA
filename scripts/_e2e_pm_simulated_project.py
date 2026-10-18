@@ -33,7 +33,7 @@ import httpx
 from playwright.sync_api import sync_playwright
 
 API = "http://127.0.0.1:8080/api/v1"
-SHELL = "http://127.0.0.1:8080/aioa/web"
+SHELL = "http://127.0.0.1:8080/aios/web"
 TENANT = "某某市某某区大数据管理局"
 ADMIN, PWD = "dsj_admin", "User@123"
 REPO_DEPT_ID = 11          # 建仓必填真实部门（组织内的「发展规划科」）
@@ -238,10 +238,10 @@ def part_b(h):
         "bind=%s bound=%s" % (rb.get("message"), [x.get("id") for x in bound]))
 
     # ---- B8 上传一个代码测试 ----
-    code = ("# AIOA 模拟项目自检文件\n"
+    code = ("# AIOS 模拟项目自检文件\n"
             "# project: %s\n" % DEV_NAME +
-            "def hello():\n    return 'aioa simulated project ok'\n")
-    path = "aioa-sim/hello.py"
+            "def hello():\n    return 'aios simulated project ok'\n")
+    path = "aios-sim/hello.py"
     up = call("post", f"/gitee/projects/{rid}/contents", h, json={
         "path": path, "content": code, "message": "模拟项目自检：上传 hello.py",
         "branch": repo.get("defaultBranch") or "master"})
@@ -250,7 +250,7 @@ def part_b(h):
 
     back = call("get", f"/gitee/projects/{rid}/contents", h, params={"path": path})
     chk("B9 读回文件内容与上传逐字一致（往返校验，不只看提交成功）",
-        "aioa simulated project ok" in json.dumps(data_of(back), ensure_ascii=False),
+        "aios simulated project ok" in json.dumps(data_of(back), ensure_ascii=False),
         json.dumps(data_of(back), ensure_ascii=False)[:220])
 
     cms = rows_of(call("get", f"/gitee/projects/{rid}/commits", h))

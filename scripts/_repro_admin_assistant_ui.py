@@ -25,7 +25,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8080"
-SHELL = BASE + "/aioa/web"
+SHELL = BASE + "/aios/web"
 TENANT = "某某市某某区大数据管理局"
 ADMIN = "dsj_admin"
 PWD = "User@123"

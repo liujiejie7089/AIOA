@@ -36,7 +36,7 @@ def call(path, params=None, timeout=12, follow=True, host=HOST):
     if params:
         url += "?" + urllib.parse.urlencode(params, encoding="utf-8")
     req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aioa-probe/1.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aios-probe/1.0",
         "Accept": "application/json, text/html, */*",
     })
     opener = urllib.request.build_opener() if follow else urllib.request.build_opener(NoRedirect)

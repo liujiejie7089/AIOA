@@ -1,7 +1,7 @@
 # 32 · 向量库迁移 Milvus 实施计划
 
 > 目标：把知识库检索的**向量存储**从「MySQL BLOB + 应用层余弦」换成 **Milvus**，沿既有
-> `KnowledgeStore` SPI 以 `aioa.kb.store=milvus` 一步切换，业务层（管理端 / 用户端 / agent / 工具网关）
+> `KnowledgeStore` SPI 以 `aios.kb.store=milvus` 一步切换，业务层（管理端 / 用户端 / agent / 工具网关）
 > **零改动**；并**同步把嵌入模型从 256 维哈希升级为语义向量**——否则换库几乎没有收益（见 §2）。
 >
 > 状态：**已落地**（2026-09-19 实施完成；代码 / 配置 / 部署 / 测试已就绪，收口记录见 §11）。
@@ -27,12 +27,12 @@ MySQL 始终保留为**切片权威底座**，Milvus 是**可随时重建的向�
 
 | 组件 | 位置 | 现状 |
 |---|---|---|
-| 存储 SPI | `aioa-resource/…/store/KnowledgeStore.java` | 接口已就位，9 个方法（文档 CRUD / 切片替换 / 向量落库 / 混合检索） |
-| 默认实现 | `…/store/MysqlKnowledgeStore.java` | `@ConditionalOnProperty(aioa.kb.store=mysql, matchIfMissing=true)`；文档与切片均在 MySQL；`embedding` = float32 小端 BLOB；检索 = n-gram 关键词 + 余弦 + **RRF(k=60)** |
+| 存储 SPI | `aios-resource/…/store/KnowledgeStore.java` | 接口已就位，9 个方法（文档 CRUD / 切片替换 / 向量落库 / 混合检索） |
+| 默认实现 | `…/store/MysqlKnowledgeStore.java` | `@ConditionalOnProperty(aios.kb.store=mysql, matchIfMissing=true)`；文档与切片均在 MySQL；`embedding` = float32 小端 BLOB；检索 = n-gram 关键词 + 余弦 + **RRF(k=60)** |
 | 预留实现 | `…/store/ElasticKnowledgeStore.java` | **骨架**：写操作抛 `UnsupportedOperationException`，读操作**静默返回空列表** |
 | 嵌入 provider | `…/service/EmbeddingProvider.java` | 仅 `local` = **256 维 char 2-gram 哈希 + L2 归一化**（确定性、零依赖，但**无语义**） |
-| 嵌入装配 | `…/config/EmbeddingConfig.java` | 硬编码 `EmbeddingProvider.local()`；`aioa.kb.embedding-provider` 目前只有文档注释、**未接线** |
-| 配置键 | `application.yml` | `aioa.kb.store: ${AIOA_KB_STORE:mysql}`（`vector` 仅在注释里被提及） |
+| 嵌入装配 | `…/config/EmbeddingConfig.java` | 硬编码 `EmbeddingProvider.local()`；`aios.kb.embedding-provider` 目前只有文档注释、**未接线** |
+| 配置键 | `application.yml` | `aios.kb.store: ${AIOS_KB_STORE:mysql}`（`vector` 仅在注释里被提及） |
 | 消费方 | `KbService`（唯一注入点）、`ToolGatewayService.searchKb` | 经 `KbService` → `store`；上层拿 `KbHit(docId, docName, snippet, chunkIndex, score)` |
 | 调用链 | agent → 工具网关 → KbService → store | agent 侧工具名 `search_kb_documents`，经 HTTP 调后端 `/api/v1/workbench/tools/invoke`；专家配置 `topK/threshold/retrievalMode/kbScope` 透传生效 |
 | 数据 | `kb_document` / `kb_chunk` | 文档 **21** 份；切片 **556** 条，**已向量化仅 62 条（11%）**；全部 `local / 256` |
@@ -85,7 +85,7 @@ MySQL 始终保留为**切片权威底座**，Milvus 是**可随时重建的向�
 **为什么不把文档元数据也迁进 Milvus**：文档列表 / 重命名 / 改可见范围 / 软删是高频**关系型**操作，
 放进向量库得不偿失。保持 **MySQL 为权威**，Milvus 只做「向量检索」这一件它擅长的事：
 
-- 回滚 = `AIOA_KB_STORE=mysql`（零数据迁移）；
+- 回滚 = `AIOS_KB_STORE=mysql`（零数据迁移）；
 - Milvus 索引损坏 = 从 `kb_chunk` 一条回填命令重建；
 - 双写失败不阻断入库（与现状 `embedAll` 的 try/catch 语义一致）。
 
@@ -115,24 +115,24 @@ MySQL 始终保留为**切片权威底座**，Milvus 是**可随时重建的向�
   验证 `milvus-sdk-java` 版本对 **2.5 BM25 Function / hybrid_search** 的支持度（D3 的验证项）。
 - **交付**：决策记录、compose 增量、最小连通性单测、Milvus 本地启动脚本。
 - **验收**：`:9091/healthz` 为 `OK`；Java 侧能建集合 / 插一条 / 查回来。
-- **产出**：`deploy/docker-compose.yml` 增量、`server/aioa-resource/pom.xml` 增 `milvus-sdk-java`。
+- **产出**：`deploy/docker-compose.yml` 增量、`server/aios-resource/pom.xml` 增 `milvus-sdk-java`。
 
 ### Ph1 · 嵌入升级（**不碰 Milvus**）
 - **动作**：新增 `HttpEmbeddingProvider`（指向 ollama/vllm 的 embedding 端点）；`EmbeddingConfig` 按
-  `aioa.kb.embedding-provider=local|http` 装配（同时接线 `dims`）；**全量重算 556 条切片向量**（一次性 job/脚本）；
+  `aios.kb.embedding-provider=local|http` 装配（同时接线 `dims`）；**全量重算 556 条切片向量**（一次性 job/脚本）；
   `kb_chunk.embedding_dims` 落库校验。
 - **交付**：provider 实现、配置接线、重算脚本、`scripts/e2e_v62_embedding.py`。
 - **验收**：现有 29 套 E2E 全绿；新增套件绿；**检索质量抽样对比**（升级前 vs 升级后，人工核对 top-N）。
 - **回滚**：配置回 `local`（注意：dims 已变，回滚需重算；或接受混维——`cosine()` 对长度不等直接返回 0，不会崩，只会不命中）。
 
 ### Ph2 · `MilvusKnowledgeStore`（核心）
-- **动作**：新增实现类（`@ConditionalOnProperty(aioa.kb.store=milvus)`），业务层零改动；
+- **动作**：新增实现类（`@ConditionalOnProperty(aios.kb.store=milvus)`），业务层零改动；
   集合自动创建（schema + 索引 + `partition_key=tenant_id`），集合名带版本后缀 `kb_chunk_v1` 便于平滑重建；
   实现 9 个方法（upsert 以 `kb_chunk.id` 为主键幂等、`delete by doc_id`）；
-  回填 job（`aioa.kb.milvus.backfill=true` 时把 MySQL 全量切片+向量灌入 Milvus）。
+  回填 job（`aios.kb.milvus.backfill=true` 时把 MySQL 全量切片+向量灌入 Milvus）。
 - **交付**：`MilvusKnowledgeStore.java`、集合自建与索引、回填 job、`scripts/e2e_v62_milvus_kb.py`。
 - **验收**：单测 + 在 `store=milvus` 下套件绿；「上传即可检索」；删除后不再命中；重试/重跑幂等。
-- **回滚**：`AIOA_KB_STORE=mysql`。
+- **回滚**：`AIOS_KB_STORE=mysql`。
 
 ### Ph3 · 混合检索对齐
 - **动作**：dense（HNSW/COSINE）⊕ BM25（优先 Milvus 2.5 原生；保底客户端 RRF，即现有形态）→ `RRFRanker(60)`；
@@ -187,8 +187,8 @@ MySQL 始终保留为**切片权威底座**，Milvus 是**可随时重建的向�
 | 层 | 文件 |
 |---|---|
 | 代码 | `store/MilvusKnowledgeStore.java`（新）、`service/HttpEmbeddingProvider.java`（新）、`config/EmbeddingConfig.java`（改）、`config/MilvusConfig.java`（新）、回填 job |
-| 构建 | `server/aioa-resource/pom.xml`（增 `milvus-sdk-java`） |
-| 配置 | `application.yml`：`aioa.kb.store` 增 `milvus`、`aioa.kb.embedding-provider` 接线、新增 `aioa.kb.embedding.*` 与 `aioa.kb.milvus.*` |
+| 构建 | `server/aios-resource/pom.xml`（增 `milvus-sdk-java`） |
+| 配置 | `application.yml`：`aios.kb.store` 增 `milvus`、`aios.kb.embedding-provider` 接线、新增 `aios.kb.embedding.*` 与 `aios.kb.milvus.*` |
 | 部署 | `deploy/docker-compose.yml`（etcd/minio/milvus）、`deploy/k8s/*` |
 | 测试 | `scripts/e2e_v62_embedding.py`、`scripts/e2e_v62_milvus_kb.py` |
 | 文档 | 本文件（收口记录）、`docs/01-架构设计.md`（pgvector 口径修正）、记忆要点 |
@@ -224,18 +224,18 @@ Ph0 决策+环境 ──► Ph1 嵌入升级(可独立验收/回滚) ──► P
 
 | 层 | 计划 | 实际 | 状态 |
 |---|---|---|---|
-| 构建 | `aioa-resource/pom.xml` 增 `milvus-sdk-java` | 父 pom 加 `milvus-sdk.version=2.6.25` + dependencyManagement；resource 模块加依赖 + `spring-boot-starter-test` | ✅ 编译通过（fat-jar 82MB → 110MB，SDK 及 gRPC 传递依赖所致） |
+| 构建 | `aios-resource/pom.xml` 增 `milvus-sdk-java` | 父 pom 加 `milvus-sdk.version=2.6.25` + dependencyManagement；resource 模块加依赖 + `spring-boot-starter-test` | ✅ 编译通过（fat-jar 82MB → 110MB，SDK 及 gRPC 传递依赖所致） |
 | 代码 | `store/MilvusKnowledgeStore.java`（新） | 已建，实现 SPI 9 方法 + `backfill()` | ✅ 编译通过，**活体未验** |
 | 代码 | `service/HttpEmbeddingProvider.java`（新） | 已建，兼容 Ollama 三种端点形状 + OpenAI 形状 | ✅ 9 条单测绿 |
 | 代码 | `config/MilvusConfig.java`（新） | 已建：连接 + 集合自建（partition_key=tenant_id、HNSW/COSINE、BM25 Function）+ 维度校验 + load | ✅ 编译通过，**活体未验** |
-| 代码 | `config/EmbeddingConfig.java`（改） | 按 `aioa.kb.embedding-provider` 装配 local/http | ✅ |
+| 代码 | `config/EmbeddingConfig.java`（改） | 按 `aios.kb.embedding-provider` 装配 local/http | ✅ |
 | 代码 | 回填 job | `service/KbIndexMaintenanceRunner.java`：`reembed-on-start`（Ph1 重算）+ `milvus.backfill-on-start`（Ph2 回填），先重算后回填 | ✅ 默认全关，mysql 档启动行为不变 |
 | 代码 | —（计划外新增） | `store/KbRelationalDao.java`、`store/RrfFusion.java`、`store/KeywordScorer.java`、`store/MilvusFilter.java` | ✅ 见 §11.2 偏离 1/2/5 |
-| 配置 | `application.yml` | `aioa.kb.{store,embedding-provider,reembed-on-start,embedding.*,milvus.*}` 共 22 键全接线 | ✅ |
+| 配置 | `application.yml` | `aios.kb.{store,embedding-provider,reembed-on-start,embedding.*,milvus.*}` 共 22 键全接线 | ✅ |
 | 部署 | `deploy/docker-compose.yml`（etcd/minio/milvus） | `etcd` + `milvus-minio` + `milvus`（profile=`milvus`），3 个命名卷、健康检查、重启策略、日志轮转 | ✅ YAML 解析 + profile 依赖检查通过；**未实际拉起** |
-| 部署 | `deploy/k8s/*` | 新增 **`40-milvus.yaml`**：etcd + milvus-minio + milvus 三组 Deployment/Service + 三个 PVC（同镜像 tag、同服务名、同环境变量，切档时 server 侧只改 `AIOA_KB_STORE`）；`00-namespace-config.yaml` 补 kb/milvus 22 键（令牌与 API Key 归 Secret）；`k8s/README.md` 补「切到 Milvus」五步 | ✅ YAML 解析通过（9 docs）、与 compose 键逐项对齐；**未对真机集群应用过** |
-| 测试 | `scripts/e2e_v62_embedding.py`、`e2e_v62_milvus_kb.py` | 合并为 **`scripts/e2e_v62_milvus_kb.py`**（一份脚本两档跑，用 `AIOA_KB_STORE` 声明期望档位 + M1 自检） | ✅ mysql 档 25/25；milvus 档待有实例时跑 |
-| 测试 | —（计划外新增） | `aioa-resource/src/test/java/...` 4 个测试类 26 条用例 | ✅ 26/26 |
+| 部署 | `deploy/k8s/*` | 新增 **`40-milvus.yaml`**：etcd + milvus-minio + milvus 三组 Deployment/Service + 三个 PVC（同镜像 tag、同服务名、同环境变量，切档时 server 侧只改 `AIOS_KB_STORE`）；`00-namespace-config.yaml` 补 kb/milvus 22 键（令牌与 API Key 归 Secret）；`k8s/README.md` 补「切到 Milvus」五步 | ✅ YAML 解析通过（9 docs）、与 compose 键逐项对齐；**未对真机集群应用过** |
+| 测试 | `scripts/e2e_v62_embedding.py`、`e2e_v62_milvus_kb.py` | 合并为 **`scripts/e2e_v62_milvus_kb.py`**（一份脚本两档跑，用 `AIOS_KB_STORE` 声明期望档位 + M1 自检） | ✅ mysql 档 25/25；milvus 档待有实例时跑 |
+| 测试 | —（计划外新增） | `aios-resource/src/test/java/...` 4 个测试类 26 条用例 | ✅ 26/26 |
 | 文档 | 本文件收口 + `docs/01` 口径修正 | 已完成（`docs/01` 的 pgvector 两处口径已改为 MySQL/Milvus 实际形态） | ✅ |
 | 部署 | —（计划外补正） | `deploy/ops/prometheus.yml`（**原文件缺失**，而 compose 的 `prometheus` 服务会挂载它 ⇒ 缺文件时 Docker 建同名目录、Prometheus 起不来）：scrape `milvus:9091/metrics` + `etcd:2379/metrics` | ✅ YAML 解析通过；**未在真实 Prometheus 中验证抓取**。`server`/`agent` 业务指标仍未接（后端未引 `micrometer-registry-prometheus`、actuator 只暴露 `health`，抓 `/actuator/prometheus` 必 404），前置条件写在文件头 |
 | 配置 | `deploy/.env.development` / `.env.production` | 各 99 键、键序逐行一致；新增 §7.0 嵌入 8 键 + §7.1 Milvus 13 键 | ✅ `set -a && .` 零报错 |
@@ -276,7 +276,7 @@ Ph0 决策+环境 ──► Ph1 嵌入升级(可独立验收/回滚) ──► P
 
 12. **补上「provider 输出维度 ↔ 集合维度」这一对校验（2026-09-21 实测发现遗漏）** ——
     上面第 10 条只校验了「HTTP 响应维度 vs 配置 `dims`」，但真正会出事的是**另一对**：
-    `EmbeddingProvider.dims()`（写入侧的真实维度）vs `aioa.kb.milvus.dims()`（集合维度）。
+    `EmbeddingProvider.dims()`（写入侧的真实维度）vs `aios.kb.milvus.dims()`（集合维度）。
     这两者分处两个配置键，此前只有文档一句「两者必须一致」，**没有任何机器强制**。
     后果是**完全静默**的：向量照常写进 MySQL，`MilvusKnowledgeStore.indexChunk` 发现维度不符后
     `log.debug` + 跳过 ⇒ Milvus 一条不收；检索侧 `EmbeddingProvider.cosine` 对维度不符的两个向量
@@ -299,8 +299,8 @@ Ph0 决策+环境 ──► Ph1 嵌入升级(可独立验收/回滚) ──► P
 | 全 11 模块编译（主代码 + 测试代码） | `mvnw -DskipTests test-compile` → BUILD SUCCESS |
 | 纯逻辑单测 26 条 | `MilvusFilterTest` 6 · `RrfFusionTest` 5 · `KeywordScorerTest` 6 · `HttpEmbeddingProviderTest` 9 → **26/26 绿** |
 | `store=mysql` 全量系统 E2E | `e2e_full_system.py` → **155/155**（含 S11 知识库段、S12 H5 段）⇒ KbRelationalDao 重构零退化 |
-| V62 套件（mysql 档） | `AIOA_KB_STORE=mysql e2e_v62_milvus_kb.py` → **25/25**（M1–M9） |
-| **fail-fast（D6）** | `AIOA_KB_STORE=milvus` + Milvus 不可达 → 启动失败 `EXIT=1`，**无静默空结果** |
+| V62 套件（mysql 档） | `AIOS_KB_STORE=mysql e2e_v62_milvus_kb.py` → **25/25**（M1–M9） |
+| **fail-fast（D6）** | `AIOS_KB_STORE=milvus` + Milvus 不可达 → 启动失败 `EXIT=1`，**无静默空结果** |
 | compose 结构 | YAML 解析通过；默认 `up` 无跨 profile 依赖（profile 未开启不会打断默认启动） |
 | env 两份 | 各 99 键、键序 `diff` 为空、`set -a && .` 零报错、prod 21 处 `CHANGE_ME__` 占位 |
 
@@ -317,14 +317,14 @@ Ph0 决策+环境 ──► Ph1 嵌入升级(可独立验收/回滚) ──► P
 
 ```bash
 # 1) 起向量库栈（etcd + milvus-minio + milvus-standalone）
-AIOA_KB_STORE=milvus docker compose --profile milvus up -d
+AIOS_KB_STORE=milvus docker compose --profile milvus up -d
 curl -f http://127.0.0.1:9091/healthz          # 期望 OK
-# 2) 起后端并首次全量回填（跑完把 AIOA_MILVUS_BACKFILL 改回 false）
-AIOA_KB_STORE=milvus AIOA_MILVUS_BACKFILL=true <启动 server>
+# 2) 起后端并首次全量回填（跑完把 AIOS_MILVUS_BACKFILL 改回 false）
+AIOS_KB_STORE=milvus AIOS_MILVUS_BACKFILL=true <启动 server>
 grep -aE "Milvus 集合|回填完成|BM25" <server 日志>
 # 3) 双档跑同一套用例
-AIOA_KB_STORE=mysql  python scripts/e2e_v62_milvus_kb.py   # 期望 25/25
-AIOA_KB_STORE=milvus python scripts/e2e_v62_milvus_kb.py   # 期望 25/25
+AIOS_KB_STORE=mysql  python scripts/e2e_v62_milvus_kb.py   # 期望 25/25
+AIOS_KB_STORE=milvus python scripts/e2e_v62_milvus_kb.py   # 期望 25/25
 ```
 
 预期需要现场确认的两点（都属于**代码已兜住、无需改代码**的情形）：
@@ -344,4 +344,4 @@ AIOA_KB_STORE=milvus python scripts/e2e_v62_milvus_kb.py   # 期望 25/25
   actuator 只暴露 `health` ⇒ `/actuator/prometheus` 必 404；接入前置条件写在配置文件头部。
 - 「从 MySQL 重建索引」的实战演练（本地无实例，见 §11.3）。
 - 现有数据里 **854 条切片仅 62 条有向量**（11%）：`store=milvus` 首次接入前建议先跑一次
-  `AIOA_KB_REEMBED_ON_START=true` 把 BLOB 补齐，再 `AIOA_MILVUS_BACKFILL=true` 回填（顺序不能反）。
+  `AIOS_KB_REEMBED_ON_START=true` 把 BLOB 补齐，再 `AIOS_MILVUS_BACKFILL=true` 回填（顺序不能反）。

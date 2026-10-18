@@ -9,21 +9,21 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-# AI 能力统一由 aioa_ai 提供（依赖方向：app -> aioa_ai，单向）。
+# AI 能力统一由 aios_ai 提供（依赖方向：app -> aios_ai，单向）。
 # 本文件只承担 HTTP 接入职责：路由挂载、SSE 帧化、异常信封。
-from aioa_ai import entry as runtime
-from aioa_ai.config import settings
-from aioa_ai.contracts import CompleteRequest, ResumeRequest, RunRequest, SseEvent, TaskPlanRequest
-from aioa_ai.events import to_frame
-from aioa_ai.guard import GuardError
-from aioa_ai.runtimes import multi_task
-from aioa_ai.speech import engine as asr_engine
-from aioa_ai.speech.router import router as asr_router
+from aios_ai import entry as runtime
+from aios_ai.config import settings
+from aios_ai.contracts import CompleteRequest, ResumeRequest, RunRequest, SseEvent, TaskPlanRequest
+from aios_ai.events import to_frame
+from aios_ai.guard import GuardError
+from aios_ai.runtimes import multi_task
+from aios_ai.speech import engine as asr_engine
+from aios_ai.speech.router import router as asr_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-logger = logging.getLogger("aioa.agent")
+logger = logging.getLogger("aios.agent")
 
-app = FastAPI(title="AIOA Agent", version="0.1.0", description="AIOA Python agent service (M1, echo mode)")
+app = FastAPI(title="AIOS Agent", version="0.1.0", description="AIOS Python agent service (M1, echo mode)")
 app.include_router(asr_router)
 
 
@@ -37,14 +37,14 @@ async def _require_service_jwt(request: Request, call_next):
     为什么必须校验：`/internal/v1/models/apply` 能把模型密钥热加载进进程，
     `/internal/v1/runs` 会消耗额度并执行工具 —— 同网段任何进程都能调。
     令牌由 Java `ServiceTokenProvider` 签发（HS256，`svc` claim，5min），
-    本侧用同一密钥按同一口径验（`aioa_ai/security/service_jwt.py`）。
+    本侧用同一密钥按同一口径验（`aios_ai/security/service_jwt.py`）。
 
     失败一律 401 且**不回显具体原因**（过期/签名错/claims 非法对外不可区分）。
     """
     path = request.url.path
     if not path.startswith("/internal/v1/"):
         return await call_next(request)
-    from aioa_ai.security.service_jwt import ServiceTokenError, bearer_value, verify
+    from aios_ai.security.service_jwt import ServiceTokenError, bearer_value, verify
 
     token = bearer_value(request.headers.get("Authorization"))
     try:
@@ -69,7 +69,7 @@ def _log_service_jwt() -> None:
     """
     import hashlib
 
-    from aioa_ai.security.service_jwt import DEV_SECRET
+    from aios_ai.security.service_jwt import DEV_SECRET
 
     secret = settings.service_jwt_secret or ""
     fingerprint = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8] if secret else "<empty>"
@@ -98,11 +98,11 @@ async def _setup_hitl() -> None:
         # 于是数字人「只会写字面步骤、永远不弹自定义表单」。生产编排默认已置 true，
         # 这里把它喊出来，避免「本地修了、镜像里是 false」再排查一次。
         logger.warning(
-            "HITL disabled (AIOA_HITL != true): ask_user / request_form 不会进模型工具表，"
+            "HITL disabled (AIOS_HITL != true): ask_user / request_form 不会进模型工具表，"
             "数字人将无法弹澄清卡与自定义表单"
         )
         return
-    from aioa_ai.graph import builder, checkpoint
+    from aios_ai.graph import builder, checkpoint
 
     await checkpoint.setup()
     builder.reset()
@@ -112,14 +112,14 @@ async def _setup_hitl() -> None:
         # /resume 找不到断点，表现为「表单提交了但 AI 不再回话」。生产必须配 Redis(Stack)。
         logger.warning(
             "HITL checkpoint = memory：挂起态只存在本进程内存，重启后 /resume 取不到断点。"
-            "生产请配 AIOA_CHECKPOINT_URL=redis://…（Redis Stack）"
+            "生产请配 AIOS_CHECKPOINT_URL=redis://…（Redis Stack）"
         )
 
 
 @app.on_event("shutdown")
 async def _close_hitl() -> None:
     """关闭挂起态存储连接（未启用 HITL 时是空操作）。"""
-    from aioa_ai.graph import checkpoint
+    from aios_ai.graph import checkpoint
 
     await checkpoint.aclose()
 
@@ -241,7 +241,7 @@ async def resume_run(run_id: str, body: ResumeRequest, request: Request) -> Stre
 @app.get("/internal/v1/models")
 async def list_models_state() -> dict:
     """运维/管理端观测：当前注册表状态（密钥只暴露「是否已配置」）。"""
-    from aioa_ai.llm import configured_providers, current_default_key
+    from aios_ai.llm import configured_providers, current_default_key
 
     return {"providers": configured_providers(), "default": current_default_key()}
 
@@ -257,7 +257,7 @@ async def check_model(payload: dict) -> dict:
 
     import httpx
 
-    from aioa_ai.llm import get_provider
+    from aios_ai.llm import get_provider
 
     key = str(payload.get("key") or "").strip().lower()
     if not key:
@@ -308,7 +308,7 @@ async def apply_models(payload: dict, request: Request) -> dict:
 
     与 /internal/v1/runs 同为内网直信端点（M1）；管理端保存模型配置后调用，变更即时生效。
     """
-    from aioa_ai.llm import apply_overrides, configured_providers
+    from aios_ai.llm import apply_overrides, configured_providers
 
     applied = apply_overrides(payload.get("models") or [], payload.get("default"))
     logger.info("model config applied via admin push (%d entries)", applied)
@@ -323,8 +323,8 @@ async def complete(req: CompleteRequest) -> dict:
     """
     import httpx
 
-    from aioa_ai.llm import resolve as resolve_provider
-    from aioa_ai.llm.upstream import UpstreamError, _post_non_stream
+    from aios_ai.llm import resolve as resolve_provider
+    from aios_ai.llm.upstream import UpstreamError, _post_non_stream
 
     if not req.prompt or not req.prompt.strip():
         raise GuardError("BAD_REQUEST", "prompt 不能为空")
@@ -362,7 +362,7 @@ async def worker_intent(payload: dict) -> dict:
     调用方：Java 侧 `POST /api/v1/workers/intent`。
     Java 收到类型后再补权限码、可申请性与申请路径 —— 权限映射属治理事实，只在 Java 侧定义一份。
     """
-    from aioa_ai.intent.intake import classify
+    from aios_ai.intent.intake import classify
 
     text = str(payload.get("text") or "").strip()
     if not text:
@@ -389,7 +389,7 @@ async def answer_shape(payload: dict) -> dict:
     ``card`` 之所以不走模型：边界必须与「创建前预览」「会话中提示」两处完全一致，
     而任何经模型的改写都会让两处口径漂移。
     """
-    from aioa_ai.prompt.answer import audit, audit_hint, card, rules
+    from aios_ai.prompt.answer import audit, audit_hint, card, rules
 
     role = str(payload.get("role") or "GENERAL")
     out = {"card": card(role), "rules": rules(payload.get("scope") or None)}

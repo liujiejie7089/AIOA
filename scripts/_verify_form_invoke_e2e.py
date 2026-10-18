@@ -5,7 +5,7 @@
 链路分两半，各有各的哨兵，**本脚本负责 H5 那一半**（并且把提交打到**真实后端**）：
 
   Python/Java 那一半：agent `request_form` → `need_form` 帧 → Java 用表单库补全 fields
-    ⇒ `agent/tests/test_aioa_ai_form_hitl.py` + `RunServiceFormFrameTest`（Java 单测，5 条）
+    ⇒ `agent/tests/test_aios_ai_form_hitl.py` + `RunServiceFormFrameTest`（Java 单测，5 条）
   浏览器那一半（本脚本）：
     need_form 帧到达 → 渲染卡片（真实字段定义） → 用户填写 → **真提交** → 续跑请求对象化
 
@@ -42,7 +42,7 @@ BASE = 'http://127.0.0.1:5181/'
 USER, PWD = 'wjj_xu', 'User@123'
 FORM = 'leave_request'
 RUN_ID = 'e2e-form-run-1'
-DB = dict(host='127.0.0.1', port=3306, user='root', password='', database='aioa')
+DB = dict(host='127.0.0.1', port=3306, user='root', password='', database='aios')
 
 fails, oks = [], []
 state = {'frame': None, 'resume_body': None, 'submit_resp': None}
@@ -105,7 +105,7 @@ async def main():
 
         # ---------------- I0 真实定义（不是硬编码字段） ----------------
         definition = await page.evaluate("""async () => {
-            const saved = JSON.parse(localStorage.getItem('aioa_session') || 'null') || {};
+            const saved = JSON.parse(localStorage.getItem('aios_session') || 'null') || {};
             const tok = saved.token || '';
             const r = await fetch('/api/v1/forms/%s', {headers:{Authorization:'Bearer '+tok}});
             const j = await r.json();

@@ -31,7 +31,7 @@ import os
 import pymysql
 
 DB = dict(host="127.0.0.1", port=3306, user="root", password="",
-          database="aioa", charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor)
+          database="aios", charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor)
 
 USER_LIKE = "e2e%"
 

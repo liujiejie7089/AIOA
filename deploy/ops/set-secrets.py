@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""AIOA · 安全写入 deploy/.env 的口令/密钥（deploy/ops/set-secrets.py）
+"""AIOS · 安全写入 deploy/.env 的口令/密钥（deploy/ops/set-secrets.py）
 
 为什么要有它：手册早期用 `sed -i "s|^KEY=.*|KEY='${P}'|"` 写口令，这条路有两个坑 ——
   ① 口令里只要含分隔符 `|` → `sed: unknown option to 's'`，**整条命令失败、值没写进去**，
@@ -9,7 +9,7 @@
 本脚本改用「按行重写」：不做任何模式替换，只把 `KEY=...` 那一行整体换掉，因此对
 `$ | & # ! ' " \\ 空格` 全部安全。
 
-用法（在部署机 /opt/aioa 下跑）：
+用法（在部署机 /opt/aios 下跑）：
     python3 deploy/ops/set-secrets.py --check                 # 只体检，不改
     python3 deploy/ops/set-secrets.py                         # 交互式逐项输入（不回显）
     python3 deploy/ops/set-secrets.py --only mysql,redis      # 只改指定的几项
@@ -35,7 +35,7 @@ GROUPS = {
     "mysql": (
         ["MYSQL_PASSWORD", "SPRING_DATASOURCE_PASSWORD"],
         True,
-        "MySQL 账号 aioa 的口令（末尾通常是 $ ⇒ 本脚本会自动用单引号保住它）",
+        "MySQL 账号 aios 的口令（末尾通常是 $ ⇒ 本脚本会自动用单引号保住它）",
     ),
     "redis": (
         ["SPRING_REDIS_PASSWORD"],

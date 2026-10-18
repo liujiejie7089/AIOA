@@ -1,7 +1,7 @@
 # scfy 接口返回结构实测表
 
 > 由 `ScfyMatrixTest` 在**真实调用**时采集：环境 `https://szbhpt.tsichuan.com/scfy`，覆盖 55 个接口，只发 GET。
-> 机器可读版：`server/aioa-integration-scfy/src/main/resources/scfy/return-shape.json`（`ScfyAgentCatalog` 直接消费它作为「返回结构」）。
+> 机器可读版：`server/aios-integration-scfy/src/main/resources/scfy/return-shape.json`（`ScfyAgentCatalog` 直接消费它作为「返回结构」）。
 
 口径：`observed` 为本次实测结果。**只有 `OK_DATA` 的行才是真实的返回结构**；`OK_EMPTY` 表示本次调用成功但该条件下无数据，结构无从观测，不得当成「该接口返回空」的结论。
 

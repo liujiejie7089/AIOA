@@ -13,11 +13,11 @@ export default defineConfig(({ command, mode }) => {
   const port = Number(env.VITE_PORT || 5173)
   const apiTarget = env.VITE_API_TARGET || 'http://localhost:8080'
 
-  // 单端口部署（docs/33）：生产由 aioa-server 在 /aioa/web/ 下发这份产物 ⇒ 产物内资源
-  // 必须是绝对前缀路径，否则挂到 /aioa/web/ 下会去请求 /assets/... 直接白屏。
+  // 单端口部署（docs/33）：生产由 aios-server 在 /aios/web/ 下发这份产物 ⇒ 产物内资源
+  // 必须是绝对前缀路径，否则挂到 /aios/web/ 下会去请求 /assets/... 直接白屏。
   // dev 保持 '/'：本地有 10+ 个管理端 UI 套件都按 http://localhost:5173/xxx 跑，
   // 把 dev 也搬进前缀会让它们全部失效（而这不是本次要改的东西）。
-  const base = command === 'build' ? '/aioa/web/' : '/'
+  const base = command === 'build' ? '/aios/web/' : '/'
 
   return {
     base,
@@ -32,7 +32,7 @@ export default defineConfig(({ command, mode }) => {
       host: true,
       strictPort: true,
       proxy: {
-        // 后端 aioa-server 地址来自 .env 的 VITE_API_TARGET；仅 dev 生效
+        // 后端 aios-server 地址来自 .env 的 VITE_API_TARGET；仅 dev 生效
         '/api': {
           target: apiTarget,
           changeOrigin: true

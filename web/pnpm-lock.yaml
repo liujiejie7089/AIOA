@@ -36,9 +36,9 @@ importers:
 
   apps/demo-ticket:
     dependencies:
-      '@aioa/sdk':
+      '@aios/sdk':
         specifier: workspace:*
-        version: link:../../packages/aioa-sdk
+        version: link:../../packages/aios-sdk
       element-plus:
         specifier: ^2.9.1
         version: 2.14.5(vue@3.5.42(typescript@5.6.3))
@@ -64,9 +64,9 @@ importers:
 
   apps/shell:
     dependencies:
-      '@aioa/sdk':
+      '@aios/sdk':
         specifier: workspace:*
-        version: link:../../packages/aioa-sdk
+        version: link:../../packages/aios-sdk
       '@element-plus/icons-vue':
         specifier: ^2.3.1
         version: 2.3.2(vue@3.5.42(typescript@5.6.3))
@@ -111,7 +111,7 @@ importers:
         specifier: ^2.1.10
         version: 2.2.12(typescript@5.6.3)
 
-  packages/aioa-sdk:
+  packages/aios-sdk:
     devDependencies:
       typescript:
         specifier: ~5.6.3

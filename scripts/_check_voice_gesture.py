@@ -58,7 +58,7 @@ def _out(s=""):
         sys.stdout.write((s + "\n").encode(enc, "replace").decode(enc, "replace"))
 
 def find_node():
-    cand = [os.environ.get("AIOA_NODE"), MANAGED_NODE, shutil.which("node"), "node"]
+    cand = [os.environ.get("AIOS_NODE"), MANAGED_NODE, shutil.which("node"), "node"]
     for c in cand:
         if not c:
             continue

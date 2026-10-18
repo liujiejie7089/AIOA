@@ -431,7 +431,7 @@ onMounted(loadDefs)
 
 .text-sub {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .hint {

@@ -11,7 +11,7 @@
 
 三条决定性理由：
 
-1. **这不是一次新决策，而是回归已批准的架构。** `docs/01-架构设计.md` 本就写明 L4 = `aioa-agent (Python：FastAPI + LangGraph)`（第 30 行），技术选型表也写明 `Agent | FastAPI + LangGraph（pin 0.2.x），core/runtime.py 门面隔离`（第 49 行），并预留了「LangGraph 不可用时只换 graph 实现」。**当前的自研循环（`agent/app/core/agent_runtime.py`）是对该设计的偏离**，不是相反。
+1. **这不是一次新决策，而是回归已批准的架构。** `docs/01-架构设计.md` 本就写明 L4 = `aios-agent (Python：FastAPI + LangGraph)`（第 30 行），技术选型表也写明 `Agent | FastAPI + LangGraph（pin 0.2.x），core/runtime.py 门面隔离`（第 49 行），并预留了「LangGraph 不可用时只换 graph 实现」。**当前的自研循环（`agent/app/core/agent_runtime.py`）是对该设计的偏离**，不是相反。
 
 2. **本次要的能力，契约和状态机早已冻结，只差实现。** 用户举例的 `ask_user` 澄清卡 = 「持久化暂停 + 结构化中断 + 恢复」，而 `docs/04-接口契约/internal-agent.yaml` 已定义 `need_clarification { question, suggested_options }`（第 133 行）与 `POST /internal/v1/runs/{id}/resume`（第 46-70 行）；`docs/01-架构设计.md` 第 69 行甚至已写完 HITL 状态机（`RUNNING → WAITING_APPROVAL → …`）、`LangGraph interrupt + checkpointer（thread_id=conversation_id，重启不丢）`、`args_hash` 校验、`args_override`。**要做的是「把设计做出来」，不是「选一个框架来设计」。**
 
@@ -281,13 +281,13 @@ Java 侧**已经在发卡片事件**：`RunService.java:722-724` 在 `message.co
 
 | 层 | 落点 | 证据（可复跑） |
 |---|---|---|
-| agent 内核 | `aioa_ai/tools/ask_user.py`、`graph/nodes.py::clarify`、`graph/facade.py`（`_pause_events`/`resume`）、`graph/checkpoint.py`、`app/main.py::resume_run` | `scripts/_verify_ask_user_hitl.py` 11/11（含 **Q3**：已完成的工具调用计数=1；HITL 关闭时无 `need_clarification`）；`agent/tests/test_aioa_ai_hitl.py` |
-| Java 后端 | `AgentRun.STATUS_WAITING_INPUT`；`RunService` 的 `proxyAgentRun`/`resume`/`markWaitingInput`/`waitingInputNotice`；`RunController` `POST /api/v1/runs/{runId}/resume` | `scripts/_check_hitl_resume_wire.py` 7/7（含负向对照）；`./mvnw -q -pl aioa-chat -am -DskipTests compile` EXIT=0 |
+| agent 内核 | `aios_ai/tools/ask_user.py`、`graph/nodes.py::clarify`、`graph/facade.py`（`_pause_events`/`resume`）、`graph/checkpoint.py`、`app/main.py::resume_run` | `scripts/_verify_ask_user_hitl.py` 11/11（含 **Q3**：已完成的工具调用计数=1；HITL 关闭时无 `need_clarification`）；`agent/tests/test_aios_ai_hitl.py` |
+| Java 后端 | `AgentRun.STATUS_WAITING_INPUT`；`RunService` 的 `proxyAgentRun`/`resume`/`markWaitingInput`/`waitingInputNotice`；`RunController` `POST /api/v1/runs/{runId}/resume` | `scripts/_check_hitl_resume_wire.py` 7/7（含负向对照）；`./mvnw -q -pl aios-chat -am -DskipTests compile` EXIT=0 |
 | H5 用户端 | `_backup_index_pre_oa.html`（`_sse` / `resumeStream` / `clarCardHtml` / `mountClarCard` / `cancelClarCard` + 经典 `send()` 回填循环）、`_oa_app.js`（OA `oaSend()`） | `scripts/_verify_h5_clarification.py`（拦截真实请求体 + 合成 SSE：OA 与经典各 N0–N8、三层线格式 L1–L10，0 失败；N8 为负向对照）；回归 `scripts/_e2e_oa.py` 105/106（唯一 FAIL 是 `/api/v1/asr/status` 401，与澄清链无关） |
 
 **与 §8 未决项 8 的关系（口径未统一）**：`need_clarification` 与 `approval.required` **仍是两条独立链路**，未合并进同一状态机。澄清走 agent 的 `interrupt()`/`resume`（真挂起、断点可续）；审批仍是 Java 侧关键词启发式（`RunService.approvalCardJson`，演示级）。统一留待审批形态（M3）落地时再做，避免为演示级启发式引入真实 HITL 语义。
 
-**本轮未验证（如实记录）**：未在真机跑通「新 Java + `AIOA_HITL=true` + 模型真实调用 `ask_user`」的整链闭环（`:8080` 上部署的是改动前的进程，Java 无热加载），故 Java 侧「暂停 → `WAITING_INPUT` → resume」的**运行时**行为仅由读码 + 编译 + 静态哨兵佐证；H5 行为由网络拦截 + 合成 SSE 验证（未走真实模型推理）。
+**本轮未验证（如实记录）**：未在真机跑通「新 Java + `AIOS_HITL=true` + 模型真实调用 `ask_user`」的整链闭环（`:8080` 上部署的是改动前的进程，Java 无热加载），故 Java 侧「暂停 → `WAITING_INPUT` → resume」的**运行时**行为仅由读码 + 编译 + 静态哨兵佐证；H5 行为由网络拦截 + 合成 SSE 验证（未走真实模型推理）。
 
 **试点不通过时的判据**：若 Q2 无法在 2 周内达成或 Q3 反复失败（幂等模型没设计好），即为「LangGraph 的持久化收益未兑现」的**负向证据**，应转方案 C。
 

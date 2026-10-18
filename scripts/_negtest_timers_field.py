@@ -53,7 +53,7 @@ async def main():
         await page.wait_for_timeout(2500)
 
         # 走真实 UI 路径：写入记忆 → 刷新 → 抽屉 → 定时任务
-        await page.evaluate("() => localStorage.setItem('aioa_mode','oa')")
+        await page.evaluate("() => localStorage.setItem('aios_mode','oa')")
         await page.reload(wait_until='domcontentloaded')
         await page.wait_for_timeout(2800)
         await page.click('#oaLeft')

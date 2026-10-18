@@ -11,26 +11,26 @@
     <relativePath/>
   </parent>
 
-  <groupId>cn.aioa</groupId>
-  <artifactId>aioa-server</artifactId>
+  <groupId>cn.aios</groupId>
+  <artifactId>aios-server</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>aioa-server</name>
-  <description>AIOA 智能办公基座 · Java 后端（多模块）</description>
+  <name>aios-server</name>
+  <description>AIOS 智能办公基座 · Java 后端（多模块）</description>
 
   <modules>
-    <module>aioa-common</module>
-    <module>aioa-security</module>
-    <module>aioa-admin</module>
-    <module>aioa-bridge</module>
-    <module>aioa-chat</module>
-    <module>aioa-tool-sdk</module>
-    <module>aioa-resource</module>
-    <module>aioa-org</module>
-    <module>aioa-gitee</module>
-    <module>aioa-project</module>
-    <module>aioa-integration-scfy</module>
-    <module>aioa-boot</module>
+    <module>aios-common</module>
+    <module>aios-security</module>
+    <module>aios-admin</module>
+    <module>aios-bridge</module>
+    <module>aios-chat</module>
+    <module>aios-tool-sdk</module>
+    <module>aios-resource</module>
+    <module>aios-org</module>
+    <module>aios-gitee</module>
+    <module>aios-project</module>
+    <module>aios-integration-scfy</module>
+    <module>aios-boot</module>
   </modules>
 
   <properties>
@@ -42,7 +42,7 @@
     <jjwt.version>0.12.6</jjwt.version>
     <springdoc.version>2.6.0</springdoc.version>
     <lombok.version>1.18.34</lombok.version>
-    <!-- 向量库 Milvus（docs/32）：仅 aioa-resource 在 aioa.kb.store=milvus 时用到 -->
+    <!-- 向量库 Milvus（docs/32）：仅 aios-resource 在 aios.kb.store=milvus 时用到 -->
     <milvus-sdk.version>2.6.25</milvus-sdk.version>
   </properties>
 
@@ -59,53 +59,53 @@
   <dependencyManagement>
     <dependencies>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-common</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-common</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-security</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-security</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-admin</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-admin</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-bridge</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-bridge</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-chat</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-chat</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-tool-sdk</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-tool-sdk</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-resource</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-resource</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-org</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-org</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-gitee</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-gitee</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>cn.aioa</groupId>
-        <artifactId>aioa-project</artifactId>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-project</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -12,7 +12,7 @@ import httpx
 from playwright.sync_api import sync_playwright
 
 API = "http://127.0.0.1:8080/api/v1"
-CONSOLE = "http://127.0.0.1:8080/aioa/web/kb"
+CONSOLE = "http://127.0.0.1:8080/aios/web/kb"
 USER = sys.argv[1] if len(sys.argv) > 1 else "dsj_admin"
 PWD = sys.argv[2] if len(sys.argv) > 2 else "User@123"
 
@@ -26,8 +26,8 @@ with sync_playwright() as pw:
     b = pw.chromium.launch(channel="msedge", headless=True)
     ctx = b.new_context(viewport={"width": 1440, "height": 900})
     ctx.add_init_script(
-        "localStorage.setItem('aioa.token', %s);"
-        "localStorage.setItem('aioa.user', %s);"
+        "localStorage.setItem('aios.token', %s);"
+        "localStorage.setItem('aios.user', %s);"
         % (json.dumps(tok), json.dumps(json.dumps(user)))
     )
     page = ctx.new_page()

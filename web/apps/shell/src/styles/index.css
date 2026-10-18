@@ -1,40 +1,40 @@
 /* ===================================================================
-   AIOA 智能办公基座 · 管理端全局样式（淡色调 V2）
+   AIOS 智能办公基座 · 管理端全局样式（淡色调 V2）
    设计基调：以浅蓝/浅青/浅紫为主色的低饱和淡色调，
              大面积留白 + 柔和阴影 + 轻描边，突出关键信息层次。
    =================================================================== */
 
 :root {
   /* 主色（淡蓝系） */
-  --aioa-primary: #5b8def;
-  --aioa-primary-soft: #eef4ff;
-  --aioa-primary-strong: #3b6fe0;
+  --aios-primary: #5b8def;
+  --aios-primary-soft: #eef4ff;
+  --aios-primary-strong: #3b6fe0;
 
   /* 辅助强调色 */
-  --aioa-accent-green: #37b98a;
-  --aioa-accent-green-soft: #eaf8f2;
-  --aioa-accent-amber: #f0a020;
-  --aioa-accent-amber-soft: #fef6e8;
-  --aioa-accent-rose: #e56b8c;
-  --aioa-accent-rose-soft: #fdeef3;
-  --aioa-accent-violet: #8a7be8;
-  --aioa-accent-violet-soft: #f1effd;
+  --aios-accent-green: #37b98a;
+  --aios-accent-green-soft: #eaf8f2;
+  --aios-accent-amber: #f0a020;
+  --aios-accent-amber-soft: #fef6e8;
+  --aios-accent-rose: #e56b8c;
+  --aios-accent-rose-soft: #fdeef3;
+  --aios-accent-violet: #8a7be8;
+  --aios-accent-violet-soft: #f1effd;
 
   /* 中性色 */
-  --aioa-border: #e8eef8;
-  --aioa-border-strong: #d8e3f4;
-  --aioa-bg: #f7f9fd;
-  --aioa-bg-card: #ffffff;
-  --aioa-text: #2b3a55;
-  --aioa-text-sub: #7b8aa3;
-  --aioa-text-mute: #a7b3c6;
+  --aios-border: #e8eef8;
+  --aios-border-strong: #d8e3f4;
+  --aios-bg: #f7f9fd;
+  --aios-bg-card: #ffffff;
+  --aios-text: #2b3a55;
+  --aios-text-sub: #7b8aa3;
+  --aios-text-mute: #a7b3c6;
 
   /* 圆角与阴影 */
-  --aioa-radius: 12px;
-  --aioa-radius-sm: 8px;
-  --aioa-shadow-sm: 0 1px 3px rgba(91, 141, 239, 0.06);
-  --aioa-shadow: 0 4px 16px rgba(91, 141, 239, 0.08);
-  --aioa-shadow-lg: 0 10px 30px rgba(91, 141, 239, 0.12);
+  --aios-radius: 12px;
+  --aios-radius-sm: 8px;
+  --aios-shadow-sm: 0 1px 3px rgba(91, 141, 239, 0.06);
+  --aios-shadow: 0 4px 16px rgba(91, 141, 239, 0.08);
+  --aios-shadow-lg: 0 10px 30px rgba(91, 141, 239, 0.12);
 
   /* Element Plus 主题变量对齐（淡色系） */
   --el-color-primary: #5b8def;
@@ -64,13 +64,13 @@ body,
 body {
   font-family: var(--el-font-family);
   font-size: 14px;
-  color: var(--aioa-text);
-  background: var(--aioa-bg);
+  color: var(--aios-text);
+  background: var(--aios-bg);
   -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--aioa-primary);
+  color: var(--aios-primary);
   text-decoration: none;
 }
 
@@ -101,7 +101,7 @@ a {
   padding: 0 20px;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--aioa-border);
+  border-bottom: 1px solid var(--aios-border);
   box-shadow: 0 1px 6px rgba(91, 141, 239, 0.05);
   z-index: 10;
 }
@@ -114,14 +114,14 @@ a {
 
 .brand-icon {
   font-size: 23px;
-  color: var(--aioa-primary);
+  color: var(--aios-primary);
 }
 
 .brand-text {
   font-size: 17px;
   font-weight: 650;
   letter-spacing: 0.4px;
-  color: var(--aioa-text);
+  color: var(--aios-text);
 }
 
 .header-right {
@@ -151,18 +151,18 @@ a {
 }
 
 .user:hover {
-  background: var(--aioa-primary-soft);
+  background: var(--aios-primary-soft);
 }
 
 .user-name {
   font-size: 13px;
-  color: var(--aioa-text);
+  color: var(--aios-text);
 }
 
 /* ---------- 侧栏 ---------- */
 .layout-aside {
   background: #ffffff;
-  border-right: 1px solid var(--aioa-border);
+  border-right: 1px solid var(--aios-border);
   transition: width 0.2s;
   /* 菜单超高时「只有菜单自己滚」，右侧页面保持不动。
      原实现是 overflow:hidden —— 既裁不出滚动条，也挡不住内容把父级撑高。 */
@@ -184,12 +184,12 @@ a {
 }
 
 .layout-aside::-webkit-scrollbar-thumb {
-  background: var(--aioa-border-strong);
+  background: var(--aios-border-strong);
   border-radius: 3px;
 }
 
 .layout-aside::-webkit-scrollbar-thumb:hover {
-  background: var(--aioa-primary);
+  background: var(--aios-primary);
 }
 
 .layout-aside::-webkit-scrollbar-track {
@@ -201,20 +201,20 @@ a {
   height: 44px;
   line-height: 44px;
   margin-bottom: 2px;
-  border-radius: var(--aioa-radius-sm);
-  color: var(--aioa-text-sub);
+  border-radius: var(--aios-radius-sm);
+  color: var(--aios-text-sub);
   font-size: 13.5px;
 }
 
 .layout-menu .el-menu-item:hover,
 .layout-menu .el-sub-menu__title:hover {
-  background: var(--aioa-primary-soft);
-  color: var(--aioa-primary-strong);
+  background: var(--aios-primary-soft);
+  color: var(--aios-primary-strong);
 }
 
 .layout-menu .el-menu-item.is-active {
   background: linear-gradient(90deg, #e7efff 0%, #f1f6ff 100%);
-  color: var(--aioa-primary-strong);
+  color: var(--aios-primary-strong);
   font-weight: 600;
   position: relative;
 }
@@ -228,13 +228,13 @@ a {
   width: 3px;
   height: 20px;
   border-radius: 0 3px 3px 0;
-  background: var(--aioa-primary);
+  background: var(--aios-primary);
 }
 
 .layout-main {
   padding: 18px;
   overflow: auto;
-  background: var(--aioa-bg);
+  background: var(--aios-bg);
 }
 
 /* ---------- 子应用宿主 ---------- */
@@ -242,8 +242,8 @@ a {
   height: 100%;
   min-height: 480px;
   background: #ffffff;
-  border-radius: var(--aioa-radius);
-  box-shadow: var(--aioa-shadow-sm);
+  border-radius: var(--aios-radius);
+  box-shadow: var(--aios-shadow-sm);
   overflow: hidden;
 }
 
@@ -258,7 +258,7 @@ a {
 .page-title {
   font-size: 17px;
   font-weight: 650;
-  color: var(--aioa-text);
+  color: var(--aios-text);
   margin-bottom: 14px;
 }
 
@@ -270,7 +270,7 @@ a {
   margin-right: 8px;
   vertical-align: -2px;
   border-radius: 2px;
-  background: var(--aioa-primary);
+  background: var(--aios-primary);
 }
 
 .card-grid {
@@ -281,23 +281,23 @@ a {
 
 /* ---------- Element Plus 淡色化覆写 ---------- */
 .el-card {
-  border: 1px solid var(--aioa-border);
-  border-radius: var(--aioa-radius);
-  box-shadow: var(--aioa-shadow-sm) !important;
+  border: 1px solid var(--aios-border);
+  border-radius: var(--aios-radius);
+  box-shadow: var(--aios-shadow-sm) !important;
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .el-card:hover {
-  box-shadow: var(--aioa-shadow) !important;
+  box-shadow: var(--aios-shadow) !important;
 }
 
 .el-card__header {
   padding: 14px 18px;
-  border-bottom: 1px solid var(--aioa-border);
+  border-bottom: 1px solid var(--aios-border);
   font-weight: 600;
-  color: var(--aioa-text);
+  color: var(--aios-text);
   background: linear-gradient(180deg, #fbfcff 0%, #ffffff 100%);
-  border-radius: var(--aioa-radius) var(--aioa-radius) 0 0;
+  border-radius: var(--aios-radius) var(--aios-radius) 0 0;
 }
 
 .el-card__body {
@@ -309,7 +309,7 @@ a {
   --el-table-header-bg-color: #f8faff;
   --el-table-header-text-color: #5a6b86;
   --el-table-row-hover-bg-color: #f5f9ff;
-  border-radius: var(--aioa-radius-sm);
+  border-radius: var(--aios-radius-sm);
 }
 
 .el-table th.el-table__cell {
@@ -322,10 +322,10 @@ a {
 }
 
 .el-button--primary {
-  --el-button-bg-color: var(--aioa-primary);
-  --el-button-border-color: var(--aioa-primary);
-  --el-button-hover-bg-color: var(--aioa-primary-strong);
-  --el-button-hover-border-color: var(--aioa-primary-strong);
+  --el-button-bg-color: var(--aios-primary);
+  --el-button-border-color: var(--aios-primary);
+  --el-button-hover-bg-color: var(--aios-primary-strong);
+  --el-button-hover-border-color: var(--aios-primary-strong);
 }
 
 .el-tag {
@@ -333,24 +333,24 @@ a {
 }
 
 .el-alert {
-  border-radius: var(--aioa-radius-sm);
+  border-radius: var(--aios-radius-sm);
 }
 
 .el-dialog {
   border-radius: 14px;
-  box-shadow: var(--aioa-shadow-lg);
+  box-shadow: var(--aios-shadow-lg);
 }
 
 .el-dialog__header {
   padding: 18px 22px 12px;
-  border-bottom: 1px solid var(--aioa-border);
+  border-bottom: 1px solid var(--aios-border);
   margin-right: 0;
 }
 
 .el-dialog__title {
   font-size: 16px;
   font-weight: 650;
-  color: var(--aioa-text);
+  color: var(--aios-text);
 }
 
 .el-dialog__body {
@@ -359,12 +359,12 @@ a {
 
 .el-dialog__footer {
   padding: 12px 22px 18px;
-  border-top: 1px solid var(--aioa-border);
+  border-top: 1px solid var(--aios-border);
 }
 
 .el-message-box {
   border-radius: 14px;
-  box-shadow: var(--aioa-shadow-lg);
+  box-shadow: var(--aios-shadow-lg);
 }
 
 .el-pagination {
@@ -372,36 +372,36 @@ a {
 }
 
 .el-switch.is-checked .el-switch__core {
-  background: var(--aioa-primary);
-  border-color: var(--aioa-primary);
+  background: var(--aios-primary);
+  border-color: var(--aios-primary);
 }
 
 /* ---------- 通用统计卡 ---------- */
 .stat-card {
   padding: 16px 18px;
-  border-radius: var(--aioa-radius);
+  border-radius: var(--aios-radius);
   background: #fff;
-  border: 1px solid var(--aioa-border);
-  box-shadow: var(--aioa-shadow-sm);
+  border: 1px solid var(--aios-border);
+  box-shadow: var(--aios-shadow-sm);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--aioa-shadow);
+  box-shadow: var(--aios-shadow);
 }
 
 .stat-value {
   font-size: 26px;
   font-weight: 700;
   line-height: 1.2;
-  color: var(--aioa-primary-strong);
+  color: var(--aios-primary-strong);
 }
 
 .stat-label {
   margin-top: 4px;
   font-size: 12.5px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 /* 修饰色（供各页面按需组合） */

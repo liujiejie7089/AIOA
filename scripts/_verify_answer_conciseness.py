@@ -66,7 +66,7 @@ MODEL_REF = "default"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DB = dict(host="127.0.0.1", port=3306, user="root", password="",
-          database="aioa", charset="utf8mb4", connect_timeout=10)
+          database="aios", charset="utf8mb4", connect_timeout=10)
 
 # 分节词（旧六段标题）：用于 a)/判别力证明
 FORBIDDEN_SECTIONS = ["结论先行", "状态卡", "能力边界", "唯一下一步",
@@ -134,7 +134,7 @@ def upload_doc(token, content_bytes, name, mime="text/plain"):
 def create_conv(token, title):
     r = requests.post(API + "/conversations",
                       headers={"Authorization": "Bearer " + token},
-                      json={"title": title, "appCode": "aioa-client", "workerId": None},
+                      json={"title": title, "appCode": "aios-client", "workerId": None},
                       timeout=15)
     d = r.json()
     if d.get("code") != 0 or not (d.get("data") or {}).get("id"):

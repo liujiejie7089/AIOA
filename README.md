@@ -1,4 +1,4 @@
-# AIOA 智能办公基座
+# AIOS 智能办公基座
 
 > Agent-era Office Automation · 地级市 AI 公共服务平台基座
 > 各业务系统（票务、调度、OA…）接入后自动获得 AI 能力，业务真值仍留在各业务系统。
@@ -10,7 +10,7 @@
 
 不是骨架：四端可跑、81 个 Flyway 迁移（最新 V81）、47 个端到端套件全绿。
 
-> 数字口径 last-verified: 2026-10-12（迁移 81 = `find server -path '*/src/main/resources/db/migration/V*.sql' | wc -l`（**必须限定 `src/main/resources`**：`server/aioa-boot/target/classes/db/migration/` 里有构建复制件，去掉该限定会数出 162）× 版本号去重后 81、最新 V81；模块 12 = `grep -c '<module>' server/pom.xml`（parent pom 不计）；e2e 套件 47 = `ls scripts/e2e_*.py | wc -l`（磁盘计数，该目录被 gitignore 故不数 git）。
+> 数字口径 last-verified: 2026-10-12（迁移 81 = `find server -path '*/src/main/resources/db/migration/V*.sql' | wc -l`（**必须限定 `src/main/resources`**：`server/aios-boot/target/classes/db/migration/` 里有构建复制件，去掉该限定会数出 162）× 版本号去重后 81、最新 V81；模块 12 = `grep -c '<module>' server/pom.xml`（parent pom 不计）；e2e 套件 47 = `ls scripts/e2e_*.py | wc -l`（磁盘计数，该目录被 gitignore 故不数 git）。
 
 - **统一工作台（Vue3 + wujie 微前端）**：业务系统作为子应用嵌入，全局 AI 助手感知
   「用户在哪一页、选中了哪个实体」，在哪问就答哪。
@@ -18,14 +18,14 @@
   多租户组织域 / 审批引擎 / 会话 / 计费 / 审计。
 - **Python Agent 服务（FastAPI）**：模型网关（多 provider）、真实流式推理、工具调用
   循环、**多任务协同编排器**（依赖分层 + 同层并发 + 依赖失败跳过）。
-- **中间层 `aioa-bridge`**：工具注册表 + 定义驱动的调用网关（权限 / 幂等 / HITL /
+- **中间层 `aios-bridge`**：工具注册表 + 定义驱动的调用网关（权限 / 幂等 / HITL /
   审计），业务系统把操作注册为标准工具，新系统接入 = 注册新工具。
 - **HITL（人机协同）**：高风险工具调用挂起 → 走审批流 → 终态回调自动恢复执行。
 
 ## 2. 仓库结构
 
 ```
-aioa/
+aios/
 ├── docs/                 # 架构设计 / 接入规范 / 接口契约 / 部署手册 / ADR
 │   └── adr/              # 架构决策记录（为什么这么做，而不是只写做了什么）
 ├── deploy/               # docker-compose + nginx + Dockerfile + k8s 清单
@@ -33,18 +33,18 @@ aioa/
 │   ├── apps/shell/           # 工作台主应用（Vue3 + Element Plus）
 │   ├── apps/demo-ticket/     # 示例子应用：票务（wujie 接入）
 │   ├── apps/demo-dispatch/   # 示例子应用：调度（iframe 模拟遗留系统）
-│   └── packages/aioa-sdk/    # 子应用接入 SDK（postMessage 桥接）
+│   └── packages/aios-sdk/    # 子应用接入 SDK（postMessage 桥接）
 ├── server/               # Java（Maven 多模块）
-│   ├── aioa-common/          # 统一响应 / 异常 / 上下文
-│   ├── aioa-security/        # JWT + RBAC + 服务间令牌
-│   ├── aioa-resource/        # 专家 / 技能 / 知识库 / 额度 / 账本 / 工具网关
-│   ├── aioa-org/             # 多租户组织域 + 审批引擎（加签 / 子流程 / 版本）
-│   ├── aioa-chat/            # 会话 / runs / SSE 中转 / 多任务计划中转
-│   ├── aioa-admin/           # 用户 / 角色 / 权限 / 应用注册 / 审计
-│   ├── aioa-bridge/          # ★ 工具注册表 + 定义驱动调用网关
-│   ├── aioa-tool-sdk/        # ★ 注解式工具 SDK（@AioaTool / @AioaToolParam）
-│   ├── aioa-gitee/           # 代码托管联动（Gitee / Gitea 双实现）
-│   └── aioa-boot/            # 启动模块 + Flyway 迁移（V1..V81）
+│   ├── aios-common/          # 统一响应 / 异常 / 上下文
+│   ├── aios-security/        # JWT + RBAC + 服务间令牌
+│   ├── aios-resource/        # 专家 / 技能 / 知识库 / 额度 / 账本 / 工具网关
+│   ├── aios-org/             # 多租户组织域 + 审批引擎（加签 / 子流程 / 版本）
+│   ├── aios-chat/            # 会话 / runs / SSE 中转 / 多任务计划中转
+│   ├── aios-admin/           # 用户 / 角色 / 权限 / 应用注册 / 审计
+│   ├── aios-bridge/          # ★ 工具注册表 + 定义驱动调用网关
+│   ├── aios-tool-sdk/        # ★ 注解式工具 SDK（@AiosTool / @AiosToolParam）
+│   ├── aios-gitee/           # 代码托管联动（Gitee / Gitea 双实现）
+│   └── aios-boot/            # 启动模块 + Flyway 迁移（V1..V81）
 ├── agent/                # Python（FastAPI）
 │   └── app/core/             # runtime 门面 / agent_runtime / orchestrator / multi_task
 ├── user-client/          # 用户端单文件 H5
@@ -73,7 +73,7 @@ bash start-all.sh      # 幂等：已运行的服务自动跳过，日志写入 
 
 | 模块 | 命令 |
 |---|---|
-| Java 后端 | `cd server && bash mvnw -DskipTests -q clean package` 然后 `java -Dspring.flyway.validate-on-migrate=false -jar aioa-boot/target/aioa-boot-0.1.0-SNAPSHOT.jar` |
+| Java 后端 | `cd server && bash mvnw -DskipTests -q clean package` 然后 `java -Dspring.flyway.validate-on-migrate=false -jar aios-boot/target/aios-boot-0.1.0-SNAPSHOT.jar` |
 | Python agent | `cd agent && uvicorn app.main:app --host 0.0.0.0 --port 8000` |
 | 前端 | `cd web && pnpm install && pnpm -r --parallel dev` |
 | 用户端 H5 | `cd user-client && python serve.py` |

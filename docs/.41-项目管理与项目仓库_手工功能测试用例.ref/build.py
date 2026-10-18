@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成《AIOA 项目管理 / 项目与仓库 · 手工功能测试用例》工作簿。
+"""生成《AIOS 项目管理 / 项目与仓库 · 手工功能测试用例》工作簿。
 
 期望结果全部与「当天实测系统」同源（接口 / 视图源码 / DB 结构），
 差异项集中在「数据对齐说明」页，避免测试者按虚构数据误报缺陷。
@@ -140,7 +140,7 @@ def add_summary(ws, anchor, data_last_row, result_col="I"):
 
 
 wb = openpyxl.Workbook()
-wb.properties.title = "AIOA 项目管理与项目仓库 手工功能测试用例"
+wb.properties.title = "AIOS 项目管理与项目仓库 手工功能测试用例"
 
 # ============================================================================
 # Sheet 1：重点联动场景对照
@@ -149,7 +149,7 @@ ws = wb.active
 ws.title = "重点联动场景对照"
 HEAD1 = ["场景号", "场景（需求原话）", "关键验证点", "关联用例ID", "实测结论（与当天系统同源）", "风险提示"]
 W1 = [8, 30, 36, 22, 62, 28]
-write_title(ws, len(HEAD1), "AIOA 项目管理 / 项目与仓库 · 五大重点联动场景对照")
+write_title(ws, len(HEAD1), "AIOS 项目管理 / 项目与仓库 · 五大重点联动场景对照")
 write_header(ws, 2, HEAD1)
 set_widths(ws, W1)
 
@@ -187,7 +187,7 @@ ROWS1 = [
      "① 四项统计与 Worker 名；② 手动校准可触发；③ 定时校准是否可切换",
      "GR-005、GR-006、GR-007、GR-008",
      "统计完全一致：待处理(PENDING)=0、执行中(RUNNING)=0、已完成(DONE)=1836、失败(FAILED)=1445、"
-     "Worker=aioa-gitee-1，与 GET /api/v1/gitee/tasks/stats 实测逐字相符；定时校准标签=开启、删除连仓标签=否；"
+     "Worker=aios-gitee-1，与 GET /api/v1/gitee/tasks/stats 实测逐字相符；定时校准标签=开启、删除连仓标签=否；"
      "【手动校准】按钮存在且可用（POST /gitee/calibrate，返回 scope=TENANT:2）。\n"
      "但【定时校准】是**只读标签（el-tag）**，页面上**没有开关控件**。",
      "中。若「定时校准开关」被要求为可切换，属功能缺口，需先确认需求口径再记缺陷。"),
@@ -214,7 +214,7 @@ write_title(ws2, len(HEAD2), "【项目管理】模块 · 手工功能测试用�
 write_header(ws2, 2, HEAD2)
 set_widths(ws2, W2)
 
-ENV = "管理端 http://127.0.0.1:8080/aioa/web/ ；账号 dsj_admin / User@123 / 租户「某某市某某区大数据管理局」；后端 8080 正常、V71 迁移已应用"
+ENV = "管理端 http://127.0.0.1:8080/aios/web/ ；账号 dsj_admin / User@123 / 租户「某某市某某区大数据管理局」；后端 8080 正常、V71 迁移已应用"
 ROWS2 = [
     ("PM-001", "项目管理", "正向", "菜单可达性与页面结构",
      ENV,
@@ -523,8 +523,8 @@ ROWS3 = [
      "以租户管理员登录（dsj_admin）；该卡片 v-if=\"isTenantAdmin\"",
      "1) 定位【运维与校准】卡片\n2) 核对四项统计、Worker 名与两个标签",
      "待处理（PENDING）=0；执行中（RUNNING）=0；已完成（DONE）=1836；失败（FAILED）=1445；\n"
-     "文本「Worker：aioa-gitee-1」；标签【定时校准：开启】；标签【删除连仓：否】；【手动校准】按钮存在且可点。",
-     "实测 GET /api/v1/gitee/tasks/stats → {PENDING:0, RUNNING:0, DONE:1836, FAILED:1445, worker:\"aioa-gitee-1\"}；"
+     "文本「Worker：aios-gitee-1」；标签【定时校准：开启】；标签【删除连仓：否】；【手动校准】按钮存在且可点。",
+     "实测 GET /api/v1/gitee/tasks/stats → {PENDING:0, RUNNING:0, DONE:1836, FAILED:1445, worker:\"aios-gitee-1\"}；"
      "定时校准/删除连仓取自 /gitee/config 的 syncEnabled=true、purgeRepoOnDelete=false",
      "未执行", "统计值与实测逐字一致，可直接作为预期"),
 
@@ -554,7 +554,7 @@ ROWS3 = [
     ("GR-009", "项目与仓库", "正向", "★重点场景5：项目列表按【归属部门】筛选",
      ENV,
      "1) 【项目列表】→【归属部门】下拉选「发展规划科（dept11-）」\n2) 点【查询】",
-     "仅剩 departmentId=11 的项目（实测该部门下有「AIOA 个人令牌验证 1789636649」「AIOA 真机验证 1789630096」等）；"
+     "仅剩 departmentId=11 的项目（实测该部门下有「AIOS 个人令牌验证 1789636649」「AIOS 真机验证 1789630096」等）；"
      "部门下拉选项来自 GET /gitee/departments，受组织作用域限制，选项形如「名称（命名前缀）」。",
      "GiteeController.projects L253-257；实测 /gitee/departments 返回 部门10=办公室…部门16=综合科（机构1=发改局）",
      "未执行", "★ 你给的「发改局」是机构，仓库侧筛的粒度是「部门」"),
@@ -562,9 +562,9 @@ ROWS3 = [
     ("GR-010", "项目与仓库", "正向", "★重点场景5：项目列表按仓库名 / 项目名称筛选",
      "接 GR-009",
      "1) 归属部门选「发展规划科（dept11-）」\n2) 关键字输入 fagai-project-ledger\n3) 点【查询】\n"
-     "4) 关键字改为已存在项目的仓库名前缀（如 dept11-aioa）再查一次",
+     "4) 关键字改为已存在项目的仓库名前缀（如 dept11-aios）再查一次",
      "① 输入 fagai-project-ledger 时列表为空（实测库中不存在该仓库）；\n"
-     "② 输入 dept11-aioa 时命中对应项目。\n"
+     "② 输入 dept11-aios 时命中对应项目。\n"
      "关键字同时匹配「项目名称」与「仓库名」（输入框占位文案为「项目名称/仓库名」）。",
      "输入框占位文案 L241；后端按 departmentId + keyword 过滤",
      "未执行", "★ 当前库中无 fagai-project-ledger，先按 GR-012 建仓再复验"),
@@ -582,7 +582,7 @@ ROWS3 = [
      "3) 归属部门选「发展规划科」\n4) 可见性选私有\n5) 提交",
      "创建成功，列表新增一行。**关键**：仓库名（repoName）由平台按 `dept{部门ID}-{项目名 slug}` 派生，"
      "即形如 `dept11-…`，**不会**等于你提供的字面量 `fagai-project-ledger`。默认分支以建仓返回值为准（实测既有行为多为 master）。",
-     "实测既有仓库 repoName 全部形如 dept10-e2e-2-… / dept11-aioa-…；命名由 GiteeNaming.repoPath 派生",
+     "实测既有仓库 repoName 全部形如 dept10-e2e-2-… / dept11-aios-…；命名由 GiteeNaming.repoPath 派生",
      "未执行", "★ 若必须叫 fagai-project-ledger，需把项目名设成可被 slug 的英文，或在 Gitee 侧重命名（平台不保证跟随）"),
 
     ("GR-013", "项目与仓库", "反向", "归属部门未选时不允许提交（或给出明确提示）",
@@ -602,7 +602,7 @@ ROWS3 = [
      "未执行", "—"),
 
     ("GR-015", "项目与仓库", "反向", "建仓失败必须留下可读原因 + 可重试",
-     "库内已有 FAILED 行（实测 id=77「AIOA 个人令牌验证 1789636649」、id=69「AIOA 真机验证 1789630096」）",
+     "库内已有 FAILED 行（实测 id=77「AIOS 个人令牌验证 1789636649」、id=69「AIOS 真机验证 1789630096」）",
      "1) 在【项目列表】找到状态=失败的记录\n2) 查看【失败原因】列\n3) 点【重试】",
      "① 列表在**存在 FAILED 行时**才显示【失败原因】列；\n"
      "② 失败原因文案完整可读，实测样例：「建仓已完成，但「配置 Webhook」这一步没成功，项目因此停在未就绪状态。"
@@ -721,7 +721,7 @@ ROWS4 = [
      "用例改用真实在册员工（王振华/刘敏/李思远/陈静怡/吴俊杰）。注意「负责人」选的是机构在册员工，不是系统账号"),
     ("仓库名 fagai-project-ledger", "字面量仓库名",
      "仓库名由平台派生：`dept{部门ID}-{项目名 slug}`。实测库内既有仓库 repoName 全部形如 dept10-e2e-2-… / "
-     "dept11-aioa-…；且当前库中**不存在** fagai-project-ledger",
+     "dept11-aios-…；且当前库中**不存在** fagai-project-ledger",
      "生成规则不同",
      "场景1 需先按 GR-012 建仓，并以列表中的实际 repoName 为准；若要该名字需让项目名可被 slug 成它"),
     ("合同 HT-2026-001 / 收付款 64000+64000 / 里程碑", "具体合同与收付款数据",
@@ -749,8 +749,8 @@ ROWS4 = [
      "虚构值，在真实 Gitee 上必然失败。实测当前 orgName=AI-OA、init_status=PENDING、tokenConfigured=false",
      "数据虚构",
      "GR-016 预期「校验失败」；GR-019 需替换真实凭据或改走桩环境（scripts/gitee_stub.py）"),
-    ("运维统计 PENDING0/RUNNING0/DONE1836/FAILED1445/Worker aioa-gitee-1", "如上",
-     "✅ 与 GET /api/v1/gitee/tasks/stats 实测**逐字一致**：{PENDING:0,RUNNING:0,DONE:1836,FAILED:1445,worker:\"aioa-gitee-1\"}",
+    ("运维统计 PENDING0/RUNNING0/DONE1836/FAILED1445/Worker aios-gitee-1", "如上",
+     "✅ 与 GET /api/v1/gitee/tasks/stats 实测**逐字一致**：{PENDING:0,RUNNING:0,DONE:1836,FAILED:1445,worker:\"aios-gitee-1\"}",
      "无差异",
      "可直接作为 GR-005 的预期值使用"),
     ("定时校准开关", "可切换的开关",
@@ -780,12 +780,12 @@ ROWS4 = [
      "环境事实",
      "用例不验证分页；数据量大时无分页属体验问题，不记缺陷"),
     ("执行环境", "—",
-     "管理端 http://127.0.0.1:8080/aioa/web/ ；H5 http://127.0.0.1:8080/aioa/h5/ ；接口前缀 /api/v1；"
-     "数据库 MySQL8 库名 aioa（root 无密码）；管理端账号 dsj_admin / User@123",
+     "管理端 http://127.0.0.1:8080/aios/web/ ；H5 http://127.0.0.1:8080/aios/h5/ ；接口前缀 /api/v1；"
+     "数据库 MySQL8 库名 aios（root 无密码）；管理端账号 dsj_admin / User@123",
      "环境事实",
      "作为全部用例的统一前置条件（表中简写为「ENV」）"),
     ("已知失败数据（勿当缺陷）", "—",
-     "仓库列表中存在历史 FAILED 行（id=77 AIOA 个人令牌验证、id=69 AIOA 真机验证），失败原因均为「配置 Webhook 这一步没成功」；"
+     "仓库列表中存在历史 FAILED 行（id=77 AIOS 个人令牌验证、id=69 AIOS 真机验证），失败原因均为「配置 Webhook 这一步没成功」；"
      "失败原因文案本身是完整可读的（见 GR-015）",
      "环境事实",
      "GR-015 正是用这些行来验证「失败有终态 + 可重试」，不要把它们当成待修的缺陷"),

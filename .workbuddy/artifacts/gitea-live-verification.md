@@ -14,7 +14,7 @@
 |---|---|
 | `scripts/e2e_gitea_live.py`（**新增**，真机套件，11 段 75 条） | **75 / 75 PASS**，0 FAIL，0 BLOCKED |
 | `scripts/_check_gitea_ui_provider.py`（**新增**，浏览器渲染核对） | **17 / 17 PASS** |
-| `aioa-gitee` 单测（含 8 条新增防回归 + 1 条源码审计） | **136 / 136** |
+| `aios-gitee` 单测（含 8 条新增防回归 + 1 条源码审计） | **136 / 136** |
 | `e2e_v51_gitee_init`（Gitee 桩接线，防回归） | **50 / 50** |
 | `e2e_v48_gitee`（Gitee 桩接线，防回归） | **116 / 116** |
 | `e2e_full_system --no-browser` | **145 / 145**（已知缺口 0 项） |
@@ -37,7 +37,7 @@ branches: ['main']     collaborators: []
 - **实测症状**：`provider=gitea` 下，租户2 的 `dsj_admin` 建项目 → `POST /api/v1/gitee/projects` 返回
   `code=500「服务内部错误」`；日志根因：
   ```
-  java.lang.IllegalStateException: Gitee 令牌解密失败：请确认 aioa.gitee.token-enc-key 未被变更
+  java.lang.IllegalStateException: Gitee 令牌解密失败：请确认 aios.gitee.token-enc-key 未被变更
     at GiteeCrypto.decrypt → GiteeTokenService.validToken → GiteeProjectService.create
   Caused by: javax.crypto.AEADBadTagException: Tag mismatch
   ```
@@ -63,7 +63,7 @@ branches: ['main']     collaborators: []
 
 ### 缺陷 3（可运维级）：令牌密钥报错说错配置键
 
-- 原文案恒为 `aioa.gitee.token-enc-key`，而当时 `provider=gitea` —— 用户会去改一个**根本不生效**的配置项。
+- 原文案恒为 `aios.gitee.token-enc-key`，而当时 `provider=gitea` —— 用户会去改一个**根本不生效**的配置项。
 - 修法：新增 `RepoProviderSettings.tokenEncKeyProperty()`，文案随 provider；
   并补「若刚切换过托管方，则这条密文是另一个平台写的，需要重新绑定」的下一步指引。
 
@@ -71,7 +71,7 @@ branches: ['main']     collaborators: []
 
 - **实测症状**：`provider=gitea` 下打开「项目与仓库」，页头写「项目与仓库（**Gitee** 联动）」、
   卡片写「我的 **Gitee** 账号」，而仓库地址、跳转链接、协作者全部指向 `172.16.8.249:3000`。
-  更糟的是「模块未启用」提示让人去改 `aioa.**gitee**.*` —— 一个在 gitea 下**根本不读**的配置段；
+  更糟的是「模块未启用」提示让人去改 `aios.**gitee**.*` —— 一个在 gitea 下**根本不读**的配置段；
   企业初始化对话框还写着「令牌需具备 `projects` 权限」，而 Gitea 的个人令牌页上没有这个选项。
 - **成因**：V48 只有 Gitee 一个实现，前端把平台名当常量写进文案；后端若干服务/控制器同理
   （`setLastError`、`BizException` 文案、接口返回的 `note`、初始化步骤标签、OAuth 结果页）。
@@ -125,7 +125,7 @@ branches: ['main']     collaborators: []
   4. 单测 20 条穷举各状态分支 + 真机断言 G9.4~G9.6（构造「绑定账号在实例不存在」这一真实形态）。
 - **实测修复后落库文案**（真机原文）：
   ```
-  在 Gitea 上找不到目标仓库 aioa-tenant2-1789551170/dept10-e2e-2-1789551170，也找不到账号「dsj_admin」：
+  在 Gitea 上找不到目标仓库 aios-tenant2-1789551170/dept10-e2e-2-1789551170，也找不到账号「dsj_admin」：
   仓库可能尚未在该实例创建；若仓库正常，则是该成员绑定的 Gitea 账号在当前实例不存在，
   请到「我的 Gitea 账号」重新绑定后重试。（Gitea 原始返回：...）
   ```
@@ -135,9 +135,9 @@ branches: ['main']     collaborators: []
 - **怎么发现的**：为缺陷 6 写真机探针时探针拿不到 FAILED —— 成员反而被标成 `SYNCED`。
 - **实测证据**（直连 Gitea 1.26.2）：
   ```
-  PUT /api/v1/repos/AI-OA/AIOA_FrontWeb/collaborators/no-such-gitea-user-xyz
+  PUT /api/v1/repos/AI-OA/AIOS_FrontWeb/collaborators/no-such-gitea-user-xyz
     -> 422 {"message":"user does not exist [uid: 0, name: no-such-gitea-user-xyz]"}
-  PUT /api/v1/repos/AI-OA/AIOA_FrontWeb/collaborators/liujiejie   （已是协作者）
+  PUT /api/v1/repos/AI-OA/AIOS_FrontWeb/collaborators/liujiejie   （已是协作者）
     -> 204 （幂等成功，根本不走异常分支）
   ```
 - **成因**：`GiteeMemberTaskHandler.isAlreadyCollaborator()` 把 **422 一律**当「已在协作者中」
@@ -191,7 +191,7 @@ branches: ['main']     collaborators: []
 「Gitea 主动回调平台」这一段不通 —— 即 `gitee_event` 不会自动增长。
 
 **两条可行路径**（按推荐度）：
-1. **平台与 Gitea 同网段部署**（生产常态）：把 `AIOA_GITEA_WEBHOOK_BASE_URL` 配成
+1. **平台与 Gitea 同网段部署**（生产常态）：把 `AIOS_GITEA_WEBHOOK_BASE_URL` 配成
    **Gitea 能访问到**的平台地址即可，无需改代码。
 2. **用无需入站的收敛手段**：平台的**定时校准**（`SYNC_ALL`）与**只读接口**
    （分支/目录/提交按需从 Gitea 拉取）本来就与入站无关，已实测可用（套件 G9/G10）。
@@ -234,9 +234,9 @@ python scripts/_check_gitea_ui_provider.py
 ```
 
 `.env.gitea-real`（已 gitignore）关键项：
-`AIOA_REPO_PROVIDER=gitea` · `AIOA_GITEA_BASE_URL=http://172.16.8.249:3000/api/v1`（**必须带 `/api/v1`**）·
-`AIOA_GITEA_ORG=AI-OA` · `AIOA_GITEA_CLIENT_ID/SECRET`（截图给的 OAuth 应用）·
-`AIOA_GITEA_WEBHOOK_BASE_URL`（**必须是 Gitea 能访问到的地址**）。
+`AIOS_REPO_PROVIDER=gitea` · `AIOS_GITEA_BASE_URL=http://172.16.8.249:3000/api/v1`（**必须带 `/api/v1`**）·
+`AIOS_GITEA_ORG=AI-OA` · `AIOS_GITEA_CLIENT_ID/SECRET`（截图给的 OAuth 应用）·
+`AIOS_GITEA_WEBHOOK_BASE_URL`（**必须是 Gitea 能访问到的地址**）。
 
 ## 六、明确**未**验证的项（不假装通过）
 

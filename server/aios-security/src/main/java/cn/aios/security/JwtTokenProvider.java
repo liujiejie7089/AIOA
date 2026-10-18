@@ -1,0 +1,151 @@
+package cn.aios.security;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 用户侧 JWT（HS256）：access 2h / refresh 7d。
+ */
+@Component
+public class JwtTokenProvider {
+
+    public static final String CLAIM_UID = "uid";
+    public static final String CLAIM_TENANT = "tid";
+    public static final String CLAIM_ROLES = "roles";
+    public static final String CLAIM_TYPE = "typ";
+    /**
+     * 所属机构 / 部门。此前 token 只带 uid+tid+roles，导致请求链路里
+     * {@code AuthUser.institutionId/departmentId} 恒为空——机构约束与部门可见范围
+     * 都会静默失效（表现为"看起来过滤了，其实是所有人/没人能通过"）。
+     */
+    public static final String CLAIM_INSTITUTION = "iid";
+    public static final String CLAIM_DEPT = "did";
+    public static final String TYPE_ACCESS = "access";
+    public static final String TYPE_REFRESH = "refresh";
+
+    /**
+     * 令牌唯一标识（JWT 标准声明 {@code jti}）—— 服务端吊销的抓手（D-1）。
+     *
+     * <p>没有它就只能靠「用户级失效水位」实现吊销，代价是同用户其它设备一起下线。
+     * 带上 jti 后，登出只让<b>这一个</b>令牌失效。</p>
+     *
+     * <p>兼容性：V46 之前签发的令牌没有 jti，此时吊销检查无从施加，仍按「未吊销」处理
+     * （这类令牌会在最长 2 小时内自然过期）。</p>
+     */
+    public static final String CLAIM_JTI = "jti";
+
+    private final JwtProperties properties;
+    private final SecretKey key;
+
+    public JwtTokenProvider(JwtProperties properties) {
+        this.properties = properties;
+        this.key = Keys.hmacShaKeyFor(properties.getSecret().getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String generateAccessToken(AuthUser user) {
+        return build(user, TYPE_ACCESS, properties.getAccessTtlSeconds());
+    }
+
+    public String generateRefreshToken(AuthUser user) {
+        return build(user, TYPE_REFRESH, properties.getRefreshTtlSeconds());
+    }
+
+    public long accessTtlSeconds() {
+        return properties.getAccessTtlSeconds();
+    }
+
+    private String build(AuthUser user, String type, long ttl) {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())
+                .subject(user.getUsername())
+                .claim(CLAIM_UID, user.getUserId())
+                .claim(CLAIM_TENANT, user.getTenantId() == null ? 0L : user.getTenantId())
+                .claim(CLAIM_ROLES, user.getRoles() == null ? List.of() : user.getRoles())
+                .claim(CLAIM_INSTITUTION, user.getInstitutionId())
+                .claim(CLAIM_DEPT, user.getDepartmentId())
+                .claim(CLAIM_TYPE, type)
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + ttl * 1000L))
+                .signWith(key, Jwts.SIG.HS256)
+                .compact();
+    }
+
+    /** 令牌的过期时间（吊销表按此清理历史行）；解析失败返回 null。 */
+    public static java.time.LocalDateTime expiryOf(Claims claims) {
+        Date exp = claims == null ? null : claims.getExpiration();
+        return exp == null ? null
+                : java.time.LocalDateTime.ofInstant(exp.toInstant(), java.time.ZoneId.systemDefault());
+    }
+
+    public Claims parse(String token) {
+        return Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+    }
+
+    public AuthUser toAuthUser(Claims claims) {
+        Long userId = claims.get(CLAIM_UID, Long.class);
+        if (userId == null) {
+            Object raw = claims.get(CLAIM_UID);
+            userId = raw == null ? null : Long.valueOf(String.valueOf(raw));
+        }
+        Long tenantId = claims.get(CLAIM_TENANT, Long.class);
+        Object rawRoles = claims.get(CLAIM_ROLES);
+        List<String> roles = new ArrayList<>();
+        if (rawRoles instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                roles.add(String.valueOf(item));
+            }
+        }
+        return AuthUser.builder()
+                .userId(userId)
+                .tenantId(tenantId == null ? 0L : tenantId)
+                .institutionId(longOrNull(claims.get(CLAIM_INSTITUTION)))
+                .departmentId(longOrNull(claims.get(CLAIM_DEPT)))
+                .username(claims.getSubject())
+                .roles(roles)
+                .permissions(new ArrayList<>())
+                .build();
+    }
+
+    /** claim 可能是 Integer/Long/String（不同签发端序列化差异），统一转 Long，无法解析返回 null。 */
+    private static Long longOrNull(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(String.valueOf(raw));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    public boolean isValid(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        try {
+            parse(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    public Map<String, Object> claimsAsMap(Claims claims) {
+        return new java.util.LinkedHashMap<>(claims);
+    }
+}

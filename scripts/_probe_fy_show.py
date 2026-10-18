@@ -114,7 +114,7 @@ def probe(item):
     t0 = time.time()
     rec = {"group": group, "prefix": prefix, "path": path, "params": params, "url": url}
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "aioa-probe/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "aios-probe/1.0"})
         with urllib.request.urlopen(req, timeout=TIMEOUT, context=CTX) as r:
             raw = r.read(400000).decode("utf-8", "replace")
             rec["http"] = r.status

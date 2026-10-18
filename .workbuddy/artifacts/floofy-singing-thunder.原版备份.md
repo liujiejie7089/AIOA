@@ -1,4 +1,4 @@
-# AIOA 智能办公基座 · 项目全面评估报告
+# AIOS 智能办公基座 · 项目全面评估报告
 
 > 范围：`C:\Users\刘尖尖\WorkBuddy\aioa`
 > 调研日期：2026-09-18
@@ -9,12 +9,12 @@
 
 ## 0. 一句话总评
 
-**AIOA 不是"AI 办公骨架"了，它已经长成"业务域高度丰满的 AI 办公平台"——但骨架反而成了最薄弱的一环。**
+**AIOS 不是"AI 办公骨架"了，它已经长成"业务域高度丰满的 AI 办公平台"——但骨架反而成了最薄弱的一环。**
 
 - README 仍声称"M1 骨架已完成、M2/M3/M4 待启动"，但仓库实际已经跑到了 V53 迁移、10 个 Maven 模块、28 个用户端 + 管理端视图、20+ 份实施报告。
-- **架构核心 aioa-bridge（工具注册表/桥接中间层）依然是 142K 占位、InternalToolController 直接 throw notImplemented**——这是 README 反复强调的"新系统接入 = 注册工具"叙事的命门，至今没接上。
+- **架构核心 aios-bridge（工具注册表/桥接中间层）依然是 142K 占位、InternalToolController 直接 throw notImplemented**——这是 README 反复强调的"新系统接入 = 注册工具"叙事的命门，至今没接上。
 - Python agent 服务是 1900 行的"FastAPI SSE 网关骨架"，**state graph、checkpoint、HITL 挂起、多 agent 协作全部未实现**，与 LangGraph / AutoGen / OpenAI Agents SDK 差距巨大。
-- 后端业务域（aioa-resource / aioa-org / aioa-gitee）野蛮生长，把"基座不存业务数据"的红线几乎踩完。
+- 后端业务域（aios-resource / aios-org / aios-gitee）野蛮生长，把"基座不存业务数据"的红线几乎踩完。
 
 **综合评分：6.5 / 10**。价值点是真的在的——但 README 与现实错位、bridge 旁路、Python agent 缺骨架，是阻碍"agent 协同办公 + 接入其他业务系统"目标的三座大山。
 
@@ -34,7 +34,7 @@
 | **数据** | MySQL 8（远程 192.168.31.129）+ Redis 7（远程）+ MinIO；53 个 Flyway 迁移 |
 | **LLM 网关** | DeepSeek / 通义千问 / vLLM / Ollama / echo 共 5 个 provider，可运行时热加载 |
 | **部署** | docker-compose 一键起（minio + server + agent + web + nginx），远程库直连；**无 K8s** |
-| **协作** | 单兵 AIOA Dev 97% 提交、无 PR 流程、main 单分支、commit 规范三类混用 |
+| **协作** | 单兵 AIOS Dev 97% 提交、无 PR 流程、main 单分支、commit 规范三类混用 |
 
 ### 1.2 当前阶段判定
 
@@ -43,7 +43,7 @@
 | 维度 | README 声称 | 实际状态 |
 |---|---|---|
 | 里程碑 | M1 已完成、M2 待启动 | 已完成 V53：M1(骨架)→ M2(工具网关/模型)→ M3(RBAC/HITL)→ M4(RAG)→ 一期交付 35 FR → V18-V22 权限迭代 → V36-V44 组织改造 → V45-V47 docs/28 收口 → V48 Gitee → V48-V52 消息中心/菜单合并 → V53 repo URL 规范化 |
-| 后端模块 | 7 个 | **10 个**（多了 aioa-resource / aioa-org / aioa-gitee） |
+| 后端模块 | 7 个 | **10 个**（多了 aios-resource / aios-org / aios-gitee） |
 | Bridge | "M2 完整" | **仍是 142K 骨架**，InternalToolController 仍 throw notImplemented |
 
 ---
@@ -54,7 +54,7 @@
 |---|---|---|
 | **后端业务完整度** | **8.0 / 10** | 53 个迁移、320 个 .java、Spring Security 双通道（JWT+Service JWT+JTI 吊销）、RBAC+实时授权（V36）、SHA-256 哈希链审计（V25 V2）、Gitee OAuth+Webhook 完整闭环 |
 | **前端实现** | **7.0 / 10** | pnpm workspace 三应用；微前端 wujie；AI 助手 SSE 流式 OK；缺 tool call / citation UI 气泡、缺 i18n 与暗色、无前端监控 |
-| **子应用接入** | **6.0 / 10** | @aioa/sdk 设计干净，但 `getToken()` 仍返回 null（子应用无法独立调基座 API）；postMessage origin 用 `*` 无白名单 |
+| **子应用接入** | **6.0 / 10** | @aios/sdk 设计干净，但 `getToken()` 仍返回 null（子应用无法独立调基座 API）；postMessage origin 用 `*` 无白名单 |
 | **Agent（Python）** | **3.5 / 10** | 1900 行 FastAPI 骨架；单 agent while 循环工具调用；state / checkpoint / HITL / 多 agent / 真 streaming / OpenTelemetry 全部缺失 |
 | **Bridge 中间层** | **2.0 / 10** | 表结构 4 张齐了，Controller 直接 501；tool_permission / requires_approval 表里两列未被任何 service 读取 |
 | **文档完整度** | **6.5 / 10** | 30+ 份实施报告丰富；缺 ER 图、ADR、独立的"模型网关规范"文档、监控告警 Runbook |
@@ -95,7 +95,7 @@
 
 ### 3.3 与 7 个主流框架对比
 
-| 能力 | LangGraph | AutoGen | CrewAI | OpenAI Agents SDK | Anthropic Agent SDK | MCP | **AIOA** |
+| 能力 | LangGraph | AutoGen | CrewAI | OpenAI Agents SDK | Anthropic Agent SDK | MCP | **AIOS** |
 |---|---|---|---|---|---|---|---|
 | 状态机 / Graph | ✅ | ✅ | ✅ | ✅ | ✅ | — | ❌ while 循环 |
 | Checkpoint | ✅ | 手写 | 手写 | ✅ | ✅ | — | ❌ |
@@ -148,26 +148,26 @@
 ### 4.1 Maven 模块结构（10 个）
 
 ```
-aioa-common        ← ApiResponse / PageResult / BizException / TraceId
-aioa-security      ← JwtAuthenticationFilter / ServiceTokenFilter / PermissionCatalog
-aioa-admin         ← SysUser/Role/Permission/AppRegistry + AuthController
-aioa-bridge        ← ⚠ ToolDefinition/Permission/Log 4 张表 + 501 占位 Controller
-aioa-tool-sdk      ← ⚠ 仅 PageContext 1 个文件（无 @AioaTool 注解）
-aioa-chat          ← Conversation/Run/WorkerIntake/Stats + RunService(SSE)
-aioa-resource      ← ToolGateway(实际网关)/Approval/Billing/KB/Notification/ContentReview 等业务域
-aioa-org           ← Onboarding/AuditRecorder(哈希链)/ApprovalFlow/PermissionGrant/Org
-aioa-gitee         ← OAuth/Webhook/SyncScheduler/3 个 TaskHandler/Crypto
-aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
+aios-common        ← ApiResponse / PageResult / BizException / TraceId
+aios-security      ← JwtAuthenticationFilter / ServiceTokenFilter / PermissionCatalog
+aios-admin         ← SysUser/Role/Permission/AppRegistry + AuthController
+aios-bridge        ← ⚠ ToolDefinition/Permission/Log 4 张表 + 501 占位 Controller
+aios-tool-sdk      ← ⚠ 仅 PageContext 1 个文件（无 @AiosTool 注解）
+aios-chat          ← Conversation/Run/WorkerIntake/Stats + RunService(SSE)
+aios-resource      ← ToolGateway(实际网关)/Approval/Billing/KB/Notification/ContentReview 等业务域
+aios-org           ← Onboarding/AuditRecorder(哈希链)/ApprovalFlow/PermissionGrant/Org
+aios-gitee         ← OAuth/Webhook/SyncScheduler/3 个 TaskHandler/Crypto
+aios-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 ```
 
 调用关系单向无循环：`boot → admin/chat/resource/org/gitee/bridge/tool-sdk → security → common`；`chat → org`，`gitee → org`。
 
-### 4.2 aioa-bridge 现状
+### 4.2 aios-bridge 现状
 
 - 表结构齐全：tool_system / tool_definition（含 `uk(tool_code, version)`）/ tool_permission（含 `uk(tool_code, role_code)` effect ALLOW/DENY）/ tool_invocation_log
 - Entity / Mapper 占位（MyBatis-Plus BaseMapper，9 行无自定义 SQL）
 - **InternalToolController 直接 throw notImplemented("tool invoke 将在 M2 实现")**
-- 实际工具网关**不在 bridge 里**，在 `aioa-resource` 的 `ToolGatewayService`（5 个内置工具静态白名单 + ExternalToolHandler SPI）
+- 实际工具网关**不在 bridge 里**，在 `aios-resource` 的 `ToolGatewayService`（5 个内置工具静态白名单 + ExternalToolHandler SPI）
 - 鉴权层（SecurityConfig 路由 `/internal/**` → ServiceTokenFilter）能生效，但**模块边界已乱**——bridge 模块的 Controller 要借 chat 模块的 ServiceTokenProvider
 
 ### 4.3 工具调用关键缺陷
@@ -175,7 +175,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 1. **ToolGatewayService 不查 tool_permission 表**——只按 `requiredRoles` 写死角色判定，新增工具易漏配 → 越权
 2. **requires_approval 列在表里无 service 读取**——HITL 缺失
 3. **idempotency_required 列在表里无 service 读取**——幂等缺失，重放风险
-4. **aioa-tool-sdk 仍 1 个文件 PageContext**——子应用无 SDK 注解契约
+4. **aios-tool-sdk 仍 1 个文件 PageContext**——子应用无 SDK 注解契约
 5. **MCP Server 缺失**——无法被 Claude Desktop / Cursor 等 MCP 客户端直接消费
 
 ### 4.4 已落地能力
@@ -186,7 +186,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 | RBAC + 实时授权 | ✅ | 6 角色 × 12 权限码；V36 审批通过即生效无需重登 |
 | SHA-256 哈希链审计 | ✅ | V25 V2 算法（微秒截断 + 自哈希可复算） |
 | 配额 / 账单 / 订单 | ✅ | QuotaService / BillingService / OrderService |
-| 通知多通道 | ✅ | 站内/邮件/短信/推送/HTTP 网关 5 通道（aioa-resource/notify/） |
+| 通知多通道 | ✅ | 站内/邮件/短信/推送/HTTP 网关 5 通道（aios-resource/notify/） |
 | 知识库 RAG | ✅ | KbService + EmbeddingProvider + KnowledgeStore（MySQL/Elastic 双实现） |
 | Gitee OAuth+Webhook | ✅ | 一次性 state + redirect_uri 严格匹配 + X-Gitee-Token + event_key 幂等 + 抢占式 outbox + 5 次退避 |
 | Approval Flow | ✅ | 5 类节点模式 + 4 策略 ApproverResolver；V45 加权重 / 阈值 |
@@ -215,7 +215,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 ### 4.7 后端优化路线（按 ROI 排序）
 
 **P0（2 周）**：
-- aioa-bridge 网关实现：InternalToolController#invoke 按 tool_definition.endpoint/httpMethod/inputSchema 调下游；调用前查 tool_permission 表按 effect ALLOW/DENY 决策；命中 requires_approval 走 approval_order
+- aios-bridge 网关实现：InternalToolController#invoke 按 tool_definition.endpoint/httpMethod/inputSchema 调下游；调用前查 tool_permission 表按 effect ALLOW/DENY 决策；命中 requires_approval 走 approval_order
 - 接入 idempotency_required：按 (tenant_id, tool_code, args_hash, idempotency_key) 缓存到 tool_invocation_log
 - 全局限流：Bucket4j + Redis 按 userId/toolCode/endpoint 维度令牌桶；解析 tool_definition.rate_limit
 - 密钥启动校验：JwtProperties / ServiceJwtProperties / GiteeProperties 检到默认 dev 串且 profile=prod 时启动失败
@@ -230,7 +230,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 - SSE 改 WebFlux Flux<ServerSentEvent>，去掉 Servlet 线程占用
 
 **P2（半年）**：
-- aioa-tool-sdk 注解契约：@AioaTool / @AioaToolParam；spring-boot-starter 自动注册
+- aios-tool-sdk 注解契约：@AiosTool / @AiosToolParam；spring-boot-starter 自动注册
 - springdoc 6 个 group，6 个 Swagger UI 子页面
 - ApiResponse 透出 traceId：所有响应自动加 traceId 字段
 - DB 切面强租户隔离：@TenantFilter + MyBatis interceptor 自动拼 tenant_id
@@ -243,7 +243,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 
 ### 5.1 已有能力
 
-- pnpm workspace 完整（shell + demo-ticket + demo-dispatch + @aioa/sdk）
+- pnpm workspace 完整（shell + demo-ticket + demo-dispatch + @aios/sdk）
 - wujie 微前端 1.0.22；iframe 逃生舱
 - AI 助手面板 SSE 流式 + 上下文感知 + 异常态处理 + AbortController 停止
 - 路由 / 状态 / 权限三层守卫（菜单 → meta → 后端）
@@ -252,8 +252,8 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 
 | 优先级 | 缺口 | 影响 |
 |---|---|---|
-| **P0** | @aioa/sdk.getToken() 永远 null | 子应用无法独立调基座 API，必须经主应用转发——限制子应用能力 |
-| **P0** | postMessage origin 用 `*` 无白名单 | 任意 iframe 可伪造 AIOA_SET_CONTEXT 注入恶意上下文 |
+| **P0** | @aios/sdk.getToken() 永远 null | 子应用无法独立调基座 API，必须经主应用转发——限制子应用能力 |
+| **P0** | postMessage origin 用 `*` 无白名单 | 任意 iframe 可伪造 AIOS_SET_CONTEXT 注入恶意上下文 |
 | **P0** | 缺主应用反向动作派发统一 API（仅内部 sendAction） | 业务代码"让子应用跳页"无统一 API |
 | **P1** | MessageList.vue 只渲染文本，无 tool_call / citation / 思考链 UI 气泡 | 用户感知不到 AI 干了什么，可信度难建立 |
 | **P1** | 缺 i18n（写死 zhCn）、缺暗色模式 | 多语言客户与体验天花板 |
@@ -284,8 +284,8 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 | 模块 | 当前状态 | 补齐方案 |
 |---|---|---|
 | **通用工作流引擎** | ApprovalService 是硬编码流程；ApprovalFlowConfigView 仅支持"知会对象"，无条件分支/加签/会签/子流程/版本对比 | 引入 Camunda / Flowable；或自研 `WorkflowDefinition/Node/Instance/Task` + JSON DSL + 通用 UI 模板 |
-| **aioa-bridge 真实实现** | InternalToolController 501；ToolGatewayService 不查 tool_permission | 见 §4.7 P0 |
-| **@aioa/sdk.getToken 真实化** + 主应用 API 代理 | SDK 注释写"M1 恒返回 null" | 实现 shell 侧 `aioa.proxyRequest({url, method, body})`；SDK getToken 经 MessageChannel 异步取短期票据 |
+| **aios-bridge 真实实现** | InternalToolController 501；ToolGatewayService 不查 tool_permission | 见 §4.7 P0 |
+| **@aios/sdk.getToken 真实化** + 主应用 API 代理 | SDK 注释写"M1 恒返回 null" | 实现 shell 侧 `aios.proxyRequest({url, method, body})`；SDK getToken 经 MessageChannel 异步取短期票据 |
 | **postMessage origin 白名单 + appCode 签名** | 全 `*` | 立即加 origin 白名单 + 短期 nonce + appCode 签名校验 |
 
 ### P1 — 差异化竞争力
@@ -293,7 +293,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 | 模块 | 当前状态 | 补齐方案 |
 |---|---|---|
 | **tool call / citation / 思考链 UI 气泡** | MessageList 只渲染文本 | 加 `<tool_call>` 折叠块（参考 Cursor/ChatGPT）+ citation chip + 思考链路 |
-| **通知多通道 Sender SPI 端到端** | aioa-resource/notify 子目录雏形 | 补 EmailSender / SmsSender / DingTalkSender / WebhookSender + Channel 配置 + 失败重试 + 投递记录 |
+| **通知多通道 Sender SPI 端到端** | aios-resource/notify 子目录雏形 | 补 EmailSender / SmsSender / DingTalkSender / WebhookSender + Channel 配置 + 失败重试 + 投递记录 |
 | **通用任务调度面板** | 只有 GiteeSyncScheduler / WorkerScheduleService | XXL-Job / Quartz + 任务 CRUD + 触发记录 + 失败告警 |
 | **ES 全文检索** | KB 用 MySQL `LIKE`；vector 模式预留 | 引入 ES 或 Meilisearch，与 pgvector / mysql 向量形成"全文 + 语义"双路召回 |
 | **K8s 部署清单** | 无 yaml | `k8s/base/` + `k8s/overlays/{dev,staging,prod}/`（Kustomize）；HPA / PDB / NetworkPolicy |
@@ -329,14 +329,14 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 ### 立刻做（1-2 周）
 
 1. **bridge 网关实现 + tool_permission/requires_approval 接入**——叙事的命门
-2. **@aioa/sdk.getToken 真实化 + 主应用 API 代理**——子应用独立业务请求能力
+2. **@aios/sdk.getToken 真实化 + 主应用 API 代理**——子应用独立业务请求能力
 3. **postMessage origin 白名单 + appCode 签名**——M1 阶段就该有的安全门
 4. **tool call / citation UI 气泡**——提升助手可信度
 5. **K8s 基础清单**（Kustomize + Ingress + ConfigMap + Secret）
 6. **ops profile 修复**：补 prometheus.yml + alert rules + Grafana dashboard
 7. **前端错误监控 + 性能埋点**
-8. **立即清理 .env.gitee-real + .aioa_login.json**（已泄漏的凭据）
-9. **.gitignore 补丁**：`scripts/_*` / `*.probe*.txt` / `e2e_*_exit.txt` / `.env.*real` / `.env.*local` / `.aioa_login.json` / `.workbuddy/artifacts/`
+8. **立即清理 .env.gitee-real + .aios_login.json**（已泄漏的凭据）
+9. **.gitignore 补丁**：`scripts/_*` / `*.probe*.txt` / `e2e_*_exit.txt` / `.env.*real` / `.env.*local` / `.aios_login.json` / `.workbuddy/artifacts/`
 10. **README 重写 §2 仓库结构、§5 里程碑、§1 定位**——与现实对齐
 
 ### 短期（1-2 月）
@@ -359,7 +359,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 23. 工具版本灰度 / 热加载
 24. SSE 改 WebFlux（去 Servlet 线程）
 25. SSE 状态持久化（agent_run_step 写入）
-26. aioa-tool-sdk 注解契约
+26. aios-tool-sdk 注解契约
 27. springdoc 6 group 分组
 28. DB 切面强租户隔离
 29. 插件市场 / 应用商店
@@ -387,7 +387,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 **第 2 步（4-6 周，骨架补齐）**：
 - Python agent 引入 LangGraph + checkpointer + HITL 挂起 + 真 streaming
 - Java 端 Bucket4j 限流 + Resilience4j 熔断 + 密钥启动校验
-- @aioa/sdk.getToken 真实化 + postMessage origin 白名单
+- @aios/sdk.getToken 真实化 + postMessage origin 白名单
 - tool call / citation UI 气泡
 - K8s 基础清单（Kustomize + Ingress）
 
@@ -400,7 +400,7 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 - ER 图 + 5 张时序图 + ADR 起步
 - 独立"模型网关规范"文档
 
-完成第 3 步后，AIOA 才能真正对外宣称"agent 协同办公 + 接入其他业务系统的 AI OA 基座"。
+完成第 3 步后，AIOS 才能真正对外宣称"agent 协同办公 + 接入其他业务系统的 AI OA 基座"。
 
 ---
 
@@ -410,16 +410,16 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 
 ### Phase A — 基建止血（Day 1-5，可单人并行）
 
-1. .gitignore 补丁：`scripts/_*` / `*.probe*.txt` / `e2e_*_exit.txt` / `.env.*real` / `.env.*local` / `.aioa_login.json` / `.workbuddy/artifacts/`
-2. 清理已泄漏凭据：`.env.gitee-real` / `.aioa_login.json`（从 disk 删除）+ 检查 git 历史是否曾 tracked `.env.gitee-real`，如有则 `git filter-branch` 或 BFG
+1. .gitignore 补丁：`scripts/_*` / `*.probe*.txt` / `e2e_*_exit.txt` / `.env.*real` / `.env.*local` / `.aios_login.json` / `.workbuddy/artifacts/`
+2. 清理已泄漏凭据：`.env.gitee-real` / `.aios_login.json`（从 disk 删除）+ 检查 git 历史是否曾 tracked `.env.gitee-real`，如有则 `git filter-branch` 或 BFG
 3. scripts/ 下划线脚本归档到 `.workbuddy/diagnostics/`，committed 脚本（SMOKE_v48.py / e2e_*.py 等）保留
-4. README §1-2-5 重写，与 V53 现实对齐（声明 aioa-bridge 真实状态、添加 aioa-resource/org/gitee 三个模块）
+4. README §1-2-5 重写，与 V53 现实对齐（声明 aios-bridge 真实状态、添加 aios-resource/org/gitee 三个模块）
 5. 根目录临时文件清理：bind_probe.txt / probe*.txt / e2e_v50_*.txt → 归档或删除
 6. 暂时禁用 profile=ops 或补 deploy/ops/prometheus.yml（避免误导用户）
 
 ### Phase B — SDK 安全加固（Week 1-2，可与 A/C 并行）
 
-1. **@aioa/sdk.getToken 真实化**：shell 暴露 `aioa.proxyRequest({url, method, body})`；SDK getToken 经 MessageChannel 异步取短期票据（access token 5 分钟过期 + refresh 机制）
+1. **@aios/sdk.getToken 真实化**：shell 暴露 `aios.proxyRequest({url, method, body})`；SDK getToken 经 MessageChannel 异步取短期票据（access token 5 分钟过期 + refresh 机制）
 2. **postMessage origin 白名单**：shell 维护 `appCode → allowedOrigins` 注册表；M3 之前先用宽松白名单（`localhost:5174-5175`），上线前严格化
 3. **appCode 签名**：bridge 在子应用握手时下发短期 HMAC 签名，子应用每次上行消息附上，防伪造
 4. **tool call / citation UI 气泡**：MessageList.vue 加 `<​tool_call>` 折叠块（参考 Cursor）+ citation chip 点击定位到 KB 文档；assistant store 增加 tool_calls 字段渲染
@@ -427,11 +427,11 @@ aioa-boot          ← 启动 + OpenApiConfig + 53 个 Flyway 迁移
 
 ### Phase C — bridge 网关真实化（Week 2-3，紧接 B）
 
-1. **aioa-bridge 网关实现**：InternalToolController#invoke 按 tool_definition.endpoint/httpMethod/inputSchema 调下游；保留 ToolGatewayService.listTools 作为 OpenAI function-calling 兼容入口
+1. **aios-bridge 网关实现**：InternalToolController#invoke 按 tool_definition.endpoint/httpMethod/inputSchema 调下游；保留 ToolGatewayService.listTools 作为 OpenAI function-calling 兼容入口
 2. **接入 tool_permission**：ToolGatewayService#invoke 调用前查 tool_permission 表按 (tool_code, role_code) 决策 effect ALLOW/DENY
 3. **接入 requires_approval**：命中走 approval_order（沿用 ApprovalService），发 approval.required SSE 事件
 4. **接入 idempotency_required**：按 (tenant_id, tool_code, args_hash, idempotency_key) 缓存到 tool_invocation_log
-5. **aioa-tool-sdk 注解契约**：定义 @AioaTool(name, description, scopes, riskLevel, requiresApproval) + @AioaToolParam；子应用加 aioa-spring-boot-starter 自动注册
+5. **aios-tool-sdk 注解契约**：定义 @AiosTool(name, description, scopes, riskLevel, requiresApproval) + @AiosToolParam；子应用加 aios-spring-boot-starter 自动注册
 6. **Bucket4j 全局限流**：Redis 令牌桶按 userId/toolCode/endpoint 维度；tool_definition.rate_limit 解析为配置
 7. **密钥启动校验**：JwtProperties / ServiceJwtProperties / GiteeProperties 检测到默认 dev 串且 profile=prod 时启动失败
 
@@ -470,10 +470,10 @@ A ─┬─→ B ─┬─→ C ─→ (Java 端进入生产可用态)
 
 ## 11. 一句话结论（回答用户问题）
 
-> **AIOA 是个"骨架没长大、业务旁路野蛮生长、Python agent 是 while 循环"的 AI 办公平台。**
+> **AIOS 是个"骨架没长大、业务旁路野蛮生长、Python agent 是 while 循环"的 AI 办公平台。**
 
 - **项目识别**：Vue3 + wujie + Spring Boot 3.3 + FastAPI + MyBatis-Plus 的 AI OA 基座，已完成 V53 迁移、10 模块、20+ 实施报告，但 README 严重过时
-- **缺失模块**：通用工作流引擎、aioa-bridge 真实网关、@aioa/sdk.getToken、K8s、ES、MCP Server、通知多通道、OAuth2、CI/CD、ER 图 / ADR / 时序图、国际化、暗色、前端监控
+- **缺失模块**：通用工作流引擎、aios-bridge 真实网关、@aios/sdk.getToken、K8s、ES、MCP Server、通知多通道、OAuth2、CI/CD、ER 图 / ADR / 时序图、国际化、暗色、前端监控
 - **优化方向**：①补 bridge 骨架②Python 引入 LangGraph ③SDK token + origin 安全 ④tool call UI ⑤K8s 部署⑥ops profile 修复⑦.gitignore 补丁 + README 重写
 - **Python agent 实现度**：**3.5/10**——单 agent while 循环工具调用完善；state graph / checkpoint / HITL / 多 agent / 真 streaming / OpenTelemetry / Anthropic driver / 并行调用 / prompt caching 全部缺失；与 LangGraph 11 项核心能力仅 1/11
 - **结构标准度**：与 LangGraph / OpenAI Agents SDK / Anthropic Agent SDK / MCP 全面差距；唯一亮点是 model_gateway 的 Provider 注册表 + 热加载 + 工具下沉 Java 的工程纪律
@@ -491,19 +491,19 @@ A ─┬─→ B ─┬─→ C ─→ (Java 端进入生产可用态)
 - `agent/app/tools/sandbox.py`（孤儿代码）
 
 **Java 后端**：
-- `server/aioa-bridge/src/main/java/cn/aioa/bridge/controller/InternalToolController.java`（501 占位）
-- `server/aioa-tool-sdk/src/main/java/cn/aioa/tool/sdk/PageContext.java`（SDK 仅 1 个文件）
-- `server/aioa-resource/src/main/java/cn/aioa/resource/service/ToolGatewayService.java`（实际工具网关）
-- `server/aioa-chat/src/main/java/cn/aioa/chat/service/RunService.java`（SSE 中转）
-- `server/aioa-security/src/main/java/cn/aioa/security/PermissionCatalog.java`
-- `server/aioa-org/src/main/java/cn/aioa/org/support/AuditRecorder.java`（SHA-256 哈希链 V2）
-- `server/aioa-boot/src/main/resources/application.yml`
-- `server/aioa-boot/src/main/resources/db/migration/`（V1-V53）
+- `server/aios-bridge/src/main/java/cn/aios/bridge/controller/InternalToolController.java`（501 占位）
+- `server/aios-tool-sdk/src/main/java/cn/aios/tool/sdk/PageContext.java`（SDK 仅 1 个文件）
+- `server/aios-resource/src/main/java/cn/aios/resource/service/ToolGatewayService.java`（实际工具网关）
+- `server/aios-chat/src/main/java/cn/aios/chat/service/RunService.java`（SSE 中转）
+- `server/aios-security/src/main/java/cn/aios/security/PermissionCatalog.java`
+- `server/aios-org/src/main/java/cn/aios/org/support/AuditRecorder.java`（SHA-256 哈希链 V2）
+- `server/aios-boot/src/main/resources/application.yml`
+- `server/aios-boot/src/main/resources/db/migration/`（V1-V53）
 
 **前端**：
 - `web/apps/shell/src/stores/assistant.ts`（AI 助手 store 193 行）
 - `web/apps/shell/src/components/assistant/MessageList.vue`（缺 tool call UI）
-- `web/packages/aioa-sdk/src/bridge.ts`（SDK 桥接 144 行）
+- `web/packages/aios-sdk/src/bridge.ts`（SDK 桥接 144 行）
 - `web/apps/shell/src/micro/bridge.ts`（主应用消息监听）
 
 **部署 / 配置**：

@@ -8,12 +8,12 @@
   1. 需要**有效的 OAuth 应用 + 有效令牌**（用户提供的试用令牌实测 401，见 docs/29 风险章节）；
   2. Webhook 回调地址必须是 **Gitee 能访问到的公网地址**，本机 127.0.0.1 不可达。
 
-本桩服务把这两点都变成可控的：平台侧只要把 `aioa.gitee.base-url` 指向它，就走完了与
+本桩服务把这两点都变成可控的：平台侧只要把 `aios.gitee.base-url` 指向它，就走完了与
 真实 Gitee 完全相同的代码路径（HTTP 调用、错误处理、幂等、退避重试），而**不需要任何
 真实凭据**。平台侧代码里没有任何 if-stub 分支 —— 换回真实地址即是生产形态。
 
-（`aioa.gitee.web-base-url` **不是**死配置，它管两处**服务端**调用：`POST /oauth/token`
-换码与刷新。它**不**决定用户浏览器的授权跳转 —— 那一跳由 `aioa.gitee.oauth-authorize-base-url`
+（`aios.gitee.web-base-url` **不是**死配置，它管两处**服务端**调用：`POST /oauth/token`
+换码与刷新。它**不**决定用户浏览器的授权跳转 —— 那一跳由 `aios.gitee.oauth-authorize-base-url`
 单独决定（默认 `https://gitee.com`）。曾把两者复用同一个键，于是"服务端桩化"的部署顺手
 把用户也送进了桩，用户看不到 Gitee 授权页却被签发假身份。展示用的仓库地址一律取自接口
 返回的 `html_url`/`ssh_url`/`https_url`；要让桩返回生产形态的地址，用下面的
@@ -270,7 +270,7 @@ def _issue(uid: int, login: str) -> Dict[str, Any]:
         STUB["refresh"][rt] = at
     return {"access_token": at, "refresh_token": rt,
             "expires_in": STUB["token_ttl"], "token_type": "bearer",
-            # 与后端默认 scope 保持一致（GiteeProperties.scope / AIOA_GITEE_SCOPE）。
+            # 与后端默认 scope 保持一致（GiteeProperties.scope / AIOS_GITEE_SCOPE）。
             # 注意：本桩**不校验** scope，所以「缺 hook 导致真站挂 Webhook 被拒」这类问题
             # 桩环境永远测不出来 —— 该风险已在 GiteeProperties.scope 处注明。
             "scope": "user_info projects hook pull_requests issues notes",
@@ -294,7 +294,7 @@ def user(request: Request):
 def user_orgs(request: Request):
     if not _auth(request):
         return _fail(401, "401 Unauthorized: Access token does not exist")
-    return [{"id": 1, "login": "aioa-demo-org", "name": "AIOA 演示组织"}]
+    return [{"id": 1, "login": "aios-demo-org", "name": "AIOS 演示组织"}]
 
 
 @app.get("/api/v5/orgs/{org}")

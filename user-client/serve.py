@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AIOA 用户端 —— 统一联调服务器
+AIOS 用户端 —— 统一联调服务器
 
 作用：
   1. 静态托管 user-client（H5 用户端）
@@ -176,7 +176,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 if __name__ == "__main__":
-    print("AIOA 用户端联调服务: http://%s:%d  ->  backend %s:%d"
+    print("AIOS 用户端联调服务: http://%s:%d  ->  backend %s:%d"
           % (HOST, PORT, BACKEND_HOST, BACKEND_PORT))
     with Server((HOST, PORT), ProxyHandler) as httpd:
         httpd.serve_forever()

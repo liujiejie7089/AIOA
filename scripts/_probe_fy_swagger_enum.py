@@ -25,7 +25,7 @@ def call(path, params=None, timeout=12):
     if params:
         url += "?" + urllib.parse.urlencode(params, encoding="utf-8")
     req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aioa-probe/1.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aios-probe/1.0",
         "Accept": "application/json, text/html, */*",
     })
     try:

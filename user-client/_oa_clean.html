@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AIOA · 协同工作台（新页面 Demo v2）</title>
+<title>AIOS · 协同工作台（新页面 Demo v2）</title>
 <!--
   ============================================================================
-  AIOA 用户端 · 新页面（协同工作台）交互 Demo v2
+  AIOS 用户端 · 新页面（协同工作台）交互 Demo v2
   ----------------------------------------------------------------------------
   形态：单文件、无构建、移动优先；可整体并入 user-client/index.html（同令牌/同命名）。
 
@@ -14,7 +14,7 @@
     首页 = 图1「工作助手」—— 数字人 + 四枚悬浮指标 + 底部输入条
       · 点数字人 → 弹出「选择 专家 / 数字人」
       · 左上角 ≡ → 抽屉：任务 / 项目 / 日程 / 审批
-    任务 = 图2「AIOA 办公协同」—— 左导轨 任务/项目/审批/日程 + 任务列表 + 助手建议
+    任务 = 图2「AIOS 办公协同」—— 左导轨 任务/项目/审批/日程 + 任务列表 + 助手建议
     知识库 = 图3      部门 = 图4「通讯录」      我的 = 图5（内含「界面版本」切换）
     底部菜单：首页 · 任务 · 知识库 · 部门 · 我的
 
@@ -524,7 +524,7 @@ body{
     <!-- ② 任务 = 办公协同（图2） -->
     <section class="view flush" id="v-collab">
       <div class="collab-head">
-        <div class="ct">AIOA 办公协同</div>
+        <div class="ct">AIOS 办公协同</div>
         <button class="newtask" id="newTaskBtn">新建任务</button>
       </div>
       <div class="collab-body">
@@ -567,7 +567,7 @@ body{
           <!-- 项目 -->
           <div class="panel" id="p-projects">
             <div class="task-card">
-              <div class="task-line" style="margin-top:0"><div class="tl-name">AIOA OA 改版</div><span class="chip prog">68%</span></div>
+              <div class="task-line" style="margin-top:0"><div class="tl-name">AIOS OA 改版</div><span class="chip prog">68%</span></div>
               <div class="tl-meta" style="margin-top:8px"><svg class="ic"><use href="#i-user"/></svg>刘尖尖 · 12/18 任务</div>
             </div>
             <div class="task-card">
@@ -726,7 +726,7 @@ body{
           <div class="pava">刘</div>
           <div>
             <div class="pn">刘尖尖</div>
-            <div class="pr">产品经理 | AIOA 项目组</div>
+            <div class="pr">产品经理 | AIOS 项目组</div>
           </div>
           <svg class="ic qr"><use href="#i-qr"/></svg>
         </div>
@@ -1001,11 +1001,11 @@ const composer = document.getElementById('composer');
 
 /* 顶栏配置：left=menu|back|none，right=图标或 'pillgroup'，bare=页面自带头部（隐藏全局顶栏） */
 const META = {
-  home:{mode:'new', title:'AIOA', cls:'center brandmark', left:'menu', right:'pillgroup'},
+  home:{mode:'new', title:'AIOS', cls:'center brandmark', left:'menu', right:'pillgroup'},
   collab:{mode:'new', bare:true},
   kb:{mode:'new', title:'知识库', cls:'center', left:'back', right:['check']},
   org:{mode:'new', title:'通讯录', cls:'', left:'none', right:['search','plus']},
-  me:{mode:'new', title:'AIOA', cls:'center brandmark', left:'none', right:'pillgroup'},
+  me:{mode:'new', title:'AIOS', cls:'center brandmark', left:'none', right:'pillgroup'},
   stats:{mode:'new', title:'工作统计', cls:'center', left:'back', right:[]},
   workers:{mode:'new', title:'数字人', cls:'center', left:'back', right:[]},
   experts:{mode:'new', title:'专家', cls:'center', left:'back', right:[]},

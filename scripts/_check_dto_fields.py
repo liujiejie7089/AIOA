@@ -65,7 +65,7 @@ async def main():
         await page.wait_for_selector('body.auth', timeout=15000)
         # 必须先切成 OA 形态：OA 的懒加载（loadOaExtras）才会补齐 conversations 等集合，
         # 留在经典形态采样会把「未加载」误判成「接口无数据」。
-        await page.evaluate("() => localStorage.setItem('aioa_mode','oa')")
+        await page.evaluate("() => localStorage.setItem('aios_mode','oa')")
         await page.reload(wait_until='domcontentloaded')
         await page.wait_for_timeout(3500)
 

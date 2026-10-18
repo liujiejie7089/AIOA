@@ -34,7 +34,7 @@
 
 | 参数 | 缺省行为 | 什么时候需要 |
 |---|---|---|
-| `webhookBaseUrl` | 留空 → Webhook 配置会失败（**不影响仓库本体创建**，仅 Webhook 状态为失败） | 你希望 Gitee 能真实回调到平台时，需要一个 **Gitee 可访问的公网地址**（如 `https://aioa.example.com`）。`127.0.0.1` 无效 |
+| `webhookBaseUrl` | 留空 → Webhook 配置会失败（**不影响仓库本体创建**，仅 Webhook 状态为失败） | 你希望 Gitee 能真实回调到平台时，需要一个 **Gitee 可访问的公网地址**（如 `https://aios.example.com`）。`127.0.0.1` 无效 |
 | `webhookSecret` | 留空 → 每仓库随机生成（更安全） | 需要所有仓库共用同一回调密钥时 |
 | `enabled` | `true` | 临时关闭某租户联动 |
 | `note` | 空 | ≤255 字符备注 |
@@ -49,7 +49,7 @@
 | 参数 | 说明 |
 |---|---|
 | `clientId` / `clientSecret` | 在 gitee.com → 设置 → **第三方应用** 创建一个 OAuth 应用后给出 |
-| `redirectUri` | 应用登记的回调地址，**必须与服务端 `aioa.gitee.redirect-uri` 完全一致**，默认 `http://localhost:8080/api/v1/gitee/bind/callback` |
+| `redirectUri` | 应用登记的回调地址，**必须与服务端 `aios.gitee.redirect-uri` 完全一致**，默认 `http://localhost:8080/api/v1/gitee/bind/callback` |
 | `scope` | 需含 `projects`（默认值 `user_info projects pull_requests issues notes` 已含） |
 
 > 这条路径参数更多、还要登记回调；**只做"真实建仓"的话走第 1 节就够了**（企业令牌会在个人未绑定时自动回落使用，见 `GiteeTokenService.enterpriseToken`）。

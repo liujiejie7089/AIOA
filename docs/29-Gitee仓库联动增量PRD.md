@@ -8,7 +8,7 @@
 | 上游依据 | `docs/25-权限审批与组织关联改造二期三期增量PRD.md`（文档体例与缺口编号规范）；`docs/23-权限审批流程与组织关联改造方案.md`（项目文档语气）；迁移 `V48__gitee_integration.sql` / `V49__gitee_member_username_nullable.sql` |
 | 基线 | **后端已实现并完成端到端回归（本地 Gitee V5 桩，116 断言全绿）**。本文件是对**已建成能力的忠实产品化描述**，用于冻结口径、指导前端接入与后续验收；非对未来的提案。 |
 | 范围声明 | 只描述「平台项目 ↔ Gitee 仓库联动」这一增量能力。平台侧的权限审批、组织模型、多租户隔离沿用既有实现（`docs/23`、`docs/25`），**不重复设计**。不写竞品分析与市场定位。 |
-| 编程栈（沿用） | SpringBoot 单体（`server/`，新增 Maven 模块 `aioa-gitee`）+ MySQL8（`aioa`）+ Vue3 管理端 shell + 用户端单文件 H5 |
+| 编程栈（沿用） | SpringBoot 单体（`server/`，新增 Maven 模块 `aios-gitee`）+ MySQL8（`aios`）+ Vue3 管理端 shell + 用户端单文件 H5 |
 
 ---
 
@@ -19,7 +19,7 @@
 | 需求线 | 多部门协作场景下「平台建项目 → 代码实际托管在 Gitee」的打通 |
 | 关联需求编号 | 平台侧权限码 `project:view` / `project:manage` / `gitee:bind`（`docs/15` 权限矩阵增量） |
 | 关联迁移 | `V48`（8 张表 + 3 个权限码播种）、`V49`（成员登录名可空缺陷修正） |
-| 关联模块 | `server/aioa-gitee`（client / config / controller / entity / mapper / service / support） |
+| 关联模块 | `server/aios-gitee`（client / config / controller / entity / mapper / service / support） |
 | 关联接口前缀 | `/api/v1/gitee`（业务）、`/api/v1/gitee/bind`（OAuth2）、`/api/v1/gitee/webhook`（回调） |
 | 关联测试 | `scripts/gitee_stub.py`（本地 Gitee V5 桩）、`scripts/e2e_v48_gitee.py`（端到端回归套件） |
 
@@ -55,7 +55,7 @@
 
 | 名词 | 界定 |
 |---|---|
-| **Gitee 组织（org）** | 全局唯一的 Gitee 组织（login），所有部门仓库都建在它下面。由平台配置 `aioa.gitee.org` 指定。 |
+| **Gitee 组织（org）** | 全局唯一的 Gitee 组织（login），所有部门仓库都建在它下面。由平台配置 `aios.gitee.org` 指定。 |
 | **命名空间（namespace）** | 部门隔离在**仓库名**上的可观测落点，形如 `dept<部门id>-`。用它替代「Gitee 组织团队」做部门聚类（原因见 §11 风险 R-1）。 |
 | **平台团队（gitee_team）** | 平台侧的「部门 ↔ 组织团队」逻辑记录。`provider=NAMESPACE` 时仅登记命名空间；保留 `gitee_team_id` 字段供企业版 / 未来 API 对接。 |
 | **仓库（repo）** | 一个平台项目对应一个 Gitee 仓库；`repo_name` 含部门命名空间前缀，`gitee_owner` 为总组织。 |
@@ -122,9 +122,9 @@
 ### FR-1 · Gitee OAuth2 应用接入与个人账号绑定
 
 - **描述**：平台用户通过 Gitee OAuth2 授权码模式绑定个人 Gitee 账号。令牌以 AES-256-GCM 加密入库（密文带 `enc:` 前缀），过期前 5 分钟自动续期，支持解绑。
-- **前置条件**：`aioa.gitee.enabled=true` 且已配置 `client-id` / `client-secret` / `redirect-uri`。
+- **前置条件**：`aios.gitee.enabled=true` 且已配置 `client-id` / `client-secret` / `redirect-uri`。
 - **主流程**：`POST /gitee/bind/authorize` 生成一次性 state（TTL 10 分钟）并返回授权跳转地址 → 用户在 Gitee 完成授权 → `GET /gitee/bind/callback`（公开端点）校验 state → 换令牌 → 拉取用户真实身份 → 落库 / 更新。
-- **授权跳转域与服务端域必须解耦**（`aioa.gitee.oauth-authorize-base-url`，默认 `https://gitee.com`）：
+- **授权跳转域与服务端域必须解耦**（`aios.gitee.oauth-authorize-base-url`，默认 `https://gitee.com`）：
   `web-base-url` 是**服务器**在调（`POST /oauth/token`、跳转原仓库链接），而 `/oauth/authorize` 是**用户浏览器**要去的地方。
   曾复用同一个键，于是「把服务端接口桩化以做端到端回归」的部署顺手把用户也送进了桩 ——
   用户看不到 Gitee 的授权同意页，被桩直接签发一个假身份（如 `gitee_dev_152`）后回跳显示「绑定成功」，
@@ -138,7 +138,7 @@
 
   验收：`scripts/_probe_authorize_host.py` 用**同一份 jar、只改配置**跑两个实例对照 ——
   端到端接线（三项基址都指向桩）应得 `authorizeHost=127.0.0.1` + `sandbox=true`；
-  生产默认（不设任何 `AIOA_GITEE_*` 基址）应得 `authorizeHost=gitee.com` + `sandbox=false`。
+  生产默认（不设任何 `AIOS_GITEE_*` 基址）应得 `authorizeHost=gitee.com` + `sandbox=false`。
 - **异常流**：
   - state 不存在 / 已消费 / 已过期 → 业务错误，返回可读失败 HTML 页，链接不可复用；
   - 换码未返回 access_token → 提示「授权可能被拒绝」；
@@ -332,13 +332,13 @@
 |---|---|---|
 | **性能 / 限流** | 所有对外写操作不得在接口内同步执行；遇 Gitee `403 Rate Limit Exceeded` 必须可退避重试而非永久失败 | DB outbox（`gitee_task`）+ 固定延迟 3s 轮询 + `batch=5` 限速；退避 `10s × 2^attempts`，封顶 10 分钟；仅对可重试错误重试，参数类错误直接判死 |
 | **优先 Webhook、禁止轮询** | 提交与事件**以 Webhook 推送为主**，不轮询 Gitee 拉取；浏览类优先读本地库 | 提交 / 事件读本地 `gitee_commit` / `gitee_event`；仅分支、文件树等实时性要求高的走远端 |
-| **安全 · 令牌** | 令牌加密存储、**任何接口不落前端** | AES-256-GCM，密文带 `enc:` 前缀，密钥来自 `aioa.gitee.token-enc-key`；绑定视图与项目视图均不含令牌字段 |
+| **安全 · 令牌** | 令牌加密存储、**任何接口不落前端** | AES-256-GCM，密文带 `enc:` 前缀，密钥来自 `aios.gitee.token-enc-key`；绑定视图与项目视图均不含令牌字段 |
 | **安全 · 密钥比对** | Webhook 密钥使用**恒定时间比较** | `MessageDigest.isEqual(...)`；项目未配置密钥时**拒绝**而非放行 |
 | **安全 · 越界** | 跨租户 / 跨机构一律 404（不泄露存在性）；同租户越权才 403 | 服务层统一 `requireVisible(forWrite)`，控制器不做二次鉴权 |
 | **可用性 · 降级** | Gitee 不可用时降级不阻塞主流程 | 分支列表失败降级为默认分支并带 `degradedReason`；成员补齐失败只记日志，不回退「项目已就绪」主结论 |
 | **可用性 · 幂等** | 外部调用可能成功但本地写库失败，重试必须安全 | 建仓遇已存在→认领；配钩子先列现有 hooks→复用；事件 / 提交靠唯一键去重 |
 | **审计** | 关键动作可追溯 | 事件表存原始报文（截断上限 60000 字符）、请求 id、收件时间；成员表存 `source`（PLATFORM/GITEE）与 `synced_at`；解绑保留审计痕迹 |
-| **配置** | 关键参数可外部化 | `aioa.gitee.*`：`enabled` / `base-url` / `client-id` / `client-secret` / `redirect-uri` / `org` / `webhook-base-url` / `token-enc-key` / `sync-cron` / `purge-repo-on-delete` 等 |
+| **配置** | 关键参数可外部化 | `aios.gitee.*`：`enabled` / `base-url` / `client-id` / `client-secret` / `redirect-uri` / `org` / `webhook-base-url` / `token-enc-key` / `sync-cron` / `purge-repo-on-delete` 等 |
 
 ---
 
@@ -502,7 +502,7 @@
 
 | 阶段 | 交付物 | 状态 |
 |---|---|---|
-| M1 | 迁移 `V48`（8 表 + 3 权限码）、`aioa-gitee` 模块骨架、OAuth2 绑定 | 已完成 |
+| M1 | 迁移 `V48`（8 表 + 3 权限码）、`aios-gitee` 模块骨架、OAuth2 绑定 | 已完成 |
 | M2 | 建仓 / 配 Webhook / 成员同步 / 异步队列与退避 | 已完成 |
 | M3 | 网页上传 + 本地 push 回流 + Webhook 接收与身份映射 | 已完成 |
 | M4 | 分支文件预览、事件流、软删与回收链路 | 已完成 |

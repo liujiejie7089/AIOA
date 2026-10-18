@@ -147,7 +147,7 @@ def main():
         br = pw.chromium.launch(channel="msedge", headless=True)
         ctx = br.new_context(viewport={"width": 1440, "height": 1100})
         ctx.add_init_script(
-            "localStorage.setItem('aioa.token', %s); localStorage.setItem('aioa.user', %s);"
+            "localStorage.setItem('aios.token', %s); localStorage.setItem('aios.user', %s);"
             % (json.dumps(tok), json.dumps(json.dumps(user, ensure_ascii=False)))
         )
         check_one(ctx, "本地地址项目", tok, ids["local_pid"], expect_gitee=False)

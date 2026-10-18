@@ -66,13 +66,13 @@ Gitea 的换令牌错误体是 `{error, error_description}`，而 `error` **恒�
 
 | 项 | 内容 |
 |---|---|
-| Gitea OAuth 应用 | 删除失效的 id 4；**新建 id 6**（名称 `AIOA`、重定向 URI 逐字符不变、机密客户端） |
+| Gitea OAuth 应用 | 删除失效的 id 4；**新建 id 6**（名称 `AIOS`、重定向 URI 逐字符不变、机密客户端） |
 | 新 `client_id` | `a2e8f7bd-8f0b-4a2f-a1e5-345b5741b0cd` |
 | 密钥 | 写入 `.env.gitea-real`（已 gitignore；`gto_` 前缀、56 字符），并在该文件注明重建原因 |
 | 代码 | `client/GiteaProviderClient.java`：`firstDetail()` 优先 `error_description`；<br>`support/ProviderFailureText.java`：新增 `forOauthBind()`；<br>`controller/GiteeOauthController.java`：两个失败分支改走它 |
 | 用户可见文案 | 绑定结果页从**托管方英文短语**改为「中文归因 + 可执行动作」，并保留原文附尾。例：<br>`invalid client secret` → 「平台侧应用密钥与 Gitea 登记的不一致（属平台配置问题，与你的账号无关）：请联系平台运维在 Gitea 重置该 OAuth 应用的密钥……（Gitea 原始返回：invalid client secret……）」<br>判据是**原因短语特征**而非状态码（换令牌失败恒为 400，状态码无区分度） |
 | 单测 | 新增 `client/GiteaProviderErrorTextTest.java` 6 条（含「两种故障不得被判成同一字符串」）；<br>`support/ProviderFailureTextTest.java` +6 条（密钥失配 / 授权码 / 回调地址 / 无原因 / label 注入 / 确定性） |
-| 清理 | 诊断用的临时应用已删除（未留残留）；最终该账号下**只有一个** `AIOA` 应用 |
+| 清理 | 诊断用的临时应用已删除（未留残留）；最终该账号下**只有一个** `AIOS` 应用 |
 
 ## 6. 第二个缺陷：令牌写库被列宽截断（你的第二次截图）
 
@@ -162,7 +162,7 @@ Gitea 的换令牌错误体是 `{error, error_description}`，而 `error` **恒�
 |---|---|
 | **绑定真实成功** | `gitee_account` id=98：tenant 0 / user 1（`admin`）→ Gitea `liujiejie`(11)，`bound_at=15:20:50` |
 | 成功那一刻的令牌规模 | 日志 `Gitea 绑定：令牌长度 token=858 refresh=858 scope=0`；**入库密文 1188 字符**（旧列 1024 ⇒ 必被拒） |
-| 后端健康 + 接线 | `UP` · `provider=gitea` · `providerLabel=Gitea` · `configKey=aioa.gitea` · `enabled=true` |
+| 后端健康 + 接线 | `UP` · `provider=gitea` · `providerLabel=Gitea` · `configKey=aios.gitea` · `enabled=true` |
 | 授权地址使用的 client_id | `a2e8f7bd-8f0b-4a2f-a1e5-345b5741b0cd` ≡ 新应用（一致） |
 | Flyway 最新版本 | `55` (gitee token columns widen) |
 | 列型实测 | `gitee_account.access_token=text` · `refresh_token=text` · `scope=varchar(1024)` · `gitee_tenant_config.access_token=text` · `token_scope=varchar(1024)` |
@@ -170,7 +170,7 @@ Gitea 的换令牌错误体是 `{error, error_description}`，而 `error` **恒�
 | `scripts/e2e_gitea_live.py` | **79 / 79**（含新增 `G0a` 四条） |
 | `scripts/e2e_full_system.py --no-browser` | **145 / 145**（已知缺口 0） |
 | `scripts/_check_gitea_ui_provider.py` / `_check_gitea_cfg_failure_ui.py` | **17 / 17** / **16 / 16** |
-| `aioa-gitee` 单测（`mvnw clean package` 全量） | **158 / 158**（150 + 设置端 4 + 控制器 4）· BUILD SUCCESS |
+| `aios-gitee` 单测（`mvnw clean package` 全量） | **158 / 158**（150 + 设置端 4 + 控制器 4）· BUILD SUCCESS |
 | 前端类型检查 | `vue-tsc --noEmit` exit 0 |
 | `e2e_v51_gitee_init` / `e2e_v48_gitee`（Gitee 桩接线） | **50 / 50** / **116 / 116** |
 
@@ -233,7 +233,7 @@ Gitee 绑定成功 tenant=0 user=1 gitee=liujiejie(11)
 
 - toast：`无法获取仓库联动配置，模块可能未启用`
 - 页头：`项目与仓库（Gitee 联动）`
-- 横幅：`仓库联动模块未启用 / 后端尚未配置 aioa.gitee.*…请联系系统管理员开启配置`
+- 横幅：`仓库联动模块未启用 / 后端尚未配置 aios.gitee.*…请联系系统管理员开启配置`
 
 **这三句全是错的，而且成因在我**：为了让 V55 生效，我在 **15:21–15:25** 停了后端重建。
 v63 日志在 `15:20:50`（你绑定成功那一刻）之后**一条记录都没有** ⇒ 服务不在，
@@ -257,7 +257,7 @@ v63 日志在 `15:20:50`（你绑定成功那一刻）之后**一条记录都没
 指向桩仍 fail-loud、解析不出主机名不编造、判据必须来自设置端）；
 新增界面探针 `scripts/_check_gitea_cfg_failure_ui.py`：用 Playwright **拦截 `/gitee/config`**
 （`abort` 与 HTTP 500 两种形态）重现你截图那个场景，断言**不得**出现
-「尚未配置 / aioa.gee* / Gitee 联动」，且点「重试」能自愈 —— **16 / 16**。
+「尚未配置 / aios.gee* / Gitee 联动」，且点「重试」能自愈 —— **16 / 16**。
 
 ## 9. 顺带说明：为什么不是「你密钥复制错了」
 

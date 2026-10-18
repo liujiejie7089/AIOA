@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AIOA · 部署机只读体检（deploy/ops/host-check.sh）
+# AIOS · 部署机只读体检（deploy/ops/host-check.sh）
 # ------------------------------------------------------------------------------
 # 用途：在**部署目标机**（本环境为 10.0.0.3）上一把跑完，输出部署前需要的全部事实：
 #   ① 机器身份 / 资源        ② 代码版本            ③ 配置现状（占位符 / 口令长度）
@@ -11,7 +11,7 @@
 #
 # 用法：
 #     bash deploy/ops/host-check.sh
-#     bash deploy/ops/host-check.sh /opt/aioa          # 指定仓库根目录
+#     bash deploy/ops/host-check.sh /opt/aios          # 指定仓库根目录
 # ==============================================================================
 set -uo pipefail
 
@@ -23,7 +23,7 @@ COMPOSE="$REPO/deploy/docker-compose.yml"
 hr() { printf '\n\033[36m%s\033[0m\n' "===== $* ====="; }
 kv() { printf '  %-34s %s\n' "$1" "$2"; }
 
-printf '\033[1mAIOA 部署机只读体检\033[0m  时间=%s  仓库=%s\n' "$(date '+%F %T')" "$REPO"
+printf '\033[1mAIOS 部署机只读体检\033[0m  时间=%s  仓库=%s\n' "$(date '+%F %T')" "$REPO"
 
 # ------------------------------------------------------------------ ① 身份/资源
 hr "① 机器身份与资源"
@@ -48,7 +48,7 @@ if [ -d "$REPO/.git" ]; then
     kv "模板含 10.0.0.5:13049" "$(grep -c 'MYSQL_PORT=13049' "$PRODF" 2>/dev/null) 处"
     kv "模板含 10.0.0.7" "$(grep -c 'REDIS_HOST=10.0.0.7' "$PRODF" 2>/dev/null) 处"
     # Milvus 与应用机**不同机**（2026-09-24 用户确认：Milvus 在 10.0.0.12，无密码）
-    kv "模板含 10.0.0.12:19530" "$(grep -c 'AIOA_MILVUS_URI="http://10.0.0.12:19530"' "$PRODF" 2>/dev/null) 处"
+    kv "模板含 10.0.0.12:19530" "$(grep -c 'AIOS_MILVUS_URI="http://10.0.0.12:19530"' "$PRODF" 2>/dev/null) 处"
     _mwrong=$(grep -cE '10\.0\.0\.3:19530' "$PRODF" 2>/dev/null)
     if [ "${_mwrong:-0}" != "0" ]; then
       kv "⚠ 模板仍有 10.0.0.3:19530" "$_mwrong 处 ← Milvus 不在应用机，应为 10.0.0.12"
@@ -66,14 +66,14 @@ else
   echo "  -- 残留的 CHANGE_ME__ 占位（此行应【无输出】）--"
   grep -nE 'CHANGE_ME__' "$ENVF" | grep -v ':#' | sed 's/^/    /' || true
   echo "  -- 关键键值（非敏感）--"
-  grep -nE '^(MYSQL_HOST|MYSQL_PORT|MYSQL_DB|MYSQL_USER|REDIS_HOST|REDIS_PORT|SPRING_REDIS_DATABASE|AIOA_MILVUS_URI|MODEL_DEFAULT|SPRING_PROFILES_ACTIVE|PUBLIC_BASE_URL)=' \
+  grep -nE '^(MYSQL_HOST|MYSQL_PORT|MYSQL_DB|MYSQL_USER|REDIS_HOST|REDIS_PORT|SPRING_REDIS_DATABASE|AIOS_MILVUS_URI|MODEL_DEFAULT|SPRING_PROFILES_ACTIVE|PUBLIC_BASE_URL)=' \
     "$ENVF" 2>/dev/null | sed 's/^/    /'
   echo "  -- 口令/密钥：只打印长度与状态（不打印明文）--"
   # 在子 shell 里 source，避免污染当前环境
   (
     set -a; . "$ENVF" 2>/dev/null; set +a
     for k in MYSQL_PASSWORD SPRING_DATASOURCE_PASSWORD SPRING_REDIS_PASSWORD \
-             MINIMAX_API_KEY JWT_SECRET AIOA_JWT_SECRET MINIO_ROOT_PASSWORD; do
+             MINIMAX_API_KEY JWT_SECRET AIOS_JWT_SECRET MINIO_ROOT_PASSWORD; do
       v="${!k-}"; n=${#v}
       case "$v" in
         CHANGE_ME__*) tag='❌ 仍是占位符' ;;
@@ -166,11 +166,11 @@ hr "⑥ 镜像齐备度（对照 deploy/docker-compose.yml）"
 if command -v docker >/dev/null 2>&1; then
   have() { docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -qxF "$1"; }
   have_re() { docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -qE "$1"; }
-  echo "  -- ★ 单端口入口（:8080 同时供 /aioa/h5、/aioa/web、/aioa/api）只需要这 2 个 --"
-  for img in aioa-server aioa-agent; do
+  echo "  -- ★ 单端口入口（:8080 同时供 /aios/h5、/aios/web、/aios/api）只需要这 2 个 --"
+  for img in aios-server aios-agent; do
     have_re "(^|/)$img:latest$|(^|/)$img$" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s   ← 缺（本地构建产物镜像，必须靠离线包）\n' "$img"
   done
-  echo "    （html/H5 与管理端静态已打进 aioa-server 镜像，不再有独立 aioa-web 镜像）"
+  echo "    （html/H5 与管理端静态已打进 aios-server 镜像，不再有独立 aios-web 镜像）"
   echo "  -- 构建这两个应用镜像还需的基础镜像（只有要在这台机上 build 时才需要）--"
   for img in maven:3.9-eclipse-temurin-21 eclipse-temurin:21-jre node:22-alpine python:3.13-slim; do
     have "$img" && printf '    ✅ %s\n' "$img" || printf '    ❌ %s\n' "$img"
@@ -180,7 +180,7 @@ if command -v docker >/dev/null 2>&1; then
     have "$img" && printf '    %s %s（要短路径入口就齐了）\n' "✅" "$img" || printf '    %s %s   ← 缺；不起入口不影响功能（起法见部署手册 §0.1）\n' "⚪" "$img"
   done
   echo "  -- 已摘除的边缘组件（单端口改造后不再需要；列出来只为确认宿主上没有陈旧容器还占着端口）--"
-  for img in aioa-web ollama/ollama:latest minio/minio:latest; do
+  for img in aios-web ollama/ollama:latest minio/minio:latest; do
     have "$img" && printf '    ⚠  %s（镜像仍在，但 compose 已不声明该服务，不会启动）\n' "$img" || printf '    ⚪ %s（已不在，符合预期）\n' "$img"
   done
 fi

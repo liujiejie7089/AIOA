@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>cn.aios</groupId>
+        <artifactId>aios-server</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>aios-chat</artifactId>
+    <name>aios-chat</name>
+    <description>会话与 Agent 运行（含 Python SSE 中转）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.aios</groupId>
+            <artifactId>aios-common</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>cn.aios</groupId>
+            <artifactId>aios-security</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>cn.aios</groupId>
+            <artifactId>aios-resource</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- 首页/我的统计需要读多级审批引擎（approval_task 的「待我处理」计数），
+             该引擎在 aios-org；org 不反向依赖 chat，无循环。 -->
+        <dependency>
+            <groupId>cn.aios</groupId>
+            <artifactId>aios-org</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- 工具桥接需要「工具域」与「审批域」同时可见：bridge 只定义
+             ToolApprovalGateway，由本模块实现（bridge 不反向依赖 chat/org，无循环）。 -->
+        <dependency>
+            <groupId>cn.aios</groupId>
+            <artifactId>aios-bridge</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <!-- 项目会话隔离（需求一 / V79）：会话与 run 需要按项目校验数字员工归属并下发项目上下文。
+             只经 aios-project 暴露的**只读窄接口** cn.aios.project.port.PmAiScopePort 调用；
+             aios-project 绝不反向依赖 aios-chat（其依赖闭包 = common/security/org/gitee，无环）。 -->
+        <dependency>
+            <groupId>cn.aios</groupId>
+            <artifactId>aios-project</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+        <!-- 测试基建：本模块此前没有 src/test。2026-10 新增「动作意图透传」定点验收，
+             需要 JUnit5 + AssertJ 断言（与 aios-gitee 同款依赖，只在此声明 test 作用域）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

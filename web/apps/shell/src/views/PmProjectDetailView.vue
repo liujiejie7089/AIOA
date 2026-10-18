@@ -763,7 +763,7 @@ const binding = ref(false)
 // null = 未取到（不显示提示），避免把「接口不可达」误报成「配置缺失」。
 const webhookBaseUrlOk = ref<boolean | null>(null)
 const giteeProviderLabel = ref('Gitee')
-const giteeConfigKey = ref('aioa.gitee')
+const giteeConfigKey = ref('aios.gitee')
 
 const taskList = ref<PmTaskList | null>(null)
 const tasks = ref<PmTask[]>([])
@@ -834,7 +834,7 @@ async function loadRepos() {
     const cfg = await giteeConfig()
     webhookBaseUrlOk.value = cfg.webhookBaseUrlConfigured
     giteeProviderLabel.value = cfg.providerLabel || 'Gitee'
-    giteeConfigKey.value = cfg.configKey || 'aioa.gitee'
+    giteeConfigKey.value = cfg.configKey || 'aios.gitee'
   } catch {
     webhookBaseUrlOk.value = null
   }

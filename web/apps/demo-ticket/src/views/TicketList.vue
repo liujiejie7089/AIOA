@@ -32,7 +32,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { STATUS_LABEL, STATUS_OPTIONS, TICKETS, type TicketStatus } from '@/data/tickets'
-import { getBridge, REFRESH_EVENT } from '@/aioa'
+import { getBridge, REFRESH_EVENT } from '@/aios'
 
 const router = useRouter()
 const status = ref<TicketStatus | 'ALL'>('ALL')

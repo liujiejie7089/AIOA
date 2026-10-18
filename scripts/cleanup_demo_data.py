@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SQL_FILE = os.path.join(ROOT, "server", "scripts", "cleanup_demo_data.sql")
 
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa", charset="utf8mb4")
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios", charset="utf8mb4")
 
 # 与 SQL 中的条件一一对应（用于「先查将被影响的行」）
 TARGETS = [

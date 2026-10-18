@@ -111,7 +111,7 @@ def list_projects(token):
 
 def create_conv(token, project_id=None):
     body = {"title": "验收-agent执行意图 %s" % time.strftime("%m%d-%H%M%S"),
-            "appCode": "aioa-client", "workerId": None}
+            "appCode": "aios-client", "workerId": None}
     if project_id is not None:
         body["projectId"] = project_id
     r = requests.post(API + "/conversations",

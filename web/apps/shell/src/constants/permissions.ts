@@ -1,7 +1,7 @@
 /**
  * 前端角色与权限归属常量（V33）。
  *
- * <p>与后端 {@code cn.aioa.resource.support.PermissionCatalog} 一一对应。
+ * <p>与后端 {@code cn.aios.resource.support.PermissionCatalog} 一一对应。
  * 二者必须同步修改 —— 历史上正是因为前端菜单、路由层级、后端权限三处各写一套，
  * 才出现「菜单能进但接口 403」「接口放开了但菜单藏起来」两类互为镜像的缺陷。</p>
  */

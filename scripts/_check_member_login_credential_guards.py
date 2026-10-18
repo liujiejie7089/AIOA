@@ -41,7 +41,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ORG = os.path.join(ROOT, "server", "aioa-org", "src", "main", "java", "cn", "aioa", "org")
+ORG = os.path.join(ROOT, "server", "aios-org", "src", "main", "java", "cn", "aios", "org")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
 
 PROV = os.path.join(ORG, "support", "AccountProvisioner.java")
@@ -280,7 +280,7 @@ def selftest():
         ("C8 重置端点漏权限校验",
          lambda t: dict(t, ctrl=t["ctrl"].replace(
              'guard.requireOrgWriter();\n        return ApiResponse.ok(treeService.resetMemberPassword(',
-             'cn.aioa.security.AuthUserContext.require();\n        return ApiResponse.ok(treeService.resetMemberPassword(')),
+             'cn.aios.security.AuthUserContext.require();\n        return ApiResponse.ok(treeService.resetMemberPassword(')),
          ["C8"]),
         ("C9 前端硬编码口令常量",
          lambda t: dict(t, view=t["view"].replace(

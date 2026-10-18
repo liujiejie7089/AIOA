@@ -1,11 +1,11 @@
-"""一次性迁移工具：把 agent/app 下的 AI 能力复制到统一模块 agent/aioa_ai。
+"""一次性迁移工具：把 agent/app 下的 AI 能力复制到统一模块 agent/aios_ai。
 
 设计要点（为什么这样做）：
   1. **复制而非移动**：app/ 是已推送到 GitHub 的备份（tag `backup/pre-langgraph-2026-10-15`），
      保留它可随时回滚；迁移期两棵树共存。
   2. **显式映射表**：每个源文件 -> 目标路径写死在 MAP 里，不靠猜目录结构。
   3. **有序 sed**：长前缀先替换（`app.model_gateway.mock_llm` 必须先于 `app.model_gateway`），
-     否则会产出 `aioa_ai.llm.mock_llm` 这类半截路径。
+     否则会产出 `aios_ai.llm.mock_llm` 这类半截路径。
   4. **自校验**：改完 grep 全树，任何残留 `app.` 引用都当失败，逐条打印，不静默。
 
 只做机械搬运与改引用；新逻辑（LangGraph 图）由人工编写，不在本脚本职责内。
@@ -19,7 +19,7 @@ from pathlib import Path
 
 AGENT = Path(__file__).resolve().parent
 APP = AGENT / "app"
-DEST = AGENT / "aioa_ai"
+DEST = AGENT / "aios_ai"
 
 # 源文件 -> 目标文件
 MAP: dict[str, str] = {
@@ -46,42 +46,42 @@ MAP: dict[str, str] = {
 # 有序替换：长前缀优先。命中即改，不区分行。
 REWRITES: list[tuple[str, str]] = [
     # —— from app.X import ... 的具名形式（必须最先，形态特殊）——
-    ("from app.core import answer_shape", "from aioa_ai.prompt import answer as answer_shape"),
-    ("from app.core import worker_intake", "from aioa_ai.intent import intake as worker_intake"),
-    ("from app.core import multi_task, runtime", "from aioa_ai.runtimes import multi_task"),
+    ("from app.core import answer_shape", "from aios_ai.prompt import answer as answer_shape"),
+    ("from app.core import worker_intake", "from aios_ai.intent import intake as worker_intake"),
+    ("from app.core import multi_task, runtime", "from aios_ai.runtimes import multi_task"),
     # 共享辅助函数：原寄居在 agent_runtime 里，现按职责拆到 knowledge / llm
     ("from app.core.agent_runtime import _citations_from_tool",
-     "from aioa_ai.knowledge.kb import _citations_from_tool"),
+     "from aios_ai.knowledge.kb import _citations_from_tool"),
     ("from app.core.agent_runtime import UpstreamError, _post_non_stream",
-     "from aioa_ai.llm.upstream import UpstreamError, _post_non_stream"),
+     "from aios_ai.llm.upstream import UpstreamError, _post_non_stream"),
     # —— 具体模块路径 ——
-    ("app.model_gateway.mock_llm", "aioa_ai.llm.mock"),
-    ("app.model_gateway.gateway", "aioa_ai.llm.gateway"),
-    ("app.model_gateway", "aioa_ai.llm"),
-    ("app.core.answer_shape", "aioa_ai.prompt.answer"),
-    ("app.core.worker_intake", "aioa_ai.intent.intake"),
-    ("app.core.intent_router", "aioa_ai.intent.router"),
-    ("app.core.orchestrator", "aioa_ai.tools.orchestrator"),
-    ("app.core.echo_runtime", "aioa_ai.runtimes.echo"),
-    ("app.core.multi_task", "aioa_ai.runtimes.multi_task"),
-    ("app.core.events", "aioa_ai.events"),
-    ("app.core.guards", "aioa_ai.guard"),
-    ("app.tools_client", "aioa_ai.tools.client"),
-    ("app.tools.sandbox", "aioa_ai.tools.sandbox"),
-    ("app.tools.gateway_client", "aioa_ai.tools.gateway_client"),
-    ("app.tools", "aioa_ai.tools"),
-    ("app.asr.engine", "aioa_ai.speech.engine"),
-    ("app.asr.router", "aioa_ai.speech.router"),
-    ("app.asr", "aioa_ai.speech"),
-    ("app.schemas", "aioa_ai.contracts"),
-    ("app.config", "aioa_ai.config"),
+    ("app.model_gateway.mock_llm", "aios_ai.llm.mock"),
+    ("app.model_gateway.gateway", "aios_ai.llm.gateway"),
+    ("app.model_gateway", "aios_ai.llm"),
+    ("app.core.answer_shape", "aios_ai.prompt.answer"),
+    ("app.core.worker_intake", "aios_ai.intent.intake"),
+    ("app.core.intent_router", "aios_ai.intent.router"),
+    ("app.core.orchestrator", "aios_ai.tools.orchestrator"),
+    ("app.core.echo_runtime", "aios_ai.runtimes.echo"),
+    ("app.core.multi_task", "aios_ai.runtimes.multi_task"),
+    ("app.core.events", "aios_ai.events"),
+    ("app.core.guards", "aios_ai.guard"),
+    ("app.tools_client", "aios_ai.tools.client"),
+    ("app.tools.sandbox", "aios_ai.tools.sandbox"),
+    ("app.tools.gateway_client", "aios_ai.tools.gateway_client"),
+    ("app.tools", "aios_ai.tools"),
+    ("app.asr.engine", "aios_ai.speech.engine"),
+    ("app.asr.router", "aios_ai.speech.router"),
+    ("app.asr", "aios_ai.speech"),
+    ("app.schemas", "aios_ai.contracts"),
+    ("app.config", "aios_ai.config"),
 ]
 
 # 需要生成 __init__.py 的包目录（内容为简短职责说明 + 必要再导出）
 INIT_FILES: dict[str, str] = {
     "prompt/__init__.py": (
         '"""提示词与回答结构约束。"""\n'
-        "from aioa_ai.prompt.answer import audit, audit_hint, card, rules\n\n"
+        "from aios_ai.prompt.answer import audit, audit_hint, card, rules\n\n"
         '__all__ = ["audit", "audit_hint", "card", "rules"]\n'
     ),
     "tools/__init__.py": '"""工具层：Java 工具网关客户端 + 同层并发编排 + 沙箱。"""\n',
@@ -91,7 +91,7 @@ INIT_FILES: dict[str, str] = {
     "runtimes/__init__.py": '"""非图运行时：回声演示、显式计划执行。"""\n',
     "graph/__init__.py": (
         '"""LangGraph 运行时：本包是**唯一**允许 import langgraph 的地方。"""\n'
-        "from aioa_ai.graph.facade import run\n\n"
+        "from aios_ai.graph.facade import run\n\n"
         '__all__ = ["run"]\n'
     ),
 }

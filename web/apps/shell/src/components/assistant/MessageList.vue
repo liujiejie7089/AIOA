@@ -94,7 +94,7 @@ watch(
 }
 
 .msg-row.is-user .msg-bubble {
-  background: var(--aioa-primary);
+  background: var(--aios-primary);
   color: #fff;
 }
 
@@ -109,7 +109,7 @@ watch(
   height: 14px;
   margin-left: 2px;
   vertical-align: -2px;
-  background: var(--aioa-primary);
+  background: var(--aios-primary);
   animation: blink 1s steps(1) infinite;
 }
 

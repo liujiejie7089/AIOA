@@ -186,7 +186,7 @@ async def main():
 
         await page.goto(BASE, wait_until='domcontentloaded')
         # 只验样式，不验默认形态（默认形态由 _e2e_oa.py 负责），故显式落记忆
-        await page.evaluate("() => localStorage.setItem('aioa_mode', 'oa')")
+        await page.evaluate("() => localStorage.setItem('aios_mode', 'oa')")
         await page.reload(wait_until='domcontentloaded')
         await page.wait_for_timeout(900)
         await page.fill('#lgUser', USER)

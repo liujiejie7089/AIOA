@@ -3,7 +3,7 @@ import { http, unwrap } from './index'
 /**
  * 项目管理（PM，V71 / docs/40）。
  *
- * <p>本文件是「后端 {@code aioa-project} 模块 REST 契约」在前端的唯一映射入口。
+ * <p>本文件是「后端 {@code aios-project} 模块 REST 契约」在前端的唯一映射入口。
  * 字段名与后端 {@code PmProjectController} / {@code PmTaskController} 返回的
  * {@code Map<String,Object>} **逐字对应**，不在视图里另起一套字面量。</p>
  *

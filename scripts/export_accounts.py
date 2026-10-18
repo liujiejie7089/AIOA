@@ -3,7 +3,7 @@
 import pymysql
 
 conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',
-                       database='aioa', charset='utf8mb4')
+                       database='aios', charset='utf8mb4')
 cur = conn.cursor(pymysql.cursors.DictCursor)
 
 CODES = ('JYJ-DEMO', 'GAJ-DEMO', 'CTJT-DEMO', 'RMYY-DEMO', 'KFGQ-DEMO', 'MYQY-DEMO', 'WJJ-DEMO')
@@ -23,7 +23,7 @@ cur.execute(
 tenants = cur.fetchall()
 
 L = []
-L.append('# AIOA 入驻租户账号清单（负责人 + 全部普通成员）')
+L.append('# AIOS 入驻租户账号清单（负责人 + 全部普通成员）')
 L.append('')
 L.append('> 统一密码：**User@123**（平台管理员 `admin / Admin@123`）')
 L.append('> 生成时间：2026-09-12 · 数据来源：数据库实际落库账号')

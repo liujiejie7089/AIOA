@@ -4,7 +4,7 @@
 > 缩写：SPI / E2E / 术语按项目惯例。
 
 **框架 / 构建 / 状态机**
-1. `aioa-common` **不引 spring-security** ⇒ `@RestControllerAdvice(Exception)` 把 `AccessDeniedException` 吞成 500。统一 `BizException.forbidden()`→403；`NoResourceFoundException` 已补 404。
+1. `aios-common` **不引 spring-security** ⇒ `@RestControllerAdvice(Exception)` 把 `AccessDeniedException` 吞成 500。统一 `BizException.forbidden()`→403；`NoResourceFoundException` 已补 404。
 2. 给 Java `record` 加字段必须全局搜构造点（`grep -rn "new XxxView(" server/ --include=*.java`）——漏一处即编译失败，且 `mvnw -q package` 失败可能很安静。
 3. MyBatis-Plus 清空字段默认 `update-strategy=NOT_NULL` ⇒ `setErrorMsg(null)` **是空转**（库里还挂旧文案）。修法：`@TableField(updateStrategy=ALWAYS)` 或 `LambdaUpdateWrapper.set()`。验证「清空生效」= 写脏 → 走真实动作 → 回读必须为空。
 4. `decide()` 判定顺序：CC 任务 `status='CC'`（非 PENDING），**必须先判 `task_role=CC` 再判状态**，否则「知会无需审批」分支**永不可达**。
@@ -17,7 +17,7 @@
 **前端**
 10. `api/index.ts` 的 `unwrap` **必须校验 `code`**：body 含「数字 `code`+`message`」即按信封处理，`code≠0` 抛 `ApiError`。旧实现只在含 `code`+`data` 时剥壳，而后端 `non_null` 让失败响应 `data` 键消失 ⇒ 整封信封当业务数据。「页面空白无数据」基本都此根因。
 11. 接口返回结构不统一 ⇒ 前端 `asArray()` 兼容 数组/`{list|items|records|data|rows}`；`renderAll` 每块独立 try/catch（否则一块抛异常后续全空白）。比对分页总量用 `total`，**不能用 `len(list)`**。
-12. H5 单文件：页面 `go('page-xxx')`；session `localStorage['aioa_session']={token,user}`；无头校验用 `add_init_script` 注入；改完先 `node scripts/_syntax_h5.js` 再 `node scripts/_refaudit_h5.js`。图标只引用 sprite 真实存在的 `#i-*`（不存在**静默留白**）。Tab 栏高 76px，flush 页需单独 `padding-bottom:76px`。
+12. H5 单文件：页面 `go('page-xxx')`；session `localStorage['aios_session']={token,user}`；无头校验用 `add_init_script` 注入；改完先 `node scripts/_syntax_h5.js` 再 `node scripts/_refaudit_h5.js`。图标只引用 sprite 真实存在的 `#i-*`（不存在**静默留白**）。Tab 栏高 76px，flush 页需单独 `padding-bottom:76px`。
 13. 成果列表接口**不含 body**，详情走 `GET /api/v1/results/{id}`。登出先 `clearSession()` 再 best-effort 远端；`<router-view>` 必须带 `sessionActive &&` 闸门。
 14. **合并菜单禁用 `alias`**（`alias` **继承**被别名路由的 `allowRoles` ⇒ 深链旧路径不再被拦截 = 顺手放宽边界）。正解 = **独立路由**沿用原 `allowRoles`；共用组件时默认页签用 `watch(immediate)` 而非 `onMounted`，目标页签不可见时**必须回落**，`:default-active` 做「旧路径→合并入口」映射。
 15. **侧栏滚动隔离的根因是 flex 高度链**：`.el-container` 是 `flex:1; flex-basis:auto`，flex 项默认 `min-height:auto` ⇒ 内侧行被整棵菜单撑高且无法收缩。四处齐改才成立：`.layout{overflow:hidden}` + **内侧 flex 行 `min-height:0`** + `.layout-aside{overflow-y:auto}` + `.layout-menu{min-height:100%}`（**不能 `height:100%`**）。判据 `document.scrollHeight == clientHeight`；探针 `scripts/_check_menu_scroll.py`（27 项）。
@@ -27,12 +27,12 @@
 17. 额度闸门判据 `state.quotaInfo.exhausted===true`（**勿**用数字型默认值表达「未知」，`state.left` 初值 0 曾致误判「额度用完」）。复位 `scripts/reset_demo_quota.py`。
 18. 审批流解析优先级：机构专属 > 租户默认(`institution_id=0`) > 内置单级兜底。`audit_log` **永不 UPDATE**。假种 `quota_days_per_year=0` = 不占额度只走审批（`quotaTracked=false`）。
 19. 审核态闸门：V34 起租户管理员建的内容 `audit_status=PENDING`，对成员不可见、不被调度；V36 权限申请**终态回调才置 ACTIVE 并发放**（`granted_by/at`=终态处理人/时间）；`expert_config` 生效解析**必须过滤 `audit_status='APPROVED'`**；终态回调里 `order` 是**决策前**快照，意见/审批人须回查 `approval_task`。
-20. `aioa-resource` 与 `aioa-org` **互不依赖**；只有 `aioa-chat` 同时依赖二者。需同时读「权限/计费/工具」与「组织/审批/假种/知识库」的功能只能落 `aioa-chat`。
+20. `aios-resource` 与 `aios-org` **互不依赖**；只有 `aios-chat` 同时依赖二者。需同时读「权限/计费/工具」与「组织/审批/假种/知识库」的功能只能落 `aios-chat`。
 21. **V39 审批链递推**：`ApprovalFlowService.expandNodes()` 遇 `APPLICANT_SUPERIOR` **不展开固定 steps_json**，改用 `superiorLadder()` 从「申请人层级+1」起逐级展开，跳过 null/申请人本人(自审防护)/重复人；兜底分支必须把 `effectiveType` 置为**实际生效类型**。
 22. **V41/V42 职务与知会**：`org_duty` + `org_member.duty_code` 是「谁是部门负责人」的**唯一权威口径**（原 27/8/3 三口径已收敛）。steps_json 新增 `levels`(1=只批一级) 与 `cc`（生成 `task_role='CC'` 任务，**不阻塞**流程、不进 todo、不可 decide）。
 23. **V43 部门申请 + 知会已读**：新增 `approval_order.applicant_type`(`USER`|`DEPARTMENT`)+`applicant_department_id`、`permission_grant.applicant_type`、`approval_task.cc_read_at`。① 部门申请起点 = **`ORG_ADMIN`**（跳过 DEPT_LEADER，保留自审防护与 levels 截断）；② 负责人判定**只认 `duty_code='DEPT_PRINCIPAL'`**，`job_title` 不作权限依据；③ 跨机构/跨租户/平台 → **404**、同机构非正职 → **403**，**均不落库**；④ `summary.cc` 固定为**总条数**（不因已读减少），未读另开 `ccUnread`；⑤ 底部「待办」角标**不计入 CC 站内通知**（`tab = 待审数 + 未读通知数(剔除 refId ∈ 我的抄送单)`，仅 `user-client/index.html` 一处）；⑥ 授权仍发给**提交人本人**（部门共享权限未排期）。
-24. **V45 策略族 + 节点组**：审批人解析走 `cn.aioa.org.support.approver`（`ApproverResolver` 门面 + `DutyApproverStrategy` 抽象 + `DeptDuty`/`UnitDuty`/`DeptLeader` 三实现 + 4 个固定口径 Bean）。**策略返回「有序候选列表」**，消费层才决定用几个 ⇒ 会签/抢占的基础。同 `seq` = 同一「级」：`isCurrentNode` **按 `seq` 比较**（不是 id）、`countTasksOfOrder` 用 `COUNT(DISTINCT seq)`（前端「共 N 级」同理，**不能用时间线行数**）。`mode`=single/parallel/grab；`when`={field,op,value} —— **运行期宽容**（未知模式退 single、坏条件不拦）、**保存期严格**（`writeSteps` 校验 mode/when/cc，非法 400），且**永远至少留一个生效节点**（回落首个无条件节点→末级并写「流程提示」）。`cc` 支持对象形态 `{"type":"SPECIFIC","user_id":N}`。
-25. **V46 令牌吊销**：`revoked_token` 表 + JWT 带 `jti`；`JwtAuthenticationFilter` 在**验签与过期通过之后**再查吊销表（顺序不能反）。`TokenRevocationChecker` 是接口、`DbTokenRevocationChecker` 是实现（放 `aioa-admin`，安全模块只依赖接口）。
+24. **V45 策略族 + 节点组**：审批人解析走 `cn.aios.org.support.approver`（`ApproverResolver` 门面 + `DutyApproverStrategy` 抽象 + `DeptDuty`/`UnitDuty`/`DeptLeader` 三实现 + 4 个固定口径 Bean）。**策略返回「有序候选列表」**，消费层才决定用几个 ⇒ 会签/抢占的基础。同 `seq` = 同一「级」：`isCurrentNode` **按 `seq` 比较**（不是 id）、`countTasksOfOrder` 用 `COUNT(DISTINCT seq)`（前端「共 N 级」同理，**不能用时间线行数**）。`mode`=single/parallel/grab；`when`={field,op,value} —— **运行期宽容**（未知模式退 single、坏条件不拦）、**保存期严格**（`writeSteps` 校验 mode/when/cc，非法 400），且**永远至少留一个生效节点**（回落首个无条件节点→末级并写「流程提示」）。`cc` 支持对象形态 `{"type":"SPECIFIC","user_id":N}`。
+25. **V46 令牌吊销**：`revoked_token` 表 + JWT 带 `jti`；`JwtAuthenticationFilter` 在**验签与过期通过之后**再查吊销表（顺序不能反）。`TokenRevocationChecker` 是接口、`DbTokenRevocationChecker` 是实现（放 `aios-admin`，安全模块只依赖接口）。
 26. **V47 回填 + 新租户播种**：① `LeaveTypeProvisioner` 只对**零 `leave_type`** 的租户播种 6 类标准假种（常量与 tenant 2 逐字节一致）；② `cc` 回填**机构级**定义；③ `org_member.duty_code` 回填**不触碰 `job_title` 含「负责人」的行**、也不把局长/总经理强升 `ORG_LEADER`；④ 无负责人部门补人。
 27. **同类播种器必须实测**：`ApprovalFlowProvisioner` / `LeaveTypeProvisioner`(`@EventListener(TenantProvisionedEvent)`) 只在建机构时触发 + 内部 try/catch 吞异常 = **失败静默**。
 28. **管理端配置页 = 能力的唯一入口**：引擎支持但配置页配不出来 = 能力**事实上不可用**。`constants/permissions.ts` 是审批人类型/职务/模式/条件字段的**唯一常量入口**（视图里不得再抄字面量）；配置页须做 `_extra` **无损往返**，否则管理员每次「打开-保存」都悄悄丢配置。
@@ -57,7 +57,7 @@
 41. **`.gitignore` / `.dockerignore` 裸目录模式会吞掉源码（两处必须同改）**：不以 `/` 开头的模式（`data/`、`logs/`、`dist/`）匹配**任意层级**。本项目 `data/` 造成**两个独立原因**同时成立：① `.gitignore` 使 `web/apps/demo-ticket/src/data/` 从未入过库（`git log --all -- <路径>` 无记录，随 `c1dca22` 引入 compose 起就缺）；② `.dockerignore` 使该目录**即便源码拷全也被排除出构建上下文**（所以 rsync 拷贝也照样失败）。两个文件都有 `data/`，**修一个不修另一个，重建仍挂**。凡「本地过、CI/容器不过」，先跑：`git check-ignore -v <文件>` + `git status --porcelain --ignored`。修法：目录模式一律**锚定根**（`/data/`）。另注意 `--ignored` 里出现 `scripts/e2e_*.py` / `start-backend.bat` 属**约定不入库**（本地回归台与本地启动器），不是缺陷。
 42. **`docker compose restart` 不重读 `.env`**：它只把同一个容器停掉再启动，**不重新渲染服务定义**，环境变量保持旧值 ⇒ 改完 `.env` 执行 `restart` 等于白改（现象：日志里地址/Key 还是老的）。正解 `docker compose up -d <svc>`（配置哈希变了会自动重建）。**不需要** `--force-recreate`。生效判据看 `docker exec <c> printenv <VAR>`，**不是**「容器重启成功了」。
 43. **「镜像构建所需的、不在 COPY 清单里的文件」是同一类静默缺陷**：`Dockerfile.web` 漏 `COPY web/tsconfig.base.json ./` ⇒ 容器内 `apps/*/tsconfig.json` 的 `extends: "../../tsconfig.base.json"` 失效，丢的是 `strict`/`esModuleInterop`/`moduleResolution:bundler`/`skipLibCheck`，**报错却指向 element-plus 与 `rollup/parseAst`**，与真实原因毫无关联。排查手法：把 Dockerfile 的 `COPY` 指令解析成「`/build` 下的文件清单」，再校验每个 `extends`/被引用路径是否在清单内（本次用 20 行脚本验证 4 个 tsconfig 全部命中）。
-44. **重打包前必须列出「所有」后端实例，jar 锁可能来自另一个端口**：本机同时跑着 8080（主档，`aioa` 库）与 8081（`aioa_prodtest` 库）两个后端，**它们共用同一个 fat-jar 文件**。只停 8080 后 `mvnw clean package` 仍失败：`Failed to clean project: Failed to delete .../aioa-boot-...jar` / `mv: Device or resource busy` —— 持锁的是 8081 那个 JVM。定位手法（本环境 PowerShell 工具**不回显 stdout**，必须写文件再 `Read`；`wmic` 已不可用）：用 PowerShell 工具跑 `Get-CimInstance Win32_Process -Filter "Name='java.exe'"` 取 `ProcessId` + `CommandLine`，`Select-Object` 后 `Set-Content logs/_probe_java.txt`，再 Read 该文件。**判据**：`CommandLine` 里含 `--server.port=<别的端口>` 且含 `aioa-boot/target/aioa-boot-*.jar` 的 java 就是第二实例。本机另有 3 个 java **不能动**：FinalShell（`finalshell.jar`）、VS Code 的 `redhat.java` JDT LS、IDEA 的 Maven embedder。**绝不**用 `Get-Process java | Stop-Process` 一把梭。停用借来的实例后要**按原参数原样恢复**（含原日志文件名与 `--spring.datasource.url`）。另：`mvnw ... | tail -20` 的退出码是 `tail` 的，**永远是 0** —— 判成败要看 `BUILD SUCCESS`/`FAILURE` 文本，别信 `$?`。产物大小兜底判据：fat-jar 应 ~110MB，若掉到 ~20KB = 被 rename 成的 stripped-jar（说明没停 JVM 就重打包了）。
+44. **重打包前必须列出「所有」后端实例，jar 锁可能来自另一个端口**：本机同时跑着 8080（主档，`aios` 库）与 8081（`aios_prodtest` 库）两个后端，**它们共用同一个 fat-jar 文件**。只停 8080 后 `mvnw clean package` 仍失败：`Failed to clean project: Failed to delete .../aios-boot-...jar` / `mv: Device or resource busy` —— 持锁的是 8081 那个 JVM。定位手法（本环境 PowerShell 工具**不回显 stdout**，必须写文件再 `Read`；`wmic` 已不可用）：用 PowerShell 工具跑 `Get-CimInstance Win32_Process -Filter "Name='java.exe'"` 取 `ProcessId` + `CommandLine`，`Select-Object` 后 `Set-Content logs/_probe_java.txt`，再 Read 该文件。**判据**：`CommandLine` 里含 `--server.port=<别的端口>` 且含 `aios-boot/target/aios-boot-*.jar` 的 java 就是第二实例。本机另有 3 个 java **不能动**：FinalShell（`finalshell.jar`）、VS Code 的 `redhat.java` JDT LS、IDEA 的 Maven embedder。**绝不**用 `Get-Process java | Stop-Process` 一把梭。停用借来的实例后要**按原参数原样恢复**（含原日志文件名与 `--spring.datasource.url`）。另：`mvnw ... | tail -20` 的退出码是 `tail` 的，**永远是 0** —— 判成败要看 `BUILD SUCCESS`/`FAILURE` 文本，别信 `$?`。产物大小兜底判据：fat-jar 应 ~110MB，若掉到 ~20KB = 被 rename 成的 stripped-jar（说明没停 JVM 就重打包了）。
 
 **配置参数（sys_config / 默认口径）**
 45. **「有行但留空」与「没有这一行」是两种语义，不能都当「没配」**：`chat.default_expert_key` 的留空是**明确不做兜底**（管理员关掉），缺行只是**参数还没物化**。若写成 `if (own != null && !own.isBlank()) { …回落… }`，管理员把值清空后仍会偷偷回落到平台/出厂值 ⇒ **关不掉**，且用户端还照旧标记默认 AI。正解：本租户**有行**即以该值为最终口径（空 ⇒ 返回 null ⇒ 不标记、不回落）；只有**没行**才继续「平台默认 → 出厂常量」。单测锁死（`CatalogServiceTest#blankValueMeansExplicitlyDisabled`）。
@@ -91,7 +91,7 @@
     Content-Length: 44          <- 声明了长度
     （空行，**随后并无 body**）
     ```
-    **修法（已落地）**：`server/aioa-common/.../cn/aioa/common/http/AgentHttpClient.java` 作为「后端访问 agent」的唯一入口，客户端级 `version(HTTP_1_1)`；4 处调用点（`WorkerScheduleService`/`KpiInsightService`/`WorkerIntakeService`/`ModelConfigService`）全部改走它。
+    **修法（已落地）**：`server/aios-common/.../cn/aios/common/http/AgentHttpClient.java` 作为「后端访问 agent」的唯一入口，客户端级 `version(HTTP_1_1)`；4 处调用点（`WorkerScheduleService`/`KpiInsightService`/`WorkerIntakeService`/`ModelConfigService`）全部改走它。
     **判据不是「跑通一次」而是三件套**：① 静态守卫 `scripts/_check_agent_httpclient.py`（正向 8/8 + 负向自检 4/4，禁止新的裸 `newBuilder()`，且禁止把该工厂套到 Gitee/网关/embedding 等外网客户端上）；② 行为回归 `scripts/e2e_worker_schedule_exec.py`（手动 + 到点两条分支）；③ 判别探针 `scripts/_probe_agent_h2c.py`。
     **别只修 `/complete`**：同一坏客户端还在打 `/internal/v1/worker-intent`（意图识别，**8/8 全 422**，只是被 `local-fallback` 静默兜住了，所以没人报障）、`/internal/v1/models/check|apply`（V61 手动添加模型）、`/internal/v1/complete`（KPI 经营解读）。
     **反证（写进注释防回退）**：走 Spring `WebClient`（Reactor Netty，明文默认 HTTP/1.1）的 `/internal/v1/runs`、`/tasks` 一直是 200 —— 「只有带 body 的 POST + `java.net.http.HttpClient` 这一组合会炸」，所以极难在常规验证里撞见。
@@ -212,11 +212,11 @@
        故**租户管理员点「停用」不会立刻生效**（要等平台放行）。UI 若不给「待审」提示，
        用户会再次体验成「停用无效」。要改需单开需求，别顺手改审计语义。
 70. **SPA 的短路径别名不能用 rewrite，必须 302。**
-    入口 nginx 想让 `10.0.0.3/web` 指向管理端：管理端产物是 `base=/aioa/web/` +
+    入口 nginx 想让 `10.0.0.3/web` 指向管理端：管理端产物是 `base=/aios/web/` +
     `createWebHistory(BASE_URL)` 的 SPA ⇒ **地址栏必须落在 SPA base 之下**，
-    用 `rewrite` 会让 `assets/*` 相对路径解析错而**白屏**；`/web` 只能 `return 302 /aioa/web/`。
+    用 `rewrite` 会让 `assets/*` 相对路径解析错而**白屏**；`/web` 只能 `return 302 /aios/web/`。
     反之 H5 是**自包含单文件**、API base 由 `location.pathname` 推导（`/user/` ⇒ `/api`），
-    所以 `/user/` 可以用**内部 rewrite** 到 `/aioa/h5/` 而不跳转。
+    所以 `/user/` 可以用**内部 rewrite** 到 `/aios/h5/` 而不跳转。
     **通则**：**先判断目标的 base 语义**（有没有 base path / 是不是单文件 / 是否按 pathname 推 API），
     再决定 redirect 还是 rewrite —— 两者不可互换。改这类入口后要跑
     `scripts/_check_single_port.py`（现 **13 项 + 26 项负向 mutation**）确认 `/web` 的 302 跳转语义与
@@ -224,7 +224,7 @@
 71. **「固定宿主端口」在目标机上被占用 ⇒ 部署就起不来；覆盖口必须走 `.env`，不能靠改 compose。**
     现象：`docker compose up -d server agent` 报 `port is already allocated`。本案是 `0.0.0.0:8000`
     被目标机上一个**无关容器**占着，而 compose 把 agent 固定发布 `127.0.0.1:8000:8000`。
-    修法：compose 写成 `127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000`（**默认值不变**），
+    修法：compose 写成 `127.0.0.1:${AIOS_AGENT_HOST_PORT:-8000}:8000`（**默认值不变**），
     并在 `.env` / `.env.production` **声明该键**（compose 引用的每个 `${VAR}` 都要在 env 里有出处，
     否则 `compose-lint` 会警告「引用了未声明的键」）。
     ★ **现场只改 `.env`，不要改 compose** —— 改 compose 会在用户下次 `git pull` 时冲突，
@@ -246,22 +246,22 @@
     **通则**：加可选服务时，先问「它会不会进默认 `up` 集合」；会，就门控。
     并顺手检查三类文档里对它的**历史描述**是否已失真。
 73. **前端写死「根路径」接口基址 ⇒ 本地全绿、只在「共用域名 + 只反代子路径」的生产入口暴露。**
-    现场：公网 `https://mall.egooaicloud.com/aioa/web/` 页面能开，但**所有接口 404**；
-    在应用机上直连 `:8080/aioa/web/` 却一切正常。根因：管理端 SPA 的 `axios.create({baseURL:'/api/v1'})`
+    现场：公网 `https://mall.egooaicloud.com/aios/web/` 页面能开，但**所有接口 404**；
+    在应用机上直连 `:8080/aios/web/` 却一切正常。根因：管理端 SPA 的 `axios.create({baseURL:'/api/v1'})`
     与 SSE `` `/api/v1/runs/…` ``（`fetchEventSource` **不走 axios**，必须自己拼）都是**根绝对路径**；
-    浏览器把它解析成 `https://域名/api/v1/**`，而外网入口只有 `location /aioa/` ⇒ 无人代理。
-    ★ **为什么能长期潜伏**：后端是**双前缀并存**（`/aioa/api/**` 剥成 `/api/**`，`/api/**` 也保留），
+    浏览器把它解析成 `https://域名/api/v1/**`，而外网入口只有 `location /aios/` ⇒ 无人代理。
+    ★ **为什么能长期潜伏**：后端是**双前缀并存**（`/aios/api/**` 剥成 `/api/**`，`/api/**` 也保留），
     本地 44 个套件直打 `:8080/api/**`、vite dev 又代理 `/api` ⇒ **本地全是对的**。
-    只有「共用域名只反代 `/aioa/`」这一种拓扑才会 404。
-    **通则**：只要产物被挂在子路径下（`base=/aioa/web/`），**根绝对路径就是错的**；
+    只有「共用域名只反代 `/aios/`」这一种拓扑才会 404。
+    **通则**：只要产物被挂在子路径下（`base=/aios/web/`），**根绝对路径就是错的**；
     基址必须与 `import.meta.env.BASE_URL`（或等价的 base 变量）**同源**，且要**逐一找出不走 axios 的调用**
     （SSE / `EventSource` / `window.open` / 文件下载直链 / 后端回填的 url 字段）。
     守卫：`scripts/_check_single_port.py` 的 c12（对应 H5 侧是 c9）。
 
 74. **Dockerfile 的 `COPY …/pom.xml` 清单与聚合 pom 的 `<modules>` 漂移，且被 `|| true` 静默掉。**
     现场：`server/pom.xml` 有 11 个 `<module>`，`deploy/Dockerfile.server` 只 COPY 了 10 个 ⇒
-    Maven 报 `Child module aioa-integration-scfy of /build/pom.xml does not exist`。
-    ★ 该行写成 `mvn … dependency:go-offline -pl aioa-boot -am || true` ⇒ **构建不会失败**，
+    Maven 报 `Child module aios-integration-scfy of /build/pom.xml does not exist`。
+    ★ 该行写成 `mvn … dependency:go-offline -pl aios-boot -am || true` ⇒ **构建不会失败**，
     只是 `go-offline` 整层失效：**每次都全量下依赖**，受限网络下从「几分钟」变成「反复超时」。
     「不中断构建」正是它能潜伏很久的原因 —— 报错在日志里，但没人当回事。
     同族缺陷见 #43（`Dockerfile.web` 漏 `COPY web/tsconfig.base.json`）。
@@ -366,7 +366,7 @@
     `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":76,"threshold":50,"scope":"turn"}`
     直接让构建失败（`npm run build` / `--outDir dist2` 都一样，只要目标目录已存在且文件多）。
     且在**同一轮里分批删也躲不掉**（`scope: turn` 是累计的）。
-    **可行做法**：`vite build --outDir "C:/Users/<u>/AppData/Local/Temp/aioa-shell-vNN"`（每轮换一个**不存在**的
+    **可行做法**：`vite build --outDir "C:/Users/<u>/AppData/Local/Temp/aios-shell-vNN"`（每轮换一个**不存在**的
     目录名 ⇒ 无需删除），再 `cp <out>/assets/* <webroot>/assets/ && cp <out>/index.html <webroot>/index.html`
     （覆盖是写、不是删，不触发保护）。★ 路径必须写成 **`C:/...` 风格**：
     写 git-bash 的 `/c/Users/...` 会被 node 当**相对路径**，产物落到 `C:/c/Users/...`（实测踩到），
@@ -815,15 +815,15 @@
     判据：**别拿健康检查当「启动链路健康」的证据；`Get-CimInstance Win32_Process` 看命令行，
     再拿脚本原样跑一遍临时端口**（本次即用 18083 复验，见 `docs/42` 第一节「补充」）。
 
-119. ★**禁止用 `-Dspring-boot.repackage.skip=true` 构建 `aioa-boot`**（2026-10-11 实际踩到，且**铁律早有记载仍复发**）：
+119. ★**禁止用 `-Dspring-boot.repackage.skip=true` 构建 `aios-boot`**（2026-10-11 实际踩到，且**铁律早有记载仍复发**）：
    该开关产出 **170KB 的瘦 jar**（无 `BOOT-INF/lib`）。若此时**已有更早启动的进程在跑**，
    JVM 按需加载 ⇒ 启动时已加载的类照常，**未加载的类再也读不到**：
-   `/v1/conversations/{id}/runs` → 500 `NoClassDefFoundError: cn/aioa/chat/dto/RunCreatedResponse`，
+   `/v1/conversations/{id}/runs` → 500 `NoClassDefFoundError: cn/aios/chat/dto/RunCreatedResponse`，
    `/admin/org-configs` → 500 `NoClassDefFoundError: …mvc.LastModified`。
    **与业务代码无关、日志里是 CNFE、`mvn test` 全绿**（测试读 `target/classes`，不读 jar）⇒
    **只有查产物才看得见**：`scripts/_check_boot_jar_fat.py`（已进 `_run_all_regression.sh`）。
    修法：**先停 :8080**（运行中进程锁着 jar，repackage 的 rename 必失败，`-Djar.finalName` 也无效），
-   再 `./mvnw -o -pl aioa-boot -am -DskipTests package`。
+   再 `./mvnw -o -pl aios-boot -am -DskipTests package`。
 120. **新写的 api 模块路径不得自带 `/v1`**：`api/index.ts` 的 `http` 已带 `baseURL=/api/v1`，
    写成 `http.get('/v1/admin/org-configs')` 会打到 **`/api/v1/v1/...`**（404）。
    `typecheck` / `vite build` **都查不出这种运行时路径错** ⇒ 新页面必须**真点一次**。
@@ -875,7 +875,7 @@
    `warning: no corresponding .pack: …idx`；某些历史提交 `git cat-file -t <sha>` 报 `Not a valid object name`。
    **判据**：`.git/objects/pack/` 里只剩 `.idx`/`.rev`/`multi-pack-index` 而**没有同名 `.pack`** ⇒ 对象已丢。
    **恢复配方（本次实测可用，工作树完好时）**：
-   1. 先**冻结工作树**（它此时是唯一副本）——把关键文件 `cp` 到仓库外（本次 `_aioa_rescue_20261011/`）。
+   1. 先**冻结工作树**（它此时是唯一副本）——把关键文件 `cp` 到仓库外（本次 `_aios_rescue_20261011/`）。
    2. 找**可达的镜像远端**：本仓库有第二个远端 `github = ssh://git@ssh.github.com:443/liujiejie7089/AIOA.git`
       （`origin 172.16.8.249:3000` 当时 502）。`git ls-remote github` 通 ⇒ `git fetch github main`，
       新 pack 落盘（21 MB）后历史恢复可用。
@@ -951,7 +951,7 @@
    ⚠️ 与 #130 **互不相关**（同一批日志里两类错误从不同时出现）；排查时**先按指纹分类再归因**，不要混着修。
 
 132. ★**`mvn package` 会把你正在运行的 fat jar 改成「没有 BOOT-INF 的空壳」**（2026-10-15 实测）。
-   现象：`-pl aioa-boot -am` 打包在 `spring-boot:repackage` 步失败（`Unable to rename ... .jar to ...jar.original`，
+   现象：`-pl aios-boot -am` 打包在 `spring-boot:repackage` 步失败（`Unable to rename ... .jar to ...jar.original`，
    因为**运行中的后端进程占着该 jar 文件锁**），而磁盘上留下的是**未 repackage 的 173KB 普通 jar**（无 `BOOT-INF/`）——
    直接 `java -jar` 会启不起来。
    **定式**：重新打包前**先停掉占用 jar 的后端进程**；打包后**验产物**`any(n.startswith('BOOT-INF/'))` 为真
@@ -1000,7 +1000,7 @@
    附：`grep` 在本仓库常把混合编码的输出判成二进制（只回 `Binary file (standard input) matches`）⇒ 取 Maven 日志一律用 `grep -a`。
 
 137. ★**「用 `-Dtest=` 只跑一条用例」时，`-am` 会把过滤条件套到上游兄弟模块 ⇒ 兄弟模块「无匹配用例」被判失败**（2026-10-16 实测）。
-   `mvn -pl aioa-chat -am test -Dtest=XxxTest` 会在 `aioa-common` 等无该用例的模块上报
+   `mvn -pl aios-chat -am test -Dtest=XxxTest` 会在 `aios-common` 等无该用例的模块上报
    `No tests matching pattern "XxxTest" were executed!` 并 `BUILD FAILURE`。
    **正确写法**：`-Dsurefire.failIfNoSpecifiedTests=false`（**属性名是 `surefire.` 前缀**，
    写成 `-DfailIfNoSpecifiedTests=false` 无效）。
@@ -1041,18 +1041,18 @@
 
 ## 本地 `.venv` 有 ≠ 镜像里有（2026-10-18 第二次复发：`langgraph` 没进依赖清单）
 
-**现象**：生产 `aioa-agent` 一直 `Restarting`，日志
+**现象**：生产 `aios-agent` 一直 `Restarting`，日志
 `ModuleNotFoundError: No module named 'langgraph'` + `Application startup failed`；
 用户侧表现是对话**「本次未返回内容」**（不是 502、不是 500，看不到任何后端错误）。
 
-**根因**：`aioa_ai/graph/{builder,facade,nodes}.py` 全靠 langgraph，但
+**根因**：`aios_ai/graph/{builder,facade,nodes}.py` 全靠 langgraph，但
 `agent/pyproject.toml` 的 `dependencies` 里**没有它**（那几个 checkpoint 也各有独立发行包）。
 本地 `.venv` 是手工装的 ⇒ pytest/uvicorn 全绿；镜像走 `pip install .` ⇒ 缺包。
 
-**这是同一模式的第二次**（第一次是 `packages.find.include` 漏 `aioa_ai`）：
+**这是同一模式的第二次**（第一次是 `packages.find.include` 漏 `aios_ai`）：
 **「本地能跑」永远不能推断「镜像能跑」**。判据只能是「声明的集合 vs 实际 import 的集合」。
 
-**收口哨兵**：`scripts/_check_agent_deps_declared.py`（纯离线，AST 扫 `app/`+`aioa_ai/`，
+**收口哨兵**：`scripts/_check_agent_deps_declared.py`（纯离线，AST 扫 `app/`+`aios_ai/`，
 与 pyproject 做差集；D2 负向对照保证它会红；已登记进 `_run_all_regression.sh`）。
 
 **排查动作（照做）**：

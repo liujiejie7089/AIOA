@@ -34,7 +34,7 @@ def main():
     with sync_playwright() as pw:
         b = pw.chromium.launch(channel="msedge", headless=True)
         ctx = b.new_context(viewport={"width": 460, "height": 920}, device_scale_factor=2, locale="zh-CN")
-        ctx.add_init_script("try{localStorage.setItem('aioa_session', %s);}catch(e){}"
+        ctx.add_init_script("try{localStorage.setItem('aios_session', %s);}catch(e){}"
                             % json.dumps(json.dumps({"token": at, "user": au})))
         page = ctx.new_page()
         page.goto(BASE + "/", wait_until="domcontentloaded")

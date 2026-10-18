@@ -7,7 +7,7 @@
 
 ## 一、现在的状态：**真机流程已跑通，可切；只剩「入站 Webhook」受网络限制**
 
-- 默认 `aioa.repo.provider=gitee` ⇒ **现有部署行为逐字节不变**（真机 Gitee 绑定 `liu-yang20` 可用）。
+- 默认 `aios.repo.provider=gitee` ⇒ **现有部署行为逐字节不变**（真机 Gitee 绑定 `liu-yang20` 可用）。
 - 切成 `gitea` 只需**改环境变量 + 重启**，不用改代码（见 §六）。
 - `企业管理 → 项目管理` 在真机 Gitea 上端到端通过（`scripts/e2e_gitea_live.py` **75/75**），
   且**界面实渲染核对**通过（`scripts/_check_gitea_ui_provider.py` **17/17**）—— 页面文案不再谎报托管方，
@@ -55,8 +55,8 @@
 |---|---|---|
 | 老绑定密文解不开且**不回落企业令牌** | `POST /gitee/projects` → **500**；`AEADBadTagException: Tag mismatch` | 解密失败→按「本平台无此绑定」处理→回落企业令牌；无企业令牌才报错，且文案指名当前密钥键 |
 | `gitee_account` 无托管方维度 | 异平台登录名被拿去 Gitea 加协作者 → **404 静默失败**；同用户无法并存两平台绑定 | **V54**：加 `provider` 列 + 唯一键并入 `provider`/`gitee_uid` + 查询按 provider 过滤 |
-| 密钥报错说错配置键 | gitea 下让用户去改 `aioa.gitee.token-enc-key` | `tokenEncKeyProperty()` 随 provider |
-| **整页界面文案写死「Gitee」** | 页头/卡片/表头/按钮/Toast/结果页全写「Gitee」，而仓库地址指向 Gitea；「未启用」提示让改 `aioa.gitee.*`；初始化说「令牌需 `projects` 权限」 | 端口加 `providerLabel()`/`configKeyPrefix()`/`tokenRequirementHint()`；`/gitee/config` 成前端文案唯一来源；前端两页按 `pName` 渲染；后端 13 处文案改拼接 |
+| 密钥报错说错配置键 | gitea 下让用户去改 `aios.gitee.token-enc-key` | `tokenEncKeyProperty()` 随 provider |
+| **整页界面文案写死「Gitee」** | 页头/卡片/表头/按钮/Toast/结果页全写「Gitee」，而仓库地址指向 Gitea；「未启用」提示让改 `aios.gitee.*`；初始化说「令牌需 `projects` 权限」 | 端口加 `providerLabel()`/`configKeyPrefix()`/`tokenRequirementHint()`；`/gitee/config` 成前端文案唯一来源；前端两页按 `pName` 渲染；后端 13 处文案改拼接 |
 | **删项目后成员同步任务空转** | 队列残留 `PENDING/attempts=5`，指向已 `DELETED` 的项目 | `project == null`（终态）直接作废；只有「仓库未建出」才重试 |
 | **失败原因把托管方原文抛给用户** | 成员表/项目详情上显示 `GetUserByName`、`Rate Limit Exceeded`、`401 Unauthorized: ...` | `errors[]` 优先（人话在 `errors[]`，`message` 可能是内部操作名）；`ProviderFailureText` 按状态给中文归因+动作，原文附尾 |
 | **422「用户不存在」判成「已是协作者」** | 成员显示绿色「已同步」，实际对仓库**没有权限**（假绿） | 判据改为「4xx 且文案明确说已是协作者」；Gitea 重复添加回 204，不走该分支 |
@@ -78,28 +78,28 @@
 
 | 验证 | 结果 |
 |---|---|
-| `aioa-gitee` 单测 | **136/136**（含 providerName / providerLabel / configKeyPrefix / tokenEncKeyProperty / 令牌权限提示 / 异平台密文文案 / 失败文案映射 20 条 / 已是协作者判据 6 条 / 三类源码审计） |
+| `aios-gitee` 单测 | **136/136**（含 providerName / providerLabel / configKeyPrefix / tokenEncKeyProperty / 令牌权限提示 / 异平台密文文案 / 失败文案映射 20 条 / 已是协作者判据 6 条 / 三类源码审计） |
 | `e2e_gitea_live`（真机） | **75/75**，0 FAIL，0 BLOCKED |
 | `_check_gitea_ui_provider`（浏览器实渲染） | **17/17** |
 | `e2e_v51_gitee_init` | **50/50** |
 | `e2e_v48_gitee` | **116/116** |
 | `e2e_full_system --no-browser` | **145/145**（已知缺口 0 项） |
-| 真机产物 | 项目 `ACTIVE`、仓库 `AI-OA/dept11-*` 存在、`default_branch=main`、`hook active=true`、删项目后远端仓库 404；队列 `PENDING+RUNNING=0`；`AI-OA` 下只剩 `AIOA_FrontWeb` |
+| 真机产物 | 项目 `ACTIVE`、仓库 `AI-OA/dept11-*` 存在、`default_branch=main`、`hook active=true`、删项目后远端仓库 404；队列 `PENDING+RUNNING=0`；`AI-OA` 下只剩 `AIOS_FrontWeb` |
 | V54 迁移 | `Successfully applied 1 migration, now at version v54`；74 条老绑定回填 `provider='gitee'` |
-| 收口接线 | 后端以 `.env.gitea-real` 运行：`provider=gitea` · `providerLabel=Gitea` · `configKey=aioa.gitea` |
+| 收口接线 | 后端以 `.env.gitea-real` 运行：`provider=gitea` · `providerLabel=Gitea` · `configKey=aios.gitea` |
 
 ## 六、切过去的操作要点
 
-- 只需环境变量：`AIOA_REPO_PROVIDER=gitea` + `AIOA_GITEA_ENABLED=true` +
-  `AIOA_GITEA_BASE_URL`（**必须带 `/api/v1`**）+ `AIOA_GITEA_WEB_URL` /
-  `AIOA_GITEA_OAUTH_AUTHORIZE_URL` / `AIOA_GITEA_CLIENT_ID` / `..._SECRET` /
+- 只需环境变量：`AIOS_REPO_PROVIDER=gitea` + `AIOS_GITEA_ENABLED=true` +
+  `AIOS_GITEA_BASE_URL`（**必须带 `/api/v1`**）+ `AIOS_GITEA_WEB_URL` /
+  `AIOS_GITEA_OAUTH_AUTHORIZE_URL` / `AIOS_GITEA_CLIENT_ID` / `..._SECRET` /
   `..._REDIRECT_URI` / `..._ORG` / `..._WEBHOOK_BASE_URL`。**改完必须重启**。
   现成模板：`.env.gitea-real`（gitignore）。
 - ⚠️ **切换会让既有个人绑定不可用**（两段各有一个默认加密密钥）——有意设计（令牌按平台签发）。
   但**不再阻塞**：个人绑定不可用时自动回落**企业令牌**，企业令牌本身需重新 `POST /gitee/init`。
 - ⚠️ **同一时刻只起一个后端实例**：两个实例共库会互抢任务队列，
   现象是「项目卡 `CREATING` + 套件大片红」，而**失败在另一个实例的日志里**。
-  （`AIOA_GITEE_SYNC_ENABLED=false` **只停 cron，不停任务 worker**。）
-- ⚠️ **`AIOA_GITEA_WEBHOOK_BASE_URL` 必须是 Gitea 能访问到的地址**；填本机内网地址时
+  （`AIOS_GITEE_SYNC_ENABLED=false` **只停 cron，不停任务 worker**。）
+- ⚠️ **`AIOS_GITEA_WEBHOOK_BASE_URL` 必须是 Gitea 能访问到的地址**；填本机内网地址时
   建仓与配钩子都会成功，但**事件永远不会进来**（本机即此情形）。
 - ✅ 跑桩接线回归不再需要手工备份 `gitee_account`：覆盖守卫会拦下「用桩身份覆盖真实绑定」。

@@ -197,7 +197,7 @@ ERROR: relation "t_shop" does not exist
 ## 修订（端到端矩阵实测后，2026-09-23）—— 覆盖上表 5 处判定
 
 > 上表由首轮探测生成，判定口径是「HTTP 200 且 code=0」。端到端矩阵
-> （`server/aioa-integration-scfy` 的 `ScfyMatrixTest`，报告见同目录 `非遗scfy-端到端矩阵报告.md`）
+> （`server/aios-integration-scfy` 的 `ScfyMatrixTest`，报告见同目录 `非遗scfy-端到端矩阵报告.md`）
 > 逐个接口带真实依赖 id 复测后，发现**「code=0」不等于「可用」**：有接口恒返回空、有接口参数形态判断错。
 > 本条修订以上表之外的事实为准，上表对应行作废。
 

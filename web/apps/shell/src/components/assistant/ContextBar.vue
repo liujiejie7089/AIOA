@@ -27,13 +27,13 @@ const ctx = computed(() => assistant.currentContext)
   flex-wrap: wrap;
   gap: 6px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--aioa-border);
+  border-bottom: 1px solid var(--aios-border);
   background: #fafafa;
 }
 
 .ctx-title {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
   max-width: 180px;
   overflow: hidden;
   white-space: nowrap;
@@ -42,6 +42,6 @@ const ctx = computed(() => assistant.currentContext)
 
 .ctx-empty {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 </style>

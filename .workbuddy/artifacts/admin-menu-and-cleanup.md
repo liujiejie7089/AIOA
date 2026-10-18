@@ -95,7 +95,7 @@ Element Plus 的 `.el-container` 是 `flex:1; flex-basis:auto`，而 flex 项默
 | 新增忽略 | `ux-review/full-audit/*.png`、`ux-review/admin-audit/*.png`（并 `!` 白名单三个 json） | 防止再次误入库 |
 | 顺带 | 清理 `scripts/__pycache__` | 字节码缓存 |
 
-**刻意没删**（避免「为清理而清理」）：根目录三份交付报告（`AIOA_*.md`，体积 6–16KB，
+**刻意没删**（避免「为清理而清理」）：根目录三份交付报告（`AIOS_*.md`，体积 6–16KB，
 属交付物而非过程产物）、`docs/**` 全部规格源、`logs/`（有进程在写）。
 
 ---

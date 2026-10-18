@@ -27,7 +27,7 @@ def get(path, params=None, timeout=15):
     if params:
         url += "?" + urllib.parse.urlencode(params, encoding="utf-8")
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "aioa-probe/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "aios-probe/1.0"})
         with urllib.request.urlopen(req, timeout=timeout, context=CTX) as r:
             return json.loads(r.read(400000).decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:

@@ -123,7 +123,7 @@ def load_workers(tenant: int, only_ids: list[int] | None) -> list[dict]:
     import pymysql
 
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor)
+                           database="aios", charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
             sql = ("select id, name, worker_type, enabled "
@@ -268,7 +268,7 @@ def main() -> int:
     try:
         workers = load_workers(args.tenant, only_ids)
     except Exception as exc:  # noqa: BLE001
-        log(f"[SKIP] 读库失败（需要本地 MySQL 3306 / root 空密码 / 库 aioa）：{exc}")
+        log(f"[SKIP] 读库失败（需要本地 MySQL 3306 / root 空密码 / 库 aios）：{exc}")
         return 2
     if args.only_cap:
         workers = [w for w in workers if w["caps"]]

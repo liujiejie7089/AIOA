@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: AIOA 基座对外 API（前端 ⇄ Java aioa-server）
+  title: AIOS 基座对外 API（前端 ⇄ Java aios-server）
   version: "1.0"
   description: |
     M1 范围：认证 / 应用注册表 / 会话与回声对话。

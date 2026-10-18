@@ -462,7 +462,7 @@ onMounted(reload)
 
 .text-sub {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .flow-cur {
@@ -475,18 +475,18 @@ onMounted(reload)
 }
 .flow-cur.done b {
   font-weight: 500;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 .flow-sub {
   font-size: 11px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .dlg-subtitle {
   font-size: 13px;
   font-weight: 600;
   margin: 16px 0 8px;
-  color: var(--aioa-text);
+  color: var(--aios-text);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -509,11 +509,11 @@ onMounted(reload)
 }
 .node-type {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 .node-note {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
   margin-top: 4px;
   white-space: pre-wrap;
   word-break: break-word;

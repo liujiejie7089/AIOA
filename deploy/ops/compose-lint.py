@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-AIOA · compose 静态体检（deploy/ops/compose-lint.py）
+AIOS · compose 静态体检（deploy/ops/compose-lint.py）
 --------------------------------------------------------------------------------
 为什么需要它：开发机/隧道机上**通常没有 docker**（`docker compose config` 跑不了），
 而 compose 的三类错误又都是「上机才炸」的：
@@ -213,7 +213,7 @@ def lint(path: str, env_path: str | None, override_path: str | None, rep: Report
 def main() -> int:
     here = os.path.dirname(os.path.abspath(__file__))
     deploy = os.path.dirname(here)
-    ap = argparse.ArgumentParser(description="AIOA compose 静态体检（不需要 docker）")
+    ap = argparse.ArgumentParser(description="AIOS compose 静态体检（不需要 docker）")
     ap.add_argument("--compose", default=os.path.join(deploy, "docker-compose.yml"))
     ap.add_argument("--override", default=None, help="可选叠加文件（本仓已无叠加文件，保留仅为通用性）")
     ap.add_argument("--env", default=os.path.join(deploy, ".env.production"),

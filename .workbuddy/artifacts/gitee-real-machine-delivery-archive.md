@@ -1,4 +1,4 @@
-# AIOA · Gitee **真机建仓**端到端实测 — 交付概览
+# AIOS · Gitee **真机建仓**端到端实测 — 交付概览
 
 > 编制：2026-09-17 · 范围：在**真实 gitee.com**上完成「初始化 → 建仓 → 写文件 → 提交 → 删仓」闭环，并汇总真实缺陷
 > 详细报告：`.workbuddy/artifacts/real-gitee-e2e-report-v2.md`
@@ -7,7 +7,7 @@
 ## 1. 一句话结论
 
 用你给的私人令牌，在真实 Gitee 组织 `yjiud` 下**真的建出了仓库**
-**`https://gitee.com/yjiud/dept11-aioa-1789630096`**（`gitee_repo_id=50369702`，私有，`master`），
+**`https://gitee.com/yjiud/dept11-aios-1789630096`**（`gitee_repo_id=50369702`，私有，`master`），
 写文件 / 提交 / URL 校验 / 删仓全部在真站验证通过。
 过程中揪出 **3 个桩环境永远测不出的真实缺陷**（均已修复并回真站验证）+ 1 个套件卫生问题。
 **还差一步**：浏览器跳转授权需要你先在 Gitee 注册第三方应用并给我 Client ID / Secret（见 §5）。
@@ -21,7 +21,7 @@
 | 组织真实性 | `GET /orgs/yjiud` → 200，`type=Group`，`owner=liu-yang20` |
 | 初始化只校验不落库 | `/gitee/init/verify` 6 步全 ok，且**复核库中 tenant 2 无行** |
 | 初始化正式落库 + 幂等 | `/gitee/init` 7 步全 ok → `ACTIVE` / `tokenOwner=liu-yang20`；重跑仍 **1 行** |
-| **真实建仓** | 任务 DONE；`GET /repos/yjiud/dept11-aioa-1789630096` → **HTTP 200** |
+| **真实建仓** | 任务 DONE；`GET /repos/yjiud/dept11-aios-1789630096` → **HTTP 200** |
 | 真实写文件 | 写 `docs/README.md`，真站回读**同一内容、sha 一致** |
 | 真实提交历史 | 真站 `GET /commits` → `b950f1b add readme 刘尖尖` |
 | 文件链接正确性 | 平台返回 URL 与 **Gitee 自身 API 的 `html_url` 逐字符一致** |
@@ -67,7 +67,7 @@
 现已加**守卫**（#274）：沙箱回调用「看起来是真实账号」的 uid 覆盖既有绑定时**直接拒绝**，
 并给出可执行中文报错。已用「假真实行」在桩接线下**实测拦截成功且行未被覆盖**（见 §7.2）。
 
-真站 `yjiud` 组织现有 **2 个仓库**：`dept11-aioa-1789630096`（企业令牌路径）、`dept11-aioa-1789636649`（个人令牌路径）。
+真站 `yjiud` 组织现有 **2 个仓库**：`dept11-aios-1789630096`（企业令牌路径）、`dept11-aios-1789636649`（个人令牌路径）。
 后端当前运行在**真实接线**（`.env.gitee-real`，不入库）。
 
 ## 6. 环境限制（非代码问题，如实标注）
@@ -95,7 +95,7 @@
 
 **新增保障**
 
-- `aioa-gitee` **首个 Java 单测**（此前为零）：**98/98 绿**
+- `aios-gitee` **首个 Java 单测**（此前为零）：**98/98 绿**
   —— `GiteeWebhookEventClassifyTest` 31 例（Gitee + Gitea 两种事件命名风格）
   · `GiteaProviderRequestBodyTest` 29 例（请求体静默失效陷阱）
   · `RepoWebhookVerifyTest` 21 例（HMAC 校验，期望值用 **Python `hmac` 独立算出**，非回填自测）
@@ -115,8 +115,8 @@
 | `e2e_full_system --no-browser` | 145 | **145/145**（+7 渲染段 = 152）|
 | **守卫实拦**（桩接线 + 假真实行） | 拒绝覆盖且行不变 | 回调返回失败页「…拒绝用它覆盖已存在的真实绑定：原 uid=14032724，本次 uid=42364…」，**行 uid 未被改写**，测试后已还原 |
 | 零凭据探针 `POST /gitee/bind/authorize`（provider=gitea） | 产出 Gitea 授权地址 | `http://172.16.8.249:3000/login/oauth/authorize?...&scope=repo read:organization notification issue` |
-| 配置面是否真中立（provider=gitea） | 取 gitea 段 | `config.webhookBaseUrlConfigured=true`（来源 `aioa.gitea.webhook-base-url`） |
-| fail-loud 告警（Gitea，授权域≠网页域） | `sandbox=true` + 指名 `AIOA_GITEA_OAUTH_AUTHORIZE_URL` | ✅ 命中 |
+| 配置面是否真中立（provider=gitea） | 取 gitea 段 | `config.webhookBaseUrlConfigured=true`（来源 `aios.gitea.webhook-base-url`） |
+| fail-loud 告警（Gitea，授权域≠网页域） | `sandbox=true` + 指名 `AIOS_GITEA_OAUTH_AUTHORIZE_URL` | ✅ 命中 |
 | fail-loud 告警（Gitea，两端同域） | `sandbox=false`（用户确实到达真实例） | ✅ 命中 |
 | 恢复真实接线 | 无桩警告 | `[gitee] 接线：api=https://gitee.com/api/v5 授权跳转=https://gitee.com` |
 | 真实绑定未被破坏 | `bound=true` | `liu-yang20` / uid 14032724 / `tokenExpired=false`；租户 2 队列 `PENDING=0 RUNNING=0` |
@@ -125,18 +125,18 @@
 
 1. **（真缺陷，已修）授权地址仍在读 Gitee 段** —— 切 `provider=gitea` 后
    `POST /gitee/bind/authorize` 返回 `code=400`
-   「Gitee OAuth 应用未配置（缺 aioa.gitee.client-id / client-secret）」，
+   「Gitee OAuth 应用未配置（缺 aios.gitee.client-id / client-secret）」，
    **gitea 接线根本绑不上**。根因：`GiteeAccountService.assertBindable()` 与授权警示文案
    直接读 `GiteeProperties`，而「客户端契约」只覆盖了「怎么调接口」，没覆盖「配置长什么样」。
    → 抽出 `RepoProviderSettings` 端口（#273）后 **红→绿实证**：`code=400` → `code=0` 且 URL 正确。
    同一根因还波及建仓/Webhook/初始化等 8 处（组织、回调基址、签名密钥、令牌密钥），一并收口。
 
 2. **（验证方法缺陷，已固化进技能 §0.12）双实例会互抢同一个任务队列** ——
-   为做 Gitea 探测在 `:8081` 另起实例（以为 `AIOA_GITEE_SYNC_ENABLED=false` 能关掉它），
+   为做 Gitea 探测在 `:8081` 另起实例（以为 `AIOS_GITEE_SYNC_ENABLED=false` 能关掉它），
    结果它把 `:8080` 队列里的 `CONFIGURE_WEBHOOK` 抢走、用 Gitea 段密钥解 Gitee 令牌而失败，
    套件大面积看起来像「设置面改造打断了建仓链路」。
    **`SYNC_ENABLED=false` 只停 cron，不停任务 worker**；正解是同一时刻只起一个实例。
-   已写入 `.workbuddy/skills/aioa-e2e-regression` §0.12 / §4.5。
+   已写入 `.workbuddy/skills/aios-e2e-regression` §0.12 / §4.5。
 
 3. **（已澄清，非缺陷）`GiteaProviderClient.authorizeHostIsSandbox()` 一开始看着像恒 false** ——
    实为我的探测配置让授权域与网页域同域。该判据对自建实例只能以 `web-base-url` 为参照，

@@ -18,7 +18,7 @@
     故必须用静态守卫把「默认排除」钉在唯一一处，并把"忘了加默认排除"变成一次报红。
 
 本守卫断言：
-    Z1  运营面规则只有一处权威：`InstitutionStatus.operational/sqlOperational`（aioa-common）
+    Z1  运营面规则只有一处权威：`InstitutionStatus.operational/sqlOperational`（aios-common）
     Z2  五个运营面查询都调用了唯一的运营面过滤器（机构清单 / 入驻总览 / 资源授权 / 费用分摊 / 人员归属）
     Z3  默认口径是「排除」而非「包含」：服务端默认分支正确，且 Controller 的 includeClosed 默认值必须是 false
     Z4  前端不提供「已注销」筛选项、不得自建第二套状态过滤；「申请删除 / 注销」对 CLOSED 行禁用
@@ -52,27 +52,27 @@ def _p(*parts):
 SKIPS = []
 
 
-STATUS = _p(SERVER, "aioa-common", "src", "main", "java", "cn", "aioa", "common", "org",
+STATUS = _p(SERVER, "aios-common", "src", "main", "java", "cn", "aios", "common", "org",
             "InstitutionStatus.java")
-ENTITY = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "entity",
+ENTITY = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "entity",
             "OrgInstitution.java")
-INST_SVC = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "service",
+INST_SVC = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "service",
               "InstitutionService.java")
-ONB_SVC = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "service",
+ONB_SVC = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "service",
              "OnboardingService.java")
-GRANT_SVC = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "service",
+GRANT_SVC = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "service",
                "ResourceGrantService.java")
-COST_SVC = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "service",
+COST_SVC = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "service",
               "CostAllocService.java")
-TENANT_CTRL = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "controller",
+TENANT_CTRL = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "controller",
                  "TenantAdminController.java")
-PERSONNEL = _p(SERVER, "aioa-admin", "src", "main", "java", "cn", "aioa", "admin", "service",
+PERSONNEL = _p(SERVER, "aios-admin", "src", "main", "java", "cn", "aios", "admin", "service",
                "PersonnelService.java")
-ORG_GUARD = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "support",
+ORG_GUARD = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "support",
                "OrgGuard.java")
 # deleteMember 不在 OrgGuard —— FR-B2（企业管理员不可直删）的判定长在 OrgTreeService 里。
 # 首版 Z7 误拿 OrgGuard 取方法体 ⇒ 取到空串、该分支被静默跳过（恒真），靠自检才发现。
-TREE_SVC = _p(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa", "org", "service",
+TREE_SVC = _p(SERVER, "aios-org", "src", "main", "java", "cn", "aios", "org", "service",
               "OrgTreeService.java")
 
 INST_VIEW = _p(SHELL, "views", "InstitutionView.vue")
@@ -136,7 +136,7 @@ def checks(t):
     owners = [p for p, s in t["java_all"].items()
               if "public static String sqlOperational(" in s or "public static boolean operational(" in s]
     out.append((
-        "Z1 运营面可见性规则只有一处权威（aioa-common 的 InstitutionStatus）",
+        "Z1 运营面可见性规则只有一处权威（aios-common 的 InstitutionStatus）",
         len(owners) == 1 and os.path.basename(owners[0]) == "InstitutionStatus.java"
         and "public static boolean operational(String status)" in t["status"]
         and "sqlOperational" in t["status"]

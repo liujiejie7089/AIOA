@@ -39,12 +39,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
 H5_PRODUCT = os.path.join(REPO, "user-client", "index.html")
 H5_SOURCE = os.path.join(REPO, "user-client", "_oa_app.js")
-MIGRATION = os.path.join(REPO, "server", "aioa-boot", "src", "main", "resources",
+MIGRATION = os.path.join(REPO, "server", "aios-boot", "src", "main", "resources",
                          "db", "migration", "V79__chat_conversation_project.sql")
-CONV_SRC = os.path.join(REPO, "server", "aioa-chat", "src", "main", "java", "cn", "aioa",
+CONV_SRC = os.path.join(REPO, "server", "aios-chat", "src", "main", "java", "cn", "aios",
                         "chat", "service", "ConversationService.java")
 
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa",
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios",
           charset="utf8mb4", autocommit=True)
 
 C = httpx.Client(timeout=60, trust_env=False)

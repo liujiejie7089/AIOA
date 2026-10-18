@@ -25,14 +25,14 @@
 set -euo pipefail
 
 APPLY=0
-PUBLIC_BASE="https://mall.egoaicloud.com/aioa"
+PUBLIC_BASE="https://mall.egoaicloud.com/aios"
 ENV_FILE="${ENV_FILE:-deploy/.env}"
-CLIENT_ID="${AIOA_GITEE_CLIENT_ID:-}"
-CLIENT_SECRET="${AIOA_GITEE_CLIENT_SECRET:-}"
+CLIENT_ID="${AIOS_GITEE_CLIENT_ID:-}"
+CLIENT_SECRET="${AIOS_GITEE_CLIENT_SECRET:-}"
 RESTART=1
 SKIP_VERIFY=0
-ADMIN_USER="${AIOA_ADMIN_USER:-admin}"
-ADMIN_PASS="${AIOA_ADMIN_PASSWORD:-}"
+ADMIN_USER="${AIOS_ADMIN_USER:-admin}"
+ADMIN_PASS="${AIOS_ADMIN_PASSWORD:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -64,8 +64,8 @@ echo "== 目标文件：$ENV_FILE"
 get_env() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | sed -E 's/^["'"'"']|["'"'"']$//g'; }
 
 # 取值优先级：命令行 > 环境变量 > 现有 .env 里的非空值 > 交互输入
-[ -n "$CLIENT_ID" ]     || CLIENT_ID="$(get_env AIOA_GITEE_CLIENT_ID || true)"
-[ -n "$CLIENT_SECRET" ] || CLIENT_SECRET="$(get_env AIOA_GITEE_CLIENT_SECRET || true)"
+[ -n "$CLIENT_ID" ]     || CLIENT_ID="$(get_env AIOS_GITEE_CLIENT_ID || true)"
+[ -n "$CLIENT_SECRET" ] || CLIENT_SECRET="$(get_env AIOS_GITEE_CLIENT_SECRET || true)"
 if [ -z "$CLIENT_ID" ]; then read -rp  "Gitee Client ID: " CLIENT_ID; fi
 if [ -z "$CLIENT_SECRET" ]; then read -rsp "Gitee Client Secret（不回显）: " CLIENT_SECRET; echo; fi
 if [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
@@ -75,18 +75,18 @@ fi
 
 echo
 echo "== 将要修改（含现值对比；Secret 一律不回显）=="
-for k in AIOA_GITEE_ENABLED AIOA_GITEE_OAUTH_AUTHORIZE_URL AIOA_GITEE_CLIENT_ID \
-         AIOA_GITEE_CLIENT_SECRET AIOA_GITEE_REDIRECT_URI AIOA_GITEE_BIND_RETURN_URL; do
+for k in AIOS_GITEE_ENABLED AIOS_GITEE_OAUTH_AUTHORIZE_URL AIOS_GITEE_CLIENT_ID \
+         AIOS_GITEE_CLIENT_SECRET AIOS_GITEE_REDIRECT_URI AIOS_GITEE_BIND_RETURN_URL; do
   cur="$(get_env "$k" || true)"
   case "$k" in
-    AIOA_GITEE_CLIENT_SECRET)
+    AIOS_GITEE_CLIENT_SECRET)
       # 绝不回显 Secret 的值（终端会被录屏/进日志）
       [ -n "$cur" ] && cur="(已配置)" || cur="（空）"
       new="(将写入)" ;;
-    AIOA_GITEE_CLIENT_ID)       new="$CLIENT_ID" ;;
-    AIOA_GITEE_REDIRECT_URI)    new="$REDIRECT_URI" ;;
-    AIOA_GITEE_BIND_RETURN_URL) new="$BIND_RETURN_URL" ;;
-    AIOA_GITEE_ENABLED)         new="true" ;;
+    AIOS_GITEE_CLIENT_ID)       new="$CLIENT_ID" ;;
+    AIOS_GITEE_REDIRECT_URI)    new="$REDIRECT_URI" ;;
+    AIOS_GITEE_BIND_RETURN_URL) new="$BIND_RETURN_URL" ;;
+    AIOS_GITEE_ENABLED)         new="true" ;;
     *)                          new="https://gitee.com" ;;
   esac
   printf '   %-30s %s  ->  %s\n' "$k" "${cur:-（空）}" "$new"
@@ -109,12 +109,12 @@ python3 - "$ENV_FILE" "$CLIENT_ID" "$CLIENT_SECRET" "$REDIRECT_URI" "$BIND_RETUR
 import re, sys, pathlib
 path, cid, csec, ruri, bret = sys.argv[1:6]
 updates = {
-    "AIOA_GITEE_ENABLED": "true",
-    "AIOA_GITEE_OAUTH_AUTHORIZE_URL": "https://gitee.com",
-    "AIOA_GITEE_CLIENT_ID": cid,
-    "AIOA_GITEE_CLIENT_SECRET": csec,
-    "AIOA_GITEE_REDIRECT_URI": ruri,
-    "AIOA_GITEE_BIND_RETURN_URL": bret,
+    "AIOS_GITEE_ENABLED": "true",
+    "AIOS_GITEE_OAUTH_AUTHORIZE_URL": "https://gitee.com",
+    "AIOS_GITEE_CLIENT_ID": cid,
+    "AIOS_GITEE_CLIENT_SECRET": csec,
+    "AIOS_GITEE_REDIRECT_URI": ruri,
+    "AIOS_GITEE_BIND_RETURN_URL": bret,
 }
 p = pathlib.Path(path)
 lines = p.read_text(encoding="utf-8").splitlines()
@@ -137,11 +137,11 @@ PY
 if [ "$RESTART" = 1 ]; then
   echo "== 重建 server 容器"
   ( cd deploy && docker compose up -d server )
-  # 注意：AioaPathPrefixFilter 只把 {prefix}/api/** 剥成 /api/**，**不动 actuator**
+  # 注意：AiosPathPrefixFilter 只把 {prefix}/api/** 剥成 /api/**，**不动 actuator**
   # ⇒ actuator 在根路径 /actuator/health；此处两个形态都试，避免误报。
   echo "== 等待 actuator 就绪"
   for _ in $(seq 1 40); do
-    for p in /actuator/health /aioa/actuator/health; do
+    for p in /actuator/health /aios/actuator/health; do
       code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080${p}" || true)"
       [ "$code" != "000" ] && { echo "   ${p} -> HTTP ${code}"; break 2; }
     done
@@ -152,12 +152,12 @@ fi
 # ---- 验收一：容器**真正收到**的环境变量（不是 .env 里写了什么）----
 echo
 echo "== 容器实收 env"
-got="$( (cd deploy && docker compose exec -T server printenv AIOA_GITEE_CLIENT_ID) 2>/dev/null | tr -d '\r' || true)"
+got="$( (cd deploy && docker compose exec -T server printenv AIOS_GITEE_CLIENT_ID) 2>/dev/null | tr -d '\r' || true)"
 if [ "$got" = "$CLIENT_ID" ]; then
-  echo "   [PASS] AIOA_GITEE_CLIENT_ID 已进入容器"
+  echo "   [PASS] AIOS_GITEE_CLIENT_ID 已进入容器"
 else
   echo "   [FAIL] 容器拿到的 CLIENT_ID='${got:-<空>}'（期望 $CLIENT_ID）"
-  echo "          排查：cd deploy && docker compose config | grep -A1 AIOA_GITEE_CLIENT_ID"
+  echo "          排查：cd deploy && docker compose config | grep -A1 AIOS_GITEE_CLIENT_ID"
   exit 1
 fi
 

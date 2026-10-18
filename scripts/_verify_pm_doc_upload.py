@@ -40,10 +40,10 @@ TENANT = "某某市某某区大数据管理局"
 # 允许指向另一个端口（用于「不动用户正在跑的 8080，用新构建的 jar 另起 8081 验收」）
 USER, PWD = "dsj_admin", "User@123"
 HERE = os.path.dirname(os.path.abspath(__file__))
-SERVICE = os.path.join(HERE, "..", "server", "aioa-project", "src", "main", "java",
-                       "cn", "aioa", "project", "service", "PmDocService.java")
+SERVICE = os.path.join(HERE, "..", "server", "aios-project", "src", "main", "java",
+                       "cn", "aios", "project", "service", "PmDocService.java")
 DB = dict(host="127.0.0.1", port=3306, user="root", password="",
-          database="aioa", charset="utf8mb4")
+          database="aios", charset="utf8mb4")
 
 C = httpx.Client(timeout=60, trust_env=False)
 RES = []
@@ -183,7 +183,7 @@ def main():
                 others.append(r2["data"]["id"])
 
         # ---- 真实上传一份文件，拿到 fileId 与真实字节数
-        payload = ("AIOA 文档上传验收 " + stamp).encode("utf-8")
+        payload = ("AIOS 文档上传验收 " + stamp).encode("utf-8")
         up = C.post(f"{API}/files/upload", headers=h,
                     files={"file": ("验收-%s.txt" % stamp, io.BytesIO(payload), "text/plain")}).json()
         file_id = (up.get("data") or {}).get("id")

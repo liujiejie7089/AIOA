@@ -49,7 +49,7 @@ def open_shell(b, tok, user):
     """打开本页并旁听：控制台错误、>=500 响应、以及所有 /api/v1/gitee 请求。"""
     ctx = b.new_context(viewport={"width": 1440, "height": 1000})
     ctx.add_init_script(
-        "localStorage.setItem('aioa.token', %s); localStorage.setItem('aioa.user', %s);"
+        "localStorage.setItem('aios.token', %s); localStorage.setItem('aios.user', %s);"
         % (json.dumps(tok), json.dumps(json.dumps(user, ensure_ascii=False)))
     )
     errs, bad, calls = [], [], []

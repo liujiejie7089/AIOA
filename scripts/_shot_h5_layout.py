@@ -51,7 +51,7 @@ def main():
         b = pw.chromium.launch(channel="msedge", headless=True)
         for name, w, h, scale, label in SCENES:
             ctx = b.new_context(viewport={"width": w, "height": h}, device_scale_factor=scale)
-            ctx.add_init_script(f"localStorage.setItem('aioa_session', {json.dumps(session)})")
+            ctx.add_init_script(f"localStorage.setItem('aios_session', {json.dumps(session)})")
             pg = ctx.new_page()
             pg.goto(BASE + "/index.html", wait_until="networkidle")
             pg.wait_for_timeout(2500)

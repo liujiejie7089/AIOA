@@ -31,8 +31,8 @@ jobs:
       - name: 归档 fat-jar
         uses: actions/upload-artifact@v4
         with:
-          name: aioa-boot
-          path: server/aioa-boot/target/aioa-boot-*.jar
+          name: aios-boot
+          path: server/aios-boot/target/aios-boot-*.jar
           if-no-files-found: error
 
   agent:
@@ -69,7 +69,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: 构建 SDK（shell 的类型解析依赖 dist）
         working-directory: web
-        run: pnpm --filter @aioa/sdk build
+        run: pnpm --filter @aios/sdk build
       - name: 类型检查（少 import 一个常量在页面上是「整页空白」）
         working-directory: web
         run: pnpm -r typecheck

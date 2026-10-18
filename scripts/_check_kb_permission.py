@@ -30,7 +30,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB_CTRL = os.path.join(
-    ROOT, "server", "aioa-resource", "src", "main", "java", "cn", "aioa",
+    ROOT, "server", "aios-resource", "src", "main", "java", "cn", "aios",
     "resource", "controller", "KbController.java")
 KB_VIEW = os.path.join(ROOT, "web", "apps", "shell", "src", "views", "KbView.vue")
 

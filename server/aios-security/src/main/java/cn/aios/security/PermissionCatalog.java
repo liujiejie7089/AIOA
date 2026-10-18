@@ -1,0 +1,446 @@
+package cn.aios.security;
+
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 权限目录 —— 权限码 → 允许的角色集合。
+ *
+ * <p>本目录覆盖平台全部 6 个内置角色（与 {@code sys_role.role_code} 一一对应），
+ * 避免出现「角色存在但没有任何权限码」的真空状态。</p>
+ *
+ * <p>两个维度的分工：</p>
+ * <ul>
+ *   <li><b>权限点</b>（本类）：决定「能做什么」，如创建 vs 使用数字员工；</li>
+ *   <li><b>数据范围</b>（{@code sys_role.data_scope}）：决定「能看到谁的数据」，
+ *       取值 ALL / TENANT / ORG / DEPT / SELF。</li>
+ * </ul>
+ * 二者必须同时校验：有权限点才谈得上范围，有范围才不会越界。
+ *
+ * <p>{@code AuthUser.permissions} 的来源见 {@link PermissionResolver}（V36 起可由权限申请审批链路发放）；
+ * 将来接入 {@code sys_permission} 只需在 {@link #holds} 优先判断 permissions，调用方无需改动。</p>
+ */
+public final class PermissionCatalog {
+
+    /** 请假审批：与请假类数字人绑定。 */
+    public static final String APPROVAL_LEAVE = "approval:leave";
+    /** 通用对话：所有登录用户。 */
+    public static final String CHAT_BASIC = "chat:basic";
+    /** 知识库检索：所有登录用户。 */
+    public static final String KB_READ = "kb:read";
+    /** 公文起草：所有登录用户。 */
+    public static final String DOC_DRAFT = "doc:draft";
+
+    // ---- 数字员工：创建 / 使用 / 管理 三分，支撑最小权限与部门分发 ----
+    /** 使用数字员工（发起对话、提交业务申请）。所有登录用户。 */
+    public static final String WORKER_USE = "worker:use";
+    /**
+     * 创建数字员工。所有登录用户均可创建（V33 放开普通成员）。
+     *
+     * <p>放开普通成员的依据：数字员工本质是「个人 AI 助理」，要求人人都找管理员代建
+     * 既不现实也放大审批负担。风险由<b>可见范围</b>兜底，而非剥夺创建权：</p>
+     * <ul>
+     *   <li>企业管理员：受 {@code institution_id} 约束，仅本机构；</li>
+     *   <li>部门负责人：受 {@code visible_scope} 约束，新建即锁定到本部门；</li>
+     *   <li>普通成员：新建即锁定为 {@code SELF}（仅本人可见），他人列表里根本不出现。</li>
+     * </ul>
+     * <p>越权类型是另一道闸：请假审批类仍需 {@code approval:leave}，
+     * 普通成员即使能建通用助理，也建不了有审批权的数字人。</p>
+     */
+    public static final String WORKER_CREATE = "worker:create";
+    /**
+     * 修改<b>自己创建</b>的数字员工（配置、启停）。
+     *
+     * <p>与 {@link #WORKER_MANAGE} 的区别：后者管全租户/全机构的资产，前者只管自己的。
+     * 「创建者即所有者」是最小权限的常规做法——能建就能改，但不因此获得删他人资产的权力，
+     * 删除仍只认 {@link #WORKER_MANAGE}。</p>
+     */
+    public static final String WORKER_EDIT_SELF = "worker:edit:self";
+    /**
+     * 管理数字员工（修改/启停/删除）。
+     *
+     * <p>租户管理员（全租户）、企业管理员（限本机构）、部门负责人（限已分发到本部门的）。</p>
+     */
+    public static final String WORKER_MANAGE = "worker:manage";
+
+    /**
+     * 表单定义管理（docs/52 P1/P4）：配置/新建/更新「每个功能的自定义表单」。
+     *
+     * <p>表单定义是平台/租户级配置资产，与「管理数字员工」同属「管理员配置、成员使用」的边界——
+     * 普通成员只消费表单（GET /forms/{code} 与 submit 均登录即可，不校验本码）。
+     * 故授予 {@code WORKER_MANAGERS}（系统/租户/企业管理员 + 部门负责人），
+     * 与 {@link #WORKER_MANAGE} 同一口径，避免把「定义表单」这种治理动作下放给任意成员。</p>
+     */
+    public static final String FORM_MANAGE = "form:manage";
+
+    /**
+     * 数字人能力编排（docs/52 P1/P3）：给数字人声明「任务 → 表单 → 工具 → 审批」。
+     *
+     * <p>能力声明决定了「这个数字人能办什么」，并引用审批流与已注册工具，属治理动作，
+     * 同样授予 {@code WORKER_MANAGERS}（与 {@link #WORKER_MANAGE} / {@link #FORM_MANAGE} 同口径）。
+     * 注意：本码只控制「能否编排能力」；普通成员要创建带能力的数字人，仍受
+     * {@code WorkerCapabilityService#checkCapabilities} 的预检约束（表单必须存在、工具必须注册、
+     * 审批流必须存在），不会因持有本码而获得无约束的编排权。</p>
+     */
+    public static final String WORKER_CAPABILITY = "worker:capability";
+
+    /**
+     * 专家（AI 专家）的创建与配置：从全局模板导入租户副本、改参数、启停、删除。
+     *
+     * <p>此前 {@code ExpertConfigController} 只认 {@code ROLE_ADMIN || ROLE_TENANT_ADMIN}，
+     * 企业管理员无法为自己的机构引入专家。现纳入企业管理员，范围仍受其机构约束。</p>
+     */
+    public static final String EXPERT_MANAGE = "expert:manage";
+
+    // ---- Gitee 项目与代码仓库（V48）----
+    /**
+     * 查看「项目与代码仓库」。
+     *
+     * <p>全体登录用户可读，但**可见范围由部门作用域收紧**（见 {@code GiteeProjectService}）：
+     * 权限点决定「能不能进这个页面」，数据范围决定「进去能看见哪些项目」。
+     * 二者缺一不可 —— 只判权限点会让任意成员看见全租户项目。</p>
+     */
+    public static final String PROJECT_VIEW = "project:view";
+    /**
+     * 创建 / 管理项目（建仓、改配置、加成员、软删）。
+     *
+     * <p>对全体登录用户开放**创建权**，因为需求就是「不同部门用户自己建项目」；
+     * 风险由作用域兜底：普通成员只能在自己所属部门下建，且只能管理自己创建的项目
+     * （或本部门项目，若其为部门负责人）。要求「人人找管理员代建」既不现实也不可运维。</p>
+     */
+    public static final String PROJECT_MANAGE = "project:manage";
+    /**
+     * 绑定自己的 Gitee 账号。
+     *
+     * <p>必须人人可用：建仓与网页提交都以**操作者自己的 Gitee 身份**发起，
+     * 绑定是使用前置条件而非管理特权。</p>
+     */
+    public static final String GITEE_BIND = "gitee:bind";
+
+    // ---- 项目管理（PM，V71 / docs/40）----
+    /**
+     * 查看项目管理（项目列表与详情）。全体登录用户可读，**可见范围由数据范围收紧**：
+     * 平台/租户管理员看全量，企业管理员看本机构，部门负责人看其负责部门，成员看「本部门 + 我参与的项目」。
+     */
+    public static final String PM_PROJECT_VIEW = "pm:project:view";
+    /**
+     * 新建项目。
+     *
+     * <p>限四级管理者（不含普通成员）：项目是**有预算与合同**的载体，创建权过宽会让
+     * 「谁都能建一个有预算的空项目」。普通成员若确有需要，可经权限申请链路获得。</p>
+     */
+    public static final String PM_PROJECT_CREATE = "pm:project:create";
+    /**
+     * 管理项目本身（改基础信息 / 改状态 / 软删 / 绑解仓库）。
+     *
+     * <p>权限码只做**粗闸**（机构管理员及以上）；真正的判定是「项目内角色 OWNER/PM」，
+     * 由服务层按 {@code project_id} 查 {@code pm_project_member} 得出 ——
+     * 系统角色表达不了「在这个项目里是 PM、在另一个项目里只是成员」。</p>
+     */
+    public static final String PM_PROJECT_MANAGE = "pm:project:manage";
+    /** 管理项目成员与角色。粗闸全员，细判由服务层按项目内角色（OWNER/PM）收窄。 */
+    public static final String PM_MEMBER_MANAGE = "pm:member:manage";
+    /** 管理项目任务。粗闸全员，细判由服务层按项目内角色（OWNER/PM/DEV + 任务负责人）收窄。 */
+    public static final String PM_TASK_MANAGE = "pm:task:manage";
+    /** 查看项目 / 企业文档。粗闸全员（范围由数据范围与项目可见性收紧）。 */
+    public static final String PM_DOC_VIEW = "pm:doc:view";
+    /**
+     * 维护文档（建文件夹 / 上传 / 大模型创建 / 删除）。
+     *
+     * <p>粗闸为机构管理员级；项目内 OWNER/PM 走 {@code PmProjectService.canManage} 另行放行
+     * （见 {@code PmDocService.canWrite}）。企业级公共文件夹（跨项目）只有本码持有者可写 ——
+     * 它没有「项目内角色」可依托。</p>
+     */
+    public static final String PM_DOC_MANAGE = "pm:doc:manage";
+    /**
+     * 维护项目经费流水（追加式账目）。
+     *
+     * <p>粗闸机构管理员级；项目内 OWNER/PM 由服务层按项目角色另行放行。
+     * <b>本码不授予「修改」语义</b>——经费流水无 update 端点，修正只能红冲（见 docs/43 §4）。</p>
+     */
+    public static final String PM_BUDGET_MANAGE = "pm:budget:manage";
+    /** 维护合同与收付款（采购/收款）。粗闸机构管理员级，项目内 OWNER/PM 另行放行。 */
+    public static final String PM_CONTRACT_MANAGE = "pm:contract:manage";
+    /**
+     * 分配项目数字人 / 维护项目上下文来源。
+     *
+     * <p>粗闸机构管理员级；项目内 OWNER/PM 由服务层按项目角色另行放行。
+     * <b>不授予「新建数字人」语义</b>——数字人本体是既有的「数字员工」（{@code agent_worker}），
+     * 其增删改仍在「数字员工」域；本码只管「把既有数字员工挂到项目 + 配其上下文来源」。</p>
+     */
+    public static final String PM_AI_MANAGE = "pm:ai:manage";
+
+    // ---- 机构作用域系统参数（需求二 · docs/44 §2.5 B 案）----
+    /**
+     * 机构作用域参数配置：机构管理员为本机构覆盖系统参数。
+     *
+     * <p><b>作用域</b>：持有者角色集 = {@code ORG_ADMINS}（系统/租户/机构管理员）。
+     * 但数据范围由调用端点按档位双重收紧 ——</p>
+     * <ul>
+     *   <li>机构管理员（{@code ROLE_ORG_ADMIN} 且非平台/租户管理员）：{@code institution_id}
+     *       被后端从登录态钉死为本机构，请求别的机构直接 403（不静默降级）；</li>
+     *   <li>平台/租户管理员：{@code institution_id} 必须属本租户，否则 404/403。</li>
+     * </ul>
+     * <p>权限点只做粗闸；真正的越权防护在端点（{@code OrgConfigController} /
+     * {@code OrgConfigService.resolveScopeInstitution}），二者缺一不可。</p>
+     */
+    public static final String ORG_CONFIG_MANAGE = "org:config:manage";
+
+    // ---- 平台全部内置角色 ----
+    public static final String ROLE_ADMIN = "ROLE_ADMIN";
+    public static final String ROLE_USER = "ROLE_USER";
+    public static final String ROLE_TENANT_ADMIN = "ROLE_TENANT_ADMIN";
+    public static final String ROLE_ORG_ADMIN = "ROLE_ORG_ADMIN";
+    public static final String ROLE_DEPT_LEADER = "ROLE_DEPT_LEADER";
+    public static final String ROLE_MEMBER = "ROLE_MEMBER";
+
+    /** 所有登录用户。 */
+    private static final Set<String> ALL = Set.of(
+            ROLE_ADMIN, ROLE_USER, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN, ROLE_DEPT_LEADER, ROLE_MEMBER);
+    /** 租户管理员级：系统管理员 + 租户管理员。 */
+    private static final Set<String> TENANT_ADMINS = Set.of(ROLE_ADMIN, ROLE_TENANT_ADMIN);
+    /** 机构管理员级：租户管理员级 + 企业管理员。 */
+    private static final Set<String> ORG_ADMINS = Set.of(ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN);
+    /**
+     * 数字员工管理者：机构管理员级 + 部门负责人。
+     *
+     * <p>部门负责人的范围在 {@code WorkerController} 内另行收紧（只看本部门可见的员工），
+     * 不能仅凭本集合判定「能管全部」。</p>
+     */
+    private static final Set<String> WORKER_MANAGERS = Set.of(
+            ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN, ROLE_DEPT_LEADER);
+
+    /**
+     * 专家管理者：机构管理员级（不含部门负责人）。
+     *
+     * <p>专家是面向整个租户/机构的知识资产，部门负责人不参与专家治理；
+     * 其可配置的是「本部门数字员工」。</p>
+     */
+    private static final Set<String> EXPERT_MANAGERS = Set.of(
+            ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN);
+
+    /** 可新建项目者：四级管理者（不含普通成员 / 普通用户）。 */
+    private static final Set<String> PM_CREATORS = Set.of(
+            ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_ORG_ADMIN, ROLE_DEPT_LEADER);
+
+    /** 权限码 → 允许的角色。 */
+    private static final Map<String, Set<String>> GRANTS = Map.ofEntries(
+            Map.entry(CHAT_BASIC, ALL),
+            Map.entry(KB_READ, ALL),
+            Map.entry(DOC_DRAFT, ALL),
+            Map.entry(WORKER_USE, ALL),
+            Map.entry(WORKER_CREATE, ALL),
+            Map.entry(WORKER_EDIT_SELF, ALL),
+            Map.entry(WORKER_MANAGE, WORKER_MANAGERS),
+            // 表单定义 / 数字人能力编排：与「管理数字员工」同属治理动作，粗闸为管理者级（细判在服务层）
+            Map.entry(FORM_MANAGE, WORKER_MANAGERS),
+            Map.entry(WORKER_CAPABILITY, WORKER_MANAGERS),
+            Map.entry(EXPERT_MANAGE, EXPERT_MANAGERS),
+            Map.entry(APPROVAL_LEAVE, TENANT_ADMINS),
+            // Gitee 项目与代码仓库：查看/管理/绑定对全体登录用户开放，范围由部门作用域收紧
+            Map.entry(PROJECT_VIEW, ALL),
+            Map.entry(PROJECT_MANAGE, ALL),
+            Map.entry(GITEE_BIND, ALL),
+            // 项目管理（PM）：查看/成员/任务对全员开放（范围与项目内角色在服务层收紧）；
+            // 新建限四级管理者；「管理项目本身」的粗闸为机构管理员级（细判为项目内 OWNER/PM）
+            Map.entry(PM_PROJECT_VIEW, ALL),
+            Map.entry(PM_PROJECT_CREATE, PM_CREATORS),
+            Map.entry(PM_PROJECT_MANAGE, ORG_ADMINS),
+            Map.entry(PM_MEMBER_MANAGE, ALL),
+            Map.entry(PM_TASK_MANAGE, ALL),
+            Map.entry(PM_DOC_VIEW, ALL),
+            // 文档维护：粗闸机构管理员级（企业文档管理员口径）；项目内 OWNER/PM 由服务层另行放行
+            Map.entry(PM_DOC_MANAGE, ORG_ADMINS),
+            // 经费 / 合同：粗闸机构管理员级；项目内 OWNER/PM 由服务层另行放行
+            Map.entry(PM_BUDGET_MANAGE, ORG_ADMINS),
+            Map.entry(PM_CONTRACT_MANAGE, ORG_ADMINS),
+            Map.entry(PM_AI_MANAGE, ORG_ADMINS),
+            // 机构作用域参数（需求二 B 案）：机构管理员可覆盖本机构参数，平台/租户管理员可配本租户任意机构
+            Map.entry(ORG_CONFIG_MANAGE, ORG_ADMINS));
+
+    /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
+    private static final Map<String, String> ROLE_NAMES = Map.of(
+            ROLE_ADMIN, "系统管理员",
+            ROLE_TENANT_ADMIN, "租户管理员",
+            ROLE_ORG_ADMIN, "企业管理员",
+            ROLE_DEPT_LEADER, "部门负责人",
+            ROLE_MEMBER, "机构成员",
+            ROLE_USER, "普通用户");
+
+    private PermissionCatalog() {
+    }
+
+    /** 权限码 → 中文名（用于申请单与目录展示，避免把英文码裸露给用户）。 */
+    private static final Map<String, String> PERMISSION_NAMES = Map.ofEntries(
+            Map.entry(CHAT_BASIC, "通用对话"),
+            Map.entry(KB_READ, "知识库检索"),
+            Map.entry(DOC_DRAFT, "公文起草"),
+            Map.entry(WORKER_USE, "使用数字员工"),
+            Map.entry(WORKER_CREATE, "创建数字员工"),
+            Map.entry(WORKER_EDIT_SELF, "修改自己的数字员工"),
+            Map.entry(WORKER_MANAGE, "管理数字员工"),
+            Map.entry(FORM_MANAGE, "表单定义管理"),
+            Map.entry(WORKER_CAPABILITY, "数字人能力编排"),
+            Map.entry(EXPERT_MANAGE, "专家管理"),
+            Map.entry(APPROVAL_LEAVE, "请假审批"),
+            Map.entry(PROJECT_VIEW, "项目与代码仓库（查看）"),
+            Map.entry(PROJECT_MANAGE, "项目与代码仓库（管理）"),
+            Map.entry(GITEE_BIND, "Gitee 账号绑定"),
+            Map.entry(PM_PROJECT_VIEW, "项目管理（查看）"),
+            Map.entry(PM_PROJECT_CREATE, "项目管理（新建项目）"),
+            Map.entry(PM_PROJECT_MANAGE, "项目管理（管理项目）"),
+            Map.entry(PM_MEMBER_MANAGE, "项目管理（成员与角色）"),
+            Map.entry(PM_TASK_MANAGE, "项目管理（任务）"),
+            Map.entry(PM_DOC_VIEW, "项目管理（文档查看）"),
+            Map.entry(PM_DOC_MANAGE, "项目管理（文档维护）"),
+            Map.entry(PM_BUDGET_MANAGE, "项目管理（经费流水维护）"),
+            Map.entry(PM_CONTRACT_MANAGE, "项目管理（合同与收付款）"),
+            Map.entry(PM_AI_MANAGE, "项目管理（数字人与上下文）"),
+            Map.entry(ORG_CONFIG_MANAGE, "机构参数配置"));
+
+    /**
+     * 权限码 → 对应数字员工类型（申请单「目的」展示用）。
+     *
+     * <p>只有真正对应某类越权数字员工的权限码才在此登记，其余返回 null。
+     * 用 {@code Map.of} 不能存 null，故只登记有映射的项。</p>
+     */
+    private static final Map<String, String> WORKER_TYPE_OF = Map.of(
+            APPROVAL_LEAVE, "LEAVE_APPROVER");
+
+    /** 权限码中文名；未知返回权限码本身。 */
+    public static String nameOf(String permission) {
+        if (permission == null) {
+            return null;
+        }
+        return PERMISSION_NAMES.getOrDefault(permission, permission);
+    }
+
+    /** 权限码对应的数字员工类型；无映射返回 null。 */
+    public static String workerTypeOf(String permission) {
+        return permission == null ? null : WORKER_TYPE_OF.get(permission);
+    }
+
+    /**
+     * 可申请权限码清单。
+     *
+     * <p>排除 {@code ALL} 类权限（全体登录用户天然持有，申请无意义），
+     * 只保留需要审批发放的「稀缺权限」。排序固定，便于前端稳定渲染。</p>
+     */
+    public static List<String> applicablePermissions() {
+        return GRANTS.entrySet().stream()
+                .filter(e -> !ALL.equals(e.getValue()))
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    /** 该权限码是否可申请（既存在定义、又非全员持有）。 */
+    public static boolean applicable(String permission) {
+        return permission != null && GRANTS.containsKey(permission)
+                && !ALL.equals(GRANTS.get(permission));
+    }
+
+    /** 权限码 → 允许的角色集合；未知权限码返回空集合（默认拒绝）。 */
+    public static Set<String> rolesOf(String permission) {
+        return GRANTS.getOrDefault(permission, Set.of());
+    }
+
+    /** 允许角色的中文描述，如「系统管理员、租户管理员」。 */
+    public static String rolesText(String permission) {
+        List<String> names = rolesOf(permission).stream()
+                .map(r -> ROLE_NAMES.getOrDefault(r, r))
+                .sorted()
+                .toList();
+        return names.isEmpty() ? "（无）" : String.join("、", names);
+    }
+
+    /** 当前用户是否持有该权限：先看细粒度 permissions，再按角色判定。 */
+    public static boolean holds(AuthUser user, String permission) {
+        if (user == null) {
+            return false;
+        }
+        if (permission == null || permission.isBlank()) {
+            return true;
+        }
+        if (user.getPermissions() != null && user.getPermissions().contains(permission)) {
+            return true;
+        }
+        return holdsByRole(user, permission);
+    }
+
+    /**
+     * 仅按<b>角色</b>判定是否持有该权限（不含细粒度授权）。
+     *
+     * <p>为什么要单独一个方法：{@link #holds} 是「角色 ∪ 授权」的并集，无法回答
+     * 「这个权限到底是怎么来的」。权限来源对用户是有意义的信息 ——
+     * 角色内置的权限收回需要改角色，而申请来的授权可以自己回收，
+     * 前端必须区分展示，否则会把「可回收」误显示成「不可变」。</p>
+     */
+    public static boolean holdsByRole(AuthUser user, String permission) {
+        if (user == null || permission == null || permission.isBlank()) {
+            return false;
+        }
+        Set<String> allowed = rolesOf(permission);
+        if (allowed.isEmpty()) {
+            return false;
+        }
+        return user.getRoles() != null && user.getRoles().stream().anyMatch(allowed::contains);
+    }
+
+    /**
+     * 是否为租户管理员（含系统管理员）。数字员工的管理类操作以此为判定。
+     *
+     * <p>此前仅认 {@code ROLE_ADMIN}，导致租户管理员调用 {@code /api/v1/workers} 创建时
+     * 收到 403，且提示语自相矛盾（提示「仅租户管理员可执行」却把租户管理员拒之门外）。</p>
+     */
+    public static boolean isAdmin(AuthUser user) {
+        return holdsAny(user, TENANT_ADMINS);
+    }
+
+    /** 是否为平台（系统）管理员：仅 {@code ROLE_ADMIN}，用于跨租户与平台级操作。 */
+    public static boolean isPlatformAdmin(AuthUser user) {
+        return holdsAny(user, Set.of(ROLE_ADMIN));
+    }
+
+    /** 是否具备机构管理员及以上身份。 */
+    public static boolean isOrgAdmin(AuthUser user) {
+        return holdsAny(user, ORG_ADMINS);
+    }
+
+    /** 是否具备「部门负责人」身份且不高于该层级（即范围必须收紧到本部门）。 */
+    public static boolean isDeptLeaderOnly(AuthUser user) {
+        return hasRole(user, ROLE_DEPT_LEADER) && !holdsAny(user, ORG_ADMINS);
+    }
+
+    /**
+     * 是否为「数字员工管理者」（系统管理员 / 租户管理员 / 企业管理员 / 部门负责人）。
+     *
+     * <p>用于区分两类创建者：管理者创建的资产面向团队（{@code TENANT}/{@code ORG}/{@code DEPT} 可见），
+     * 普通成员创建的只能本人可见（{@code SELF}）。</p>
+     */
+    public static boolean isWorkerManager(AuthUser user) {
+        return holdsAny(user, WORKER_MANAGERS);
+    }
+
+    /**
+     * 是否为该数字员工的创建者（{@code created_by} 匹配）。
+     *
+     * <p>创建者拥有「改自己的」权力，但不因此管到别人的资产；
+     * 两侧都为 null 时返回 false（宁可拒绝，不可放行）。</p>
+     */
+    public static boolean isCreator(AuthUser user, Long createdBy) {
+        return user != null && user.getUserId() != null && createdBy != null
+                && user.getUserId().equals(createdBy);
+    }
+
+    /** 当前用户是否持有某角色码。 */
+    public static boolean hasRole(AuthUser user, String role) {
+        return user != null && user.getRoles() != null && user.getRoles().contains(role);
+    }
+
+    private static boolean holdsAny(AuthUser user, Set<String> roles) {
+        return user != null && user.getRoles() != null && user.getRoles().stream().anyMatch(roles::contains);
+    }
+}

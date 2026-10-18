@@ -1,13 +1,13 @@
-# AIOA Python agent 服务
+# AIOS Python agent 服务
 FROM python:3.13-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml ./
-# ★ 必须同时拷 aioa_ai：AI 能力（图/工具/提示词/检索）全在 aioa_ai，app/ 只是 HTTP 接入层。
-#   只拷 app 时容器内 `from aioa_ai import entry` 直接 ModuleNotFoundError，agent 起不来。
-#   pyproject 的 packages.find 也已改成 ["app*", "aioa_ai*"]，两处是双保险：
+# ★ 必须同时拷 aios_ai：AI 能力（图/工具/提示词/检索）全在 aios_ai，app/ 只是 HTTP 接入层。
+#   只拷 app 时容器内 `from aios_ai import entry` 直接 ModuleNotFoundError，agent 起不来。
+#   pyproject 的 packages.find 也已改成 ["app*", "aios_ai*"]，两处是双保险：
 #   pip 装进 site-packages 一份，cwd(/app) 下再放一份，任一条路径失效都不至于起不来。
-COPY aioa_ai ./aioa_ai
+COPY aios_ai ./aios_ai
 COPY app ./app
 # ★ 构建期依赖源**必须可覆盖**：国内服务器直连 pypi.org 常超时，运维会手改这一行换成
 #   镜像源 —— 但手改会让工作区永远有未提交改动，于是**每次 git pull 都被挡住**

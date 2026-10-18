@@ -395,9 +395,9 @@ def read(p):
 
 async def task5(page):
     print('\n=== 任务 5：三层线格式一致性（静态）===')
-    ask = read(os.path.join(REPO, 'agent', 'aioa_ai', 'tools', 'ask_user.py'))
-    facade = read(os.path.join(REPO, 'agent', 'aioa_ai', 'graph', 'facade.py'))
-    run_svc = read(os.path.join(REPO, 'server', 'aioa-chat', 'src', 'main', 'java', 'cn', 'aioa', 'chat', 'service', 'RunService.java'))
+    ask = read(os.path.join(REPO, 'agent', 'aios_ai', 'tools', 'ask_user.py'))
+    facade = read(os.path.join(REPO, 'agent', 'aios_ai', 'graph', 'facade.py'))
+    run_svc = read(os.path.join(REPO, 'server', 'aios-chat', 'src', 'main', 'java', 'cn', 'aios', 'chat', 'service', 'RunService.java'))
     backup = read(os.path.join(REPO, 'user-client', '_backup_index_pre_oa.html'))
 
     # agent：build_clarification 产出 question + suggested_options，每项 value + label

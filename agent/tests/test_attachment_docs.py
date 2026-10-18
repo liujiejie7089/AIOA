@@ -81,9 +81,9 @@ def test_attachment_doc_injection_is_neutralized():
     ]
 
     spy = MagicMock(wraps=agent_runtime._neutralize_injection)
-    # 补丁必须打在该名字的**查找处**：build_messages 现在住在 aioa_ai.prompt.builder，
+    # 补丁必须打在该名字的**查找处**：build_messages 现在住在 aios_ai.prompt.builder，
     # 其内部引用的是本模块自己的全局名，补 app.* 垫片上的同名别名不会生效（别名只是再导出）。
-    with patch("aioa_ai.prompt.builder._neutralize_injection", spy):
+    with patch("aios_ai.prompt.builder._neutralize_injection", spy):
         messages = agent_runtime._build_messages(req)
 
     # a) 既有防线被调用，且是以该文档正文作为参数

@@ -52,8 +52,8 @@ logs/
 # ---- Docs temp ----
 *.tmp
 
-# ---- AIOA 本地临时产物 / 密钥（一律不入库）----
-.aioa_login.json
+# ---- AIOS 本地临时产物 / 密钥（一律不入库）----
+.aios_login.json
 .diag.txt
 .docx_extract/
 .workbuddy/_check.js
@@ -89,7 +89,7 @@ start-backend.bat
 .proxy.pid
 .backend.pid
 .smoke_*.py
-.aioa_check.js
+.aios_check.js
 proxy-run*.log
 
 # ---- 演示数据备份文件 ----

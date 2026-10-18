@@ -2,19 +2,19 @@
 # 向量库 Milvus 单机栈（可选；对应 deploy/docker-compose.yml 的 profile=milvus）
 #
 # 三个组件 + 三个 PVC，与 compose 版**同镜像 tag、同服务名、同环境变量**，
-# 因此 server 侧切换只需把 AIOA_KB_STORE 从 mysql 改成 milvus，其余键一字不改：
+# 因此 server 侧切换只需把 AIOS_KB_STORE 从 mysql 改成 milvus，其余键一字不改：
 #   etcd         元数据（Milvus 用它存集合/分区/索引元数据）
 #   milvus-minio 段文件对象存储（与业务 MinIO 分开，避免 access key 口径与桶混用）
 #   milvus       standalone（19530=gRPC 端口；9091=healthz/metrics + 自带 WebUI）
 #
 # ⚠️ 切换前必读（与 docs/32 口径一致）：
-#   1. server 侧 AIOA_KB_STORE=milvus 时 **Milvus 必须在线**，否则应用直接启动失败
+#   1. server 侧 AIOS_KB_STORE=milvus 时 **Milvus 必须在线**，否则应用直接启动失败
 #      （决策 D6 fail-fast：宁可起不来，也不要静默返回空结果）。
-#   2. 集合维度**创建后不可改**：换嵌入模型（AIOA_KB_EMBEDDING_MODEL）或改
-#      AIOA_KB_EMBEDDING_DIMS / AIOA_MILVUS_DIMS 时，必须同时换集合名（如 kb_chunk_v2）再回填。
+#   2. 集合维度**创建后不可改**：换嵌入模型（AIOS_KB_EMBEDDING_MODEL）或改
+#      AIOS_KB_EMBEDDING_DIMS / AIOS_MILVUS_DIMS 时，必须同时换集合名（如 kb_chunk_v2）再回填。
 #   3. 三个 PVC 都是**可丢的**：索引任何时刻可从 MySQL kb_chunk 重建
-#      （一次性开 AIOA_MILVUS_BACKFILL=true）。
-#   4. 首次切换前先补齐切片向量（AIOA_KB_REEMBED_ON_START=true 跑一次），否则表现为
+#      （一次性开 AIOS_MILVUS_BACKFILL=true）。
+#   4. 首次切换前先补齐切片向量（AIOS_KB_REEMBED_ON_START=true 跑一次），否则表现为
 #      「切过去了但搜不到」——存量切片里只有一部分有向量。
 #   5. 本清单与同目录其余清单**一并未经真机集群验证**（见 README 顶部）：
 #      storageClassName、资源配额、镜像仓库地址需按目标集群调整。
@@ -23,7 +23,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: etcd-data
-  namespace: aioa
+  namespace: aios
 spec:
   accessModes: [ReadWriteOnce]
   # storageClassName: <按目标集群填>    # 不填即用集群默认 StorageClass
@@ -35,10 +35,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: etcd
-  namespace: aioa
+  namespace: aios
   labels:
     app: etcd
-    app.kubernetes.io/part-of: aioa
+    app.kubernetes.io/part-of: aios
 spec:
   replicas: 1
   strategy:
@@ -103,7 +103,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: etcd
-  namespace: aioa
+  namespace: aios
 spec:
   selector:
     app: etcd
@@ -117,7 +117,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: milvus-minio-data
-  namespace: aioa
+  namespace: aios
 spec:
   accessModes: [ReadWriteOnce]
   # storageClassName: <按目标集群填>
@@ -129,10 +129,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: milvus-minio
-  namespace: aioa
+  namespace: aios
   labels:
     app: milvus-minio
-    app.kubernetes.io/part-of: aioa
+    app.kubernetes.io/part-of: aios
 spec:
   replicas: 1
   strategy:
@@ -185,7 +185,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: milvus-minio
-  namespace: aioa
+  namespace: aios
 spec:
   selector:
     app: milvus-minio
@@ -199,7 +199,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: milvus-data
-  namespace: aioa
+  namespace: aios
 spec:
   accessModes: [ReadWriteOnce]
   # storageClassName: <按目标集群填>
@@ -211,10 +211,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: milvus
-  namespace: aioa
+  namespace: aios
   labels:
     app: milvus
-    app.kubernetes.io/part-of: aioa
+    app.kubernetes.io/part-of: aios
 spec:
   replicas: 1
   strategy:
@@ -250,7 +250,7 @@ spec:
               value: "Asia/Shanghai"
           ports:
             - name: grpc
-              containerPort: 19530      # server 侧 AIOA_MILVUS_URI=http://milvus:19530
+              containerPort: 19530      # server 侧 AIOS_MILVUS_URI=http://milvus:19530
             - name: http
               containerPort: 9091       # healthz / metrics / WebUI
           # 首次启动要建集合与加载，给足冷启动时间；否则会被反复重启
@@ -281,7 +281,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: milvus
-  namespace: aioa
+  namespace: aios
 spec:
   selector:
     app: milvus

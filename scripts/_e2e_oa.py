@@ -188,12 +188,12 @@ async def main():
 
         # ---------------- A. 默认形态 + 经典形态回归 ----------------
         # A0 全新访客默认进入新版（本轮口径翻转：原为「默认经典」）。
-        #    判据必须是「默认」本身，故先确认本上下文没有 aioa_mode 记忆 ——
+        #    判据必须是「默认」本身，故先确认本上下文没有 aios_mode 记忆 ——
         #    否则测到的是「记忆」而不是「默认」，换个浏览器就是另一个结果。
         fresh = await page.evaluate("""() => ({
           om: document.querySelector('.phone').classList.contains('oa-mode'),
           mode: state.mode,
-          ls: localStorage.getItem('aioa_mode'),
+          ls: localStorage.getItem('aios_mode'),
           oaTabbar: getComputedStyle(document.getElementById('oaTabs')).display,
           classicPages: getComputedStyle(document.querySelector('.pages')).display
         })""")
@@ -211,7 +211,7 @@ async def main():
         sw = await page.evaluate("""() => ({
           om: document.querySelector('.phone').classList.contains('oa-mode'),
           mode: state.mode,
-          ls: localStorage.getItem('aioa_mode'),
+          ls: localStorage.getItem('aios_mode'),
           classicTabbar: getComputedStyle(document.querySelector('.phone > .tabbar')).display,
           oaRoot: getComputedStyle(document.getElementById('oaRoot')).display })""")
         chk('A1 新版「我的」按钮切到经典形态（并写入记忆）',
@@ -273,7 +273,7 @@ async def main():
         st = await page.evaluate("""() => ({
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
           mode: state.mode,
-          ls: localStorage.getItem('aioa_mode'),
+          ls: localStorage.getItem('aios_mode'),
           /* #oaTabs 自身的 computed display 恒为 flex —— oa-mode 之外是由祖先
              .oa 整体 display:none 收起的。所以「可见」只能问 .oa 容器本身，
              问 #oaTabs 得到的是恒真值（原 B2 就是这样一条假断言）。 */
@@ -284,7 +284,7 @@ async def main():
         chk('B1 切到 OA：.phone.oa-mode 生效', st['oa'] is True, st)
         chk('B2 OA 外壳可见、经典底部菜单隐藏', st['oaRoot'] != 'none' and st['classicTabbar'] == 'none', st)
         chk('B3 经典页面层隐藏', st['pages'] == 'none', st)
-        chk('B4 模式写入本地记忆', st['ls'] == 'oa', 'aioa_mode=%s' % st['ls'])
+        chk('B4 模式写入本地记忆', st['ls'] == 'oa', 'aios_mode=%s' % st['ls'])
         await shot(page, '02-oa-home')
 
         # 显式回到 OA 首页：本轮是从新版「我的」切出去再切回来的，S.view 还停在 me。
@@ -525,7 +525,7 @@ async def main():
           const before = document.getElementById('oac-' + b.dataset.reveal).textContent;
           b.click();
           const after = document.getElementById('oac-' + b.dataset.reveal).textContent;
-          return {n:1, before: before, after: after, stored: localStorage.getItem('aioa_contacts')};
+          return {n:1, before: before, after: after, stored: localStorage.getItem('aios_contacts')};
         }""")
         if rev['n']:
             chk('C5 联系方式默认隐藏、点击才展开',
@@ -704,7 +704,7 @@ async def main():
               return {
                 view: window.oaState.view,
                 oa: document.querySelector('.phone').classList.contains('oa-mode'),
-                mode: localStorage.getItem('aioa_mode'),
+                mode: localStorage.getItem('aios_mode'),
                 rendered: !!el && el.innerHTML.trim().length > 0,
                 title: document.getElementById('oaTitle').textContent.trim()
               };
@@ -720,7 +720,7 @@ async def main():
         await page.wait_for_timeout(600)
         round = await page.evaluate("""() => ({
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
-          mode: localStorage.getItem('aioa_mode'),
+          mode: localStorage.getItem('aios_mode'),
           view: window.oaState.view })""")
         chk('C9f 四页往返后仍在新版（未被弹回经典）',
             round['oa'] is True and round['mode'] == 'oa' and round['view'] == 'me', round)
@@ -740,7 +740,7 @@ async def main():
         await page.wait_for_timeout(2600)
         after = await page.evaluate("""() => ({
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
-          mode: localStorage.getItem('aioa_mode'),
+          mode: localStorage.getItem('aios_mode'),
           auth: document.body.classList.contains('auth') })""")
         chk('B6 刷新后记忆生效（保持经典）', after['mode'] == 'classic' and after['oa'] is False and after['auth'], after)
         # 再切到 OA 后刷新，验证反向记忆
@@ -752,7 +752,7 @@ async def main():
         await page.wait_for_timeout(2800)
         after2 = await page.evaluate("""() => ({
           oa: document.querySelector('.phone').classList.contains('oa-mode'),
-          mode: localStorage.getItem('aioa_mode') })""")
+          mode: localStorage.getItem('aios_mode') })""")
         chk('B7 刷新后保持 OA 形态', after2['oa'] is True and after2['mode'] == 'oa', after2)
         await no_overflow(page, 'OA·刷新后')
         await shot(page, '14-oa-after-reload')

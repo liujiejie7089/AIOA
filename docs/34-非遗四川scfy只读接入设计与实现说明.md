@@ -1,6 +1,6 @@
 # 34 · 非遗四川 2023（scfy）只读接入设计与实现说明
 
-> 对象：`server/aioa-integration-scfy`（独立模块，3406 行，含测试）。
+> 对象：`server/aios-integration-scfy`（独立模块，3406 行，含测试）。
 > 状态：**查询能力已完成并在生产全量实测通过**（55 个查询工具，54 个返回数据、1 个实测恒空）。
 > 写操作（增删改）本阶段一律不做；需登录接口等后台测试服务提供账号后再评估。
 
@@ -34,7 +34,7 @@
 | 加解密 | JDK `javax.crypto`（AES/ECB/PKCS5Padding） | 仅用于登录密码，见 §3.3 |
 | 测试 | JUnit 5 + `spring-boot-starter-test` | 离线单测 + 可选的真实出网矩阵 |
 
-依赖方向：`aioa-integration-scfy → aioa-tool-sdk + aioa-common`。**不反向依赖基座业务模块。**
+依赖方向：`aios-integration-scfy → aios-tool-sdk + aios-common`。**不反向依赖基座业务模块。**
 
 ---
 
@@ -81,7 +81,7 @@
 ## 4. 模块划分
 
 ```
-server/aioa-integration-scfy/
+server/aios-integration-scfy/
 ├── ScfyIntegrationProperties.java   配置（开关 / 地址 / 超时 / 重试 / 登录）
 ├── ScfyAutoConfiguration.java        装配 + 启动自检（契约覆盖核对）
 ├── contract/                         契约层：唯一事实源
@@ -99,7 +99,7 @@ server/aioa-integration-scfy/
 └── tools/                            工具层：模型看到的能力
     ├── ScfyToolSupport.java  (175)   统一执行路径：查契约→校验→调用→裁剪→组装结果
     ├── ScfyArgs.java                 入参装配（丢弃 null：空值 ≠ 不筛选）
-    └── Scfy*Tools.java ×5    (774)   9+8+13+11+14 = 55 个 @AioaTool
+    └── Scfy*Tools.java ×5    (774)   9+8+13+11+14 = 55 个 @AiosTool
 ```
 
 各层职责边界与「为什么这样切」：
@@ -122,13 +122,13 @@ server/aioa-integration-scfy/
 ```java
 @Configuration
 @EnableConfigurationProperties(ScfyIntegrationProperties.class)
-@ConditionalOnProperty(prefix = "aioa.integration.scfy", name = "enabled", havingValue = "true")
+@ConditionalOnProperty(prefix = "aios.integration.scfy", name = "enabled", havingValue = "true")
 public class ScfyAutoConfiguration { ... }
 ```
 
 ```yaml
-aioa.integration.scfy:
-  enabled: ${AIOA_SCFY_ENABLED:false}     # 默认关
+aios.integration.scfy:
+  enabled: ${AIOS_SCFY_ENABLED:false}     # 默认关
 ```
 
 | 状态 | 后果 |
@@ -136,11 +136,11 @@ aioa.integration.scfy:
 | `enabled=false`（默认） | 不建任何 Bean、不注册任何工具、不出现在模型能力清单里、不产生任何连接。等价于这段代码不存在 |
 | `enabled=true` | 注册 55 个工具 + 启动自检 |
 
-每个 `@AioaTool` 方法上也带同样的 `@ConditionalOnProperty`，防止有人只加了装配类。
+每个 `@AiosTool` 方法上也带同样的 `@ConditionalOnProperty`，防止有人只加了装配类。
 
 ### 5.2 启动自检：把「两份文本必然漂移」变成启动即失败
 
-`@AioaTool(code=...)` 是编译期注解，**无法引用运行时的 `ScfyCatalog`** —— 所以「接口清单」和「工具声明」必然存在两份文本。设计上不消除重复，而是**让不一致立刻暴露**：
+`@AiosTool(code=...)` 是编译期注解，**无法引用运行时的 `ScfyCatalog`** —— 所以「接口清单」和「工具声明」必然存在两份文本。设计上不消除重复，而是**让不一致立刻暴露**：
 
 - `ScfyCatalogConsistencyChecker`（启动时反射扫描所有 `scfy_*` 工具）：
   - 工具指向了不存在的接口 / 已废弃接口 → **抛异常，启动失败**；
@@ -160,12 +160,12 @@ aioa.integration.scfy:
 工具用基座 SDK 声明，`inputSchema` 由注解自动推导，**不手写 JSON Schema**：
 
 ```java
-@AioaTool(code = "scfy_shop_detail", name = "非遗工坊-详情",
+@AiosTool(code = "scfy_shop_detail", name = "非遗工坊-详情",
         description = "查询单个工坊/店铺详情。参数名是 id，不是文档里的 shopId。",
         domain = "scfy", riskLevel = "LOW", owner = "integration")
 public Map<String, Object> detail(
-        @AioaToolParam(name = "cityName", description = "市州简称（如 成都市，不能用全称）", required = true) String cityName,
-        @AioaToolParam(name = "id", description = "工坊 id，取自 scfy_shop_table 的 list[].id", required = true) String id) {
+        @AiosToolParam(name = "cityName", description = "市州简称（如 成都市，不能用全称）", required = true) String cityName,
+        @AiosToolParam(name = "id", description = "工坊 id，取自 scfy_shop_table 的 list[].id", required = true) String id) {
     return support.call("shop_detail", ScfyArgs.of("cityName", cityName, "id", id));
 }
 ```
@@ -247,8 +247,8 @@ public Map<String, Object> detail(
 
 | 层次 | 命令 | 结果 |
 |---|---|---|
-| 离线单测 | `cd server && ./mvnw -pl aioa-integration-scfy -am test` | 契约 4/4 + 校验器 8/8 = **12/12 通过** |
-| 端到端矩阵（真实出网） | `./mvnw -pl aioa-integration-scfy -am test -Dtest=ScfyMatrixTest -Dsurefire.failIfNoSpecifiedTests=false -Dscfy.matrix=true` | **55/55 全部覆盖：54 有数据、1 空集（`eco_nmch_base`，实测该前缀恒空并已在工具描述里注明）、0 失败** |
+| 离线单测 | `cd server && ./mvnw -pl aios-integration-scfy -am test` | 契约 4/4 + 校验器 8/8 = **12/12 通过** |
+| 端到端矩阵（真实出网） | `./mvnw -pl aios-integration-scfy -am test -Dtest=ScfyMatrixTest -Dsurefire.failIfNoSpecifiedTests=false -Dscfy.matrix=true` | **55/55 全部覆盖：54 有数据、1 空集（`eco_nmch_base`，实测该前缀恒空并已在工具描述里注明）、0 失败** |
 | 打本地测试服务 | 上条命令追加 `-Dscfy.baseUrl=http://127.0.0.1:16060/scfy` | 待其数据源恢复后复跑 |
 
 矩阵的两条纪律：
@@ -259,7 +259,7 @@ public Map<String, Object> detail(
 
 ## 8. 未闭环项
 
-1. **管理端配置页**：按项目铁律「管理端配置页 = 能力的唯一入口」，引擎支持但配不出来 = 能力事实上不可用。目前开关只在 `application.yml` / `AIOA_SCFY_ENABLED`，**尚未在有管理端配置页暴露**。
+1. **管理端配置页**：按项目铁律「管理端配置页 = 能力的唯一入口」，引擎支持但配不出来 = 能力事实上不可用。目前开关只在 `application.yml` / `AIOS_SCFY_ENABLED`，**尚未在有管理端配置页暴露**。
 2. **需登录接口（后台 CRUD / 小程序）**：当前阶段业务约束是只读，且 `/show/*` 已覆盖查询需求，故未接入。待后台测试服务可用并提供账号后评估。
 3. **测试环境数据源**：`http://127.0.0.1:16060/scfy` 服务在跑但连不上库（§6.4），修复前无法用测试环境复跑矩阵。
 4. **反馈对方**：`/show/data/*` 的 `relation "t_shop" does not exist` 是其生产库缺表/schema 不一致，我们改不了，需对方修。

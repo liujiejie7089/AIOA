@@ -7,7 +7,7 @@
 `git ls-remote` 与 `push` 均需 escalation 放行（工具会自动提示并 bypass），不影响结果。
 
 ## 远端（两个，别混）—— 历史形态
-- `origin` = 内网 Gitea `172.16.8.249:3000/liujiejie/AIOA_System.git`：**HTTP 层沙箱可达**；公共接口免认证可读（`/api/v1/version` → 1.26.2），但**仓库/组织/用户级全需令牌**，push-to-create 关闭(403)。契约以实例自述规范为准：`GET /swagger.v1.json`（已存 `logs/gitea-swagger-1.26.2.json`，gitignored）。
+- `origin` = 内网 Gitea `172.16.8.249:3000/liujiejie/AIOS_System.git`：**HTTP 层沙箱可达**；公共接口免认证可读（`/api/v1/version` → 1.26.2），但**仓库/组织/用户级全需令牌**，push-to-create 关闭(403)。契约以实例自述规范为准：`GET /swagger.v1.json`（已存 `logs/gitea-swagger-1.26.2.json`，gitignored）。
   - ⚠️ **2026-09-20 实测该机不可达**：`git ls-remote origin` 回 `502 / upstream connect failed: connection timed out`。
   - 与本地**已分叉**：`origin/main = 179547e「删除目录 .workbuddy」`，合并基 `42e2aa2`；本地 `main` 相对 origin **ahead 78 / behind 1** ⇒ 对 origin 的推送**不是快进**，需先 merge 或 rebase。
 - `github` = `github.com/liujiejie7089/AIOA.git`。HTTPS 默认不可用（schannel 证书吊销检查失败 `CRYPT_E_NO_REVOCATION_CHECK 0x80092012`；`-c http.schannelCheckRevoke=false` 同样失败；换 `-c http.sslBackend=openssl` 报 `unable to get local issuer certificate`）。

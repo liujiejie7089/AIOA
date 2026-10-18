@@ -44,10 +44,10 @@ API = "http://127.0.0.1:8080/api/v1"
 TENANT = "某某市某某区大数据管理局"
 USER, PWD = "dsj_admin", "User@123"
 HERE = os.path.dirname(os.path.abspath(__file__))
-MIG_DIR = os.path.join(HERE, "..", "server", "aioa-boot", "src", "main", "resources", "db", "migration")
+MIG_DIR = os.path.join(HERE, "..", "server", "aios-boot", "src", "main", "resources", "db", "migration")
 V78 = os.path.join(MIG_DIR, "V78__sys_config_template_backfill.sql")
 DB = dict(host="127.0.0.1", port=3306, user="root", password="",
-          database="aioa", charset="utf8mb4")
+          database="aios", charset="utf8mb4")
 
 C = httpx.Client(timeout=60, trust_env=False)
 RES = []

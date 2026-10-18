@@ -27,8 +27,8 @@ import time
 from fastapi.testclient import TestClient
 
 from app.main import app
-from aioa_ai.config import settings
-from aioa_ai.security.service_jwt import DEV_SECRET, issue
+from aios_ai.config import settings
+from aios_ai.security.service_jwt import DEV_SECRET, issue
 from tests._svc import svc_headers
 
 client = TestClient(app)

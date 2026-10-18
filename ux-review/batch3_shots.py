@@ -16,7 +16,7 @@ def login(u_, p_):
 
 
 def sess(t, usr):
-    return "try{localStorage.setItem('aioa_session', %s);}catch(e){}" % json.dumps(
+    return "try{localStorage.setItem('aios_session', %s);}catch(e){}" % json.dumps(
         json.dumps({"token": t, "user": usr}))
 
 

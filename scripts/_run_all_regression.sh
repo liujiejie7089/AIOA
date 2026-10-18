@@ -38,7 +38,7 @@ SUITES=(
   # 2026-10-11 除名 5 个「指向已删文件的幽灵条目」：SMOKE_v48 / check_org_structure_render /
   # h5_v33_render / admin_v39_todo_badge / admin_v34_review_render。
   # 它们已在 2026-09-20 的 `f370fdd chore(repo): 仓库清理` 里作为「一次性诊断/渲染校验脚本」删除
-  # （备份仍在项目外 aioa-cleanup-backup-20260920/scripts/），但**当时没同步改本清单**
+  # （备份仍在项目外 aios-cleanup-backup-20260920/scripts/），但**当时没同步改本清单**
   # ⇒ 此后每次矩阵都为这 5 条凭空产出 exit=2「can't open file」，把 28 条非零里的 5 条弄成纯噪声。
   # 且它们依赖早已移除的 tenant 9 与 :5173 管理端 shell ⇒ 即便还原也只会再加 5 条假红。
   # 已加下方 preflight：以后「清单里有、磁盘上没有」一律**跑前大声报错并 exit 2**，不再静默制造失败。
@@ -75,7 +75,7 @@ SUITES=(
   _check_voice_gesture.py
   # 部署面：application.yml 引用的环境变量必须被 compose 透传（否则在 .env 里改它是空转）
   _check_compose_env_wiring.py
-  # 可执行产物：aioa-boot 的 jar 必须是胖 jar（含 BOOT-INF/lib）。
+  # 可执行产物：aios-boot 的 jar 必须是胖 jar（含 BOOT-INF/lib）。
   # 2026-10-11 实际踩到：构建用了 repackage.skip 后留下 170KB 瘦 jar，
   # 正在运行的实例随即 NoClassDefFoundError（/runs、/admin/org-configs 一律 500），
   # 而 mvn test 全绿（测试读 target/classes 不读 jar）⇒ 只有查产物才看得见。
@@ -87,13 +87,13 @@ SUITES=(
   # agent 镜像布局 + HITL 透传（2026-10-17 新增）。
   # 为什么必须单列一条：上面的 _check_compose_env_wiring.py **只校验 server 服务**
   # 与 application.yml 的 ${VAR} 占位，agent 服务的 Python 配置（pydantic alias）完全在它
-  # 的盲区里 ⇒ 「AIOA_HITL 没透传」「Dockerfile 只 COPY app 丢了 aioa_ai」两件事它都发现不了。
+  # 的盲区里 ⇒ 「AIOS_HITL 没透传」「Dockerfile 只 COPY app 丢了 aios_ai」两件事它都发现不了。
   # 本套件 7 项：打包清单 / Dockerfile COPY / 按 COPY 行推导布局后真 import /
   # 负向对照（只拷 app 必须失败）/ compose / k8s / .env.example。纯离线，无需任何服务。
   _check_agent_image_layout.py
   # agent 依赖声明完整性（2026-10-18 新增）：pyproject 的 dependencies 是否覆盖代码里
   # **实际 import 的每个第三方包**。防的是「本地 .venv 手工装过 ⇒ 本机全绿，镜像
-  # `pip install .` 缺包 ⇒ 容器 Restarting」这一类：已发生两次（aioa_ai 缺打包清单、
+  # `pip install .` 缺包 ⇒ 容器 Restarting」这一类：已发生两次（aios_ai 缺打包清单、
   # langgraph 缺依赖声明）。纯离线，读 pyproject + AST 扫描，含负向对照。
   _check_agent_deps_declared.py
   # 表单链路端到端（2026-10-18）：① 每个数字人是否开**自己**那张表（真实 LLM 活体 SSE，

@@ -1,6 +1,6 @@
 # 35 · 非遗四川 scfy —— 接口注册 · 语义匹配 · 自动调用 设计与实现说明
 
-> 模块：`server/aioa-integration-scfy`（包 `cn.aioa.integration.scfy.agent` + `.tools`）
+> 模块：`server/aios-integration-scfy`（包 `cn.aios.integration.scfy.agent` + `.tools`）
 > 前置文档：`docs/34-非遗四川scfy只读接入设计与实现说明.md`（适配器与契约）、
 > `docs/_incoming/非遗scfy-返回结构实测.md`（实测原始数据）
 > 状态：已实现并验证（44 个离线单测 + 2 个真实出网端到端 + 3 个装配级验证）
@@ -17,7 +17,7 @@
 | ② | 用户提问 → 按接口描述**语义匹配** → 匹配成功则**自动调用并返回数据** | `ToolMatcher` / `LexicalToolMatcher` + `ScfyParamExtractor` + `ScfyAgentService.ask()`，入口工具 `scfy_ask` | `ScfyToolMatcherTest`（6）+ `ScfyParamExtractorTest`（9）+ `ScfyAgentServiceTest`（9）+ `ScfyAgentE2ETest`（2，真实出网） |
 | ③ | 设计需**支持可扩展**，新增接口不改动核心匹配与调用逻辑 | 扩展点落在「契约一行 + 注解方法」，匹配层是接口插槽 | `ScfyAutoConfigurationWiringTest`（3，含「换匹配器不改调用方」的实测） |
 
-**仍然生效的硬约束（沿用 docs/34）**：只读（无任何写路径）；不确定的接口不注册；模块不依赖基座业务模块（只依赖 `aioa-tool-sdk` + `aioa-common`）；适配器不含 Controller、不占端口。
+**仍然生效的硬约束（沿用 docs/34）**：只读（无任何写路径）；不确定的接口不注册；模块不依赖基座业务模块（只依赖 `aios-tool-sdk` + `aios-common`）；适配器不含 Controller、不占端口。
 
 关于「已能正常返回数据的接口」这句，本实现取**实测口径**而非文档口径：
 `ScfyMatrixTest` 对契约中每个可用接口发起真实请求，只有观测到**非空数据**（`observed=OK_DATA`）才进入自动匹配集合。结论是 **55 个已注册 / 54 个可自动匹配 / 1 个被排除**（`eco_nmch_base` 调用成功但恒返回空集）。
@@ -55,7 +55,7 @@
 - **`scfy_ask`** —— 一句话直达数据。服务端承担匹配、抽参、调用、裁剪，模型只需把用户**原话整句**递进来。
 - **`scfy_catalog`** —— 先看清单再决定。不传参数看 55 个接口概览；传 `toolCode` 看某个接口的**完整参数表 + 返回字段**。
 
-> 为什么用 `@AioaTool` 两个方法而不是新开一组 HTTP 接口：本模块的既有口径是「适配器不做 Controller、不占端口」，对外通道统一由平台工具网关提供（`/internal/v1/tools` 列表 + `/internal/v1/tools/invoke` 调用）。声明两个注解方法即自动获得清单登记、权限、审计与其余工具一致的调用方式 —— **不改基座一行代码**。
+> 为什么用 `@AiosTool` 两个方法而不是新开一组 HTTP 接口：本模块的既有口径是「适配器不做 Controller、不占端口」，对外通道统一由平台工具网关提供（`/internal/v1/tools` 列表 + `/internal/v1/tools/invoke` 调用）。声明两个注解方法即自动获得清单登记、权限、审计与其余工具一致的调用方式 —— **不改基座一行代码**。
 
 ---
 
@@ -68,7 +68,7 @@
 
 | 要素 | 唯一来源 | 为什么不另写一份 |
 |---|---|---|
-| **名称 / 用途描述 / 入参 Schema** | `@AioaTool(name=…, description=…)` + `@AioaToolParam`（经 SDK 注册表 `ToolSpec`） | 这就是模型看到的工具清单本身。分开写必然出现「注册表说三个参数、清单说两个」 |
+| **名称 / 用途描述 / 入参 Schema** | `@AiosTool(name=…, description=…)` + `@AiosToolParam`（经 SDK 注册表 `ToolSpec`） | 这就是模型看到的工具清单本身。分开写必然出现「注册表说三个参数、清单说两个」 |
 | **分组 / 真实路径 / 参数契约（必填性、枚举、实测校正）** | `ScfyCatalog`（契约，docs/34 已建） | 接口事实只在契约里判定一处 |
 | **返回结构** | `src/main/resources/scfy/return-shape.json`（**矩阵实测生成**） | 手写返回结构等于第二份真相；后端改字段名后它会静默变成误导，而模型会照着它取 null |
 
@@ -79,8 +79,8 @@ record ScfyToolDescriptor(
     String toolCode,            // scfy_<endpointId>，与契约可机器比对
     String endpointId,          // 契约 id
     String group,               // 能力域：传承人/项目/工坊/保护区/旅游
-    String name,                // @AioaTool.name
-    String purpose,             // @AioaTool.description（语义匹配主输入）
+    String name,                // @AiosTool.name
+    String purpose,             // @AiosTool.description（语义匹配主输入）
     String path,                // /show/project/getProjectCountByArea
     List<ScfyParam> params,     // 契约参数（含必填性、枚举）
     Map<String,Object> inputSchema,   // 模型可填的入参 Schema
@@ -237,8 +237,8 @@ args / argEvidence / returns`，以及裁剪与截断标记：
 | 步 | 动作 | 为什么不需要动流程代码 |
 |---|---|---|
 | 1 | 在 `ScfyCatalog` **加一行契约**（路径、分组、参数、必填性、枚举） | 契约是接口事实的唯一入口；`ScfyAgentCatalog` 按 id 反查自动带上它 |
-| 2 | 写一个 `@AioaTool` 方法（调 `ScfyToolSupport`） | 名称 / 用途 / 入参 Schema 由注解推导，SDK 扫描器自动登记 |
-| 3 | 跑一次矩阵采集返回结构：<br>`mvn -pl aioa-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true` | `return-shape.json` 重新生成，`outputSchema` 随之更新 |
+| 2 | 写一个 `@AiosTool` 方法（调 `ScfyToolSupport`） | 名称 / 用途 / 入参 Schema 由注解推导，SDK 扫描器自动登记 |
+| 3 | 跑一次矩阵采集返回结构：<br>`mvn -pl aios-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true` | `return-shape.json` 重新生成，`outputSchema` 随之更新 |
 
 **`ScfyAgentCatalog` / `ToolMatcher` / `ScfyParamExtractor` / `ScfyAgentService` 一行都不用改。**
 漏做第 3 步也不会静默：启动自检会以「返回结构缺失」硬失败。漏做第 1 步则 `ScfyCatalogConsistencyChecker` 报「指向契约中不存在的接口」。
@@ -302,7 +302,7 @@ public interface ToolMatcher {
 cd server
 
 # 1) 离线全量（44 例）：注册表 / 匹配器 / 抽参 / 服务 / 装配，均不出网
-./mvnw -pl aioa-integration-scfy test
+./mvnw -pl aios-integration-scfy test
 #    ScfyAgentCatalogTest            5   四要素齐备、55/54/1、检索文本含返回字段
 #    ScfyToolMatcherTest             6   真实问句命中正确接口、无关问题不命中、结果确定
 #    ScfyParamExtractorTest          9   城市归一化、等级、区划码、数量、id、区县
@@ -311,10 +311,10 @@ cd server
 #    （另 ScfyContractTest 4 / ScfyParamValidatorTest 8）
 
 # 2) 真实出网端到端（2 例）：真实提问 → 匹配 → 抽参 → 调用 → 非空数据
-./mvnw -pl aioa-integration-scfy test -Dtest=ScfyAgentE2ETest -Dscfy.agent=true
+./mvnw -pl aios-integration-scfy test -Dtest=ScfyAgentE2ETest -Dscfy.agent=true
 
 # 3) 重新采集返回结构（改了契约或新增接口后必须跑）
-./mvnw -pl aioa-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true
+./mvnw -pl aios-integration-scfy test -Dtest=ScfyMatrixTest -Dscfy.matrix=true
 ```
 
 端到端实测样例（2026-09-23，生产西昌，`ScfyAgentE2ETest.CASES` 全 6 例均通过）：

@@ -32,7 +32,7 @@ import sys
 
 import pymysql
 
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa", charset="utf8mb4")
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios", charset="utf8mb4")
 
 # 要清理的表（跨租户全集视图的数据源）；其余只报告
 PURGE = ["sys_user", "sys_user_role"]
@@ -48,13 +48,13 @@ def connect():
 
 def tables_with_tenant(cur):
     cur.execute("""SELECT TABLE_NAME FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA='aioa' AND COLUMN_NAME='tenant_id' ORDER BY TABLE_NAME""")
+        WHERE TABLE_SCHEMA='aios' AND COLUMN_NAME='tenant_id' ORDER BY TABLE_NAME""")
     return [r[0] for r in cur.fetchall()]
 
 
 def has_column(cur, table, col):
     cur.execute("""SELECT COUNT(*) FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA='aioa' AND TABLE_NAME=%s AND COLUMN_NAME=%s""", (table, col))
+        WHERE TABLE_SCHEMA='aios' AND TABLE_NAME=%s AND COLUMN_NAME=%s""", (table, col))
     return cur.fetchone()[0] > 0
 
 

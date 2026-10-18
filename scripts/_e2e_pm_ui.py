@@ -28,9 +28,9 @@ from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8080"
 API = BASE + "/api/v1"
-# 单端口形态：管理端产物挂在 /aioa/web/ 下（docs/33）。用生产形态验证，
+# 单端口形态：管理端产物挂在 /aios/web/ 下（docs/33）。用生产形态验证，
 # 顺带把「webroot 同步是否真的生效」一并证掉。
-SHELL = BASE + "/aioa/web"
+SHELL = BASE + "/aios/web"
 
 TENANT = "某某市某某区大数据管理局"
 ADMIN, MEMBER = "dsj_admin", "fagai_li"   # 租户管理员 / 机构成员（三级权限差异的对照组）

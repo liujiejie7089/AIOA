@@ -514,7 +514,7 @@ onMounted(loadForms)
 
 .text-sub {
   font-size: 12px;
-  color: var(--aioa-text-sub);
+  color: var(--aios-text-sub);
 }
 
 .fields-toolbar {

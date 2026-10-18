@@ -126,7 +126,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="未配置 AIOA_MODEL_KEY_ENC_KEY / AIOA_GITEE_TOKEN_ENC_KEY，管理端填写的 API Key 使用内置开发密钥加密（弱保护）。生产环境请在服务端环境变量配置其中之一。"
+        title="未配置 AIOS_MODEL_KEY_ENC_KEY / AIOS_GITEE_TOKEN_ENC_KEY，管理端填写的 API Key 使用内置开发密钥加密（弱保护）。生产环境请在服务端环境变量配置其中之一。"
         style="margin-bottom: 10px"
       />
       <el-table v-loading="loading" :data="models" stripe>

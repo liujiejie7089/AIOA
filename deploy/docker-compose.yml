@@ -1,18 +1,18 @@
 # =============================================================================
-# AIOA 一键部署（生产可用）
+# AIOS 一键部署（生产可用）
 # - 数据库 / Redis / Milvus / MinIO：**都在外部主机、不由本 compose 托管**，地址由 .env 注入
-#     MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa）　Redis = 10.0.0.7:6379
+#     MySQL = 10.0.0.5:13049（库 aios / 账号 aios）　Redis = 10.0.0.7:6379
 #     Milvus = 10.0.0.12:19530（无鉴权）
 #     MinIO = 别处有（172.16.8.249:9000）但**应用代码根本不读它**，见文件内注释 ⇒ 不需要接、不需要搬镜像
 #     （下面 `${MYSQL_HOST:-…}` 的默认值只是「没传 .env 时的兜底」，**部署时必须用 .env 覆盖**；
 #      默认值已与本次环境对齐，但真实口令不在默认值里）
-# - 公网入口：**只有 aioa-server 一个端口**（docs/33 单端口改造）
-#     aioa-server 自己同时提供三块内容（前缀可配，默认 /aioa）：
-#       /aioa/h5/   用户端 H5（镜像内的 /app/h5/index.html）
-#       /aioa/web/  管理端（镜像内的 /app/web/，含 subapps/<name>/）
-#       /aioa/api/  业务接口（进入安全链前剥成 /api/** 复用既有控制器；/api/** 亦原样保留）
+# - 公网入口：**只有 aios-server 一个端口**（docs/33 单端口改造）
+#     aios-server 自己同时提供三块内容（前缀可配，默认 /aios）：
+#       /aios/h5/   用户端 H5（镜像内的 /app/h5/index.html）
+#       /aios/web/  管理端（镜像内的 /app/web/，含 subapps/<name>/）
+#       /aios/api/  业务接口（进入安全链前剥成 /api/** 复用既有控制器；/api/** 亦原样保留）
 #     ⇒ **不需要边缘 nginx**（原 `nginx` + `web` 两个服务已删除），
-#       **只需要两张镜像**：aioa-server + aioa-agent（离线搬运量随之减半）。
+#       **只需要两张镜像**：aios-server + aios-agent（离线搬运量随之减半）。
 #       ★ 另有一个**可选的「入口 nginx」**（profile=entry，只监听 80），只把路径变短：
 #         `/web` → 管理端、`/user` → 用户端；**不是**当年那层边缘层（不管静态、不碰接口）。
 #         默认 `up -d` **不起它**，要用就 `docker compose --profile entry up -d nginx`。
@@ -23,23 +23,23 @@
 # 起停（在 deploy/ 目录）：
 #     cp .env.production .env && vim .env      # 填密钥；.env 已被 gitignore
 #     docker compose up -d server agent        # server 自带静态前端，8080 直接对外
-#     # 打开 http://<宿主>:8080/aioa/h5/  与  http://<宿主>:8080/aioa/web/
+#     # 打开 http://<宿主>:8080/aios/h5/  与  http://<宿主>:8080/aios/web/
 #     # 想要短路径 /web、/user（可选）：docker compose --profile entry up -d nginx
 #   （不再需要叠加文件：原 docker-compose.backend.yml 只为「发布 8080/8000」，已并入本文件）
 #   详见 `deploy/生产部署手册.md`。
 # =============================================================================
 
-name: aioa
+name: aios
 
 # 数据库（MySQL 8）与 Redis 7 都在**外部主机**，由下方 server 的 SPRING_DATASOURCE_* /
 # SPRING_DATA_REDIS_HOST 环境变量直连，compose 内不再托管：
-#   MySQL = 10.0.0.5:13049（库 aioa / 账号 aioa，**非默认端口**）　Redis = 10.0.0.7:6379（**有口令**）
+#   MySQL = 10.0.0.5:13049（库 aios / 账号 aios，**非默认端口**）　Redis = 10.0.0.7:6379（**有口令**）
 # 如需本地临时起一个 MySQL 调试，可取消下方注释：
 # mysql:
 #   image: mysql:8.0
-#   container_name: aioa-mysql
+#   container_name: aios-mysql
 #   environment:
-#     MYSQL_DATABASE: ${MYSQL_DB:-aioa}
+#     MYSQL_DATABASE: ${MYSQL_DB:-aios}
 #     MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-}
 #     TZ: Asia/Shanghai
 #   command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
@@ -53,12 +53,12 @@ name: aioa
 #   logging:
 #     driver: json-file
 #     options: { max-size: "100m", max-file: "5" }
-#   networks: [aioa-net]
+#   networks: [aios-net]
 #   mem_limit: 4g
 
 # redis:
 #   image: redis:7-alpine
-#   container_name: aioa-redis
+#   container_name: aios-redis
 #   command: ["redis-server", "--appendonly", "yes"]
 #   expose: ["6379"]
 #   healthcheck:
@@ -70,7 +70,7 @@ name: aioa
 #   logging:
 #     driver: json-file
 #     options: { max-size: "100m", max-file: "5" }
-#   networks: [aioa-net]
+#   networks: [aios-net]
 #   mem_limit: 512m
 
 services:
@@ -81,7 +81,7 @@ services:
   # ⚠️ 事实核对（2026-09-21 全仓 grep 验证）：**应用代码根本不使用 MinIO**。
   #     全部 Java / Python / 前端源码里没有 `minio` 字样，也没有 S3 客户端
   #     （无 `S3Client` / `amazonaws` / OSS SDK 依赖）。
-  #     文件上传走的是 **本地磁盘**：`FileController` 的 `@Value("${aioa.upload.dir:./uploads}")`
+  #     文件上传走的是 **本地磁盘**：`FileController` 的 `@Value("${aios.upload.dir:./uploads}")`
   #     + 元数据落 `sys_file` 表。所以本服务与下方 `MINIO_*` 三个环境变量都是**历史遗留**，
   #     一起起它只是白占 2G 内存与一个端口。
   # ⇒ 因此把它归到 `profile: [minio]`：`docker compose up -d` **不会**再带起它；
@@ -91,18 +91,18 @@ services:
   minio:
     profiles: ["minio"]
     image: minio/minio:latest
-    container_name: aioa-minio
+    container_name: aios-minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aioa}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aioa_dev_minio}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aios}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aios_dev_minio}
     volumes:
       - miniodata:/data
     expose:
       - "9000"
     ports:
       # 仅控制台端口暴露，且**用 9011 而不是 9001** —— 生产机上 milvus-minio 已占用
-      # 9000/9001，直接映射会 `port is already allocated`。数据端口 9000 只在 aioa-net 内可达。
+      # 9000/9001，直接映射会 `port is already allocated`。数据端口 9000 只在 aios-net 内可达。
       - "9011:9001"
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || curl -f http://localhost:9000/minio/health/live"]
@@ -113,7 +113,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "100m", max-file: "5" }
-    networks: [aioa-net]
+    networks: [aios-net]
     mem_limit: 2g
     cpus: "1"
 
@@ -124,12 +124,12 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.server
-    container_name: aioa-server
+    container_name: aios-server
     environment:
       # ---- 数据库 / Redis ----
       # createDatabaseIfNotExist=true：全新机器上不必手工建库（账号需有 CREATE 权限）
-      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aioa}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
-      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-aioa}
+      SPRING_DATASOURCE_URL: jdbc:mysql://${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aios}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-aios}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-}
       # 两个键名都传：application.yml 显式写了 ${SPRING_REDIS_HOST:…}，
       # 而 Spring Boot 的宽松绑定认 SPRING_DATA_REDIS_HOST —— 少传一个都可能连错 Redis。
@@ -141,16 +141,16 @@ services:
       SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
 
       # ---- JWT 密钥 ----
-      AIOA_JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-bytes-long}
-      AIOA_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      AIOS_JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-bytes-long}
+      AIOS_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
 
       # ---- Agent / MinIO ----
-      AIOA_AGENT_BASE_URL: http://agent:8000
-      # 语音输入（ASR）两个闸：application.yml 用 ${AIOA_ASR_ENABLED:true} / ${AIOA_ASR_MAX_BYTES:10485760}
+      AIOS_AGENT_BASE_URL: http://agent:8000
+      # 语音输入（ASR）两个闸：application.yml 用 ${AIOS_ASR_ENABLED:true} / ${AIOS_ASR_MAX_BYTES:10485760}
       # 引用它们，不透传就等于「在 .env 里改是空转」（`_check_compose_env_wiring.py` 实测 FAIL）。
       # max-bytes 必须与 agent 侧同名变量取同一个值，否则会出现「Java 放行、agent 拒绝」两套阈值。
-      AIOA_ASR_ENABLED: ${AIOA_ASR_ENABLED:-true}
-      AIOA_ASR_MAX_BYTES: ${AIOA_ASR_MAX_BYTES:-10485760}
+      AIOS_ASR_ENABLED: ${AIOS_ASR_ENABLED:-true}
+      AIOS_ASR_MAX_BYTES: ${AIOS_ASR_MAX_BYTES:-10485760}
       # ⚠️ 下面三个 MINIO_* 键**当前无人读取**（全仓无 MinIO/S3 客户端；文件落本地盘）。
       #    默认值故意留空 —— 不给一个「看起来已经接上了」的 IP 暗示。真想启用对象存储时，
       #    在 .env 里填 MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY，**并同时**给应用侧补 S3 客户端。
@@ -161,13 +161,13 @@ services:
       # ---- 文件上传落盘目录（**这个是真正在用的**）----
       # FileController 默认 ./uploads（= 容器内 /app/uploads，Dockerfile.server 的 WORKDIR）。
       # 必须挂卷，否则容器重建一次上传的文件全丢，而 sys_file 记录还在 ⇒ 下载 404。
-      AIOA_UPLOAD_DIR: /app/uploads
+      AIOS_UPLOAD_DIR: /app/uploads
 
-      # ---- 上传文件大小上限（application.yml 读 ${AIOA_FILE_MAX_SIZE_MB:50}）----
-      # 与 AIOA_UPLOAD_DIR 同属「上传」语义，放一起。
-      # ⚠️ 必须透传：不透传时 .env 里写 AIOA_FILE_MAX_SIZE_MB **是空转** ——
+      # ---- 上传文件大小上限（application.yml 读 ${AIOS_FILE_MAX_SIZE_MB:50}）----
+      # 与 AIOS_UPLOAD_DIR 同属「上传」语义，放一起。
+      # ⚠️ 必须透传：不透传时 .env 里写 AIOS_FILE_MAX_SIZE_MB **是空转** ——
       #    配置看着能改、实际改不动（`_check_compose_env_wiring.py` 正是钉这个）。
-      AIOA_FILE_MAX_SIZE_MB: ${AIOA_FILE_MAX_SIZE_MB:-50}
+      AIOS_FILE_MAX_SIZE_MB: ${AIOS_FILE_MAX_SIZE_MB:-50}
 
       # ---- 单端口入口（docs/33）：H5 与管理端由本进程自己发，不需要边缘 nginx ----
       # 这两份静态已随构建打进镜像（见 deploy/Dockerfile.server 的前端构建段）：
@@ -175,87 +175,87 @@ services:
       #   /app/web/**         管理端 dist（含 subapps/<name>/）
       # 目录路径写死为镜像内实际位置（不取自 .env）：它们必须与镜像布局一致，
       # 做成可配只会多一个「配了但和镜像不符」的漂移点。
-      AIOA_WEB_ENABLED: ${AIOA_WEB_ENABLED:-true}
-      AIOA_WEB_PREFIX: ${AIOA_WEB_PREFIX:-/aioa}
-      AIOA_WEB_H5_DIR: /app/h5
-      AIOA_WEB_WEB_DIR: /app/web
+      AIOS_WEB_ENABLED: ${AIOS_WEB_ENABLED:-true}
+      AIOS_WEB_PREFIX: ${AIOS_WEB_PREFIX:-/aios}
+      AIOS_WEB_H5_DIR: /app/h5
+      AIOS_WEB_WEB_DIR: /app/web
 
       # ---- 知识库存储与嵌入（docs/32 向量库 Milvus）----
       # 默认 mysql（零新增依赖）。Milvus 用**另一台机器上的既有实例**（10.0.0.12，无鉴权）⇒
-      # 本部署用 .env 的 AIOA_KB_STORE=milvus + AIOA_MILVUS_URI=http://10.0.0.12:19530
+      # 本部署用 .env 的 AIOS_KB_STORE=milvus + AIOS_MILVUS_URI=http://10.0.0.12:19530
       # 指向那台**现成实例**，因此**不要**加 `--profile milvus`
       # （本机不必再起一套自建栈：它还要多带 etcd + milvus-minio 两个容器）。
       # 只有目标机没有 Milvus 时，才用 `--profile milvus` 起文末那套自带栈。
       # 两种走法下，Milvus 不可达 server 都会**启动失败**（决策 D6 fail-fast，不静默降级为空结果）。
-      AIOA_KB_STORE: ${AIOA_KB_STORE:-mysql}
-      AIOA_KB_EMBEDDING_PROVIDER: ${AIOA_KB_EMBEDDING_PROVIDER:-local}
+      AIOS_KB_STORE: ${AIOS_KB_STORE:-mysql}
+      AIOS_KB_EMBEDDING_PROVIDER: ${AIOS_KB_EMBEDDING_PROVIDER:-local}
       # format/url/model/api-key 只在 provider=http 时被读。生产档是 local（256 维哈希、零外部依赖），
       # ⇒ 默认值一律**留空**，不再指向已删除的 ollama 服务。
       # 提示：format=ollama 描述的是「要对接的嵌入接口形态」（/api/embeddings），不代表要部署 Ollama。
-      AIOA_KB_EMBEDDING_FORMAT: ${AIOA_KB_EMBEDDING_FORMAT:-ollama}
-      AIOA_KB_EMBEDDING_URL: ${AIOA_KB_EMBEDDING_URL:-}
-      AIOA_KB_EMBEDDING_MODEL: ${AIOA_KB_EMBEDDING_MODEL:-bge-small-zh-v1.5}
-      # ★ 必须与 AIOA_MILVUS_DIMS 逐字一致：不一致会在**启动时硬失败**
+      AIOS_KB_EMBEDDING_FORMAT: ${AIOS_KB_EMBEDDING_FORMAT:-ollama}
+      AIOS_KB_EMBEDDING_URL: ${AIOS_KB_EMBEDDING_URL:-}
+      AIOS_KB_EMBEDDING_MODEL: ${AIOS_KB_EMBEDDING_MODEL:-bge-small-zh-v1.5}
+      # ★ 必须与 AIOS_MILVUS_DIMS 逐字一致：不一致会在**启动时硬失败**
       #   （MilvusConfig.assertDimsAgree；provider=local 写死 256）。
       #   这两个默认值以前是 512，与 .env 的 256 不一致 ⇒ 一旦没传 .env 就起不来。
-      AIOA_KB_EMBEDDING_DIMS: ${AIOA_KB_EMBEDDING_DIMS:-256}
-      AIOA_KB_EMBEDDING_TIMEOUT_MS: ${AIOA_KB_EMBEDDING_TIMEOUT_MS:-15000}
-      AIOA_KB_EMBEDDING_API_KEY: ${AIOA_KB_EMBEDDING_API_KEY:-}
+      AIOS_KB_EMBEDDING_DIMS: ${AIOS_KB_EMBEDDING_DIMS:-256}
+      AIOS_KB_EMBEDDING_TIMEOUT_MS: ${AIOS_KB_EMBEDDING_TIMEOUT_MS:-15000}
+      AIOS_KB_EMBEDDING_API_KEY: ${AIOS_KB_EMBEDDING_API_KEY:-}
       # 换 provider / 换模型后置 true 跑一次全量重算（幂等），跑完记得改回 false
-      AIOA_KB_REEMBED_ON_START: ${AIOA_KB_REEMBED_ON_START:-false}
+      AIOS_KB_REEMBED_ON_START: ${AIOS_KB_REEMBED_ON_START:-false}
       # 容器内 Milvus 地址固定为 http://milvus:19530（compose 网络内）
-      AIOA_MILVUS_URI: ${AIOA_MILVUS_URI:-http://milvus:19530}
-      AIOA_MILVUS_TOKEN: ${AIOA_MILVUS_TOKEN:-}
-      AIOA_MILVUS_DATABASE: ${AIOA_MILVUS_DATABASE:-default}
+      AIOS_MILVUS_URI: ${AIOS_MILVUS_URI:-http://milvus:19530}
+      AIOS_MILVUS_TOKEN: ${AIOS_MILVUS_TOKEN:-}
+      AIOS_MILVUS_DATABASE: ${AIOS_MILVUS_DATABASE:-default}
       # 集合名**带维度后缀**：维度创建后不可改，换嵌入模型必须新建集合再回填
-      AIOA_MILVUS_COLLECTION: ${AIOA_MILVUS_COLLECTION:-kb_chunk_v1_256}
-      AIOA_MILVUS_DIMS: ${AIOA_MILVUS_DIMS:-256}
-      AIOA_MILVUS_METRIC: ${AIOA_MILVUS_METRIC:-COSINE}
-      AIOA_MILVUS_INDEX: ${AIOA_MILVUS_INDEX:-HNSW}
-      AIOA_MILVUS_HNSW_M: ${AIOA_MILVUS_HNSW_M:-16}
-      AIOA_MILVUS_HNSW_EF: ${AIOA_MILVUS_HNSW_EF:-200}
-      AIOA_MILVUS_ENABLE_BM25: ${AIOA_MILVUS_ENABLE_BM25:-true}
+      AIOS_MILVUS_COLLECTION: ${AIOS_MILVUS_COLLECTION:-kb_chunk_v1_256}
+      AIOS_MILVUS_DIMS: ${AIOS_MILVUS_DIMS:-256}
+      AIOS_MILVUS_METRIC: ${AIOS_MILVUS_METRIC:-COSINE}
+      AIOS_MILVUS_INDEX: ${AIOS_MILVUS_INDEX:-HNSW}
+      AIOS_MILVUS_HNSW_M: ${AIOS_MILVUS_HNSW_M:-16}
+      AIOS_MILVUS_HNSW_EF: ${AIOS_MILVUS_HNSW_EF:-200}
+      AIOS_MILVUS_ENABLE_BM25: ${AIOS_MILVUS_ENABLE_BM25:-true}
       # 首次接入 / 索引损坏后置 true 从 kb_chunk 全量回填，跑完改回 false
-      AIOA_MILVUS_BACKFILL: ${AIOA_MILVUS_BACKFILL:-false}
-      AIOA_MILVUS_TIMEOUT_MS: ${AIOA_MILVUS_TIMEOUT_MS:-10000}
-      AIOA_MILVUS_BATCH: ${AIOA_MILVUS_BATCH:-200}
+      AIOS_MILVUS_BACKFILL: ${AIOS_MILVUS_BACKFILL:-false}
+      AIOS_MILVUS_TIMEOUT_MS: ${AIOS_MILVUS_TIMEOUT_MS:-10000}
+      AIOS_MILVUS_BATCH: ${AIOS_MILVUS_BATCH:-200}
 
       # ---- 代码托管方 ----
-      AIOA_REPO_PROVIDER: ${AIOA_REPO_PROVIDER:-gitee}
+      AIOS_REPO_PROVIDER: ${AIOS_REPO_PROVIDER:-gitee}
 
       # ---- Gitee ----
-      AIOA_GITEE_ENABLED: ${AIOA_GITEE_ENABLED:-true}
-      AIOA_GITEE_BASE_URL: ${AIOA_GITEE_BASE_URL:-https://gitee.com/api/v5}
-      AIOA_GITEE_WEB_URL: ${AIOA_GITEE_WEB_URL:-https://gitee.com}
-      AIOA_GITEE_OAUTH_AUTHORIZE_URL: ${AIOA_GITEE_OAUTH_AUTHORIZE_URL:-https://gitee.com}
-      AIOA_GITEE_CLIENT_ID: ${AIOA_GITEE_CLIENT_ID:-}
-      AIOA_GITEE_CLIENT_SECRET: ${AIOA_GITEE_CLIENT_SECRET:-}
-      AIOA_GITEE_REDIRECT_URI: ${AIOA_GITEE_REDIRECT_URI:-http://localhost/api/v1/gitee/bind/callback}
-      AIOA_GITEE_SCOPE: ${AIOA_GITEE_SCOPE:-user_info projects hook pull_requests issues notes}
-      AIOA_GITEE_ORG: ${AIOA_GITEE_ORG:-}
-      AIOA_GITEE_WEBHOOK_BASE_URL: ${AIOA_GITEE_WEBHOOK_BASE_URL:-}
-      AIOA_GITEE_WEBHOOK_SECRET: ${AIOA_GITEE_WEBHOOK_SECRET:-}
-      AIOA_GITEE_TOKEN_ENC_KEY: ${AIOA_GITEE_TOKEN_ENC_KEY:-aioa-dev-gitee-token-key-please-change}
-      AIOA_GITEE_BIND_RETURN_URL: ${AIOA_GITEE_BIND_RETURN_URL:-http://localhost/}
+      AIOS_GITEE_ENABLED: ${AIOS_GITEE_ENABLED:-true}
+      AIOS_GITEE_BASE_URL: ${AIOS_GITEE_BASE_URL:-https://gitee.com/api/v5}
+      AIOS_GITEE_WEB_URL: ${AIOS_GITEE_WEB_URL:-https://gitee.com}
+      AIOS_GITEE_OAUTH_AUTHORIZE_URL: ${AIOS_GITEE_OAUTH_AUTHORIZE_URL:-https://gitee.com}
+      AIOS_GITEE_CLIENT_ID: ${AIOS_GITEE_CLIENT_ID:-}
+      AIOS_GITEE_CLIENT_SECRET: ${AIOS_GITEE_CLIENT_SECRET:-}
+      AIOS_GITEE_REDIRECT_URI: ${AIOS_GITEE_REDIRECT_URI:-http://localhost/api/v1/gitee/bind/callback}
+      AIOS_GITEE_SCOPE: ${AIOS_GITEE_SCOPE:-user_info projects hook pull_requests issues notes}
+      AIOS_GITEE_ORG: ${AIOS_GITEE_ORG:-}
+      AIOS_GITEE_WEBHOOK_BASE_URL: ${AIOS_GITEE_WEBHOOK_BASE_URL:-}
+      AIOS_GITEE_WEBHOOK_SECRET: ${AIOS_GITEE_WEBHOOK_SECRET:-}
+      AIOS_GITEE_TOKEN_ENC_KEY: ${AIOS_GITEE_TOKEN_ENC_KEY:-aios-dev-gitee-token-key-please-change}
+      AIOS_GITEE_BIND_RETURN_URL: ${AIOS_GITEE_BIND_RETURN_URL:-http://localhost/}
       # ★ 这两键此前未透传 ⇒ 容器拿不到 ⇒ 在 .env 里改它们**是空转**（只有 yml 默认生效）。
       #   默认值与 application.yml 一致，不改变现有行为。
-      AIOA_GITEE_SYNC_ENABLED: ${AIOA_GITEE_SYNC_ENABLED:-true}
-      AIOA_GITEE_SYNC_CRON: "${AIOA_GITEE_SYNC_CRON:-0 17 * * * *}"
+      AIOS_GITEE_SYNC_ENABLED: ${AIOS_GITEE_SYNC_ENABLED:-true}
+      AIOS_GITEE_SYNC_CRON: "${AIOS_GITEE_SYNC_CRON:-0 17 * * * *}"
 
       # ---- Gitea ----
-      AIOA_GITEA_ENABLED: ${AIOA_GITEA_ENABLED:-false}
-      AIOA_GITEA_BASE_URL: ${AIOA_GITEA_BASE_URL:-}
-      AIOA_GITEA_WEB_URL: ${AIOA_GITEA_WEB_URL:-}
-      AIOA_GITEA_OAUTH_AUTHORIZE_URL: ${AIOA_GITEA_OAUTH_AUTHORIZE_URL:-}
-      AIOA_GITEA_CLIENT_ID: ${AIOA_GITEA_CLIENT_ID:-}
-      AIOA_GITEA_CLIENT_SECRET: ${AIOA_GITEA_CLIENT_SECRET:-}
-      AIOA_GITEA_REDIRECT_URI: ${AIOA_GITEA_REDIRECT_URI:-http://localhost/api/v1/gitea/bind/callback}
-      AIOA_GITEA_SCOPE: ${AIOA_GITEA_SCOPE:-repo read:organization notification issue}
-      AIOA_GITEA_ORG: ${AIOA_GITEA_ORG:-}
-      AIOA_GITEA_WEBHOOK_BASE_URL: ${AIOA_GITEA_WEBHOOK_BASE_URL:-}
-      AIOA_GITEA_WEBHOOK_SECRET: ${AIOA_GITEA_WEBHOOK_SECRET:-}
-      AIOA_GITEA_TOKEN_ENC_KEY: ${AIOA_GITEA_TOKEN_ENC_KEY:-aioa-dev-gitea-token-key-please-change}
-      AIOA_GITEA_REPO_NAME_SOURCE: ${AIOA_GITEA_REPO_NAME_SOURCE:-AUTO}
+      AIOS_GITEA_ENABLED: ${AIOS_GITEA_ENABLED:-false}
+      AIOS_GITEA_BASE_URL: ${AIOS_GITEA_BASE_URL:-}
+      AIOS_GITEA_WEB_URL: ${AIOS_GITEA_WEB_URL:-}
+      AIOS_GITEA_OAUTH_AUTHORIZE_URL: ${AIOS_GITEA_OAUTH_AUTHORIZE_URL:-}
+      AIOS_GITEA_CLIENT_ID: ${AIOS_GITEA_CLIENT_ID:-}
+      AIOS_GITEA_CLIENT_SECRET: ${AIOS_GITEA_CLIENT_SECRET:-}
+      AIOS_GITEA_REDIRECT_URI: ${AIOS_GITEA_REDIRECT_URI:-http://localhost/api/v1/gitea/bind/callback}
+      AIOS_GITEA_SCOPE: ${AIOS_GITEA_SCOPE:-repo read:organization notification issue}
+      AIOS_GITEA_ORG: ${AIOS_GITEA_ORG:-}
+      AIOS_GITEA_WEBHOOK_BASE_URL: ${AIOS_GITEA_WEBHOOK_BASE_URL:-}
+      AIOS_GITEA_WEBHOOK_SECRET: ${AIOS_GITEA_WEBHOOK_SECRET:-}
+      AIOS_GITEA_TOKEN_ENC_KEY: ${AIOS_GITEA_TOKEN_ENC_KEY:-aios-dev-gitea-token-key-please-change}
+      AIOS_GITEA_REPO_NAME_SOURCE: ${AIOS_GITEA_REPO_NAME_SOURCE:-AUTO}
 
       TZ: Asia/Shanghai
     expose:
@@ -267,7 +267,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # 上传文件落盘目录（对齐上面的 AIOA_UPLOAD_DIR）。不挂卷 = 容器重建即丢文件。
+      # 上传文件落盘目录（对齐上面的 AIOS_UPLOAD_DIR）。不挂卷 = 容器重建即丢文件。
       - serveruploads:/app/uploads
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
@@ -283,7 +283,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "200m", max-file: "10" }
-    networks: [aioa-net]
+    networks: [aios-net]
     mem_limit: 4g
     cpus: "2"
 
@@ -302,24 +302,24 @@ services:
       #   留空则走上游默认源（与改造前一致，不影响本地开发）。
       args:
         PIP_EXTRA_ARGS: ${PIP_EXTRA_ARGS:-}
-    container_name: aioa-agent
+    container_name: aios-agent
     environment:
-      AIOA_SERVER_BASE_URL: http://server:8080
-      # ★ 变量名必须与 agent 侧读取名一致：`agent/aioa_ai/config.py` 读的是
-      #   **SERVICE_JWT_SECRET**（无 AIOA_ 前缀），Java 后端读的是 AIOA_SERVICE_JWT_SECRET。
-      #   此前这里只给了 AIOA_ 前缀的那个 ⇒ agent 读不到、回落开发占位串，而后端用的是
+      AIOS_SERVER_BASE_URL: http://server:8080
+      # ★ 变量名必须与 agent 侧读取名一致：`agent/aios_ai/config.py` 读的是
+      #   **SERVICE_JWT_SECRET**（无 AIOS_ 前缀），Java 后端读的是 AIOS_SERVICE_JWT_SECRET。
+      #   此前这里只给了 AIOS_ 前缀的那个 ⇒ agent 读不到、回落开发占位串，而后端用的是
       #   .env 里的真实串 ⇒ 2026-10-18 起 /internal/v1/* 强制校验后，**生产编排必 401**。
       #   两个名字在 .env / .env.development / .env.production 里都已存在，取同一个值即可。
       SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
-      # ★ 必须透传：不透传时 agent 容器内 AIOA_HITL 恒为 false（config.py:68 默认 False），
+      # ★ 必须透传：不透传时 agent 容器内 AIOS_HITL 恒为 false（config.py:68 默认 False），
       #   ask_user / request_form 两个内置工具**不会进模型工具表**，于是数字人「只会写字
       #   操作步骤、永远不弹自定义表单」。本地修了 .env 不等于生产修了 —— .env 被
       #   .gitignore/.dockerignore 双重排除，进不了镜像，只能靠这里/ConfigMap 传。
       #   判据：agent 日志里 `tools=` 应为 9（含 ask_user+request_form），为 7 即未生效。
-      AIOA_HITL: ${AIOA_HITL:-true}
+      AIOS_HITL: ${AIOS_HITL:-true}
       # HITL 挂起态存储。留空 = 进程内存：agent 一重启（或多副本无会话亲和）就取不到挂起
       # 状态，用户回填表单/澄清后可能「无法恢复」。生产建议给 Redis Stack 地址。
-      AIOA_CHECKPOINT_URL: ${AIOA_CHECKPOINT_URL:-}
+      AIOS_CHECKPOINT_URL: ${AIOS_CHECKPOINT_URL:-}
       MODEL_DEFAULT: ${MODEL_DEFAULT:-echo}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -335,39 +335,39 @@ services:
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       # M1 骨架 agent 为回声模型，不直连数据库；后续如需持久化（如 LangGraph checkpointer）
       # 复用统一 MySQL，DSN 形如：
-      # AIOA_MYSQL_DSN: mysql://${MYSQL_USER:-aioa}:${MYSQL_PASSWORD:-}@${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aioa}
+      # AIOS_MYSQL_DSN: mysql://${MYSQL_USER:-aios}:${MYSQL_PASSWORD:-}@${MYSQL_HOST:-10.0.0.5}:${MYSQL_PORT:-13049}/${MYSQL_DB:-aios}
 
       # ---- 语音识别（ASR）模型：挂卷只读进容器（docker 构建不 COPY 模型）----
       #   宿主目录默认 ../agent/.models（相对 deploy/ 目录，即仓库的 agent/.models），
-      #   也可用 .env 的 AIOA_ASR_MODELS_DIR 指向别处；模型名默认 small（可改 AIOA_ASR_MODEL）。
+      #   也可用 .env 的 AIOS_ASR_MODELS_DIR 指向别处；模型名默认 small（可改 AIOS_ASR_MODEL）。
       #   ALLOW_DOWNLOAD 默认 0：生产机无外网，离线加载；目录缺失则 ASR 不可用（见下方 volumes 注释）。
-      #   （这三个键必须透传：不透传时 .env 里写 AIOA_ASR_* 是空转 —— 容器内会用 engine.py 的默认值）
-      AIOA_ASR_MODEL_DIR: /app/.models
-      AIOA_ASR_MODEL: ${AIOA_ASR_MODEL:-small}
-      AIOA_ASR_ALLOW_DOWNLOAD: ${AIOA_ASR_ALLOW_DOWNLOAD:-0}
+      #   （这三个键必须透传：不透传时 .env 里写 AIOS_ASR_* 是空转 —— 容器内会用 engine.py 的默认值）
+      AIOS_ASR_MODEL_DIR: /app/.models
+      AIOS_ASR_MODEL: ${AIOS_ASR_MODEL:-small}
+      AIOS_ASR_ALLOW_DOWNLOAD: ${AIOS_ASR_ALLOW_DOWNLOAD:-0}
       TZ: Asia/Shanghai
     expose:
       - "8000"
-    # agent 只被 server 在 aioa-net 内按 `agent:8000` 调用；这个宿主映射**只为排查**，
-    # ★ 宿主端口可用 .env 的 AIOA_AGENT_HOST_PORT 覆盖（默认 8000，行为不变）。
+    # agent 只被 server 在 aios-net 内按 `agent:8000` 调用；这个宿主映射**只为排查**，
+    # ★ 宿主端口可用 .env 的 AIOS_AGENT_HOST_PORT 覆盖（默认 8000，行为不变）。
     #   为什么留这个口子：目标机上 8000 常被别的服务占用（实测就是），Docker 绑不上会直接
     #   `port is already allocated` 起不来。那时在 .env 里改这一行即可，**不必改本文件**
     #   （改本文件会在下次 git pull 时冲突）。容器内仍是 8000，server 走服务名访问，不受影响。
     # 因此绑 127.0.0.1 —— agent 自身没有鉴权，绑 0.0.0.0 会等于把它暴露给整个内网。
     ports:
-      - "127.0.0.1:${AIOA_AGENT_HOST_PORT:-8000}:8000"
+      - "127.0.0.1:${AIOS_AGENT_HOST_PORT:-8000}:8000"
     # ===========================================================================
     # ★ ASR 模型挂载（只读）：这是手机端语音「模型 small 未就绪」报错的根因修复。
     #   ① 宿主目录必须含 `small/`（model.bin / config.json / tokenizer.json / vocabulary.txt）；
     #   ② 模型被 .gitignore 忽略、约 483MB，fresh clone 后需手工放置，
-    #      也可用 .env 的 AIOA_ASR_MODELS_DIR 指向别处；AIOA_ASR_MODEL 可改模型名（默认 small）。
+    #      也可用 .env 的 AIOS_ASR_MODELS_DIR 指向别处；AIOS_ASR_MODEL 可改模型名（默认 small）。
     #   ③ ⚠️ 宿主目录不存在时 Docker 会**静默建一个空目录**挂进去 ⇒ ASR 不可用
     #      （接口 503、H5 麦克风置灰并提示「语音识别服务暂不可用」）—— 这正是本次手机端报错的原因，
-    #      别误判成别的 bug（也别把它当成「模型下载失败」去开 AIOA_ASR_ALLOW_DOWNLOAD）。
+    #      别误判成别的 bug（也别把它当成「模型下载失败」去开 AIOS_ASR_ALLOW_DOWNLOAD）。
     #   为什么不打进镜像：模型被 gitignore，且体积大、更新频繁，用挂卷更合适。
     # ===========================================================================
     volumes:
-      - ${AIOA_ASR_MODELS_DIR:-../agent/.models}:/app/.models:ro
+      - ${AIOS_ASR_MODELS_DIR:-../agent/.models}:/app/.models:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s
@@ -381,7 +381,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "100m", max-file: "5" }
-    networks: [aioa-net]
+    networks: [aios-net]
     mem_limit: 2g
     cpus: "1"
 
@@ -390,11 +390,11 @@ services:
   #   vllm：要 GPU 与大磁盘，**只在你真要用本地大模型时**才开（--profile model）。
   #   注：原 `ollama` 服务与 `ollamadata` 卷已删除 —— 知识库改走 provider=local（256 维哈希，
   #   零外部依赖）。若将来要接语义嵌入，把它当成「一个普通的 http 嵌入端点」来配
-  #   （AIOA_KB_EMBEDDING_PROVIDER=http + URL/MODEL/DIMS），不预设必须自建容器。
+  #   （AIOS_KB_EMBEDDING_PROVIDER=http + URL/MODEL/DIMS），不预设必须自建容器。
   # ===========================================================================
   vllm:
     image: vllm/vllm-openai:latest
-    container_name: aioa-vllm
+    container_name: aios-vllm
     profiles: ["model"]
     command: ["--model", "${LOCAL_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}", "--served-model-name", "local-vllm"]
     volumes:
@@ -409,7 +409,7 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
-    networks: [aioa-net]
+    networks: [aios-net]
     restart: unless-stopped
     logging:
       driver: json-file
@@ -419,27 +419,27 @@ services:
   # 可选：向量库 Milvus 栈（profile=milvus，docs/32）
   #
   # ⚠️ 本部署**不用这一段** —— Milvus 在另一台机器（10.0.0.12）上已有现成实例，
-  #    走 .env 的 AIOA_MILVUS_URI=http://10.0.0.12:19530 直连即可；
+  #    走 .env 的 AIOS_MILVUS_URI=http://10.0.0.12:19530 直连即可；
   #    仅当目标机完全没有 Milvus 可用时才起这一段（它会多带 etcd + milvus-minio）。
   #
-  # 启用（server 的 AIOA_KB_STORE 必须同时为 milvus，否则 server **启动失败**——决策 D6 fail-fast）：
-  #   AIOA_KB_STORE=milvus docker compose --profile milvus up -d
+  # 启用（server 的 AIOS_KB_STORE 必须同时为 milvus，否则 server **启动失败**——决策 D6 fail-fast）：
+  #   AIOS_KB_STORE=milvus docker compose --profile milvus up -d
   # 首次接入 / 索引损坏后重建（跑完把开关改回 false 并重启 server）：
-  #   AIOA_KB_STORE=milvus AIOA_MILVUS_BACKFILL=true docker compose --profile milvus up -d
+  #   AIOS_KB_STORE=milvus AIOS_MILVUS_BACKFILL=true docker compose --profile milvus up -d
   #
   # 组成（与 Milvus 官方 standalone compose 逐项对齐，未自创环境变量）：
   #   etcd（元数据）+ milvus-minio（段文件/对象存储）+ milvus-standalone。
-  # 有意**不复用**上面的 aioa-minio：官方镜像假定 minioadmin/minioadmin 凭据，
+  # 有意**不复用**上面的 aios-minio：官方镜像假定 minioadmin/minioadmin 凭据，
   # 复用业务 MinIO 需要额外对齐 access key，且业务文件与向量段文件混在一个桶里；
   # 独立的 milvus-minio 只在 profile 打开时才存在，代价很小、确定性更高。
   #
   # 运维界面用 Milvus 自带的 WebUI（无需额外镜像）：http://<host>:9091/webui/
   #
-  # 重启丢卷也不要紧：索引**随时可从 MySQL kb_chunk 重建**（AIOA_MILVUS_BACKFILL=true）。
+  # 重启丢卷也不要紧：索引**随时可从 MySQL kb_chunk 重建**（AIOS_MILVUS_BACKFILL=true）。
   # ===========================================================================
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
-    container_name: aioa-etcd
+    container_name: aios-etcd
     profiles: ["milvus"]
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
@@ -465,13 +465,13 @@ services:
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "3" }
-    networks: [aioa-net]
+    networks: [aios-net]
     mem_limit: 1g
 
   # Milvus 专用对象存储（与官方 compose 同版本、同凭据口径）
   milvus-minio:
     image: minio/minio:RELEASE.2024-05-28T17-19-04Z
-    container_name: aioa-milvus-minio
+    container_name: aios-milvus-minio
     profiles: ["milvus"]
     environment:
       MINIO_ACCESS_KEY: minioadmin
@@ -493,7 +493,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "3" }
-    networks: [aioa-net]
+    networks: [aios-net]
     mem_limit: 2g
 
   milvus:
@@ -501,7 +501,7 @@ services:
     # 若要升 2.6.x：改 MILVUS_IMAGE_TAG 即可（2.6 默认消息队列变 Woodpecker，仍复用同一个 MinIO）。
     # 注意：集合维度创建后不可改，跨大版本升级前先确认集合是否需要重建。
     image: milvusdb/milvus:${MILVUS_IMAGE_TAG:-v2.5.3}
-    container_name: aioa-milvus
+    container_name: aios-milvus
     profiles: ["milvus"]
     command: ["milvus", "run", "standalone"]
     security_opt:
@@ -533,7 +533,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "100m", max-file: "5" }
-    networks: [aioa-net]
+    networks: [aios-net]
     mem_limit: 4g
     cpus: "2"
 
@@ -542,55 +542,55 @@ services:
   # ===========================================================================
   prometheus:
     image: prom/prometheus:latest
-    container_name: aioa-prometheus
+    container_name: aios-prometheus
     profiles: ["ops"]
     volumes:
       - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
-    networks: [aioa-net]
+    networks: [aios-net]
     restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
-    container_name: aioa-grafana
+    container_name: aios-grafana
     profiles: ["ops"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     ports:
       - "3000:3000"
-    networks: [aioa-net]
+    networks: [aios-net]
     restart: unless-stopped
 
   loki:
     image: grafana/loki:latest
-    container_name: aioa-loki
+    container_name: aios-loki
     profiles: ["ops"]
     ports:
       - "3100:3100"
-    networks: [aioa-net]
+    networks: [aios-net]
     restart: unless-stopped
 
   # ===========================================================================
-  # 入口 Nginx（:80）—— /web 管理端 · /user 用户端（配置见 nginx/aioa-entry.conf）
+  # 入口 Nginx（:80）—— /web 管理端 · /user 用户端（配置见 nginx/aios-entry.conf）
   #
   # 定位：**纯入口别名**，不是新的「边缘层」。H5 / 管理端 / 接口仍由 server:8080
   # 单端口提供（docs/33），本服务只把更短的路径映射过去并补 SSE 关缓冲：
-  #     /web   → 302 → /aioa/web/   （管理端 SPA base 固定，必须跳转，原因见配置注释）
-  #     /user  → 内部改写回 /aioa/h5/（地址栏保持 /user/，H5 自推导接口基址为 /api）
-  #     /aioa/ 与 /api/ → server:8080
+  #     /web   → 302 → /aios/web/   （管理端 SPA base 固定，必须跳转，原因见配置注释）
+  #     /user  → 内部改写回 /aios/h5/（地址栏保持 /user/，H5 自推导接口基址为 /api）
+  #     /aios/ 与 /api/ → server:8080
   # 所以 8080 仍需发布（既有探活/脚本直连它）；若只想暴露 80，可把 server 的
   # `ports: "8080:8080"` 收成 `expose`，但那会让「绕过 nginx 直连」的排障手段失效。
   # ===========================================================================
   nginx:
     image: nginx:1.27-alpine
-    container_name: aioa-nginx
+    container_name: aios-nginx
     # ★ profile 门控：**默认 `up -d` 不起它**，与「两张镜像就能跑」的离线包口径一致。
     #   （裸跑 `docker compose up -d` 不会再试图去 Docker Hub 拉 nginx 而卡死。）
     #   要短路径入口时显式拉起：`docker compose --profile entry up -d nginx`
     profiles: ["entry"]
     volumes:
-      - ./nginx/aioa-entry.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/aios-entry.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "80:80"
     depends_on:
@@ -599,7 +599,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }
-    networks: [aioa-net]
+    networks: [aios-net]
 
 volumes:
   # server 上传文件（/app/uploads）。不声明会随容器重建丢失。
@@ -613,5 +613,5 @@ volumes:
   milvusminiodata:
 
 networks:
-  aioa-net:
+  aios-net:
     driver: bridge

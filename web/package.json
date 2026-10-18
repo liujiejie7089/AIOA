@@ -1,8 +1,8 @@
 {
-  "name": "aioa-web",
+  "name": "aios-web",
   "version": "0.1.0",
   "private": true,
-  "description": "AIOA 智能办公基座前端 monorepo（M1 骨架：工作台主应用 + 接入 SDK + 示例子应用）",
+  "description": "AIOS 智能办公基座前端 monorepo（M1 骨架：工作台主应用 + 接入 SDK + 示例子应用）",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",

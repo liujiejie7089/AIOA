@@ -8,7 +8,7 @@
 | 上游依据 | `docs/23-权限审批流程与组织关联改造方案.md`（§4 P3/P4、§7 分期、§8 验收、§9 实现状态）；`docs/24-…一期验收报告.md` |
 | 基线 | **一期已落地并通过全量回归（零回归）**，本文件仅描述**未开工的二期（P3）与三期（P4 完整版）** |
 | 范围声明 | **只描述变更部分**。一期已交付的 `org_duty` / `duty_code` / `levels` / `APPLICANT_SUPERIOR` / `cc` 基础能力 / `task_role` / `scope=cc` / `summary.cc` / H5「抄送我的」分区，**不重复设计**，仅作前置依赖引用。不写竞品分析与市场定位。 |
-| 编程栈（沿用） | Vue3 管理端 shell + SpringBoot 单体（`server/`）+ MySQL8（`aioa`）+ FastAPI agent + 用户端单文件 H5 |
+| 编程栈（沿用） | Vue3 管理端 shell + SpringBoot 单体（`server/`）+ MySQL8（`aios`）+ FastAPI agent + 用户端单文件 H5 |
 
 ---
 
@@ -194,7 +194,7 @@
 
 | 纪律 | 要求 |
 |---|---|
-| Flyway | **只追加、不改已应用**。当前最大版本 `V42` → 下一个 `V43`；**落地前必须重新 `ls server/aioa-boot/src/main/resources/db/migration | sort -V | tail -3` 取实际最大版本 +1**（一期的预测号曾被插队，见 `docs/23 §9`）。建议 `V43` = DDL（`applicant_type` / `applicant_department_id` / `cc_read_at`），`V44` = 各业务默认 `cc` 回填（**只补空、不覆盖**）。 |
+| Flyway | **只追加、不改已应用**。当前最大版本 `V42` → 下一个 `V43`；**落地前必须重新 `ls server/aios-boot/src/main/resources/db/migration | sort -V | tail -3` 取实际最大版本 +1**（一期的预测号曾被插队，见 `docs/23 §9`）。建议 `V43` = DDL（`applicant_type` / `applicant_department_id` / `cc_read_at`），`V44` = 各业务默认 `cc` 回填（**只补空、不覆盖**）。 |
 | 缺省兼容 | 任何新增请求体字段缺省（不传/`null`/`false`）必须保持旧行为，否则 15 个既有套件 + H5 集体变红。 |
 | 错误语义 | 业务错误 = HTTP 200 + `code != 0`；**跨租户/跨机构一律 404**（不泄露存在性），**同租户/同机构越权才 403**。 |
 | 角色层级 | `ROLE_ADMIN` > `ROLE_TENANT_ADMIN` > `ROLE_ORG_ADMIN` > `ROLE_DEPT_LEADER` > `ROLE_MEMBER`（不改）。 |

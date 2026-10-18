@@ -26,7 +26,7 @@ import json
 import sys
 import urllib.request
 
-DB = dict(host="127.0.0.1", user="root", password="", database="aioa", charset="utf8mb4")
+DB = dict(host="127.0.0.1", user="root", password="", database="aios", charset="utf8mb4")
 BASE = "http://127.0.0.1:8080/api/v1"
 USER, PWD = "zhangsan", "User@123"   # 任意登录用户可读 /workers；模块数字人是 TENANT 可见
 

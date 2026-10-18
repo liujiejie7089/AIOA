@@ -7,7 +7,7 @@
 - **收口必跑**：`e2e_full_system.py` **155/155**（13 段跨层串联；`--no-browser` 跳渲染段）。跑前先 `ls scripts/ | grep -E "^e2e_"`（套件会因 gitignore 凭空消失，别照抄本表）。只改前端也必须跑 `vue-tsc --noEmit`。
 - **按钮级全量 UI（2026-09-19 新增）**：`e2e_v61_h5_all_buttons.py`（H5 **27/27**，运行时枚举 `onclick`，冒烟点 93 键）· `e2e_v61_shell_all_buttons.py`（管理端 **145/145，0 JS 异常**：admin 49 · znkj_admin 45 · znkjyf_admin 19 · znsfb_ldr 17 · znsfb_m01 15）· wrapper `run_v61_shell_buttons.sh`。
   **铁律：管理端按钮级测试必须逐角色分进程**（单浏览器连跑 20+ 路由 + 上百点击 ⇒ Edge renderer 资源耗尽挂起）。稳定三板斧 = `goto(wait_until="commit")` + 越权断言用 `page.url`（免 evaluate 挂起）+ 按钮枚举单次 `evaluate`；点击 `locator.click(timeout=2000, no_wait_after=True, force=True)` + 每次 `Escape` 关弹层；只跳破坏性/真实网络/空文本（树箭头）按钮，跳过清单**过宽会「点 0 个」失去意义**。
-- **基线（2026-09-17~19）**：`e2e_v48_gitee`116 · `e2e_v51_gitee_init`50 · `e2e_gitea_live`81 · `e2e_v50_tenant_org`54 · `e2e_v52_message_center`47 · `e2e_leave_flow_notify`19 · `e2e_v45_approver_modes`44 · `e2e_v45_misc_fixes`27 · `e2e_v45_config_ui`25 · `e2e_v43_dept_applicant`41 · `e2e_v43_cc_read`41 · `e2e_v41_duty_levels`48 · `e2e_v39_applicant_superior`49 · `e2e_v36_grant_expert_review`64 · `e2e_admin_personnel_scope`57 · `e2e_v32_org_scope`51 · `e2e_v36_stats_clamp`66 · `e2e_v33_roles`41 · `verify_v51_repo_urls`23 · `verify_v51_repo_urls_ui`18 · `verify_v50_ui`28 · `h5_v33_render`28 · `admin_v39_todo_badge`17 · `_check_gitea_ui_provider`17 · `_check_gitea_cfg_failure_ui`16 · `agent/tests` 42 passed · `aioa-gitee` 单测 165 · **`e2e_v62_milvus_kb` 25（mysql 档；milvus 档未跑）**（以上均为 `N/N` 全绿）。
+- **基线（2026-09-17~19）**：`e2e_v48_gitee`116 · `e2e_v51_gitee_init`50 · `e2e_gitea_live`81 · `e2e_v50_tenant_org`54 · `e2e_v52_message_center`47 · `e2e_leave_flow_notify`19 · `e2e_v45_approver_modes`44 · `e2e_v45_misc_fixes`27 · `e2e_v45_config_ui`25 · `e2e_v43_dept_applicant`41 · `e2e_v43_cc_read`41 · `e2e_v41_duty_levels`48 · `e2e_v39_applicant_superior`49 · `e2e_v36_grant_expert_review`64 · `e2e_admin_personnel_scope`57 · `e2e_v32_org_scope`51 · `e2e_v36_stats_clamp`66 · `e2e_v33_roles`41 · `verify_v51_repo_urls`23 · `verify_v51_repo_urls_ui`18 · `verify_v50_ui`28 · `h5_v33_render`28 · `admin_v39_todo_badge`17 · `_check_gitea_ui_provider`17 · `_check_gitea_cfg_failure_ui`16 · `agent/tests` 42 passed · `aios-gitee` 单测 165 · **`e2e_v62_milvus_kb` 25（mysql 档；milvus 档未跑）**（以上均为 `N/N` 全绿）。
 - **本地哨兵**（非 e2e 命名）：`_syntax_h5.js` · `_refaudit_h5.js`（H5 内联 `onX="fn()"` 悬空引用——单文件 H5 无打包器无类型检查）· `_check_menu_scroll.py`（27 项）。改 H5/管理端布局后顺手跑。
 - `h5_v33_render` **（该套件现已不在 `scripts/`）**：本条曾把它的红写成「假红」，2026-09-22 查明**是误判**，保留原文以记住教训 ——
   原文：「其『AI 解读』段依赖 agent，若用 `agent/.venv` + `127.0.0.1` 起 agent，请求体被丢弃 → 422 假红；**必须按 `start-all.sh` 口径**（`envs/default` python + `--host 0.0.0.0`）重启 agent 后再判。」
@@ -167,8 +167,8 @@ tenant 9 全清（5866 行 / 44 表）。当时记录了代价，本轮把它**�
   **必须按业务键定位行**（`tr:has-text("DSJ-DEMO")`）并先查库确认该行该有值；
   （b）用 `inner_text()` 查折叠子菜单的子项 ⇒ 折叠态文本不可见，`innerText` 取不到，五项全假红；
   **先展开分组或改读 `text_content()`**。
-  附带核实：运行中的 `--aioa.web.web-dir` 指向 `%TEMP%\aioa-webroot`，其 `index.html` 与入口 bundle
-  与当次构建（`%TEMP%\aioa-shell-v68c`）同时间戳，且 webroot **已无任何 `SubTenant*` chunk** ⇒
+  附带核实：运行中的 `--aios.web.web-dir` 指向 `%TEMP%\aios-webroot`，其 `index.html` 与入口 bundle
+  与当次构建（`%TEMP%\aios-shell-v68c`）同时间戳，且 webroot **已无任何 `SubTenant*` chunk** ⇒
   「陈旧产物未清理」这条假设被排除（排查顺序：先证载体，再怀疑代码）。
 - **`scripts/e2e_v65_expert_visibility.py`（50/50，连跑两次 + `--selftest` 通过）** ——
   把「专家可见范围必须在**用户端目录**真实生效」（#6 的行为半边）从探针固化成回归套件：
@@ -473,9 +473,9 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   跨套件互证：`_e2e_pm_ui` 的侧栏清单里已无「项目与仓库」、有「仓库配置」。
 
 **用真实浏览器驱动 H5（2026-10-11 实操补充）**：把后端当静态宿主即可 —— **无需另起静态服务**：
-  `http://127.0.0.1:8080/aioa/h5/`（管理端 `/aioa/web/`，同一端口三块，见 `runtime-env.md §2`）。
+  `http://127.0.0.1:8080/aios/h5/`（管理端 `/aios/web/`，同一端口三块，见 `runtime-env.md §2`）。
   登录可**跳过 UI**：先 `POST /api/v1/auth/login` 拿 token，再
-  `localStorage.setItem('aioa_session', JSON.stringify({token, user}))` 后 `reload()`，
+  `localStorage.setItem('aios_session', JSON.stringify({token, user}))` 后 `reload()`，
   然后 `document.body.classList.add('auth'); oaState.mode='oa'; oaBoot();`。
   ⚠️ **`oaSend` / `oaGo` / `renderWorkers` 没有挂到 `window`**（只有 `oaBoot` `oaSetMode` `oaLayoutTails`
   `oaState` `oaMaybeProjectAction` `oaEnterProject`），所以必须用**真实交互**：
@@ -486,10 +486,10 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 
 ## 2026-10-11 增补：两个新哨兵入 `_run_all_regression.sh`
 
-- **`scripts/_check_boot_jar_fat.py`（12 项）** —— 可执行产物哨兵：`aioa-boot` 必须是**胖 jar**。
+- **`scripts/_check_boot_jar_fat.py`（12 项）** —— 可执行产物哨兵：`aios-boot` 必须是**胖 jar**。
   起因是本轮真踩到「可执行 jar 被换成瘦 jar ⇒ 运行中的实例一律 500」（§八）。
   J1 合法 zip · J2 `BOOT-INF/lib` 内嵌 jar ≥ 50 · J3/J3b MANIFEST 可执行 · J4 入口类进包 ·
-  J5 五个模块内嵌且非空（含**定点回归** J6：故障类 `RunCreatedResponse` 能在内嵌 `aioa-chat` jar 里解析）·
+  J5 五个模块内嵌且非空（含**定点回归** J6：故障类 `RunCreatedResponse` 能在内嵌 `aios-chat` jar 里解析）·
   **N1/N2 负向对照**（合成瘦 jar / `repackage` 前的 `.original` 必须被判「不是胖 jar」）。
   跑前判据：`python scripts/_check_boot_jar_fat.py`，期望 **12 通过 / 0 失败**。
 
@@ -511,7 +511,7 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   1. **除名 5 条「幽灵条目」**：`SMOKE_v48.py` · `check_org_structure_render.py` · `h5_v33_render.py` ·
      `admin_v39_todo_badge.py` · `admin_v34_review_render.py`。它们早在 **2026-09-20** 的
      `f370fdd chore(repo): 仓库清理` 里就作为「一次性诊断/渲染校验脚本」被删（备份在项目外
-     `%TEMP%/aioa-cleanup-backup-20260920/scripts/`），**但当时没同步改本清单** ⇒ 此后每次矩阵
+     `%TEMP%/aios-cleanup-backup-20260920/scripts/`），**但当时没同步改本清单** ⇒ 此后每次矩阵
      都为这 5 条凭空产出 `exit=2 can't open file`。**清单 46 → 41**；
      非零 28 → 23（5 条纯噪声消失）。⚠️ 它们依赖早已移除的 **tenant 9** 与 `:5173` 管理端 shell
      ⇒ 即便还原也只会再加 5 条假红，故选择「除名」而非「还原」。
@@ -538,7 +538,7 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   判据：P1 「办公用品报销」必须出现 `need_form`；P2 `form_code/fields/title` 齐全；P3 `reason` 非空；
   N1 寒暄「你好」**不得**触发表单（负向对照，防恒真）。
   `--worker-id <id>` 可测绑定数字人的会话（用户真实路径）。前置：`:8080` + `:8000` 在线；会自建并删除临时会话。
-  ⚠️ **跑之前先确认 `agent/.env` 有 `AIOA_HITL=true`**，并在 `logs/agent.log` 里看 `tools=` 是否为 **9**
+  ⚠️ **跑之前先确认 `agent/.env` 有 `AIOS_HITL=true`**，并在 `logs/agent.log` 里看 `tools=` 是否为 **9**
   （7 业务 + ask_user + request_form；为 7 说明内置工具没注入，本套必红）。
 
 

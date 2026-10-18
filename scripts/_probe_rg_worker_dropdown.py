@@ -17,10 +17,10 @@ import httpx
 from playwright.sync_api import sync_playwright
 
 # 入口可用环境变量覆盖，便于同时核对「单端口产物」与「:5173 dev」两条入口：
-#   AIOA_PROBE_ENTRY=http://127.0.0.1:5173/    （dev，base='/'）
-#   AIOA_PROBE_ENTRY=http://127.0.0.1:8080/aioa/web/   （默认，单端口产物）
+#   AIOS_PROBE_ENTRY=http://127.0.0.1:5173/    （dev，base='/'）
+#   AIOS_PROBE_ENTRY=http://127.0.0.1:8080/aios/web/   （默认，单端口产物）
 BASE = "http://127.0.0.1:8080"
-ENTRY = os.environ.get("AIOA_PROBE_ENTRY", BASE + "/aioa/web/").rstrip("/")
+ENTRY = os.environ.get("AIOS_PROBE_ENTRY", BASE + "/aios/web/").rstrip("/")
 WEB = ENTRY
 USER, PWD = "dsj_admin", "User@123"
 print("入口 =", WEB)
@@ -43,9 +43,9 @@ def main():
         b = p.chromium.launch(headless=True)
         ctx = b.new_context(viewport={"width": 1440, "height": 900})
         ctx.add_init_script(
-            "localStorage.setItem('aioa.token', %s);"
-            "localStorage.setItem('aioa.refreshToken', %s);"
-            "localStorage.setItem('aioa.user', %s);"
+            "localStorage.setItem('aios.token', %s);"
+            "localStorage.setItem('aios.refreshToken', %s);"
+            "localStorage.setItem('aios.user', %s);"
             % (json.dumps(token), json.dumps(refresh), json.dumps(json.dumps(user, ensure_ascii=False)))
         )
         page = ctx.new_page()

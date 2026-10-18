@@ -1,5 +1,5 @@
 # =============================================================================
-# Java 后端（aioa-boot）
+# Java 后端（aios-boot）
 #
 # 两个要点：
 #  1. Flyway 迁移在启动时执行，首次冷启动可能超过 60s —— readinessProbe 必须给足
@@ -10,10 +10,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: aioa-server
-  namespace: aioa
+  name: aios-server
+  namespace: aios
   labels:
-    app: aioa-server
+    app: aios-server
 spec:
   replicas: 1
   # 迁移期间禁止并行：滚动会同时起两个实例抢同一把 Flyway 锁
@@ -21,55 +21,55 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: aioa-server
+      app: aios-server
   template:
     metadata:
       labels:
-        app: aioa-server
+        app: aios-server
     spec:
       containers:
         - name: server
-          image: aioa/server:latest
+          image: aios/server:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           envFrom:
             - configMapRef:
-                name: aioa-config
+                name: aios-config
             - secretRef:
-                name: aioa-secrets
+                name: aios-secrets
           env:
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:mysql://$(MYSQL_HOST):$(MYSQL_PORT)/$(MYSQL_DB)?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false"
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 configMapKeyRef:
-                  name: aioa-config
+                  name: aios-config
                   key: MYSQL_USER
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: aioa-secrets
+                  name: aios-secrets
                   key: MYSQL_PASSWORD
-            - name: AIOA_JWT_SECRET
+            - name: AIOS_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: aioa-secrets
+                  name: aios-secrets
                   key: JWT_SECRET
-            - name: AIOA_SERVICE_JWT_SECRET
+            - name: AIOS_SERVICE_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: aioa-secrets
+                  name: aios-secrets
                   key: SERVICE_JWT_SECRET
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 configMapKeyRef:
-                  name: aioa-config
+                  name: aios-config
                   key: MINIO_ROOT_USER
             - name: MINIO_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: aioa-secrets
+                  name: aios-secrets
                   key: MINIO_ROOT_PASSWORD
           resources:
             requests: { cpu: "1", memory: "2Gi" }
@@ -90,16 +90,16 @@ spec:
       volumes:
         - name: uploads
           persistentVolumeClaim:
-            claimName: aioa-uploads
+            claimName: aios-uploads
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: aioa-server
-  namespace: aioa
+  name: aios-server
+  namespace: aios
 spec:
   selector:
-    app: aioa-server
+    app: aios-server
   ports:
     - name: http
       port: 8080

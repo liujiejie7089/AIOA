@@ -1,6 +1,6 @@
 """可用表单清单（available_forms）注入系统提示的单元测试。
 
-覆盖 aioa_ai.prompt.builder.build_messages 对 RunRequest.available_forms 的消费：
+覆盖 aios_ai.prompt.builder.build_messages 对 RunRequest.available_forms 的消费：
   T1 两张表单 → system 同时出现两个 code 与两个中文名，且【可用表单清单】只出现 1 次；
   T2 available_forms=None → system 不含「可用表单清单」（负向对照，保证逐字一致）；
   T3 module_code 缺失 → 该行不出现「模块=None」；
@@ -11,8 +11,8 @@
 """
 from __future__ import annotations
 
-from aioa_ai.contracts import RunRequest, UserContext
-from aioa_ai.prompt import builder
+from aios_ai.contracts import RunRequest, UserContext
+from aios_ai.prompt import builder
 
 
 def _make_req(available_forms=None) -> RunRequest:

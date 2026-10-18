@@ -24,7 +24,7 @@
 | **何时需要初始化** | 企业要使用「项目与仓库」能力时。未初始化时：`initStatus=PENDING`，组织回落平台默认（既有 V50 语义不变），企业令牌为空 |
 | **谁能触发** | 租户管理员（`ROLE_TENANT_ADMIN`）。平台管理员可代企业操作，需显式传 `?tenantId=`；**租户管理员跨租户会被拒** |
 | **幂等性** | 重复初始化 = 更新同一行（`gitee_tenant_config.tenant_id` 唯一键），不产生多行 |
-| **不触发 / 拒绝的情形** | ① 平台级开关关闭（`aioa.gitee.enabled=false`）；② 本企业 Gitee 联动已被显式关闭且本次未显式启用；③ 令牌格式非法；④ 组织名非法；⑤ 令牌无效/过期；⑥ 令牌无权访问该组织 |
+| **不触发 / 拒绝的情形** | ① 平台级开关关闭（`aios.gitee.enabled=false`）；② 本企业 Gitee 联动已被显式关闭且本次未显式启用；③ 令牌格式非法；④ 组织名非法；⑤ 令牌无效/过期；⑥ 令牌无权访问该组织 |
 | **不会自动发生的事** | 开通企业不会自动初始化；初始化不会自动创建 Gitee 组织（Gitee V5 无「建组织」接口）；不会修改既有组织名与开关（那是 `/gitee/tenant-config` 的职责） |
 
 ## 1.3 参数项与校验规则
@@ -52,7 +52,7 @@
 
 | # | 步骤码 | 检查内容 | 失败时 |
 |---|---|---|---|
-| 1 | `GLOBAL_ENABLED` | 平台开关 `aioa.gitee.enabled` | 中止 |
+| 1 | `GLOBAL_ENABLED` | 平台开关 `aios.gitee.enabled` | 中止 |
 | 2 | `TENANT_ENABLED` | 本企业开关（已关闭且本次未显式启用） | 中止 |
 | 3 | `TOKEN_FORMAT` | 令牌格式（见 §1.3） | 中止 |
 | 4 | `ORG_FORMAT` | 组织名格式 | 中止 |
@@ -116,18 +116,18 @@
 ## 2.1 现状与问题
 
 - `notification` 表**只有站内单一通道**（`tenant_id/user_id/type/title/content/ref_id/read_at`，**无 channel 字段**）。
-- 通知写入**分散在两处**：`aioa-resource` 的 `NotificationService.notifyUser/notifyAdmins`，以及 `aioa-org` 的 `ApprovalFlowService.notify(...)` —— 后者因为 **`aioa-org` 不依赖 `aioa-resource`**，是**用自己的 mapper 直插通知表**的。
+- 通知写入**分散在两处**：`aios-resource` 的 `NotificationService.notifyUser/notifyAdmins`，以及 `aios-org` 的 `ApprovalFlowService.notify(...)` —— 后者因为 **`aios-org` 不依赖 `aios-resource`**，是**用自己的 mapper 直插通知表**的。
 - 后果：审批到了**只能靠用户主动登录才能看见**；投递是否成功**完全不可观测**。
 
 ## 2.2 设计（事件解耦 + 通道 SPI + 投递可观测 + 用户偏好）
 
-**为什么用事件解耦**：`aioa-org` 与 `aioa-resource` 互不依赖，而两条写入路径都必须能被同一套分发逻辑覆盖。用 `aioa-common` 里的事件解耦是项目**已有先例**（`TenantProvisionedEvent` 由 `aioa-org` 发、`aioa-resource` 的 `WorkerTemplateProvisioner` 收）。
+**为什么用事件解耦**：`aios-org` 与 `aios-resource` 互不依赖，而两条写入路径都必须能被同一套分发逻辑覆盖。用 `aios-common` 里的事件解耦是项目**已有先例**（`TenantProvisionedEvent` 由 `aios-org` 发、`aios-resource` 的 `WorkerTemplateProvisioner` 收）。
 
 ```
-写入方(aioa-org / aioa-resource)
+写入方(aios-org / aios-resource)
   └─ 先写站内信（既有行为不变，任何情况下都必须落库）
-  └─ 再发布 NotificationRequested 事件（aioa-common）
-        └─ aioa-resource: NotificationDispatcher 监听
+  └─ 再发布 NotificationRequested 事件（aios-common）
+        └─ aios-resource: NotificationDispatcher 监听
               ├─ 读租户通道配置 + 用户偏好
               ├─ 逐通道投递（try/catch 隔离，单通道失败不影响其它通道，更不影响调用方）
               └─ 写 notification_delivery（每个通道一行：状态/次数/错误/时间）

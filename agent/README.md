@@ -1,4 +1,4 @@
-# aioa-agent（M1 骨架；M2 真实推理 · DeepSeek Harness 已就绪）
+# aios-agent（M1 骨架；M2 真实推理 · DeepSeek Harness 已就绪）
 
 Python agent 服务（智能体运行层 / AI 大脑）。M1 打通链路：`POST /internal/v1/runs` 接收 `RunRequest`，以 SSE 逐字符回显输入文本。
 M2 已接入真实 LLM（DeepSeek / 通义 / 本地 vLLM / Ollama，均 OpenAI 兼容）：配置对应 `DEEPSEEK_API_KEY` 等密钥并把 `MODEL_DEFAULT` 指向该 provider，即切换为流式推理；事件序列与 M1 完全一致，无需前端改动。
@@ -46,7 +46,7 @@ curl -N -X POST http://127.0.0.1:8000/internal/v1/runs \
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `SERVICE_JWT_SECRET` | 空 | 服务 JWT 密钥（M1 不校验，M2 启用） |
-| `AIOA_SERVER_BASE_URL` | `http://aioa-server:8080` | Java 后端回调地址 |
+| `AIOS_SERVER_BASE_URL` | `http://aios-server:8080` | Java 后端回调地址 |
 | `MODEL_DEFAULT` | `echo` | 默认 provider：`echo` / `deepseek` / `dashscope` / `vllm` / `ollama` |
 | `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `VLLM_API_KEY` / `OLLAMA_API_KEY` | 空 | 对应 provider 的密钥（echo 无需）；只走环境变量或 `.env`，不入库不入 git |
 | `{KEY}_BASE_URL` / `{KEY}_MODEL` | 内置值 | 覆盖 provider 的端点与模型名（如 `DEEPSEEK_MODEL=deepseek-chat`） |

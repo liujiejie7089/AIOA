@@ -191,5 +191,5 @@ OA 基座前端域名是否在白名单内？浏览器直连会不会被拦？�
 - `/show/*` 67 个接口在生产西昌**全部可达**、无需 Token，可作为第一期接入范围。
 - 文档 8 处参数错误已实测确认并给出正确参数名（见映射表 D2）。
 - 文档 20 处返回结构与实际不符，已实测确认（见映射表 D3）。
-- OA 基座已有完整的工具治理骨架（`@AioaTool` 注解即契约 / JSON Schema 自动推导 / `ToolDispatcher` 出网调用 / `ToolPermissionService` 权限 / `ToolInvocationLog` 审计 / 熔断与重试），接入**不需要改基座代码**。
+- OA 基座已有完整的工具治理骨架（`@AiosTool` 注解即契约 / JSON Schema 自动推导 / `ToolDispatcher` 出网调用 / `ToolPermissionService` 权限 / `ToolInvocationLog` 审计 / 熔断与重试），接入**不需要改基座代码**。
 - 唯一必须新写的：**scfy 适配器**（因为它的鉴权是自定义 `token` 头 + AES 加密密码 + 每次响应头续期，基座 `ToolDispatcher` 只支持 BASIC/Bearer）。

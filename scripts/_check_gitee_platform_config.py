@@ -59,16 +59,16 @@ FIELDS = [
 # 刻意**不在**可覆盖范围内的参数（放进 UI 会产生「保存了但没生效」或「自毁密文」）
 FORBIDDEN_FIELDS = ["tokenEncKey", "baseUrl", "webBaseUrl", "webhookSecret"]
 
-ADAPTER = "server/aioa-gitee/src/main/java/cn/aioa/gitee/config/RepoProviderSettingsAdapter.java"
-OVERLAY = "server/aioa-gitee/src/main/java/cn/aioa/gitee/config/PlatformConfigOverlay.java"
-ENTITY = "server/aioa-gitee/src/main/java/cn/aioa/gitee/entity/GiteePlatformConfig.java"
-SERVICE = "server/aioa-gitee/src/main/java/cn/aioa/gitee/service/GiteePlatformConfigService.java"
-CONTROLLER = "server/aioa-gitee/src/main/java/cn/aioa/gitee/controller/GiteeController.java"
-MIGRATION = "server/aioa-boot/src/main/resources/db/migration/V77__gitee_platform_config.sql"
+ADAPTER = "server/aios-gitee/src/main/java/cn/aios/gitee/config/RepoProviderSettingsAdapter.java"
+OVERLAY = "server/aios-gitee/src/main/java/cn/aios/gitee/config/PlatformConfigOverlay.java"
+ENTITY = "server/aios-gitee/src/main/java/cn/aios/gitee/entity/GiteePlatformConfig.java"
+SERVICE = "server/aios-gitee/src/main/java/cn/aios/gitee/service/GiteePlatformConfigService.java"
+CONTROLLER = "server/aios-gitee/src/main/java/cn/aios/gitee/controller/GiteeController.java"
+MIGRATION = "server/aios-boot/src/main/resources/db/migration/V77__gitee_platform_config.sql"
 TS_API = "web/apps/shell/src/api/gitee.ts"
 VUE = "web/apps/shell/src/views/GiteeProjectsView.vue"
-GITEE_CLIENT = "server/aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteeClient.java"
-GITEA_CLIENT = "server/aioa-gitee/src/main/java/cn/aioa/gitee/client/GiteaProviderClient.java"
+GITEE_CLIENT = "server/aios-gitee/src/main/java/cn/aios/gitee/client/GiteeClient.java"
+GITEA_CLIENT = "server/aios-gitee/src/main/java/cn/aios/gitee/client/GiteaProviderClient.java"
 
 # 可覆盖字段的 getter：客户端**必须经 RepoProviderSettings 端口**取这些值，
 # 不得直接读原始 *Properties bean（原始 bean 只含环境变量值，绕过管理端覆盖层）。
@@ -479,9 +479,9 @@ def main():
     ap = argparse.ArgumentParser(description="仓库联动平台参数动态配置哨兵")
     ap.add_argument("--api", action="store_true", help="额外跑接口往返（需后端在跑）")
     ap.add_argument("--selftest", action="store_true", help="自检：证明静态断言会随退化变红")
-    ap.add_argument("--base", default=os.environ.get("AIOA_BASE", "http://127.0.0.1:8080"))
-    ap.add_argument("--user", default=os.environ.get("AIOA_USER", "admin"))
-    ap.add_argument("--password", default=os.environ.get("AIOA_PASSWORD", "Admin@123"))
+    ap.add_argument("--base", default=os.environ.get("AIOS_BASE", "http://127.0.0.1:8080"))
+    ap.add_argument("--user", default=os.environ.get("AIOS_USER", "admin"))
+    ap.add_argument("--password", default=os.environ.get("AIOS_PASSWORD", "Admin@123"))
     args = ap.parse_args()
 
     print("== 静态断言 ==")

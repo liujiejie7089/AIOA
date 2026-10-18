@@ -102,9 +102,9 @@ def wheel_over(page, selector, dy):
 def new_ctx(browser, tok, user, ref):
     ctx = browser.new_context(viewport={"width": 1366, "height": 720})
     ctx.add_init_script(
-        "localStorage.setItem('aioa.token', %s);"
-        "localStorage.setItem('aioa.refreshToken', %s);"
-        "localStorage.setItem('aioa.user', %s);"
+        "localStorage.setItem('aios.token', %s);"
+        "localStorage.setItem('aios.refreshToken', %s);"
+        "localStorage.setItem('aios.user', %s);"
         % (json.dumps(tok), json.dumps(ref), json.dumps(json.dumps(user, ensure_ascii=False)))
     )
     return ctx

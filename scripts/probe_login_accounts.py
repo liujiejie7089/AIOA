@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 BASE = "http://127.0.0.1:8080/api/v1"
 C = httpx.Client(timeout=30, trust_env=False)
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa",
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios",
           charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor)
 
 CANDIDATES = ["User@123", "Admin@123", "123456"]

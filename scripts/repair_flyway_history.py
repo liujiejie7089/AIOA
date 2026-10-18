@@ -36,10 +36,10 @@ except ImportError:  # pragma: no cover
     sys.exit("缺少依赖：请 pip install pymysql")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MIG_DIR = os.path.join(ROOT, "server", "aioa-boot", "src", "main", "resources", "db", "migration")
+MIG_DIR = os.path.join(ROOT, "server", "aios-boot", "src", "main", "resources", "db", "migration")
 HISTORY = "flyway_schema_history"
 
-DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aioa", charset="utf8mb4")
+DB = dict(host="127.0.0.1", port=3306, user="root", password="", database="aios", charset="utf8mb4")
 
 
 def flyway_checksum(path):

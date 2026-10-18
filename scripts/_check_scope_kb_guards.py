@@ -49,13 +49,13 @@ SERVER = os.path.join(ROOT, "server")
 SHELL = os.path.join(ROOT, "web", "apps", "shell", "src")
 
 SCOPE_TS = os.path.join(SHELL, "api", "tenantScope.ts")
-QUOTA_CTRL = os.path.join(SERVER, "aioa-resource", "src", "main", "java", "cn", "aioa",
+QUOTA_CTRL = os.path.join(SERVER, "aios-resource", "src", "main", "java", "cn", "aios",
                           "resource", "controller", "AdminQuotaController.java")
-GRANT_SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+GRANT_SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                          "org", "service", "ResourceGrantService.java")
-KB_SVC = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+KB_SVC = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                       "org", "service", "OrgKbService.java")
-KB_MAPPER = os.path.join(SERVER, "aioa-org", "src", "main", "java", "cn", "aioa",
+KB_MAPPER = os.path.join(SERVER, "aios-org", "src", "main", "java", "cn", "aios",
                          "org", "mapper", "OrgStatMapper.java")
 GRANT_VIEW = os.path.join(SHELL, "views", "ResourceGrantView.vue")
 QUOTA_VIEW = os.path.join(SHELL, "views", "QuotaAdminView.vue")

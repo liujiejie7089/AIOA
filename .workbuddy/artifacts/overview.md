@@ -1,4 +1,4 @@
-# AIOA · 企业管理 → 项目管理 **Gitea 真机流程**交付概览
+# AIOS · 企业管理 → 项目管理 **Gitea 真机流程**交付概览
 
 > 2026-09-18 · 仓库 `C:/Users/刘尖尖/WorkBuddy/aioa` · 实例 `http://172.16.8.249:3000`（Gitea 1.26.2）· 组织 `AI-OA`
 > 详细证据：`gitea-live-verification.md`（真机跑通报告）· 交接单：`gitea-switch-readiness.md`
@@ -14,7 +14,7 @@
 绑定链路的完整定位过程与证据：`gitea-oauth-bind-closure.md`。
 
 > **第五轮（你复报「创建仓库失败」那一张截图）**：截图里的项目 `999 / dept101-999` 已修复，
-> 现在 `ACTIVE`、仓库在 `aioa-demo-org/dept101-999` 上真实存在（`http=200`）。
+> 现在 `ACTIVE`、仓库在 `aios-demo-org/dept101-999` 上真实存在（`http=200`）。
 > 顺着它查下去又抓出**两个新的真缺陷**（13、14），都在同一条「建仓闭环」上，详见 §3 末。
 
 ## 2. 实测结果
@@ -24,7 +24,7 @@
 | `scripts/e2e_gitea_live.py`（**新增真机套件**，11 段，含新增 `G0a` 列宽闸门与 `G4.7/G5.4/G5.5` 事件词表断言） | **81 / 81 PASS**（连跑两次），0 FAIL，0 BLOCKED |
 | `scripts/_check_gitea_ui_provider.py`（**新增**，浏览器实渲染核对托管方文案） | **17 / 17 PASS** |
 | `scripts/_check_gitea_cfg_failure_ui.py`（**新增**，配置拉取失败的归因核对） | **16 / 16 PASS**（abort / HTTP 500 两种失败形态 + 「重试」自愈） |
-| `aioa-gitee` 单测（含防回归 + 1 条源码审计） | **165 / 165**（`mvnw clean package` 全量，0 失败 0 错误） |
+| `aios-gitee` 单测（含防回归 + 1 条源码审计） | **165 / 165**（`mvnw clean package` 全量，0 失败 0 错误） |
 | 前端类型检查 `vue-tsc --noEmit` | **exit 0** |
 | `e2e_v51_gitee_init` · `e2e_v48_gitee` · `e2e_full_system --no-browser` | **50/50 · 116/116（连跑两次）· 145/145**（已知缺口 0） |
 | **绑定已真实成功**（最强证据） | 绑定行密文 **1188 字符** —— 旧列 `VARCHAR(1024)` 必被截断；日志 `Gitea 绑定成功 tenant=0 user=1 gitee=liujiejie(11)` |
@@ -51,10 +51,10 @@ Webhook `active=true`/`type=gitea`/事件覆盖 push·pull_request·issues；删
 2. **`gitee_account` 没有托管方维度**（正确性级）：绑定行存的其实是某一平台的身份（uid/登录名/该平台密钥加密的令牌）。
    切平台后 Gitee 的登录名会被拿去 Gitea 加协作者 → 404 静默失败；同一用户也无法并存两平台绑定。
    **修（V54 迁移）**：加 `provider` 列（74 条老行回填 `gitee`）+ 唯一键并入 `provider`/`gitee_uid` + 查询按 provider 过滤。
-3. **密钥报错说错配置键**（可运维级）：gitea 下让用户去改 `aioa.gitee.token-enc-key`。
+3. **密钥报错说错配置键**（可运维级）：gitea 下让用户去改 `aios.gitee.token-enc-key`。
    **修**：新增 `RepoProviderSettings.tokenEncKeyProperty()`，文案随 provider。
 4. **整页界面文案写死「Gitee」**（界面级）：页头/卡片/表头/按钮/确认框/Toast/OAuth 结果页一律「Gitee」，
-   而仓库地址全指向 `172.16.8.249:3000`；「未启用」提示还让人去改 `aioa.gitee.*`；
+   而仓库地址全指向 `172.16.8.249:3000`；「未启用」提示还让人去改 `aios.gitee.*`；
    初始化对话框说「令牌需具备 `projects` 权限」（Gitea 令牌页没有这个选项）。
    **修**：端口加 `providerLabel()` / `configKeyPrefix()` / `tokenRequirementHint()`；
    `/gitee/config` 回 `provider / providerLabel / configKey / tokenRequirementHint` 作为**前端文案唯一来源**；
@@ -129,7 +129,7 @@ MyBatis-Plus 默认 `NOT_NULL` 策略下**一直是空转**（库里 17 个 ACTI
 > 但它顺带暴露下面三个**与重启无关、会再犯**的缺陷 —— 它们和你截图里那三句错话一一对应：
 
 10. **把「服务不可达」说成「去改配置」**（界面级，归因错误）：
-    你截图里那句 `后端尚未配置 aioa.gitee.*…请联系系统管理员开启配置` 是**假的** —— 配置一切正常，
+    你截图里那句 `后端尚未配置 aios.gitee.*…请联系系统管理员开启配置` 是**假的** —— 配置一切正常，
     只是服务当时不在。成因：`loadConfig()` 的 catch 与 `enabled===false` **共用同一个
     `moduleEnabled=false`**，于是网络错误/5xx 也落进「未启用」分支。
     **修**：拆出 `configError` 独立状态 + 专属 error 横幅 + **「重试」按钮**；
@@ -199,7 +199,7 @@ MyBatis-Plus 默认 `NOT_NULL` 策略下**一直是空转**（库里 17 个 ACTI
 ## 5. 需要你决定 / 后续
 
 1. **Webhook 入站**（唯一未闭环）：本机在 NAT 后且防火墙未放行，Gitea 无法回调。
-   可行路径：① 平台与 Gitea **同网段部署**并把 `AIOA_GITEA_WEBHOOK_BASE_URL` 配成 Gitea 可达地址（生产常态）；
+   可行路径：① 平台与 Gitea **同网段部署**并把 `AIOS_GITEA_WEBHOOK_BASE_URL` 配成 Gitea 可达地址（生产常态）；
    ② 用**定时校准 + 只读接口**（无需入站，已实测可用）。
 2. **账号绑定（OAuth）✅ 已闭环**（2026-09-18 15:20:50 实测成功）。
    三处故障全部修复并验证：① 旧应用密钥在托管方侧**无法通过校验**（已换用新应用，
@@ -209,11 +209,11 @@ MyBatis-Plus 默认 `NOT_NULL` 策略下**一直是空转**（库里 17 个 ACTI
    完整过程、证据与「为什么不是你的密钥复制错了」见 `gitea-oauth-bind-closure.md`。
    **若要换绑**：先在「我的 Gitea 账号」点「解绑」，再点「绑定 Gitea 账号」走一次授权即可。
 3. **你截图里那条「创建仓库失败」的处置结果（第五轮）**：
-   根因是**租户 9 的 Gitea 组织配的是桩时代的名字 `aioa-demo-org`，而真实实例上没有这个组织**
-   （该配置行还是桩时代写下的：`enabled=1`、`org_name=aioa-demo-org`、**没有企业令牌**、
+   根因是**租户 9 的 Gitea 组织配的是桩时代的名字 `aios-demo-org`，而真实实例上没有这个组织**
+   （该配置行还是桩时代写下的：`enabled=1`、`org_name=aios-demo-org`、**没有企业令牌**、
    `init_status=PENDING`），建仓自然 404。已在真实 Gitea 上补建该组织，
    并让租户 9 管理员重跑一次「重试建仓」⇒ 项目 `999 / dept101-999` 现在 **ACTIVE**，
-   仓库 `aioa-demo-org/dept101-999` 真实存在（`http=200`、`default_branch=main`、你选的 public）。
+   仓库 `aios-demo-org/dept101-999` 真实存在（`http=200`、`default_branch=main`、你选的 public）。
    **仍建议你做一次（可选但推荐）**：用租户 9 管理员进「项目与仓库 → 企业 Gitea 初始化」，
    用**真实企业令牌**重跑一次初始化，把那一行的 `org_name` 改成你真正想用的组织
    （例如 `AI-OA`）并让 `org_verified` 落上 —— 否则那一行会一直「能用但来路不明」。

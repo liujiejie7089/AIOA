@@ -38,12 +38,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRM = 'web/apps/shell/src/constants/permissions.ts'
 RTR = 'web/apps/shell/src/router/index.ts'
 LAY = 'web/apps/shell/src/layouts/MainLayout.vue'
-CAT = 'server/aioa-security/src/main/java/cn/aioa/security/PermissionCatalog.java'
-ADM = 'server/aioa-resource/src/main/java/cn/aioa/resource/controller/AdminConfigController.java'
-GRP = 'server/aioa-resource/src/main/java/cn/aioa/resource/support/SysConfigGroups.java'
-SEED = 'server/aioa-boot/src/main/resources/db/migration/V81__org_config_perms.sql'
-CTRL = 'server/aioa-chat/src/main/java/cn/aioa/chat/controller/OrgConfigController.java'
-SVC = 'server/aioa-chat/src/main/java/cn/aioa/chat/service/OrgConfigService.java'
+CAT = 'server/aios-security/src/main/java/cn/aios/security/PermissionCatalog.java'
+ADM = 'server/aios-resource/src/main/java/cn/aios/resource/controller/AdminConfigController.java'
+GRP = 'server/aios-resource/src/main/java/cn/aios/resource/support/SysConfigGroups.java'
+SEED = 'server/aios-boot/src/main/resources/db/migration/V81__org_config_perms.sql'
+CTRL = 'server/aios-chat/src/main/java/cn/aios/chat/controller/OrgConfigController.java'
+SVC = 'server/aios-chat/src/main/java/cn/aios/chat/service/OrgConfigService.java'
 
 FILES = [PRM, RTR, LAY, CAT, ADM, GRP, SEED, CTRL, SVC]
 

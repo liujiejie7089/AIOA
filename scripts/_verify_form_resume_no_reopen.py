@@ -118,7 +118,7 @@ def _cap_form_code(worker: int) -> str | None:
     import pymysql
 
     conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="",
-                           database="aioa", charset="utf8mb4",
+                           database="aios", charset="utf8mb4",
                            cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:

@@ -63,7 +63,7 @@ def chk(name, ok, detail=""):
 # 在页面脚本之前注入：登录态 + 覆盖 window.fetch 拦截所有 /api/v1/** 并抓参。
 INIT_JS = r"""
 (function(){
-  try { localStorage.setItem('aioa_session', JSON.stringify({token:'fake-token',
+  try { localStorage.setItem('aios_session', JSON.stringify({token:'fake-token',
         user:{username:'zhangsan', nickname:'张三', roles:['ROLE_USER']}})); } catch(e){}
   window.__runs = [];
   window.__convN = 0;

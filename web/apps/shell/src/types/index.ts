@@ -1,4 +1,4 @@
-import type { PageContext } from '@aioa/sdk'
+import type { PageContext } from '@aios/sdk'
 
 /** 应用注册表条目（对应后端 app_registry） */
 export interface AppEntry {

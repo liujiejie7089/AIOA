@@ -200,10 +200,10 @@ ol.flow{font-size:13.3px;color:#3a4358}
 
 HTML = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AIOA 用户端体验走查报告（数字员工 · 审批）</title><style>%s</style></head><body><div class="wrap">
+<title>AIOS 用户端体验走查报告（数字员工 · 审批）</title><style>%s</style></head><body><div class="wrap">
 
 <div class="hero">
-  <h1>AIOA 用户端体验走查报告</h1>
+  <h1>AIOS 用户端体验走查报告</h1>
   <div class="sub">范围：<code style="background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3);color:#fff">http://localhost:5181</code> 公开页面 · 重点：数字员工 与 审批<br>
   方式：真实浏览器（Edge 无头）以「普通成员 zhangsan」与「租户管理员 admin」两种身份各走一遍全流程，逐页截图取证</div>
   <div class="meta"><span>普通成员 zhangsan</span><span>管理员 admin</span><span>截图 26 张</span><span>问题 %d 项</span><span>2026-09-11</span></div>

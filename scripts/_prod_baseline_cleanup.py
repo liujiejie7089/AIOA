@@ -17,8 +17,8 @@ import sys
 
 import pymysql
 
-DB = dict(host='127.0.0.1', port=3306, user='root', password='', database='aioa', charset='utf8mb4')
-BACKUP_DIR = r'C:/Users/刘尖尖/AppData/Local/Temp/aioa-db-backup-20260920'
+DB = dict(host='127.0.0.1', port=3306, user='root', password='', database='aios', charset='utf8mb4')
+BACKUP_DIR = r'C:/Users/刘尖尖/AppData/Local/Temp/aios-db-backup-20260920'
 
 # 平台基线上必须保留 tenant_id=0 数据的表
 KEEP_TENANT0 = {
@@ -34,7 +34,7 @@ def dump(cur, path):
     for (t,) in cur.fetchall():
         tables.append(t)
     with open(path, 'w', encoding='utf-8') as f:
-        f.write(f'-- AIOA 本地库备份 {dt.datetime.now():%Y-%m-%d %H:%M:%S}\n')
+        f.write(f'-- AIOS 本地库备份 {dt.datetime.now():%Y-%m-%d %H:%M:%S}\n')
         f.write('SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n')
         for t in tables:
             cur.execute(f'SHOW CREATE TABLE `{t}`')
@@ -110,7 +110,7 @@ def main():
         return
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    path = os.path.join(BACKUP_DIR, f'aioa-full-{dt.datetime.now():%Y%m%d_%H%M%S}.sql')
+    path = os.path.join(BACKUP_DIR, f'aios-full-{dt.datetime.now():%Y%m%d_%H%M%S}.sql')
     print(f'\n正在导出全库备份 -> {path}')
     n = dump(cur, path)
     size = os.path.getsize(path) / 1048576
@@ -124,7 +124,7 @@ def main():
         total += cur.rowcount
     conn.commit()
     print(f'已清除 {total} 行（覆盖 {len(plan)} 张表）')
-    print(f'恢复方式：mysql -uroot aioa < {path}')
+    print(f'恢复方式：mysql -uroot aios < {path}')
     conn.close()
 
 

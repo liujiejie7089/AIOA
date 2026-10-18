@@ -34,7 +34,7 @@ def login(username, password):
 
 def sess_script(token, user):
     payload = json.dumps({"token": token, "user": user})
-    return "try{localStorage.setItem('aioa_session', %s);}catch(e){}" % json.dumps(payload)
+    return "try{localStorage.setItem('aios_session', %s);}catch(e){}" % json.dumps(payload)
 
 
 def shot(page, name):

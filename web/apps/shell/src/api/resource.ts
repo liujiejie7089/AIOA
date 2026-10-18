@@ -1,6 +1,6 @@
 import { http, unwrap } from './index'
 
-/* ============ 审批工作流（aioa-resource ApprovalController） ============ */
+/* ============ 审批工作流（aios-resource ApprovalController） ============ */
 
 export interface ApprovalOrder {
   id: number
@@ -32,7 +32,7 @@ export function decideApproval(id: number, decision: 'APPROVE' | 'REJECT', note?
   return http.post(`/approvals/${id}/decision`, { decision, note }).then((r) => unwrap<ApprovalOrder>(r))
 }
 
-/* ============ 多级审批引擎（aioa-org WorkflowController） ============
+/* ============ 多级审批引擎（aios-org WorkflowController） ============
  *
  * 与上面单级审批的分工：
  *   · 多级引擎按「审批流定义」把单据展开成 N 个节点（部门负责人 → 企业管理员 → …），
@@ -175,7 +175,7 @@ export function uploadFile(file: File, onProgress?: (percent: number) => void): 
     .then((r) => unwrap<UploadedFile>(r))
 }
 
-/* ============ 知识库（aioa-resource KbController） ============ */
+/* ============ 知识库（aios-resource KbController） ============ */
 
 export interface KbDoc {
   id: number
@@ -261,7 +261,7 @@ export function searchKb(q: string, limit = 5): Promise<KbHit[]> {
   return http.get('/kb/search', { params: { q, limit } }).then((r) => unwrap<KbHit[]>(r))
 }
 
-/* ============ 系统管理（aioa-admin AdminController，仅租户管理员） ============ */
+/* ============ 系统管理（aios-admin AdminController，仅租户管理员） ============ */
 
 export interface SysUser {
   id: number

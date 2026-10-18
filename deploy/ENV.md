@@ -1,4 +1,4 @@
-# AIOA 环境变量配置说明（本地开发 / 生产）
+# AIOS 环境变量配置说明（本地开发 / 生产）
 
 配套文件：
 
@@ -33,7 +33,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 ```
 
 `start-all.sh` 的 Gitee 端到端回归是**显式 opt-in**，与上面两份文件无关：
-`AIOA_GITEE_E2E=1 bash start-all.sh`（内部 source `scripts/gitee-e2e-env.sh`，把服务端接口与用户授权域一并指向桩 `:8090`）。
+`AIOS_GITEE_E2E=1 bash start-all.sh`（内部 source `scripts/gitee-e2e-env.sh`，把服务端接口与用户授权域一并指向桩 `:8090`）。
 
 ## 2. 占位约定（两文件共用）
 
@@ -55,8 +55,8 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
 | `SPRING_PROFILES_ACTIVE` | Spring profile | `dev` | `prod` | — |
-| `AIOA_KB_STORE` | 知识库存储实现 | `mysql` | **`milvus`**（复用外部 Milvus；不可达则后端启动失败） | — |
-| `AIOA_REPO_PROVIDER` | 代码托管方，决定读 Gitee 段还是 Gitea 段 | `gitee` | `gitee` | — |
+| `AIOS_KB_STORE` | 知识库存储实现 | `mysql` | **`milvus`**（复用外部 Milvus；不可达则后端启动失败） | — |
+| `AIOS_REPO_PROVIDER` | 代码托管方，决定读 Gitee 段还是 Gitea 段 | `gitee` | `gitee` | — |
 
 ### 3.1 数据库 MySQL 8
 
@@ -66,10 +66,10 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 
 | 变量 | 用途 | 本地开发 | 生产（外部实例） | 敏感 | 生效 |
 |---|---|---|---|---|---|
-| `MYSQL_HOST` / `_PORT` / `_DB` | compose **拼 JDBC 串**用 | `127.0.0.1` / `3306` / `aioa` | `10.0.0.5` / **`13049`** / `aioa` | — | ✅ |
-| `MYSQL_USER` / `MYSQL_PASSWORD` | compose 拼 JDBC 串用的凭据 | `root` / 空 | `aioa` / `CHANGE_ME__`（非 root） | ★ | ✅ |
-| `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | 后端 JDBC 串与账号 | `jdbc:mysql://127.0.0.1:3306/aioa?…` | 被上面的 `MYSQL_*` **现拼覆盖** | — | ❌ 仅不经 compose 直跑 jar 时有效 |
-| `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` | 仅 compose 自建 mysql 时用 | `DEV_ONLY__` / `aioa` | 本 compose 不读（无 mysql 服务）⇒ 留空 | ★ | ❌ |
+| `MYSQL_HOST` / `_PORT` / `_DB` | compose **拼 JDBC 串**用 | `127.0.0.1` / `3306` / `aios` | `10.0.0.5` / **`13049`** / `aios` | — | ✅ |
+| `MYSQL_USER` / `MYSQL_PASSWORD` | compose 拼 JDBC 串用的凭据 | `root` / 空 | `aios` / `CHANGE_ME__`（非 root） | ★ | ✅ |
+| `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | 后端 JDBC 串与账号 | `jdbc:mysql://127.0.0.1:3306/aios?…` | 被上面的 `MYSQL_*` **现拼覆盖** | — | ❌ 仅不经 compose 直跑 jar 时有效 |
+| `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` | 仅 compose 自建 mysql 时用 | `DEV_ONLY__` / `aios` | 本 compose 不读（无 mysql 服务）⇒ 留空 | ★ | ❌ |
 
 ### 3.2 Redis
 
@@ -86,19 +86,19 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| `AIOA_JWT_SECRET` / `JWT_SECRET` | 用户令牌签名（`AIOA_*` 给后端，无前缀给 compose） | `DEV_ONLY__` | `CHANGE_ME__openssl-rand-base64-48` | ★ |
-| `AIOA_SERVICE_JWT_SECRET` / `SERVICE_JWT_SECRET` | 后端↔agent 服务间令牌 | `DEV_ONLY__` | 同上，**与 JWT 不同值** | ★ |
+| `AIOS_JWT_SECRET` / `JWT_SECRET` | 用户令牌签名（`AIOS_*` 给后端，无前缀给 compose） | `DEV_ONLY__` | `CHANGE_ME__openssl-rand-base64-48` | ★ |
+| `AIOS_SERVICE_JWT_SECRET` / `SERVICE_JWT_SECRET` | 后端↔agent 服务间令牌 | `DEV_ONLY__` | 同上，**与 JWT 不同值** | ★ |
 
-> ⚠️ 带 `AIOA_` 前缀与不带前缀的**必须同值**，否则后端签发的令牌 agent 验不过（表现为 401）。
+> ⚠️ 带 `AIOS_` 前缀与不带前缀的**必须同值**，否则后端签发的令牌 agent 验不过（表现为 401）。
 > ⚠️ 轮换即让所有已签发令牌立刻失效（全员重新登录）。
 
 ### 3.4 服务地址与运行参数
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| `AIOA_AGENT_BASE_URL` | 后端 → agent | `http://127.0.0.1:8000` | `http://agent:8000` | — |
-| `AIOA_SERVER_BASE_URL` | agent → 后端 | `http://127.0.0.1:8080` | `http://server:8080` | — |
-| `AIOA_AGENT_HOST_PORT` | agent 发布到宿主的端口（仅绑 `127.0.0.1`） | `8000` | `8000`；宿主 8000 被占用时改（如 `18000`） | — |
+| `AIOS_AGENT_BASE_URL` | 后端 → agent | `http://127.0.0.1:8000` | `http://agent:8000` | — |
+| `AIOS_SERVER_BASE_URL` | agent → 后端 | `http://127.0.0.1:8080` | `http://server:8080` | — |
+| `AIOS_AGENT_HOST_PORT` | agent 发布到宿主的端口（仅绑 `127.0.0.1`） | `8000` | `8000`；宿主 8000 被占用时改（如 `18000`） | — |
 | `PUBLIC_BASE_URL` | 对外入口（OAuth 回跳以此为准） | `http://localhost:8080` | `http://10.0.0.3:8080`（单端口，见 §3.10） | — |
 | `HOST` / `PORT` | agent 监听 | `0.0.0.0` / `8000` | 同 | — |
 | `LOG_LEVEL` | 日志级别 | `INFO` | `INFO` | — |
@@ -110,7 +110,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 
 模型网关的注册表键 `KEY` ∈ `echo | minimax | deepseek | dashscope | vllm | ollama`，
 另加管理端「模型管理」手动新增的模型（键 = 其 `providerKey`）。
-凭据一律走 **`{KEY}_API_KEY` 环境变量**或管理端填写（管理端填写的落库时加密，见 `AIOA_MODEL_KEY_ENC_KEY`）；
+凭据一律走 **`{KEY}_API_KEY` 环境变量**或管理端填写（管理端填写的落库时加密，见 `AIOS_MODEL_KEY_ENC_KEY`）；
 **任何 Key 都不写入 `.env.production` 模板**（该文件会被提交）。
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
@@ -123,73 +123,73 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 | `VLLM_API_KEY` | vLLM 鉴权；无鉴权也要给非空占位 | `vllm` | `vllm` | ★ |
 | `OLLAMA_BASE_URL` | 本地 Ollama，**必须带 `/v1`** | `http://127.0.0.1:11434/v1` | `http://ollama:11434/v1` | — |
 | `OLLAMA_API_KEY` | 同上，非空占位 | `ollama` | `ollama` | ★ |
-| `AIOA_MODEL_KEY_ENC_KEY` | 管理端填写的 API Key 的落库加密密钥 | 可留空（回退内置，仅开发） | `CHANGE_ME__`（openssl rand -base64 48） | ★ |
+| `AIOS_MODEL_KEY_ENC_KEY` | 管理端填写的 API Key 的落库加密密钥 | 可留空（回退内置，仅开发） | `CHANGE_ME__`（openssl rand -base64 48） | ★ |
 
 > ⚠️ 历史文档里的 `LOCAL_VLLM_BASE_URL` / `LOCAL_MODEL_NAME` **不是**代码读取的变量（agent 只认
 > `{KEY}_BASE_URL` / `{KEY}_MODEL`），照抄会导致配置不生效。
-> `AIOA_MODEL_KEY_ENC_KEY` 为空时回退 `AIOA_GITEE_TOKEN_ENC_KEY`，两者都空则用内置开发密钥并打印 WARN。
+> `AIOS_MODEL_KEY_ENC_KEY` 为空时回退 `AIOS_GITEE_TOKEN_ENC_KEY`，两者都空则用内置开发密钥并打印 WARN。
 
 ### 3.6 代码托管方（Gitee / Gitea）
 
-**只填 `AIOA_REPO_PROVIDER` 指向的那一段**；另一段保持 `enabled=false` 且留空。两段结构对称。
+**只填 `AIOS_REPO_PROVIDER` 指向的那一段**；另一段保持 `enabled=false` 且留空。两段结构对称。
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| `AIOA_{GITEE,GITEA}_ENABLED` | 该托管方总开关 | 仅 gitee=`true` | 仅实际用的=`true` | — |
+| `AIOS_{GITEE,GITEA}_ENABLED` | 该托管方总开关 | 仅 gitee=`true` | 仅实际用的=`true` | — |
 | `…_BASE_URL` | 服务端 REST 基址 | `https://gitee.com/api/v5` | 同（Gitea **必须带 `/api/v1`**） | — |
 | `…_WEB_URL` | 网页域 | `https://gitee.com` | 同 | — |
 | `…_OAUTH_AUTHORIZE_URL` | **用户浏览器**授权页基址（与服务端域解耦） | `https://gitee.com` | 同 | — |
 | `…_CLIENT_ID` / `…_CLIENT_SECRET` | OAuth 应用凭据 | 空 | `CHANGE_ME__` | ★ |
-| `…_REDIRECT_URI` | 回调地址，须与登记页**逐字符一致** | `http://127.0.0.1:8080/…/bind/callback` | `https://mall.egoaicloud.com/aioa/api/v1/gitee/bind/callback` | — |
+| `…_REDIRECT_URI` | 回调地址，须与登记页**逐字符一致** | `http://127.0.0.1:8080/…/bind/callback` | `https://mall.egoaicloud.com/aios/api/v1/gitee/bind/callback` | — |
 | `…_SCOPE` | 授权范围 | Gitee 含 `projects hook` | 同 | — |
 | `…_ORG` | 建仓所在组织 | 空＝用户名下 | `<gitee-org>` | — |
-| `…_WEBHOOK_BASE_URL` | 反向回调基址 | **空**（本地不可达） | `https://mall.egoaicloud.com/aioa` | — |
+| `…_WEBHOOK_BASE_URL` | 反向回调基址 | **空**（本地不可达） | `https://mall.egoaicloud.com/aios` | — |
 | `…_WEBHOOK_SECRET` | 回调签名密钥 | 空＝每仓库随机 | `CHANGE_ME__` | ★ |
 | `…_TOKEN_ENC_KEY` | 授权令牌 AES-256 加密密钥 | `DEV_ONLY__` | `CHANGE_ME__` | ★ |
-| `AIOA_GITEE_BIND_RETURN_URL` | 授权完成后前端回跳 | `http://localhost:5173/` | `https://mall.egoaicloud.com/aioa/web/` | — |
+| `AIOS_GITEE_BIND_RETURN_URL` | 授权完成后前端回跳 | `http://localhost:5173/` | `https://mall.egoaicloud.com/aios/web/` | — |
 
 > ★ **生产公网入口（2026-10-09 实测确认）**：域名 `mall.egoaicloud.com`（正确拼写 `egoai`，**不是** `egooai`）
-> → A `219.151.186.24`；该机 443 证书 SAN 即此域名；openresty 把 `/aioa/...` **原样转发**（不剥前缀）到
-> `10.0.0.3:8080`。实测 `GET /aioa/api/v1/pm/projects` → **401**（已到后端）、
-> `GET /aioa/api/v1/gitee/webhook/1` → **405**（webhook 路由存在、POST-only）
+> → A `219.151.186.24`；该机 443 证书 SAN 即此域名；openresty 把 `/aios/...` **原样转发**（不剥前缀）到
+> `10.0.0.3:8080`。实测 `GET /aios/api/v1/pm/projects` → **401**（已到后端）、
+> `GET /aios/api/v1/gitee/webhook/1` → **405**（webhook 路由存在、POST-only）
 > ⇒ 回调 `{WEBHOOK_BASE_URL}/api/v1/gitee/webhook/{项目id}` 公网可达。
 > 「10.0.0.3 能访问外网」只解决**出方向**（调 Gitee API 建仓/配钩子）；Webhook 是**入方向**，靠这个入口。
-| `AIOA_GITEE_SYNC_ENABLED` / `_SYNC_CRON` | 定时校准开关/表达式 | `true` / `0 17 * * * *` | 同 | — |
-| `AIOA_GITEA_REPO_NAME_SOURCE` | 仓库标识来源 `AUTO\|NAME\|PATH` | `AUTO` | `AUTO` | — |
-| `AIOA_GITEA_INSECURE_SKIP_VERIFY` | 跳过 TLS 校验 | `false` | **必须 `false`** | — |
-| `AIOA_GITEA_TRUST_STORE` / `_PASSWORD` / `_TYPE` | 自签证书信任库 | 空 / 空 / `PKCS12` | `<path>` / `CHANGE_ME__` / `PKCS12` | ★ |
+| `AIOS_GITEE_SYNC_ENABLED` / `_SYNC_CRON` | 定时校准开关/表达式 | `true` / `0 17 * * * *` | 同 | — |
+| `AIOS_GITEA_REPO_NAME_SOURCE` | 仓库标识来源 `AUTO\|NAME\|PATH` | `AUTO` | `AUTO` | — |
+| `AIOS_GITEA_INSECURE_SKIP_VERIFY` | 跳过 TLS 校验 | `false` | **必须 `false`** | — |
+| `AIOS_GITEA_TRUST_STORE` / `_PASSWORD` / `_TYPE` | 自签证书信任库 | 空 / 空 / `PKCS12` | `<path>` / `CHANGE_ME__` / `PKCS12` | ★ |
 
-> ⚠️ 切 `AIOA_REPO_PROVIDER` 后，**既有令牌解不开是预期行为**（两段各一个加密密钥），需重新授权绑定，不是 bug。
+> ⚠️ 切 `AIOS_REPO_PROVIDER` 后，**既有令牌解不开是预期行为**（两段各一个加密密钥），需重新授权绑定，不是 bug。
 
 ### 3.7 知识库 / 向量库
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| **`AIOA_KB_STORE`** | 存储实现 `mysql` \| `milvus`（**声明在 §0 档位区，勿重复声明**） | `mysql` | **`milvus`** | — |
-| `AIOA_KB_EMBEDDING_PROVIDER` | 嵌入实现 `local`（256 维 n-gram 哈希，零依赖、**无需任何嵌入服务**但**无语义**）\| `http`（语义向量，需 Ollama/vLLM） | `local` | **`local`**（本次不部署 Ollama） | — |
-| `AIOA_KB_REEMBED_ON_START` | 启动时全量重算切片向量（换 provider / 模型后跑一次，跑完改回 `false`） | `false` | `false` | — |
-| `AIOA_KB_EMBEDDING_FORMAT` | 协议形态 `ollama`（`/api/embeddings` 或 `/api/embed`）\| `openai`（`/v1/embeddings`）**（仅 `provider=http` 时读取）** | `ollama` | `ollama` | — |
-| `AIOA_KB_EMBEDDING_URL` | 嵌入服务地址（`provider=http` 时必填）**（仅 `provider=http` 时读取）** | 空 | `http://ollama:11434/api/embeddings` | — |
-| `AIOA_KB_EMBEDDING_MODEL` | 模型名**（仅 `provider=http` 时读取）** | `bge-small-zh-v1.5` | `quentinz/bge-small-zh-v1.5`（512 维） | — |
-| `AIOA_KB_EMBEDDING_DIMS` | 向量维度，**必须与 `AIOA_MILVUS_DIMS` 一致**（`local` 档不读本键：provider 固定 256 维） | `512` | **`256`** | — |
-| `AIOA_KB_EMBEDDING_TIMEOUT_MS` | 嵌入请求超时（ms）**（仅 `provider=http` 时读取）** | `15000` | `15000` | — |
-| `AIOA_KB_EMBEDDING_API_KEY` | 可选 Bearer 令牌（vLLM 网关常需） | 空 | 空 | ★ |
-| `AIOA_MILVUS_URI` | Milvus gRPC 地址 | `http://127.0.0.1:19530` | **复用外部实例** `http://10.0.0.12:19530`（`milvus:19530` 只在 `--profile milvus` 自建栈时用，本部署**不开**该 profile） | — |
-| `AIOA_MILVUS_TOKEN` | 鉴权令牌（未开鉴权时留空） | 空 | **空** —— 本环境 Milvus 无鉴权，填了会认证失败 | ★ |
-| `AIOA_MILVUS_DATABASE` / `_COLLECTION` | 库名 / 集合名（**名字带版本+维度后缀**，换嵌入模型必须新建集合再回填） | `default` / `kb_chunk_v1` | `default` / **`kb_chunk_v1_256`**（配 `local` 的 256 维） | — |
-| `AIOA_MILVUS_DIMS` | 集合维度（**创建后不可改**；与嵌入 provider 输出维度不符时后端**启动失败**，见下 §注 2） | `512` | **`256`** | — |
-| `AIOA_MILVUS_METRIC` / `_INDEX` | 距离度量 `COSINE\|IP\|L2` / 索引 `HNSW\|AUTOINDEX\|FLAT` | `COSINE` / `HNSW` | 同 | — |
-| `AIOA_MILVUS_HNSW_M` / `_HNSW_EF` | HNSW 建图/检索参数 | `16` / `200` | 同 | — |
-| `AIOA_MILVUS_ENABLE_BM25` | 原生 BM25 混合检索（需 Milvus ≥ 2.5；建集合失败自动退回纯稠密并告警） | `true` | `true` | — |
-| `AIOA_MILVUS_BACKFILL` | 启动时从 `kb_chunk` 全量回填（首次接入 / 重建索引，跑完改回 `false`） | `false` | `false` | — |
-| `AIOA_MILVUS_TIMEOUT_MS` / `_BATCH` | 超时（ms）/ 回填与 upsert 的批量大小 | `10000` / `200` | 同 | — |
+| **`AIOS_KB_STORE`** | 存储实现 `mysql` \| `milvus`（**声明在 §0 档位区，勿重复声明**） | `mysql` | **`milvus`** | — |
+| `AIOS_KB_EMBEDDING_PROVIDER` | 嵌入实现 `local`（256 维 n-gram 哈希，零依赖、**无需任何嵌入服务**但**无语义**）\| `http`（语义向量，需 Ollama/vLLM） | `local` | **`local`**（本次不部署 Ollama） | — |
+| `AIOS_KB_REEMBED_ON_START` | 启动时全量重算切片向量（换 provider / 模型后跑一次，跑完改回 `false`） | `false` | `false` | — |
+| `AIOS_KB_EMBEDDING_FORMAT` | 协议形态 `ollama`（`/api/embeddings` 或 `/api/embed`）\| `openai`（`/v1/embeddings`）**（仅 `provider=http` 时读取）** | `ollama` | `ollama` | — |
+| `AIOS_KB_EMBEDDING_URL` | 嵌入服务地址（`provider=http` 时必填）**（仅 `provider=http` 时读取）** | 空 | `http://ollama:11434/api/embeddings` | — |
+| `AIOS_KB_EMBEDDING_MODEL` | 模型名**（仅 `provider=http` 时读取）** | `bge-small-zh-v1.5` | `quentinz/bge-small-zh-v1.5`（512 维） | — |
+| `AIOS_KB_EMBEDDING_DIMS` | 向量维度，**必须与 `AIOS_MILVUS_DIMS` 一致**（`local` 档不读本键：provider 固定 256 维） | `512` | **`256`** | — |
+| `AIOS_KB_EMBEDDING_TIMEOUT_MS` | 嵌入请求超时（ms）**（仅 `provider=http` 时读取）** | `15000` | `15000` | — |
+| `AIOS_KB_EMBEDDING_API_KEY` | 可选 Bearer 令牌（vLLM 网关常需） | 空 | 空 | ★ |
+| `AIOS_MILVUS_URI` | Milvus gRPC 地址 | `http://127.0.0.1:19530` | **复用外部实例** `http://10.0.0.12:19530`（`milvus:19530` 只在 `--profile milvus` 自建栈时用，本部署**不开**该 profile） | — |
+| `AIOS_MILVUS_TOKEN` | 鉴权令牌（未开鉴权时留空） | 空 | **空** —— 本环境 Milvus 无鉴权，填了会认证失败 | ★ |
+| `AIOS_MILVUS_DATABASE` / `_COLLECTION` | 库名 / 集合名（**名字带版本+维度后缀**，换嵌入模型必须新建集合再回填） | `default` / `kb_chunk_v1` | `default` / **`kb_chunk_v1_256`**（配 `local` 的 256 维） | — |
+| `AIOS_MILVUS_DIMS` | 集合维度（**创建后不可改**；与嵌入 provider 输出维度不符时后端**启动失败**，见下 §注 2） | `512` | **`256`** | — |
+| `AIOS_MILVUS_METRIC` / `_INDEX` | 距离度量 `COSINE\|IP\|L2` / 索引 `HNSW\|AUTOINDEX\|FLAT` | `COSINE` / `HNSW` | 同 | — |
+| `AIOS_MILVUS_HNSW_M` / `_HNSW_EF` | HNSW 建图/检索参数 | `16` / `200` | 同 | — |
+| `AIOS_MILVUS_ENABLE_BM25` | 原生 BM25 混合检索（需 Milvus ≥ 2.5；建集合失败自动退回纯稠密并告警） | `true` | `true` | — |
+| `AIOS_MILVUS_BACKFILL` | 启动时从 `kb_chunk` 全量回填（首次接入 / 重建索引，跑完改回 `false`） | `false` | `false` | — |
+| `AIOS_MILVUS_TIMEOUT_MS` / `_BATCH` | 超时（ms）/ 回填与 upsert 的批量大小 | `10000` / `200` | 同 | — |
 | `MILVUS_IMAGE_TAG` | **仅供 compose / k8s 拉镜像**（升 2.6.x 改这里，注意集合是否需重建） | `v2.5.3` | `v2.5.3` | — |
 
-> **以上 22 个键后端已全部真实读取**（`KbProperties`，前缀 `aioa.kb`），不再是预留项。
-> ⚠️ `AIOA_KB_STORE=milvus` 时 **Milvus 必须在线**，否则后端**启动失败**（决策 D6 fail-fast，不静默降级为空结果）。
+> **以上 22 个键后端已全部真实读取**（`KbProperties`，前缀 `aios.kb`），不再是预留项。
+> ⚠️ `AIOS_KB_STORE=milvus` 时 **Milvus 必须在线**，否则后端**启动失败**（决策 D6 fail-fast，不静默降级为空结果）。
 > 索引可从 MySQL `kb_chunk` 重建 ⇒ `etcd` / `milvus-minio` / `milvus` 三者数据卷都是**可丢的**；
-> **回滚 = 把 `AIOA_KB_STORE` 改回 `mysql`**（无需改代码）。
-> 首次切换前先 `AIOA_KB_REEMBED_ON_START=true` 补齐切片向量，再 `AIOA_MILVUS_BACKFILL=true` 回填（顺序不能反），
+> **回滚 = 把 `AIOS_KB_STORE` 改回 `mysql`**（无需改代码）。
+> 首次切换前先 `AIOS_KB_REEMBED_ON_START=true` 补齐切片向量，再 `AIOS_MILVUS_BACKFILL=true` 回填（顺序不能反），
 > 详见 `docs/32-向量库迁移Milvus实施计划.md`。
 >
 > **本次档位（2026-09-21）：`milvus` + `local` + 256 维 —— 不部署 Ollama 也能真正落进 Milvus。**
@@ -197,19 +197,19 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 > 因此切片与向量都照常产出、Milvus 照常接收；代价是向量腿**无语义**，召回主要靠原生 BM25 腿。
 > 两条必须知道的约束：
 >
-> 1. **维度必须三方对齐**：`local` 的输出维度**写死在代码里是 256**（不受 `AIOA_KB_EMBEDDING_DIMS` 影响），
->    所以 `AIOA_MILVUS_DIMS` 也必须是 `256`，且集合名要换成一个 256 维的**新集合**（`kb_chunk_v1_256`）。
-> 2. **不存在「静默容忍」**：嵌入 provider 输出维度 ≠ `AIOA_MILVUS_DIMS` 时，后端**启动即失败**并给出该改成什么
+> 1. **维度必须三方对齐**：`local` 的输出维度**写死在代码里是 256**（不受 `AIOS_KB_EMBEDDING_DIMS` 影响），
+>    所以 `AIOS_MILVUS_DIMS` 也必须是 `256`，且集合名要换成一个 256 维的**新集合**（`kb_chunk_v1_256`）。
+> 2. **不存在「静默容忍」**：嵌入 provider 输出维度 ≠ `AIOS_MILVUS_DIMS` 时，后端**启动即失败**并给出该改成什么
 >    （`MilvusConfig.assertDimsAgree`）。这是刻意加硬校验——配错时 Milvus 会**一条都不收**、
 >    检索永远无命中，而接口全部返回成功，属于最难定位的一类故障。
-> 3. 新集合是空的，**首次接入必须手动回填一次** `AIOA_MILVUS_BACKFILL=true`（判据见手册 §6 第 9 条）。
+> 3. 新集合是空的，**首次接入必须手动回填一次** `AIOS_MILVUS_BACKFILL=true`（判据见手册 §6 第 9 条）。
 
 ### 3.8 对象存储 MinIO（★★ **当前未被使用** —— 留空即可）
 
 > **2026-09-21 核对结论（可复现）**：应用代码**不使用 MinIO** —— Java / Python / 前端源码里
 > 没有 `minio` 字样，也没有 S3 客户端（无 `S3Client` / `amazonaws` / OSS SDK）。
 > 文件上传落的是 **server 容器内的本地目录**：`FileController` 的
-> `@Value("${aioa.upload.dir:./uploads}")`（compose 已固定为 `/app/uploads` 并挂命名卷
+> `@Value("${aios.upload.dir:./uploads}")`（compose 已固定为 `/app/uploads` 并挂命名卷
 > `serveruploads` 持久化），元数据落 `sys_file` 表。
 >
 > 因此本组变量**改与不改都不影响功能**；且 compose 自带的 `minio` 服务已归入
@@ -241,14 +241,14 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 | 启动命令 | `docker compose up -d` | `docker compose up -d server agent`（无叠加文件） |
 | 服务集合 | server + agent + web + nginx | **只有 server + agent** |
 | 对外端口 | `80`（用户端 H5）、`81`（管理端） | **`8080`（唯一入口：H5 + 管理端 + 接口）**、`127.0.0.1:8000`（agent，仅本机排查） |
-| H5 / 管理端静态 | 由 nginx 容器提供 | **由 aioa-server 自己托管**：`/aioa/h5/`、`/aioa/web/`（已打进镜像的 `/app/h5`、`/app/web`） |
-| 接口路径 | `/api/**` | `/aioa/api/**`（新增）+ `/api/**`（**保留**，既有调用方零改动） |
-| 需要的镜像 | minio + nginx + aioa-server + aioa-agent + aioa-web（5 个） | **aioa-server + aioa-agent（2 个）** |
-| 前缀与目录变量 | — | `AIOA_WEB_ENABLED` / `AIOA_WEB_PREFIX` / `AIOA_WEB_H5_DIR` / `AIOA_WEB_WEB_DIR`（见生产 env §4.1） |
+| H5 / 管理端静态 | 由 nginx 容器提供 | **由 aios-server 自己托管**：`/aios/h5/`、`/aios/web/`（已打进镜像的 `/app/h5`、`/app/web`） |
+| 接口路径 | `/api/**` | `/aios/api/**`（新增）+ `/api/**`（**保留**，既有调用方零改动） |
+| 需要的镜像 | minio + nginx + aios-server + aios-agent + aios-web（5 个） | **aios-server + aios-agent（2 个）** |
+| 前缀与目录变量 | — | `AIOS_WEB_ENABLED` / `AIOS_WEB_PREFIX` / `AIOS_WEB_H5_DIR` / `AIOS_WEB_WEB_DIR`（见生产 env §4.1） |
 
-> `aioa-web` 与 `nginx` 两个服务、`ollama` 服务与 `ollamadata` 卷**都已从 `docker-compose.yml` 摘除**；
+> `aios-web` 与 `nginx` 两个服务、`ollama` 服务与 `ollamadata` 卷**都已从 `docker-compose.yml` 摘除**；
 > `docker-compose.backend.yml` 叠加文件已删除（端口并入主文件）。
-> **不需要宿主 nginx**；若仍要用前置网关，把 `/aioa/` 整体反代到 `http://<主机>:8080` 即可（见手册 §9.4）。
+> **不需要宿主 nginx**；若仍要用前置网关，把 `/aios/` 整体反代到 `http://<主机>:8080` 即可（见手册 §9.4）。
 
 ## 4. 前端 env **不在**上面两份文件
 
@@ -259,7 +259,7 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 | `web/apps/shell/.env` | `VITE_PORT` / `VITE_API_TARGET` | `5173` / `http://localhost:8080` | `5173` / `<对外网关地址>` |
 | `web/apps/demo-ticket/.env` | `VITE_PORT` | `5174` | `5174` |
 | `web/apps/demo-dispatch/.env` | `VITE_PORT` | `5175` | `5175` |
-| `user-client/.env` | `HOST` / `PORT` / `BACKEND_HOST` / `BACKEND_PORT` | `127.0.0.1` / `5181` / `127.0.0.1` / `8080` | 走容器时 `0.0.0.0` / `5181` / `aioa-server` / `8080` |
+| `user-client/.env` | `HOST` / `PORT` / `BACKEND_HOST` / `BACKEND_PORT` | `127.0.0.1` / `5181` / `127.0.0.1` / `8080` | 走容器时 `0.0.0.0` / `5181` / `aios-server` / `8080` |
 
 子应用端口改动**需同步业务应用注册表**（wujie 注册表）。
 
@@ -270,17 +270,17 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 | 主机名 | `127.0.0.1` / `localhost` | **外部主机 IP**：MySQL `10.0.0.5:13049` / Redis `10.0.0.7:6379` / Milvus `10.0.0.12:19530`；**容器之间**用服务名 `agent` `server`（`minio` 已非默认起，见 §3.8；`ollama` 本次不部署，见 §3.7） |
 | 知识库档位 | `mysql` + `local` + 512 维（仅作开发默认） | `milvus` + `local` + **256 维**（不部署 Ollama；集合 `kb_chunk_v1_256`，见 §3.7） |
 | 协议 | `http` | 本次 `http`（单端口 `8080`，未接 TLS）；拿到公网域名后再由前置网关终止 TLS |
-| 域名 | 本机端口 | 本次直接用 IP `10.0.0.3:8080`（**入口由 aioa-server 自己提供**，见 §3.10）；有公网域名时替换 |
+| 域名 | 本机端口 | 本次直接用 IP `10.0.0.3:8080`（**入口由 aios-server 自己提供**，见 §3.10）；有公网域名时替换 |
 | 凭据 | `DEV_ONLY__` / 空 | 全部 `CHANGE_ME__` 占位，部署前逐项替换 |
-| TLS | 不涉及 | `AIOA_GITEA_INSECURE_SKIP_VERIFY=false` + 自签 CA 信任库 |
+| TLS | 不涉及 | `AIOS_GITEA_INSECURE_SKIP_VERIFY=false` + 自签 CA 信任库 |
 | 并发 | `AGENT_MAX_CONCURRENCY=4` | `8`（按容器规格） |
 | 模型 | `echo`（零依赖） | 真实云端/本地模型 |
 
 ## 6. 安全纪律
 
 1. **两份模板只放占位值**，真实密钥写 `.env`（gitignore）或部署平台 Secret；`.env`、`.env.*` 已被忽略，本目录两份模板通过 `.gitignore` 例外**显式入库**。
-2. **改密钥后必须重启**后端（`AIOA_*` 均启动期读取）。
-3. `AIOA_JWT_SECRET`、`AIOA_SERVICE_JWT_SECRET`、`*_TOKEN_ENC_KEY`、各 API Key 属**高危**项：轮换 `TOKEN_ENC_KEY` 会导致存量授权令牌不可解密，需重新绑定。
+2. **改密钥后必须重启**后端（`AIOS_*` 均启动期读取）。
+3. `AIOS_JWT_SECRET`、`AIOS_SERVICE_JWT_SECRET`、`*_TOKEN_ENC_KEY`、各 API Key 属**高危**项：轮换 `TOKEN_ENC_KEY` 会导致存量授权令牌不可解密，需重新绑定。
 4. 生产交付前自查：
    ```bash
    grep -nE 'DEV_ONLY__|CHANGE_ME__' deploy/.env.production   # 每一条都必须是「已替换」或「该能力未启用」

@@ -23,7 +23,7 @@ export const useAssistantStore = defineStore('assistant', {
     contexts: {} as Record<string, PageContextSnapshot>,
     /** 当前宿主页面所在子应用（来自 /app/:appCode） */
     activeAppCode: '' as string,
-    /** 待预填到输入框的问题（AIOA_OPEN_ASSISTANT） */
+    /** 待预填到输入框的问题（AIOS_OPEN_ASSISTANT） */
     preset: '' as string,
     loadingConversations: false,
     loadingMessages: false

@@ -1,0 +1,96 @@
+package cn.aios.resource.entity;
+
+import cn.aios.common.mybatis.JsonListTypeHandler;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * 专家：用户端首页 / 专家页的卡片来源，同时携带推荐问题（recs）。
+ */
+@Data
+@TableName(value = "ai_expert", autoResultMap = true)
+public class AiExpert {
+
+    @TableId(type = IdType.AUTO)
+    private Long id;
+
+    private Long tenantId;
+
+    /** 前端稳定标识（policy / legal / startup / doc） */
+    private String expertKey;
+
+    private String name;
+
+    private String icon;
+
+    /** 一句话简介（列表副标题） */
+    private String summary;
+
+    /** 详情页介绍 */
+    private String intro;
+
+    @TableField(typeHandler = JsonListTypeHandler.class)
+    private List<Object> tags;
+
+    @TableField(typeHandler = JsonListTypeHandler.class)
+    private List<Object> recs;
+
+    private String agentCode;
+
+    private Boolean enabled;
+
+    private Integer sort;
+
+    /** 领域分类：LEGAL/LABOR/CONTRACT/IP/COMPLIANCE/TAX/DATA。 */
+    private String category;
+
+    /** 模板版本，模板升级时用于提示租户。 */
+    private String templateVersion;
+
+    /** 租户副本指向的全局模板ID；全局模板自身为 null。 */
+    private Long sourceTemplateId;
+
+    /** 可见范围：ALL/TENANT/INSTITUTION/DEPT/USER（细粒度过滤在 expert_config 中）。 */
+    private String visibleScope;
+
+    /** 知识库范围：ALL 或逗号分隔的文档ID。 */
+    private String kbScope;
+
+    /** 新用户是否默认挂载。 */
+    private Boolean defaultEnabled;
+
+    /** 审核态（V34）：PENDING 待上级审核 / APPROVED 已通过 / REJECTED 已驳回。 */
+    private String auditStatus;
+
+    /** 审核意见（驳回时回显给创建者）。 */
+    private String auditNote;
+
+    private Long reviewedBy;
+
+    private LocalDateTime reviewedAt;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    private Long createdBy;
+
+    @TableLogic
+    private LocalDateTime deletedAt;
+
+    /**
+     * 是否为「默认 AI」：用户端未选择任何专家时的兜底对象。
+     *
+     * <p>不是库表列，由 {@code CatalogService} 按系统参数
+     * {@link SysConfig#KEY_DEFAULT_EXPERT} 派生后回填，保证「展示」与「兜底判据」同源。</p>
+     */
+    @TableField(exist = false)
+    private Boolean isDefault;
+}

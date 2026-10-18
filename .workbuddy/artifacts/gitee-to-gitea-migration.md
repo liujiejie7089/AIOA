@@ -1,7 +1,7 @@
 # 把 Gitee 换成 Gitea：改造清单与工作量评估
 
 > 编制：2026-09-18 · 依据：本仓库代码实测盘点（非估算）+ Gitea 官方文档核对
-> 范围：`server/aioa-gitee`（42 文件 / 6683 行）+ 前端 7 文件 / 2691 行 + 9 张表 + 5 个 E2E 套件
+> 范围：`server/aios-gitee`（42 文件 / 6683 行）+ 前端 7 文件 / 2691 行 + 9 张表 + 5 个 E2E 套件
 
 ---
 
@@ -25,14 +25,14 @@
 
 | 维度 | 实测 |
 |---|---|
-| 后端模块 | `server/aioa-gitee`，**42 个 java 文件 / 6683 行** |
+| 后端模块 | `server/aios-gitee`，**42 个 java 文件 / 6683 行** |
 | 出网客户端 | `GiteeClient` **592 行**，**~25 个 API 方法**，**无接口抽象**（具体类被 7 个服务直接注入） |
 | 注入点 | `GiteeAccountService` / `GiteeContentService` / `GiteeMemberService` / `GiteeMemberTaskHandler` / `GiteeRepoTaskHandler` / `GiteeTenantConfigService` / `GiteeTenantInitService` / `GiteeTokenService`（共 8 处） |
-| 跨模块耦合 | **极小**：`aioa-security`（权限码 3 个）、`aioa-resource`（4 个通知文件里只是文案/通道名）。`aioa-chat` / `aioa-org` / `aioa-bridge` **零引用** |
+| 跨模块耦合 | **极小**：`aios-security`（权限码 3 个）、`aios-resource`（4 个通知文件里只是文案/通道名）。`aios-chat` / `aios-org` / `aios-bridge` **零引用** |
 | 权限码 | `project:view` / `project:manage` / **`gitee:bind`** —— **只有 1 个带提供商字样** |
 | 数据库 | 9 张 `gitee_*` 表；5 个 Flyway 迁移（V48/V49/V50/V51/V53） |
 | 前端 | `web/apps/shell` 7 文件 / **2691 行**（`api/gitee.ts` 643 + 两个视图 2048）；H5 **0 引用** |
-| 配置 | `application.yml` 里 **15 个** `AIOA_GITEE_*` 环境变量键 |
+| 配置 | `application.yml` 里 **15 个** `AIOS_GITEE_*` 环境变量键 |
 | 测试 | `gitee_stub.py` 假桩 + 5 个套件：`e2e_v48_gitee`(116) · `e2e_v50_tenant_org`(54) · `e2e_v51_gitee_init`(50) · `SMOKE_v48`(32) · `verify_v51_repo_urls`(23) |
 
 **关键有利条件**：`docs/30` 已有完整的接口契约文档（225 行）；`gitee_stub.py` 已经是「可替换后端」的雏形
@@ -83,7 +83,7 @@ Gitea 与 Gitee 在这些路径上**同名同形**（Gitea 对齐 GitHub，Gitee
 ### 3.1 ⚠⚠⚠ 仓库命名：Gitea 没有独立的 `path`
 
 - **现状**：`createOrgRepo(..., name, path, ...)` 同时传 `name` 与 `path`。平台把
-  `name` 存成中文显示名（如「AIOA 真机验证 1789630096」）、`repo_name` 存 slug（`dept11-aioa-1789630096`）。
+  `name` 存成中文显示名（如「AIOS 真机验证 1789630096」）、`repo_name` 存 slug（`dept11-aios-1789630096`）。
 - **Gitea**：`POST /orgs/{org}/repos` **不认 `path`**，`name` 即 slug。
 - **后果**：不改的话，**`path` 被静默忽略**，仓库 URL 变成中文名（百分号编码、不可分享），
   而平台库里 `repo_name` 仍记录 slug ⇒ **平台展示的地址与真站不一致**（这正是我们在 Gitee 上刚踩过的
