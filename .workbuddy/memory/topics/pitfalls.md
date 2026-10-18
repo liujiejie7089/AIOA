@@ -1039,6 +1039,29 @@
   后续 `/resume` 报「不是等待澄清状态」——红是哨兵自己造的。必须读到
   `run.completed` / `run.failed` 或 EOF；`/resume` 遇非 200 做 ≤6×1s 重试（收口有毫秒级竞态）。
 
+## 本地 `.venv` 有 ≠ 镜像里有（2026-10-18 第二次复发：`langgraph` 没进依赖清单）
+
+**现象**：生产 `aioa-agent` 一直 `Restarting`，日志
+`ModuleNotFoundError: No module named 'langgraph'` + `Application startup failed`；
+用户侧表现是对话**「本次未返回内容」**（不是 502、不是 500，看不到任何后端错误）。
+
+**根因**：`aioa_ai/graph/{builder,facade,nodes}.py` 全靠 langgraph，但
+`agent/pyproject.toml` 的 `dependencies` 里**没有它**（那几个 checkpoint 也各有独立发行包）。
+本地 `.venv` 是手工装的 ⇒ pytest/uvicorn 全绿；镜像走 `pip install .` ⇒ 缺包。
+
+**这是同一模式的第二次**（第一次是 `packages.find.include` 漏 `aioa_ai`）：
+**「本地能跑」永远不能推断「镜像能跑」**。判据只能是「声明的集合 vs 实际 import 的集合」。
+
+**收口哨兵**：`scripts/_check_agent_deps_declared.py`（纯离线，AST 扫 `app/`+`aioa_ai/`，
+与 pyproject 做差集；D2 负向对照保证它会红；已登记进 `_run_all_regression.sh`）。
+
+**排查动作（照做）**：
+```bash
+docker compose ps agent                     # Restarting = 进程起不来，不是慢
+docker compose logs --tail=40 agent | grep -E "ModuleNotFound|startup failed"
+docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('ok')"   # 起得来才有这一步
+```
+
 ## 禁删清单（铁律 13 的完整版，2026-10-18 从 MEMORY.md 迁来）
 
 「看起来像垃圾」与「真的没人用」是两件事。引用即保留：

@@ -91,6 +91,11 @@ SUITES=(
   # 本套件 7 项：打包清单 / Dockerfile COPY / 按 COPY 行推导布局后真 import /
   # 负向对照（只拷 app 必须失败）/ compose / k8s / .env.example。纯离线，无需任何服务。
   _check_agent_image_layout.py
+  # agent 依赖声明完整性（2026-10-18 新增）：pyproject 的 dependencies 是否覆盖代码里
+  # **实际 import 的每个第三方包**。防的是「本地 .venv 手工装过 ⇒ 本机全绿，镜像
+  # `pip install .` 缺包 ⇒ 容器 Restarting」这一类：已发生两次（aioa_ai 缺打包清单、
+  # langgraph 缺依赖声明）。纯离线，读 pyproject + AST 扫描，含负向对照。
+  _check_agent_deps_declared.py
   # 表单链路端到端（2026-10-18）：① 每个数字人是否开**自己**那张表（真实 LLM 活体 SSE，
   # 43 个有能力绑定的数字人逐一打，判据 R1 出帧 / R2 form_code 相符 / R3 字段非空）；
   # ② 确定性开表后「提交表单 → 续跑」不得重弹同一张表（U1–U5，含「问候不误触发」负向对照）。

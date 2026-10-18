@@ -19,6 +19,23 @@ dependencies = [
     #   装上 av>=19 会在第一个请求上炸：
     #   TypeError: open() got an unexpected keyword argument 'metadata_errors'
     "av>=14,<19",
+    # ★★★ LangGraph 内核（HITL 澄清链 / 多步图）—— 曾经**漏在这里**，导致生产镜像起不来：
+    #   aioa_ai/graph/{builder,facade,nodes}.py 都 `from langgraph...`，但本清单没有它。
+    #   本地 `.venv` 是手工 `pip install langgraph` 的，所以本机一直正常；
+    #   而镜像走的是 `pip install .`（只装本清单）⇒ 容器启动即
+    #   `ModuleNotFoundError: No module named 'langgraph'` → `Application startup failed`
+    #   （compose 里表现成 aioa-agent 一直 `Restarting`，对话「本次未返回内容」）。
+    #   判据：容器内 `python -c "import langgraph"` 必须成功，且 `pip show langgraph` 有版本。
+    "langgraph>=1.0,<2",
+    # checkpoint 三档实现里有两种是**独立发行包**（memory 档随 langgraph 自带）：
+    #   sqlite://  → langgraph.checkpoint.sqlite.aio（+ aiosqlite）
+    #   redis://   → langgraph.checkpoint.redis.aio（+ redis；生产要求 Redis Stack）
+    # 它们都是**延迟导入**（只在选中该档时才 import），所以缺了不会启动即炸，
+    # 而是切到那一档时才炸 —— 更隐蔽，因此一并声明。
+    "langgraph-checkpoint-sqlite>=3.0",
+    "langgraph-checkpoint-redis>=0.5",
+    "redis>=5.0",
+    "aiosqlite>=0.20",
 ]
 
 [tool.setuptools.packages.find]
