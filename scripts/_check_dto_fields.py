@@ -32,7 +32,7 @@ STATE_READS = {
     'experts': ['key', 'name', 'desc', 'intro', 'icon'],
     'conversations': ['id', 'title', 'lastMsgAt', 'createdAt'],
     'approvals': ['id', 'title', 'bizType', 'status', 'creatorName', 'applicantName',
-                  'createdAt', 'decidedAt', 'decisionNote', 'content', 'timeline', 'totalNodes'],
+                  'createdAt', 'content', 'timeline', 'totalNodes'],
     'kbDocs': ['id', 'name', 'icon', 'state', 'scope', 'chunkCount', 'sizeBytes', 'createdAt'],
     'notifs': ['id', 'title', 'content', 'type', 'unread', 'createdAt', 'refId'],
 }
@@ -75,6 +75,14 @@ async def main():
             const v = state[k];
             const list = Array.isArray(v) ? v : ((v && v.items) || []);
             out.state[k] = { n: list.length, keys: list.length ? Object.keys(list[0]) : null };
+            // approvals 的 decidedAt / decisionNote 只对**已终态**的单子有意义（PENDING 的还没人批）。
+            // 只按第一行取 keys 会把「首行恰好是待审」误判成「后端不给我字段」——判据必须按语义分档。
+            if (k === 'approvals') {
+              const terminal = list.filter(x => x && (x.status === 'APPROVED' || x.status === 'REJECTED'));
+              out.state[k].terminalN = terminal.length;
+              out.state[k].terminalMissing = terminal.filter(x => !('decidedAt' in x) || !('decisionNote' in x)).length;
+              out.state[k].pendingN = list.length - terminal.length;
+            }
           }
           for (const p of ['/v1/org/members', '/v1/org/departments', '/v1/org/profile']) {
             try {
@@ -97,6 +105,16 @@ async def main():
             miss = [f for f in want if f not in got['keys']]
             chk('state.%s 渲染层所读字段均存在（n=%d）' % (k, got['n']), not miss,
                 '缺失=%s' % miss if miss else 'ok')
+            if k == 'approvals':
+                # 终态单必须带 decidedAt/decisionNote（OA 的「审批时间」「审批意见」两行直接读它们，
+                # 缺失时表现为「时间那行整条消失 + 意见恒显示（未填写意见）」）。
+                # 没有终态单时如实记「不可验」，不拿 PENDING 单充数。
+                tn, tm = got.get('terminalN', 0), got.get('terminalMissing', 0)
+                if tn == 0:
+                    print('[skip] state.approvals 无终态单（pending=%s），decidedAt/decisionNote 无法核对' % got.get('pendingN'))
+                else:
+                    chk('state.approvals 终态单带 decidedAt/decisionNote（%d/%d 终态）' % (tn - tm, tn),
+                        tm == 0, '缺字段的终态单=%d' % tm)
 
         for p, want in ENDPOINTS.items():
             got = data['ep'][p]

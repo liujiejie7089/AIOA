@@ -35,6 +35,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from aioa_ai.llm import Provider  # noqa: E402
 from aioa_ai.tools.client import ToolClient, ToolOutcome  # noqa: E402
+sys.path.insert(0, str(Path(__file__).parent))
+from _svc_token import svc_headers  # noqa: E402 服务间令牌（/internal/v1/* 已强制校验）
 
 FAKE = Provider(key="fake", driver="openai_compatible", base_url="http://fake.invalid",
                 model="fake-1", api_key_env="AIOA_TEST_FAKE_KEY")
@@ -131,7 +133,8 @@ def main() -> int:
     for p in patches:
         p.start()
     try:
-        with TestClient(app) as client:
+        # 内部端点强制服务间令牌（2026-10-18 起）：统一挂到 client 上，正文不动。
+        with TestClient(app, headers=svc_headers()) as client:
             r1 = client.post("/internal/v1/runs", json=body)
             f1 = parse_sse(r1.text)
             types1 = [t for _, t, _ in f1]
@@ -196,7 +199,8 @@ def main() -> int:
         p.start()
     try:
         body2 = dict(body, run_id="run_hitl_off_0001")
-        with TestClient(app) as client:
+        # 内部端点强制服务间令牌（2026-10-18 起）：统一挂到 client 上，正文不动。
+        with TestClient(app, headers=svc_headers()) as client:
             r = client.post("/internal/v1/runs", json=body2)
         types = [t for _, t, _ in parse_sse(r.text)]
         chk("H5 关闭 HITL 时不产生 need_clarification", "need_clarification" not in types,

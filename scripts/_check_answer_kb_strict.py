@@ -89,6 +89,9 @@ def load_prefix_rules():
     return mod
 
 
+from _svc_token import svc_headers, token as svc_token  # noqa: E402 服务间令牌（/internal/v1/* 已强制校验）
+
+
 def post(url, obj, token=None, timeout=30):
     data = json.dumps(obj).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
@@ -192,7 +195,8 @@ def check_live_rules(agent):
     print("\n--- C5 活体口径（%s/internal/v1/answer-shape）---" % agent)
     try:
         body = post(agent + "/internal/v1/answer-shape",
-                    {"role": "GENERAL", "scope": None}, timeout=15)
+                    {"role": "GENERAL", "scope": None}, timeout=15,
+                    token=svc_token())
     except Exception as e:  # noqa: BLE001
         skip("C5 活体口径", "agent 不在线或不可达（%s）；"
                             "前置=agent :8000 已按新代码重启" % e)

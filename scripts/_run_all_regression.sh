@@ -84,6 +84,34 @@ SUITES=(
   # 仓库联动平台参数动态配置：适配器必须走覆盖层 + 三处字段口径一致 + Secret 不明文回传
   # （默认只跑静态；加 --api 才验接口往返，需要后端含本次改动）
   _check_gitee_platform_config.py
+  # agent 镜像布局 + HITL 透传（2026-10-17 新增）。
+  # 为什么必须单列一条：上面的 _check_compose_env_wiring.py **只校验 server 服务**
+  # 与 application.yml 的 ${VAR} 占位，agent 服务的 Python 配置（pydantic alias）完全在它
+  # 的盲区里 ⇒ 「AIOA_HITL 没透传」「Dockerfile 只 COPY app 丢了 aioa_ai」两件事它都发现不了。
+  # 本套件 7 项：打包清单 / Dockerfile COPY / 按 COPY 行推导布局后真 import /
+  # 负向对照（只拷 app 必须失败）/ compose / k8s / .env.example。纯离线，无需任何服务。
+  _check_agent_image_layout.py
+  # 表单链路端到端（2026-10-18）：① 每个数字人是否开**自己**那张表（真实 LLM 活体 SSE，
+  # 43 个有能力绑定的数字人逐一打，判据 R1 出帧 / R2 form_code 相符 / R3 字段非空）；
+  # ② 确定性开表后「提交表单 → 续跑」不得重弹同一张表（U1–U5，含「问候不误触发」负向对照）。
+  # 两者都需要后端 :8080 + agent :8000 在线；离线时各自打印 SKIP 并 exit 2（矩阵按前置不满足计）。
+  _verify_worker_form_routing.py
+  _verify_form_resume_no_reopen.py
+  # 服务间令牌（B-1，2026-10-18）：Java 每个打 agent `/internal/v1/*` 的请求都必须带
+  # Authorization。漏票不会报错，只会让 worker-intent **静默降级**、定时任务把 401 写成
+  # 「模型不可用」、经营解读抛「AI 服务返回 HTTP 401」—— 三种症状都不指向「少一行 header」。
+  # 纯静态（含 --selftest 判别力自检），无需任何服务。
+  _check_internal_service_auth.py
+  # 会话内跨数字人转交（2026-10-18）：用户在当前数字人里说了别人的事 ⇒ 同一会话改绑 worker_id、
+  # 复用同一条用户消息（不重述）、先发 worker.handoff 通知帧、由目标数字人开自己的表单。
+  # 判据 H0–H7b 共 10 项，含两类负向对照（寒暄不转交 / 口语化 Tier B 也要转）。
+  # 需要后端 :8080 + agent :8000 + 本地 MySQL；缺一则 SKIP 并写清缺哪一项。
+  _verify_worker_handoff.py
+  # 专家 AI「真有专业能力」（2026-10-18）：选了专家后，该专家的 systemPrompt 必须真的进模型。
+  # 判据 X1–X7：目录齐备 / 翻译专家直接给英文（通用助手会先来一段中文前言）/ 会话落库 expert_key /
+  # 第二轮不带参仍按专家作答 / 不存在的 key 不写坏会话 / 法律专家给法定上限 /
+  # ★专家会话不得弹业务表单（实测缺陷：法律专家曾弹出「合同管理」表且正文为空）。
+  _verify_expert_prompt_e2e.py
 )
 
 # ---- preflight：清单里的套件必须都在磁盘上 ------------------------------------

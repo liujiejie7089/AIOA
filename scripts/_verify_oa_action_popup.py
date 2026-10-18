@@ -14,6 +14,10 @@
   ③ `UPLOAD_FILE` → 先弹**可见上传窗口**（`.notif-mask.show` 新增恰好 1 层、内含 `#upFile`、标题「上传项目文档」），
      且弹窗那一刻**不自动唤起**文件选择器（见 G9b★）、**只在真实点击 `#upFile` 后才唤起**（见 G9c）；正文说明气泡照旧。
   ④ `action` 为 null/缺失 → **什么都不做**（负向对照：证明前三条的断言不是恒真）。
+  ⑤ `CREATE_WORKER`（2026-10-16 追加）→ 真的弹出**创建数字员工**窗口（含名称/职责/任务内容/执行时刻），
+     名称为空时**就地报错且不发起创建**，填名后调 `API.createWorker` 且字段口径与后端 `AgentWorker` 一致；
+     服务端前置检查报阻断时**创建按钮被禁用**（不给死路）。该动作在 OA 形态此前**无任何处理器**
+     （grep `CREATE_WORKER` 在 `_oa_app.js` 恒为 0 命中）⇒ 意图被识别后被静默丢弃，这是本轮修的缺陷本身。
 
 ★ 负向对照（铁律 12 的同源要求）：④ 与「调用前先数一遍弹层数」共同保证
   ② 的 `== 1` 不是把已有 DOM 当成新弹的。
@@ -81,6 +85,8 @@ def main():
     html = INDEX.read_text(encoding="utf-8")
     chk("G0 产物已重建（含本轮新增的 oaMaybeProjectAction 与自检暴露）",
         "window.oaMaybeProjectAction" in html and "oaMaybeProjectAction" in html, INDEX)
+    chk("G0b 产物含「创建数字员工」编排与自检暴露（CREATE_WORKER 在 OA 形态此前 0 命中）",
+        "window.oaMaybeCreateWorker" in html and "oaOpenCreateWorkerForm" in html, INDEX)
 
     with sync_playwright() as pw:
         exe = chromium_exe()
@@ -205,6 +211,94 @@ def main():
         page.wait_for_timeout(200)
         chk("G11 未知动作码：什么都不做（不误开窗）",
             page.locator(".notif-mask").count() == 0, "mask=%d" % page.locator(".notif-mask").count())
+
+        # ---------------------------------------------------------- ⑥ 创建数字员工
+        # 打桩：本哨兵走 file://、无后端 ⇒ precheck/createWorker 必失败（产品代码会吞掉），
+        # 那样只能验到「窗口弹了」，验不到「提交了正确的 body」「阻断时禁用」。
+        # 故劫持这两个 API，把前置检查与创建结果换成可控值；其余请求仍走原实现。
+        reset_actions()
+        page.evaluate("""() => {
+          window.__pcResp = { ok: true, checks: [
+            { key:'permission', label:'权限', status:'PASS', message:'已具备' },
+            { key:'quota',      label:'计费额度', status:'PASS', message:'可用' } ] };
+          window.__pcBody = null; window.__cwBody = null;
+          if (!window.__origPrecheck) { window.__origPrecheck = API.workerPrecheck.bind(API); }
+          if (!window.__origCreateWorker) { window.__origCreateWorker = API.createWorker.bind(API); }
+          API.workerPrecheck = function(body){ window.__pcBody = body; return Promise.resolve(window.__pcResp); };
+          API.createWorker   = function(body){ window.__cwBody = body; return Promise.resolve({ id: 4242, name: body.name }); };
+        }""")
+        page.evaluate("() => { window.oaState.lastQuery = '帮我创建一个数字人'; document.getElementById('oaDockList').innerHTML = ''; }")
+        before_cw = page.locator(".notif-mask").count()
+        ok_cw = page.evaluate("() => window.oaMaybeCreateWorker({ action:'CREATE_WORKER', role:'GENERAL', roleName:'通用办公助手' })")
+        page.wait_for_timeout(500)
+        n_cw = page.locator(".notif-mask").count()
+        head_cw = page.locator(".notif-mask .notif-head").first.inner_text().strip() if n_cw else ""
+        chk("G12 ★CREATE_WORKER：判定返回 true 且弹出创建窗口（新增恰好 1 层，基线 %d）" % before_cw,
+            ok_cw is True and before_cw == 0 and n_cw == 1, "ret=%s before=%d n=%d" % (ok_cw, before_cw, n_cw))
+        chk("G13 ★创建窗口四字段齐（名称/职责/任务内容/执行时刻），标题「创建数字员工」",
+            all(page.locator(".notif-mask #" + i).count() == 1 for i in ("cwName", "cwDesc", "cwTask", "cwTime"))
+            and head_cw == "创建数字员工",
+            "head=%r" % head_cw)
+        chk("G14 ★先在正文里说明再弹窗（对话式，不是凭空弹出）",
+            "创建窗口" in dock_text(page), dock_text(page)[:200])
+        chk("G15 ★前置检查真被调用，且请求带 workerType=意图识别出的角色",
+            page.evaluate("() => !!window.__pcBody && window.__pcBody.workerType === 'GENERAL'"),
+            str(page.evaluate("() => window.__pcBody")))
+        # 名称必填：空名点「创建」→ 就地报错、且**未**发起创建
+        # （守卫：窗口不存在时不去 click，否则 playwright 抛超时、整个脚本中止，后面的断言全丢）
+        if n_cw == 1:
+            page.locator(".notif-mask [data-dlg-ok]").first.click()
+            page.wait_for_timeout(250)
+        chk("G16 ★名称必填：空名点「创建」→ 就地显示错误、且未发起 createWorker、窗口不关闭",
+            n_cw == 1
+            and page.locator(".notif-mask #cwErr").count() == 1
+            and page.locator(".notif-mask #cwErr").first.is_visible()
+            and page.evaluate("() => window.__cwBody") is None
+            and page.locator(".notif-mask").count() == 1,
+            "n_cw=%d cwBody=%s" % (n_cw, page.evaluate("() => window.__cwBody")))
+        # 填名提交 → 真调 createWorker，body 与后端 AgentWorker 口径一致
+        if n_cw == 1:
+            page.fill(".notif-mask #cwName", "合同到期提醒助手")
+            page.fill(".notif-mask #cwDesc", "合同到期前提醒我")
+            page.locator(".notif-mask [data-dlg-ok]").first.click()
+            page.wait_for_timeout(350)
+        body_cw = page.evaluate("() => window.__cwBody")
+        chk("G17 ★填名后创建：调用了 createWorker，字段口径正确（name / icon=bot / workerType=意图角色）",
+            isinstance(body_cw, dict) and body_cw.get("name") == "合同到期提醒助手"
+            and body_cw.get("icon") == "bot" and body_cw.get("workerType") == "GENERAL",
+            str(body_cw))
+        chk("G18 ★创建成功后窗口关闭并回填提示（不静默、用户知道建成了）",
+            page.locator(".notif-mask").count() == 0 and "合同到期提醒助手" in dock_text(page),
+            "mask=%d dock=%s" % (page.locator(".notif-mask").count(), dock_text(page)[:200]))
+        # 前置检查报阻断 → 创建按钮禁用（不给死路）
+        reset_actions()
+        page.evaluate("""() => {
+          window.__pcResp = { ok:false, nextAction:'请联系租户管理员授予「请假审批」权限',
+            checks:[{ key:'permission', label:'权限', status:'BLOCKED', message:'缺少 approval:leave' }] };
+          window.__cwBody = null;
+        }""")
+        ok_b = page.evaluate("() => window.oaMaybeCreateWorker({ action:'CREATE_WORKER', role:'LEAVE_APPROVER' })")
+        page.wait_for_timeout(500)
+        btn_b = page.locator(".notif-mask [data-dlg-ok]")
+        chk("G19 ★前置检查阻断时：创建按钮被禁用（阻断项不给死路，由服务端一处判定）",
+            ok_b is True and btn_b.count() == 1 and btn_b.first.is_disabled(),
+            "ret=%s n=%d disabled=%s" % (ok_b, btn_b.count(),
+                page.evaluate("() => { var b=document.querySelector('.notif-mask [data-dlg-ok]'); return b && b.disabled; }")))
+        # 还原 API 劫持，保持后续断言环境干净
+        page.evaluate("() => { if (window.__origPrecheck) API.workerPrecheck = window.__origPrecheck; if (window.__origCreateWorker) API.createWorker = window.__origCreateWorker; }")
+
+        # ---------------------------------------------------------- ⑦ 负向：非创建动作
+        reset_actions()
+        page.evaluate("() => { document.getElementById('oaDockList').innerHTML = ''; }")
+        r_up = page.evaluate("() => window.oaMaybeCreateWorker({ action:'UPLOAD_FILE' })")
+        r_none2 = page.evaluate("() => window.oaMaybeCreateWorker({})")
+        r_null2 = page.evaluate("() => window.oaMaybeCreateWorker(null)")
+        page.wait_for_timeout(250)
+        chk("G20 ★负向对照：动作不是 CREATE_WORKER 时**不弹创建窗、不说话**（证明 G12–G19 非恒真）",
+            r_up is False and r_none2 is False and r_null2 is False
+            and page.locator(".notif-mask").count() == 0 and dock_text(page).strip() == "",
+            "ret=%s/%s/%s mask=%d dock=%r" % (r_up, r_none2, r_null2,
+                page.locator(".notif-mask").count(), dock_text(page)[:80]))
 
         browser.close()
 

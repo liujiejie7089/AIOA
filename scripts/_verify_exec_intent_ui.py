@@ -10,6 +10,10 @@
       worker:manage 不可申请。已修：新增 CREATE_WORKER 动作 + 提示词明确入口与权限口径。
   D4  界面调试信息已移除：经典 #chatModel 不再显示「模型：智能路由」；回答下方不再有「本次消耗 X 词元…」；
       OA 形态 onStarted/onUsage 删除对应 .bub-meta。
+  D5  「我要请假」被模型自行调用 apply_permission 提前落库（打穿「用户可以取消」）。已修：新增 APPLY_LEAVE 动作
+      + 提示词明确「动作只在用户点击时发生于界面，绝不在此代用户落库」+ 全局硬规则（写操作工具只在用户显式要求时调用）。
+      本哨兵断言：裸请假语料回答不含「已为你提交/已帮你申请」这类与界面不符的话、含请假界面指引、
+      且 permission_grant 无新增行（approval:leave 的 pending 不变）。
 
 纪律（本仓库铁律）：
   · 判据不得与被测对象同源：直接读 DOM 的对话坞/消息真实渲染文本，不读 JS 变量副本。
@@ -236,6 +240,96 @@ async def scenario_classic(page):
         (ctx_of(ans, '本次消耗') or ctx_of(ans, '模型：')) if not no_usage else '未命中')
 
 
+async def scenario_leave(page):
+    """场景 3 · 裸请假语料不得触发 apply_permission 自动落库（D5）。
+
+    真实浏览器发「我要请假两天」：模型被识别为 APPLY_LEAVE 动作、提示词要求「动作只在用户点击时
+    发生于界面，绝不在此代用户落库」。断言：回答不含「已为你提交/已帮你申请」这类与界面不符的话、
+    含请假界面指引（弹卡片/进入请假数字人/《请假申请》表单）、且 permission_grant 无新增行
+    （approval:leave 的 pending 不变）。
+    """
+    print('\n===== 场景 3 · 裸请假语料（D5：不得自动落库）=====')
+    await page.evaluate("() => { if(window.oaSetMode) window.oaSetMode('classic'); }")
+    await page.wait_for_timeout(900)
+    classic = await page.evaluate("() => !document.querySelector('.phone').classList.contains('oa-mode')")
+    chk('S3 已切到经典形态（.phone 不含 oa-mode）', classic)
+    await page.click('.tab[data-page="page-chat"]')
+    await page.wait_for_timeout(700)
+    try:
+        await page.wait_for_selector('#chatInput', state='visible', timeout=15000)
+    except Exception as e:
+        chk('S3 经典输入框 #chatInput 可见', False, str(e)[:80])
+        await shot(page, 's3-input-invisible')
+        return
+    chk('S3 经典输入框 #chatInput 可见', True)
+
+    # 阈值前：记录当前 approval:leave 的 pending（无新 PENDING 应为 false）
+    def catalog_leave():
+        return page.evaluate("""async () => {
+          try {
+            const c = await API.permissionCatalog();
+            const items = c.items || c.list || c;
+            const it = (items||[]).find(x => x.permissionCode === 'approval:leave');
+            return it ? {held: it.held, pending: it.pending} : {missing: true};
+          } catch(e){ return {err: String(e)}; }
+        }""")
+    pre = await catalog_leave()
+    print('  [catalog.pre] ' + str(pre))
+
+    # 真实点击：输入裸请假语料 → 发送
+    await page.fill('#chatInput', '我要请假两天')
+    await page.wait_for_timeout(400)
+    snd_visible = await page.evaluate("""() => {
+      const b = document.getElementById('sendBtn');
+      if(!b) return false;
+      return b.offsetParent !== null && getComputedStyle(b).display !== 'none';
+    }""")
+    chk('S3 发送按钮 #sendBtn 在输入后可见', snd_visible)
+    await page.click('#sendBtn')
+
+    try:
+        await page.wait_for_selector('#msgs .guide-block', timeout=90000)
+        landed = True
+    except Exception:
+        landed = False
+    if not landed:
+        diag = await page.evaluate("() => { const m=document.getElementById('msgs'); return m?m.innerText:''; }")
+        chk('S3 回答落定（出现 .guide-block 引导条）', False, '90s 内未出现引导条；对话=%s' % diag[:160])
+        await shot(page, 's3-no-answer')
+        return
+    chk('S3 回答落定（出现 .guide-block 引导条）', True)
+
+    ans = await page.evaluate("""() => {
+      const bs = Array.from(document.querySelectorAll('#msgs .msg .bubble'));
+      return bs.length ? bs[bs.length-1].innerText : '';
+    }""")
+    print('  [回答原文] ' + ans.replace('\n', ' ⏎ ')[:400])
+    await shot(page, 's3-answer')
+
+    # ---- 断言 a：不含与界面不符的「已提交/已申请」话术 ----
+    auto_apply_words = ['已为你提交', '已帮你申请', '已经提交', '已申请（', '已帮你提交了', '申请已提交', '已为你申请']
+    hit = [w for w in auto_apply_words if w in ans]
+    chk('S3 回答不含「已提交/已帮你申请」这类与界面不符的话（动作由界面点击触发）',
+        not hit, ('命中：' + ','.join(hit) + ' | ' + ctx_of(ans, hit[0])) if hit else '未命中')
+
+    # ---- 断言 b：含请假界面指引（弹卡片 / 进入请假数字人 / 《请假申请》表单）----
+    has_guide = any(k in ans for k in ('请假审批', '请假数字人', '请假申请', '权限', '卡片', '帮我申请', '取消'))
+    chk('S3 回答含请假界面指引（提及请假审批/数字人/申请表单/帮我申请）',
+        has_guide, (ans[:160] if not has_guide else '命中'))
+
+    # ---- 断言 c：permission_grant 无新增行（approval:leave 的 pending 不变）----
+    await page.wait_for_timeout(2500)  # 等可能的异步落库窗口
+    post = await catalog_leave()
+    print('  [catalog.post] ' + str(post))
+    if pre.get('missing') or post.get('missing'):
+        chk('S3 目录含 approval:leave（可比对 pending）', False, 'pre=%s post=%s' % (pre, post))
+    else:
+        chk('S3 approval:leave 的 pending 未因裸请假语料变 true（无新增 grant 行）',
+            post.get('pending') == pre.get('pending') and post.get('pending') is False,
+            'pre.pending=%s post.pending=%s' % (pre.get('pending'), post.get('pending')))
+
+
+
 async def scenario_oa(page):
     print('\n===== 场景 2 · 项目内（OA 形态）=====')
     # 重新加载并登录（场景 1 已切经典 + 进过创建流程，避免状态污染）
@@ -407,6 +501,7 @@ async def main():
         if not await login(page):
             await browser.close()
             return report()
+        await scenario_leave(page)
         await scenario_classic(page)
 
         # 场景 2：重新加载并登录、切 OA

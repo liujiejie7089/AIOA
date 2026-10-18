@@ -187,7 +187,8 @@ def main():
             ("/experts", "智能服务", "专家配置"),
             ("/settings", "系统配置", "系统参数"),
             ("/tenants", "租户与机构", "租户管理"),
-            ("/institutions", "租户与机构", "机构管理")
+            ("/institutions", "租户与机构", "机构管理"),
+            ("/forms", "智能服务", "表单设计器")
         ]
         for path, group, item in deep:
             ctx = new_ctx(b, tok, user, ref)

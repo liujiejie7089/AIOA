@@ -10,9 +10,12 @@
   D 数字人链路        —— 点击 → 选择卡 → 数字员工清单 → 原地对话坞（不跳转）
   E 气泡三角几何      —— 逐气泡比对「计算方向角 θ+90°」与「实际 --tail-angle」，误差 < 1°
   F 抽屉与子页        —— 抽屉、定时任务、插件-技能、最近会话
-  H 职责推荐与表单直出 —— 回答后按职责推荐更对口的数字人（理由必须来自后端分类器）、
-                        点名称直接更换（并换会话）、请假表单由数字人当场给出（两个条件缺一不可）、
-                        两形态共用同一 id 时互不遮挡
+  H 职责推荐与请假直达 —— 回答后按职责推荐更对口的数字人（理由必须来自后端分类器）、
+                        点名称直接更换（并换会话）；wjj_xu 现 held=true（docs/51 §0 实测，
+                        经 team-lead 重建重启后已生效），说「我要请假两天」
+                        ⇒ action=APPLY_LEAVE、held=true ⇒ 直接跳转 / §1.5 创建，表单落进 OA 对话坞、
+                        真填真提交、结果落对话坞且 #msgs 无新增（撤单收尾）；
+                        申请卡分支（held=false）由 zhangsan 覆盖，见 _verify_oa_leave_permcard.py。
 输出：scripts/_shot_oa/*.png + 控制台逐项结论
 退出码非零 = 有断言失败。
 """
@@ -20,17 +23,62 @@ import asyncio
 import json
 import math
 import os
+import re
 import sys
 
 from playwright.async_api import async_playwright
 
+import urllib.request
+import urllib.error
+
 BASE = 'http://127.0.0.1:5181/'
+BACKEND_BASE = 'http://127.0.0.1:8080'     # 后端直连（撤单等真实 HTTP 用）
+
+
+def _leave_login(user, pwd):
+    try:
+        req = urllib.request.Request(
+            BACKEND_BASE + '/api/v1/auth/login',
+            data=json.dumps({'username': user, 'password': pwd}).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            b = json.loads(resp.read().decode('utf-8'))
+        return ((b or {}).get('data') or {}).get('accessToken')
+    except Exception:
+        return None
+
+
+def _leave_mine(token):
+    try:
+        req = urllib.request.Request(
+            BACKEND_BASE + '/api/v1/leave/requests',
+            headers={'Authorization': 'Bearer ' + token})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        return None
+
+
+def _leave_cancel(token, rid):
+    try:
+        req = urllib.request.Request(
+            BACKEND_BASE + '/api/v1/leave/requests/%s/cancel' % rid,
+            headers={'Authorization': 'Bearer ' + token}, method='POST')
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return resp.status, json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode('utf-8'))
+        except Exception:
+            return e.code, {'err': str(e)[:120]}
+    except Exception as ex:
+        return -1, {'err': str(ex)[:120]}
 USER, PWD = 'wjj_xu', 'User@123'          # 普通成员（科员）：覆盖 ROLE_MEMBER 视角
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_shot_oa')
 # 构建产物（单次拼装后的零构建单文件 H5）；E3 的静态口径直接读它。
 INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'user-client', 'index.html')
 
-errors, fails, notes, shots = [], [], [], []
+errors, fails, notes, shots, bad_resp = [], [], [], [], []
 
 
 def chk(name, ok, detail=''):
@@ -114,6 +162,13 @@ async def main():
         page.on('console', lambda m: errors.append('console.' + m.type + ': ' + m.text)
                 if m.type == 'error' else None)
         page.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
+        # 捕获非 2xx 响应（定位 console 里的 401/4xx 究竟来自哪个 URL）
+        def _on_bad_resp(resp):
+            st = resp.status
+            if st >= 400:
+                u = resp.url or ''
+                bad_resp.append('%d %s' % (st, u))
+        page.on('response', _on_bad_resp)
 
         # ---------------- 登录 ----------------
         await page.goto(BASE, wait_until='domcontentloaded')
@@ -518,10 +573,13 @@ async def main():
           items: [...document.querySelectorAll('.dnav-item')].map(x => x.textContent.trim()),
           recent: document.querySelectorAll('#oaDrawerRecent [data-conv]').length })""")
         chk('F1 抽屉可打开', dr['open'] is True)
+        # 序号即用户看到的自上而下顺序。第三项「OA 模块」是 43 个功能模块的目录入口
+        # （每个模块一个数字人），由本轮需求新增，位置紧跟「新对话」。
+        _dr_expected = ['新工作任务', '新对话', 'OA 模块', '定时任务', '插件-技能']
         chk('F2 抽屉动作项自上而下正确',
-            dr['items'][:4] == ['新工作任务', '新对话', '定时任务0', '插件-技能0'] or
-            all(x.startswith(y) for x, y in zip(dr['items'][:4], ['新工作任务', '新对话', '定时任务', '插件-技能'])),
-            dr['items'])
+            len(dr['items']) >= len(_dr_expected) and
+            all(x.startswith(y) for x, y in zip(dr['items'], _dr_expected)),
+            'expected=%s got=%s' % (_dr_expected, dr['items']))
         await shot(page, '10-oa-drawer')
         await page.click('#odTimers')
         await page.wait_for_timeout(1200)
@@ -732,11 +790,12 @@ async def main():
         LEAVEY_Q = '我想请假三天，需要走什么流程'
         NONLEAVE_Q = '帮我把这句话写得更正式一些：明天开会'
 
-        async def ask(q, want_guide=False, want_form=False, settle_ms=700):
+        async def ask(q, want_guide=False, want_form=False, want_permcard=False,
+                     want_mask=False, settle_ms=700):
             """真实发一条消息并等回答收口（S.busy 释放 + 出现新的 AI 气泡）。
 
-            收口（推荐块 / 请假表单）要等一次 intent 调用才落地，故：
-              · **正向**断言一律等明确的 DOM 条件（want_guide / want_form），不猜毫秒数；
+            收口（推荐块 / 请假表单 / 请假权限申请卡）要等一次 intent 调用才落地，故：
+              · **正向**断言一律等明确的 DOM 条件（want_guide / want_form / want_permcard），不猜毫秒数；
               · **负向**断言没有可等的条件，只能给足窗口 —— 负向的唯一失败模式是「等太早」，
                 所以窗口给宽（等太早 = 假绿；等太久不会造成假红）。"""
             st0 = await page.evaluate("""() => ({
@@ -761,6 +820,20 @@ async def main():
                     await page.wait_for_function(
                         "() => document.querySelectorAll('#leaveForm').length > "
                         + str(st0['forms']), timeout=25000)
+                except Exception:
+                    pass
+            if want_permcard:
+                try:
+                    await page.wait_for_function(
+                        "() => document.querySelectorAll('.notif-mask [data-leave-apply]').length > 0",
+                        timeout=25000)
+                except Exception:
+                    pass
+            if want_mask:
+                try:
+                    await page.wait_for_function(
+                        "() => document.querySelectorAll('.notif-mask.show').length > 0",
+                        timeout=25000)
                 except Exception:
                     pass
             await page.wait_for_timeout(settle_ms)
@@ -856,54 +929,268 @@ async def main():
         f4 = await leave_forms()
         chk('H4a 负向：问句不是请假 ⇒ 请假类数字人也不发表单', f4['count'] == 0, f4)
 
-        # H5 正向：请假类数字人 + 请假问句 ⇒ 表单由数字人当场给出（同老版「表单融入对话流」）
-        gpre = await guide_rows_all()      # H5d 的快照：本轮之前坞里已有的推荐块
-        h5 = await ask('我要请假两天', want_form=True)
-        chk_answered('H5 回答已收口（有正文）', h5)
-        f5 = await leave_forms()
-        chk('H5a 表单直出：请假表单落在对话坞内（不跳转、不换页）', f5['inDock'] is True, f5)
-        chk('H5b 假种下拉来自后端配置（非「暂无可用假种」占位）',
-            f5['types'] > 0 and '暂无' not in str(f5['placeholder']), f5)
-        chk('H5c 文档内 #leaveForm 恰好 1 份（两形态共用同一 id，不得撞名）', f5['count'] == 1, f5)
+        # ====================================================================
+        # H5 段（新口径，docs/51 §1.4 / §1.5）：wjj_xu 现 held=true（docs/51 §0 实测，
+        # 经 team-lead 重建重启后已生效），说「我要请假两天」
+        # ⇒ action=APPLY_LEAVE、held=true ⇒ **直接跳转**（找不到 LEAVE_APPROVER 员工时
+        # 先按 §1.5 创建再跳）→ 表单真出现在 OA 对话坞、且**真能被填并提交**（真实写操作，落一张请假单）。
+        # 申请卡分支（held=false）由 zhangsan 覆盖，见 _verify_oa_leave_permcard.py。
+        # 起点必须复位到「非请假数字人」——否则第一句就命中「已在请假数字人里 ⇒ 直接出表单」，
+        # 跳转分支测不到。所有判定回源头：跳转/创建读 state.workers 与 oaState.worker.workerType；
+        # 落库读提交后对话坞 .result-card 或表单 .lf-error 的后端 message；撤单走真实 HTTP。
 
-        # H5d 自己不会被推荐给自己：「更换」的语义是换一位，不是再推荐当前这位。
-        #      此刻当前对象就是那位「会命中推荐判据」的请假助手，所以规则只在这一刻验得到。
-        #      判据必须落在**本轮新产出的块**上：坞里那块 H2 留下的推荐是当时（当前对象=政策快讯员）
-        #      合法生成的、并且刻意保留在坞里 —— 拿它当证据会得到一个假阳性（实测踩过一次）。
-        #      同时必须带**阳性对照**：更早那轮确实推荐过请假助手（H2c 已证），否则「本轮没推荐它」
-        #      可能只是因为「这个问句本来就推不出它」，整条断言退化成恒真。
-        gpost = await guide_rows_all()
-        new_blocks = gpost[len(gpre):]
-        uname = await page.evaluate("() => ((window.oaState.worker || {}).name || '')")
-        has_self = lambda rows: any(uname and uname in lb for lb in rows)
-        pre_hit = any(has_self(rows) for rows in gpre)        # 阳性对照
-        new_hit = any(has_self(rows) for rows in new_blocks)  # 被测规则
-        chk('H5d 当前就是请假助手 ⇒ 本轮不再把「请假助手」推荐给自己（对照：更早那轮确实推荐过它）',
-            pre_hit and not new_hit,
-            {'self': uname, 'pre_blocks': len(gpre), 'new_blocks': len(new_blocks),
-             '对照_更早块命中': pre_hit, '本轮命中': new_hit, 'new_rows': new_blocks})
-        await shot(page, '19-oa-leave-form')
+        LEAVE_Q = '我要请假两天'      # 命中 APPLY_LEAVE（带申请意图，非 §1.3 反例词）
 
-        # H6 表单气泡与其它气泡同形：同样不得有尾巴（新口径）
-        tc_h = await tail_count(page)
-        chk('H6 表单在坞里时气泡仍无尾巴（.bub .tail=0，气泡数 %s）' % tc_h.get('bubbles'),
-            not tc_h.get('skip') and tc_h['bubbles'] > 0
-            and tc_h['tails'] == 0 and tc_h['pseudo'] == 0,
-            tc_h.get('skip') or {'bubbles': tc_h.get('bubbles'),
-                                 'tails': tc_h.get('tails'),
-                                 'pseudo': tc_h.get('pseudo')})
+        # 环境闸门（非契约断言，暴露漂移）：本套件假定 wjj_xu 对 approval:leave 为 held=true
+        # （新契约下有权限分支）；若漂移为 held=false，wjj_xu 会改走申请卡分支，本段前提失效。
+        gate = await page.evaluate("""async () => {
+          try { const c = await API.permissionCatalog();
+            return ((c && c.items) || []).find(x => x.permissionCode === 'approval:leave') || null;
+          } catch(e){ return {err: String((e && e.message) || e)}; } }""")
+        chk('环境闸门：wjj_xu 对 approval:leave 应为 held=true（H5 跳转分支设计前提）',
+            (gate or {}).get('held') is True, gate)
 
-        # H7 离开新版 ⇒ 新版注入的表单必须撤掉，否则经典的「文档里已有表单就不再发」判据会被挡住。
-        # 多等一会儿是刻意的：若「在途收口」漏过代次判据，它会正好在这段时间里补一份表单出来。
+        # 计数助手：state.workers 里 LEAVE_APPROVER 数量
+        def worker_count_js():
+            return """() => {
+              const ws = (typeof state !== 'undefined' && state.workers) || [];
+              return ws.filter(w => String(w.workerType || '').toUpperCase() === 'LEAVE_APPROVER').length;
+            }"""
+
+        # ---- 复位到非请假数字人（H5 跳转分支起点；复用 H1 的选人机制） ----
+        await page.click('#oaRobot')
+        await page.wait_for_timeout(450)
+        await page.click('#oaSheet .sheet-opt[data-target="workers"]')
+        await page.wait_for_timeout(1000)
+        await page.evaluate("""() => {
+          const ws = state.workers || [];
+          const rows = [...document.querySelectorAll('#oaWorkersList [data-worker]')];
+          const pick = rows.find(r => {
+            const w = ws.find(x => String(x.id) === r.dataset.worker) || {};
+            return String(w.workerType || '').toUpperCase() !== 'LEAVE_APPROVER' && w.on !== false;
+          });
+          if(pick) pick.click();
+        }""")
+        await page.wait_for_timeout(900)
+        before = await page.evaluate(worker_count_js())
+        chk('§1.5 前置：演示库初始 LEAVE_APPROVER 员工数 = %d（0 表示本轮会创建）' % before, True)
+
+        # ---- H5a 负向「不出现申请卡」+ 正向「跳转/§1.5 创建」 ----
+        ha = await ask(LEAVE_Q, want_form=True)    # held=true ⇒ 表单出现（跳转后直出）
+        chk_answered('H5a 回答已收口（有正文）', ha)
+        await page.wait_for_timeout(1200)           # 负向给足窗口：确认不会 transient 弹卡
+        mask_cnt = await page.evaluate("() => document.querySelectorAll('.notif-mask').length")
+        chk('H5a 负向：held=true ⇒ 不弹权限申请卡（.notif-mask 计数 0）', mask_cnt == 0, {'mask': mask_cnt})
+        cur = await page.evaluate("""() => {
+          const w = window.oaState.worker || {};
+          return { type: String(w.workerType || '').toUpperCase(), name: w.name || null };
+        }""")
+        form_now = await page.evaluate("() => document.querySelectorAll('#leaveForm').length")
+        if cur['type'] != 'LEAVE_APPROVER' and form_now == 0:
+            chk('H5a 跳转/§1.5 创建：当前对话对象切到 LEAVE_APPROVER 或表单直出', False,
+                {'workerType': cur['type'], 'workerName': cur['name'], 'forms': form_now,
+                 '归因': '既没跳到 LEAVE_APPROVER 也没出表单——前置未就绪'})
+        else:
+            chk('H5a 跳转/§1.5 创建：当前对话对象切到 LEAVE_APPROVER 或表单直出', True, cur)
+        after1 = await page.evaluate(worker_count_js())
+        if before == 0:
+            chk('§1.5 无匹配员工 ⇒ 恰好创建 1 名 LEAVE_APPROVER', after1 == 1,
+                {'before': before, 'after1': after1})
+        else:
+            chk('§1.5 已存在匹配员工 ⇒ 本次不再创建（after1 == before）', after1 == before,
+                {'before': before, 'after1': after1})
+        chk('H5a 已切到 LEAVE_APPROVER（顶栏/气泡可见反馈）', cur['type'] == 'LEAVE_APPROVER', cur)
+        await shot(page, '17-oa-leave-jump')
+
+        # 若跳转后未直接出表单（只在 LEAVE_APPROVER 上），再问一次 ⇒ 表单直出
+        if form_now == 0:
+            await ask(LEAVE_Q, want_form=True)
+            await page.wait_for_timeout(600)
+        after2 = await page.evaluate(worker_count_js())
+        chk('§1.5.3 幂等：再触发一次后 LEAVE_APPROVER 员工数不变（不出现第二个）',
+            after2 == after1, {'after1': after1, 'after2': after2})
+
+        # ---- H5b §1.4 表单落在 OA 对话坞 + 假种来自后端 ----
+        leave_info = await page.evaluate("""() => {
+          const f = document.getElementById('leaveForm');
+          const dock = document.getElementById('oaDockList');
+          const sel = document.getElementById('lfType');
+          const opts = sel ? [...sel.options].map(o => ({value: o.value, text: o.text})) : [];
+          return { count: document.querySelectorAll('#leaveForm').length,
+                   inDock: !!(f && dock && dock.contains(f)),
+                   types: opts.length, firstText: opts.length ? opts[0].text : null, opts };
+        }""")
+        chk('H5b §1.4 表单出现在 OA 对话坞内（#leaveForm 祖先是 #oaDockList）',
+            leave_info['inDock'] is True, leave_info)
+        chk('H5b §1.4 假种下拉来自后端 GET /v1/leave/types（options>0 且首项非「暂无」）',
+            leave_info['types'] > 0 and '暂无' not in str(leave_info['firstText']), leave_info)
+        await shot(page, '18-oa-leave-form')
+
+        # ---- H5c 真填真提交（真实写操作，会落一张请假单） ----
+        # 选假种：年假有「提前 3 天申请」限制、病假「必须上传证明材料」，近日期/无附件必被业务驳回，
+        # 拿不到可撤单据就没法验证撤单收尾。优先事假（不占额度，一般无提前/证明限制），其次病假，再次年假。
+        pick_type = await page.evaluate("""() => {
+          const sel = document.getElementById('lfType');
+          if(!sel) return {err: '无 lfType'};
+          const opts = [...sel.options].filter(x => x.value && x.value.trim() !== '');
+          if(!opts.length) return {err: '无可选假种'};
+          const pref = opts.find(x => x.value === 'CASUAL')
+                    || opts.find(x => x.value === 'SICK')
+                    || opts[0];
+          return {value: pref.value, text: pref.text};
+        }""")
+        if pick_type.get('err'):
+            chk('H5c 填表：取到可选假种', False, pick_type)
+        else:
+            reason_text = '自动化回归：wjj_xu 请假直达提交可见性验证'
+            await page.select_option('#lfType', value=pick_type['value'])
+            msgs_before = await page.evaluate(
+                "() => document.querySelectorAll('#msgs .result-card').length")
+            # 提交前先拉一次 leaveMine，记下已有单据 id 集合，用于提交后「差量」定位本次新建单据的 PK
+            _tk = _leave_login(USER, PWD)
+            _mine0 = _leave_mine(_tk) if _tk else None
+            mine_before_ids = set(str(x.get('id')) for x in
+                                 (((_mine0 or {}).get('data') or []) if isinstance(_mine0, dict) else (_mine0 or [])))
+
+            # 捕获提交响应状态（resp.json 是协程必须 await）。
+            # 注意：提交响应体的 leaveRequestId 实际是「工作流 orderId」而非请假单 PK，
+            # 撤单接口 cancel(id) 要的是请假单 PK（leaveMine 的 id 字段），故 PK 一律以 leaveMine 差量为准。
+            sub_order_id = {'v': None}
+            sub_http = {'status': None, 'url': None}
+            async def _on_resp(resp):
+                u = resp.url or ''
+                if (resp.request.method or '') == 'POST' and u.rstrip('/').endswith('/requests') \
+                        and '/v1/leave/requests' in u:
+                    sub_http['status'] = resp.status
+                    sub_http['url'] = u
+                    try:
+                        b = await resp.json()
+                    except Exception:
+                        return
+                    if isinstance(b, dict) and b.get('leaveRequestId'):
+                        sub_order_id['v'] = b.get('leaveRequestId')
+            page.on('response', _on_resp)
+
+            # 真填真提交；若后端按「提前申请」规则驳回，按「最早可申请」日期后移再试（最多 3 次）。
+            ok_dock = ok_err = False
+            dock_card = {'count': 0, 'text': None}
+            lf_err = {'shown': False, 'text': None}
+            sub_res = None
+            shift = 1
+            for attempt in range(3):
+                d = await page.evaluate("""(shift) => {
+                  const pad = n => (n < 10 ? '0' + n : '' + n);
+                  const add = days => { const t = new Date(); t.setDate(t.getDate() + days);
+                    return t.getFullYear() + '-' + pad(t.getMonth()+1) + '-' + pad(t.getDate()); };
+                  return { start: add(shift), end: add(shift + 1) };
+                }""", shift)
+                await page.fill('#lfStart', d['start'])
+                await page.fill('#lfEnd', d['end'])
+                await page.fill('#lfReason', reason_text)
+                await page.wait_for_timeout(200)
+                # 表单里三枚按钮：证明材料上传（最先）、提交、取消；
+                # 必须精确点到「提交请假申请」那枚（onclick 含 submitLeave），否则会点到上传按钮、整条链路不提交。
+                await page.click('#leaveForm button[onclick*="submitLeave"]')
+                try:
+                    await page.wait_for_function(
+                        "() => { const dk = document.getElementById('oaDockList'); "
+                        "if(dk && dk.querySelector('.result-card')) return true; "
+                        "const e = document.getElementById('lfError'); "
+                        "return !!e && e.style.display !== 'none' && e.textContent.trim() !== ''; }",
+                        timeout=25000)
+                except Exception:
+                    pass
+                await page.wait_for_timeout(400)
+                dock_card = await page.evaluate("""() => {
+                  const dk = document.getElementById('oaDockList');
+                  const c = dk ? dk.querySelector('.result-card') : null;
+                  return { count: dk ? dk.querySelectorAll('.result-card').length : 0,
+                           text: c ? c.textContent.replace(/\\s+/g, ' ').trim() : null };
+                }""")
+                lf_err = await page.evaluate("""() => {
+                  const e = document.getElementById('lfError');
+                  return { shown: !!e && e.style.display !== 'none' && e.textContent.trim() !== '',
+                           text: e ? e.textContent.trim() : null };
+                }""")
+                if dock_card['count'] > 0:
+                    ok_dock = True
+                    break
+                if lf_err['shown']:
+                    # 提前申请规则：最早可申请 YYYY-MM-DD → 起始日移到该日期后重试
+                    try:
+                        repl = await page.evaluate("""(txt) => {
+                          const mm = (txt || '').match(/最早可申请\\s*(\\d{4}-\\d{2}-\\d{2})/);
+                          if(!mm) return null;
+                          const t = new Date(); t.setHours(0,0,0,0);
+                          const e = new Date(mm[1] + 'T00:00:00');
+                          return Math.ceil((e.getTime() - t.getTime()) / 86400000);
+                        }""", lf_err['text'])
+                    except Exception:
+                        repl = None
+                    if repl is not None:
+                        shift = max(shift + 1, repl)
+                        continue
+                    ok_err = True
+                    sub_res = lf_err['text']
+                    break
+                break  # 既无结果也无错误：异常，跳出
+
+            chk('H5c 提交可见性：结果落在 OA 对话坞（.result-card）或 表单内显示后端 message',
+                ok_dock or ok_err, {'dock': dock_card, 'lfError': lf_err, 'shift': shift})
+            print('    · 提交 HTTP：%s %s（响应体 leaveRequestId(=orderId)=%s）' %
+                  (sub_http['status'], sub_http['url'], sub_order_id['v']))
+            if dock_card['text']:
+                print('    · 提交回执（对话坞）：' + dock_card['text'][:220]); sub_res = dock_card['text']
+            if lf_err['text'] and not sub_res:
+                print('    · 后端拒绝原因（表单内）：' + lf_err['text'][:220]); sub_res = lf_err['text']
+            if sub_res:
+                print('    · 提交结果原文（真实写操作，已原样贴出）：' + sub_res[:240])
+            msgs_after = await page.evaluate(
+                "() => document.querySelectorAll('#msgs .result-card').length")
+            chk('H5c 提交负向：结果未写进 #msgs（OA 下不可见容器不应出现结果卡）',
+                msgs_after == 0, {'msgs_before': msgs_before, 'msgs_after': msgs_after})
+            await shot(page, '19-oa-leave-submit')
+
+            # ---- H5d 收尾撤单（真实写操作后必须复位，否则二次跑污染；撤不掉如实报告） ----
+            # 撤单接口 cancel(id) 要的是请假单 PK（leaveMine 的 id 字段），不是提交响应里的 leaveRequestId（那是 orderId）。
+            # 用「提交前后 leaveMine 差量」定位本次新建单据的 PK：优先按提交理由精确匹配，其次取新增的待审批单据。
+            rid = None
+            if ok_dock:
+                try:
+                    tk = _leave_login(USER, PWD)
+                    mine = _leave_mine(tk) if tk else None
+                    items = ((mine or {}).get('data') or []) if isinstance(mine, dict) else (mine or [])
+                    fresh = [x for x in items if str(x.get('id')) not in mine_before_ids]
+                    for x in fresh:
+                        if (x.get('reason') or '') == reason_text and \
+                                str(x.get('status', '')).upper() in ('PENDING', 'SUBMITTED', 'APPROVING'):
+                            rid = x.get('id'); break
+                    if rid is None and fresh:
+                        rid = fresh[0].get('id')
+                    if rid is not None:
+                        rid = str(rid)
+                except Exception as ex:
+                    print('    · 收尾：leaveMine 差量定位失败：' + str(ex)[:120])
+            if rid:
+                st, body = _leave_cancel(_leave_login(USER, PWD), rid)
+                ok_cancel = st == 200 and (str((body or {}).get('code', '')) == '0'
+                                          or 'CANCEL' in json.dumps(body, ensure_ascii=False).upper())
+                chk('H5d 收尾：撤单成功（单据 CANCELED）', ok_cancel,
+                    {'rid': rid, 'http': st, 'body': body})
+                if not ok_cancel:
+                    print('    · 收尾：撤单未成功，单据可能残留，需手动复位！rid=%s' % rid)
+            else:
+                if ok_err:
+                    chk('H5d 收尾：提交被业务规则驳回（无单据生成，无需撤单）', True,
+                        '后端拒绝：' + (lf_err['text'] or '未知'))
+                else:
+                    chk('H5d 收尾：拿到请假单 PK 可撤单', False,
+                        '提交成功但 leaveMine 差量未定位到新建单据 PK——单据可能残留，需手动复位')
+
+        # ---- H8 经典形态仍可独立发放请假表单（OA 流程改走跳转/创建后，经典表单不应被影响） ----
+        # 注：经典表单与 OA 请假直达是两条独立链路；这里只冒烟「经典侧仍能发一份表单」。
         await page.evaluate("() => window.oaSetMode('classic')")
-        await page.wait_for_timeout(2500)
-        h7 = await page.evaluate("""() => ({
-          oa: document.querySelector('.phone').classList.contains('oa-mode'),
-          count: document.querySelectorAll('#leaveForm').length })""")
-        chk('H7 切回经典时撤掉新版注入的请假表单（解除对经典发放判据的遮挡）',
-            h7['oa'] is False and h7['count'] == 0, h7)
-
-        # H8 反向：经典形态自己发一份表单时，文档里仍恰好 1 份（同一 id 共用，不互相遮挡）
+        await page.wait_for_timeout(1500)
         await page.evaluate("() => { if(typeof openLeaveFlow === 'function') openLeaveFlow(); }")
         await page.wait_for_timeout(900)
         h8 = await page.evaluate("() => document.querySelectorAll('#leaveForm').length")
@@ -912,7 +1199,18 @@ async def main():
         await page.wait_for_timeout(800)
 
         # ---------------- 控制台 ----------------
-        chk('G1 console 无 error / 无未捕获异常', len(errors) == 0, errors[:5])
+        # 401 /v1/asr/status 是输入栏初始化时的语音能力探活：此刻还没有 token，必然 401，
+        # 应用侧 catch 后 fail-open（见 _backup_index_pre_oa.html:4539-4568 的注释）。
+        # 但「整类不看」会掩盖真缺陷 ⇒ 只按身份放行，两条判据都必须成立：
+        #   ① 非「资源加载失败」类的 console.error / 任何 pageerror：必须为零（真 JS 异常）
+        #   ② 非 2xx 响应：必须全部是「401 …/v1/asr/status」，出现别的 URL 即红
+        js_errors = [e for e in errors
+                     if not e.startswith('console.error: Failed to load resource')]
+        other_net = [r for r in bad_resp
+                     if not ('/v1/asr/status' in r and r.startswith('401'))]
+        chk('G1 console 无 error / 无未捕获异常（ASR 探活 401 按身份放行）',
+            not js_errors and not other_net,
+            'JS异常=%s 其它非2xx=%s' % (js_errors[:3], other_net[:3]))
 
         await browser.close()
     return report()
@@ -927,6 +1225,10 @@ def report():
         print('控制台错误 %d 条：' % len(errors))
         for e in errors[:10]:
             print('  ' + e[:180])
+    if bad_resp:
+        print('非 2xx 响应 %d 条：' % len(bad_resp))
+        for r in bad_resp[:15]:
+            print('  ' + r[:200])
     return 1 if fails else 0
 
 

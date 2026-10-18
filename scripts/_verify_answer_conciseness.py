@@ -58,6 +58,8 @@ import subprocess
 import requests
 
 API = "http://127.0.0.1:8080/api/v1"
+from _svc_token import svc_headers, token as svc_token  # noqa: E402 服务间令牌（/internal/v1/* 已强制校验）
+
 AGENT = "http://127.0.0.1:8000"
 USER, PWD = "zhangsan", "User@123"
 MODEL_REF = "default"
@@ -214,7 +216,8 @@ def check_live_prompt():
     print("\n=== 5. 活体提示词口径（:8000/internal/v1/answer-shape） ===")
     try:
         r = requests.post(AGENT + "/internal/v1/answer-shape",
-                          json={"role": "GENERAL", "scope": None}, timeout=15)
+                          json={"role": "GENERAL", "scope": None}, timeout=15,
+                          headers=svc_headers())
     except Exception as e:
         skip("5 活体提示词口径", "agent 不在线：%s" % e)
         return
