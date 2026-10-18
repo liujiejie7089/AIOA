@@ -9,7 +9,7 @@
 - ★**本机启动后端的完整命令（缺参数 ⇒ `/aios/h5/`、`/aios/web/` 全 404，`e2e_v63` 的 C8/C9/C11 必红）**：
   ```
   cd server && "$JAVA" -Dspring.flyway.validate-on-migrate=false -jar aios-boot/target/aios-boot-0.1.0-SNAPSHOT.jar \
-    --aios.web.h5-dir=C:/Users/刘尖尖/WorkBuddy/aioa/user-client \
+    --aios.web.h5-dir=D:/aios/user-client \
     --aios.web.web-dir=C:/Users/刘尖尖/AppData/Local/Temp/aios-webroot
   ```
   原因：`aios.web.h5-dir`/`web-dir` 默认值是**容器内**路径 `/app/h5`、`/app/web`（`application.yml` 只给 `${AIOS_WEB_H5_DIR:/app/h5}`，本机没有这俩 env）⇒ 在 Windows 上落到 `C:\app\h5`，不存在。

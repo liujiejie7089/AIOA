@@ -809,7 +809,7 @@ ws4.conditional_formatting.add(
     f"E3:E{last4}", CellIsRule(operator="equal", formula=['"枚举不一致"'],
                              fill=PatternFill("solid", bgColor=XL_WARN_BG), font=Font(color=XL_WARN_FG)))
 
-OUT = "C:/Users/刘尖尖/WorkBuddy/aioa/docs/41-项目管理与项目仓库_手工功能测试用例.xlsx"
+OUT = "D:/aios/docs/41-项目管理与项目仓库_手工功能测试用例.xlsx"
 wb.save(OUT)
 print("saved:", OUT)
 print("sheets:", wb.sheetnames)

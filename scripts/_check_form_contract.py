@@ -49,7 +49,7 @@
 
 ## 跑法（必须用 agent venv，因为它装了 pydantic；托管 python 没装）
 
-    cd /c/Users/刘尖尖/WorkBuddy/aioa
+    cd /d/aios
     agent/.venv/Scripts/python.exe scripts/_check_form_contract.py
 
 ## 退出码

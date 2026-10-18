@@ -221,7 +221,7 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 ## 哪些文件要改、哪些不用改（★真实值只写 `.env`）
 - **真实密钥只写 `deploy/.env`** —— 实测 `git check-ignore deploy/.env` = IGNORED（`.gitignore:33 .env`）。
-  本机路径 `C:\Users\刘尖尖\WorkBuddy\aioa\deploy\.env`；服务器路径 `/opt/aios/deploy/.env`（`cp .env.production .env` 生成）。
+  本机路径 `D:\aios\deploy\.env`；服务器路径 `/opt/aios/deploy/.env`（`cp .env.production .env` 生成）。
 - ⚠️ **`deploy/.env.production` 不被 git 忽略**：`.gitignore` 有 `!deploy/.env.production` 反选，
   实测 `git check-ignore` 判 **NOT ignored**，且**已入库**（2026-09-20 起跟踪）。
   ⇒ 它只允许放 `CHANGE_ME__` 占位，**填真实密钥等于把密码提交进仓库**。

@@ -3,7 +3,7 @@
 # 导致的 Edge renderer 资源耗尽型挂起（每个角色独立子进程 + 独立浏览器）。
 set -u
 PY="C:/Users/刘尖尖/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
-SCRIPT="C:/Users/刘尖尖/WorkBuddy/aioa/scripts/e2e_v61_shell_all_buttons.py"
+SCRIPT="D:/aios/scripts/e2e_v61_shell_all_buttons.py"
 ROLES=(admin znkj_admin znkjyf_admin znsfb_ldr znsfb_m01)
 TOTAL_PASS=0
 TOTAL_FAIL=0

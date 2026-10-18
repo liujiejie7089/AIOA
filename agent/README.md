@@ -7,7 +7,7 @@ M2 已接入真实 LLM（DeepSeek / 通义 / 本地 vLLM / Ollama，均 OpenAI �
 
 ```bash
 # 建 venv（仅首次）
-"C:/Users/刘尖尖/.workbuddy/binaries/python/versions/3.13.12/python.exe" -m venv "C:/Users/刘尖尖/WorkBuddy/aioa/agent/.venv"
+"C:/Users/刘尖尖/.workbuddy/binaries/python/versions/3.13.12/python.exe" -m venv "D:/aios/agent/.venv"
 
 # 装依赖
 agent/.venv/Scripts/python.exe -m pip install -e agent           # 或在 agent/ 下：python -m pip install fastapi "uvicorn[standard]" pydantic pyyaml httpx pytest
