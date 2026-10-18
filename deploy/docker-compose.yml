@@ -294,6 +294,14 @@ services:
     build:
       context: ../agent
       dockerfile: ../deploy/Dockerfile.agent
+      # ★ 构建期 pip 源（**不是运行时环境变量**）：国内服务器直连 pypi.org 常超时，
+      #   过去是靠人去手改 Dockerfile.agent 那一行 RUN pip install 换成镜像源 ——
+      #   结果服务器工作区永远带一处未提交改动，**每次 git pull 都被它挡住**。
+      #   现在改成 build arg 透传：在 deploy/.env 里设
+      #     PIP_EXTRA_ARGS=-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+      #   留空则走上游默认源（与改造前一致，不影响本地开发）。
+      args:
+        PIP_EXTRA_ARGS: ${PIP_EXTRA_ARGS:-}
     container_name: aioa-agent
     environment:
       AIOA_SERVER_BASE_URL: http://server:8080

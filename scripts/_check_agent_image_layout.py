@@ -246,6 +246,65 @@ def l7_env_example() -> None:
             "模板里没提 AIOA_HITL ⇒ 新克隆的人不知道有这个开关，会再次踩「数字人不弹表单」")
 
 
+def _pip_source_ok(txt: str) -> tuple[bool, str]:
+    """纯判定：Dockerfile 文本里的 pip 安装行是否「源可覆盖且未被硬编码」。
+
+    为什么单独抽成纯函数：L8b 要拿**合成的坏文本**喂它，证明判据真的会红
+    （铁律 7：恒真断言比没断言更危险）。抽不出来就只能对着真文件干瞪眼。
+    """
+    lines = [ln.strip() for ln in txt.splitlines() if re.match(r"^RUN\b", ln.strip())]
+    pip_lines = [ln for ln in lines if "pip install" in ln]
+    if not pip_lines:
+        return False, "Dockerfile 里找不到 RUN ... pip install 行，结构可能已变，需人工复核"
+    bad_lines = [ln for ln in pip_lines
+                 if re.search(r"(?:-i|--index-url)\s+https?://", ln)]
+    if bad_lines:
+        return False, ("pip 源被硬编码进 Dockerfile：" + bad_lines[0][:90] +
+                       "\n⇒ 服务器手改这一行后工作区永远有未提交改动，"
+                       "之后每次 git pull 都被 `local changes would be overwritten` 挡住。"
+                       "镜像源应走 .env 的 PIP_EXTRA_ARGS / --build-arg")
+    if not any("${PIP_EXTRA_ARGS}" in ln for ln in pip_lines):
+        return False, ("pip install 行没有 ${PIP_EXTRA_ARGS} 口子 ⇒ 国内服务器无法在不改文件的前提下"
+                       "换源（只能手改，然后 pull 冲突）")
+    return True, f"pip 行已用 ${{PIP_EXTRA_ARGS}} 占位，共 {len(pip_lines)} 条"
+
+
+def l8_dockerfile_pip_source() -> None:
+    p = ROOT / "deploy" / "Dockerfile.agent"
+    if not p.exists():
+        bad("L8 pip 源可覆盖（不硬编码）", f"找不到 {p}")
+        return
+    good, detail = _pip_source_ok(read(p))
+    (ok if good else bad)("L8 pip 源可覆盖（不硬编码）", detail)
+
+    # L8b 负向对照：把同一份文本的 pip 行换成硬编码镜像源，判定必须翻转成 False。
+    fake = read(p).replace(
+        "RUN pip install ${PIP_EXTRA_ARGS}",
+        "RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple")
+    if fake == read(p):
+        skip("L8b 负向对照", "没能在真文件里定位 ${PIP_EXTRA_ARGS} 占位行，无法构造对照")
+        return
+    fake_good, _ = _pip_source_ok(fake)
+    if fake_good:
+        bad("L8b 负向对照（硬编码源必须判红）",
+            "把 pip 行换成硬编码镜像源后判据仍为绿 ⇒ L8 没有判别力")
+    else:
+        ok("L8b 负向对照（硬编码源必须判红）", "合成坏文本被判红，L8 有牙")
+
+
+def l9_compose_pip_build_arg() -> None:
+    blk = _compose_agent_block()
+    if not blk:
+        bad("L9 compose 透传 PIP_EXTRA_ARGS", "解析不到 docker-compose.yml 的 agent 服务块")
+        return
+    if re.search(r"^\s+PIP_EXTRA_ARGS\s*:", blk, re.M):
+        ok("L9 compose 透传 PIP_EXTRA_ARGS", "agent.build.args 已带该变量")
+    else:
+        bad("L9 compose 透传 PIP_EXTRA_ARGS",
+            "Dockerfile 留了 ARG 口子但 compose 没透传 ⇒ 在 .env 里写 PIP_EXTRA_ARGS 是空转，"
+            "运维只能回去手改 Dockerfile（又是 pull 冲突）")
+
+
 def main() -> int:
     global VERBOSE
     ap = argparse.ArgumentParser()
@@ -265,6 +324,8 @@ def main() -> int:
     l5_compose_hitl()
     l6_k8s_hitl()
     l7_env_example()
+    l8_dockerfile_pip_source()
+    l9_compose_pip_build_arg()
 
     n_ok = sum(1 for lv, _, _ in RESULTS if lv == "OK")
     n_bad = sum(1 for lv, _, _ in RESULTS if lv == "FAIL")

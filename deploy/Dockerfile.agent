@@ -9,7 +9,15 @@ COPY pyproject.toml ./
 #   pip 装进 site-packages 一份，cwd(/app) 下再放一份，任一条路径失效都不至于起不来。
 COPY aioa_ai ./aioa_ai
 COPY app ./app
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+# ★ 构建期依赖源**必须可覆盖**：国内服务器直连 pypi.org 常超时，运维会手改这一行换成
+#   镜像源 —— 但手改会让工作区永远有未提交改动，于是**每次 git pull 都被挡住**
+#   （实测：`error: Your local changes to deploy/Dockerfile.agent would be overwritten`）。
+#   正确做法是给它留口子，镜像源写在 .env / --build-arg 里，本文件保持干净：
+#     docker compose build --build-arg PIP_EXTRA_ARGS="-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn" agent
+#   或在 deploy/.env 里设 PIP_EXTRA_ARGS（compose 的 build.args 已透传，见 docker-compose.yml）。
+#   留空 = 走上游默认源，行为与改造前完全一致。
+ARG PIP_EXTRA_ARGS=
+RUN pip install ${PIP_EXTRA_ARGS} --no-cache-dir --upgrade pip && pip install ${PIP_EXTRA_ARGS} --no-cache-dir .
 EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
