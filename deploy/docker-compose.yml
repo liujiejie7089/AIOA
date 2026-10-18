@@ -146,6 +146,11 @@ services:
 
       # ---- Agent / MinIO ----
       AIOA_AGENT_BASE_URL: http://agent:8000
+      # 语音输入（ASR）两个闸：application.yml 用 ${AIOA_ASR_ENABLED:true} / ${AIOA_ASR_MAX_BYTES:10485760}
+      # 引用它们，不透传就等于「在 .env 里改是空转」（`_check_compose_env_wiring.py` 实测 FAIL）。
+      # max-bytes 必须与 agent 侧同名变量取同一个值，否则会出现「Java 放行、agent 拒绝」两套阈值。
+      AIOA_ASR_ENABLED: ${AIOA_ASR_ENABLED:-true}
+      AIOA_ASR_MAX_BYTES: ${AIOA_ASR_MAX_BYTES:-10485760}
       # ⚠️ 下面三个 MINIO_* 键**当前无人读取**（全仓无 MinIO/S3 客户端；文件落本地盘）。
       #    默认值故意留空 —— 不给一个「看起来已经接上了」的 IP 暗示。真想启用对象存储时，
       #    在 .env 里填 MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY，**并同时**给应用侧补 S3 客户端。
@@ -292,7 +297,21 @@ services:
     container_name: aioa-agent
     environment:
       AIOA_SERVER_BASE_URL: http://server:8080
-      AIOA_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      # ★ 变量名必须与 agent 侧读取名一致：`agent/aioa_ai/config.py` 读的是
+      #   **SERVICE_JWT_SECRET**（无 AIOA_ 前缀），Java 后端读的是 AIOA_SERVICE_JWT_SECRET。
+      #   此前这里只给了 AIOA_ 前缀的那个 ⇒ agent 读不到、回落开发占位串，而后端用的是
+      #   .env 里的真实串 ⇒ 2026-10-18 起 /internal/v1/* 强制校验后，**生产编排必 401**。
+      #   两个名字在 .env / .env.development / .env.production 里都已存在，取同一个值即可。
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      # ★ 必须透传：不透传时 agent 容器内 AIOA_HITL 恒为 false（config.py:68 默认 False），
+      #   ask_user / request_form 两个内置工具**不会进模型工具表**，于是数字人「只会写字
+      #   操作步骤、永远不弹自定义表单」。本地修了 .env 不等于生产修了 —— .env 被
+      #   .gitignore/.dockerignore 双重排除，进不了镜像，只能靠这里/ConfigMap 传。
+      #   判据：agent 日志里 `tools=` 应为 9（含 ask_user+request_form），为 7 即未生效。
+      AIOA_HITL: ${AIOA_HITL:-true}
+      # HITL 挂起态存储。留空 = 进程内存：agent 一重启（或多副本无会话亲和）就取不到挂起
+      # 状态，用户回填表单/澄清后可能「无法恢复」。生产建议给 Redis Stack 地址。
+      AIOA_CHECKPOINT_URL: ${AIOA_CHECKPOINT_URL:-}
       MODEL_DEFAULT: ${MODEL_DEFAULT:-echo}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}

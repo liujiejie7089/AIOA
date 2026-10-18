@@ -66,6 +66,17 @@ data:
   # ---- 模型 ----
   MODEL_DEFAULT: "echo"
 
+  # ---- HITL（人工介入：ask_user 澄清 + request_form 自定义表单）----
+  # ⚠️ 必须显式为 true：agent 的 config.py 默认 False，而 .env 被 .dockerignore 排除进不了镜像。
+  #   为 false 时 ask_user / request_form **不会进模型工具表**，数字人只会输出操作步骤、
+  #   永远不弹自定义表单（这正是「数字人不调用自定义表单」的根因）。
+  #   验：aioa-agent 日志出现 `tools=9`（为 7 即未生效）、`HITL enabled: checkpoint kind=...`。
+  AIOA_HITL: "true"
+  # HITL 挂起态存储。留空 = 进程内存：Pod 重启/漂移到别的副本后取不到挂起状态，
+  # 用户回填表单或澄清会「无法恢复」。生产建议 Redis Stack（本集群已有 REDIS_HOST）。
+  # 例：redis://192.168.31.129:6379/0
+  AIOA_CHECKPOINT_URL: ""
+
   # ---- 语音识别（ASR）----
   # 模型**不进镜像**（约 483MB，被 .gitignore 忽略）⇒ 必须由节点 / 共享存储提供，
   # 见 20-agent.yaml 的 asr-models 卷（挂到容器 /app/.models，其下须有 <模型名>/，默认 small/）。
