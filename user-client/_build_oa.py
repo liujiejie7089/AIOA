@@ -42,7 +42,8 @@ ROBOT = 'assets/robot.webp'
 ADD_SYMBOLS = [
     'i-task', 'i-folder', 'i-cal', 'i-stamp', 'i-book', 'i-people', 'i-note', 'i-qr',
     'i-swap', 'i-info', 'i-grid', 'i-help', 'i-logout', 'i-menu', 'i-back', 'i-search',
-    'i-dots', 'i-mic', 'i-pin', 'i-bulb', 'i-target', 'i-square-plus', 'i-puzzle',
+    'i-dots', 'i-mic', 'i-pin', 'i-bulb',     'i-target', 'i-square-plus', 'i-puzzle',
+    'i-link', 'i-mail',
 ]
 
 

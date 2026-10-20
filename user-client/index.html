@@ -738,6 +738,12 @@
   .lf-origin{font-size:11px;color:var(--text-3);margin-top:4px;text-align:right}
   .lf-req{color:var(--red);font-style:normal;margin-left:2px}
   .lf-unknown{font-size:11.5px;color:var(--red);background:var(--red-soft);border:1px solid #f3c2c2;border-radius:8px;padding:6px 8px;flex:1}
+  /* 定位字段：只读框 + 获取定位按钮同行，用途/错误说明另起一行与控件对齐 */
+  .lf-loc-row{flex-wrap:wrap}
+  .lf-loc-input{flex:1;min-width:0}
+  .lf-loc-btn{white-space:nowrap;flex-shrink:0}
+  .lf-loc-note{flex-basis:100%;margin:5px 0 0 64px;font-size:11px;color:var(--text-2);line-height:1.6}
+  .lf-loc-note.lf-error{color:var(--red);background:var(--red-soft);border:1px solid #f3c2c2;border-radius:8px;padding:6px 8px}
   .lf-submitted{font-size:11.5px;color:var(--text-2);margin-top:6px}
   .lf-receipt{margin-top:4px}
   /* boolean 开关：保留原生 checkbox（哨兵据此断言），视觉用 .lf-slider 美化 */
@@ -1609,12 +1615,20 @@
 .notif-modal.oa-dlg .notif-foot .btn.ghost{color:var(--brand-ink);border-color:var(--brand-line);background:var(--surface)}
 .notif-modal.oa-dlg .notif-foot .btn.ghost:hover{background:var(--brand-soft)}
 .notif-modal.oa-dlg .notif-foot .btn:not(.ghost){background:var(--brand);border-color:var(--brand);color:#fff}
-/* 「上传项目文档」专用：标题带图标砖 */
-.notif-modal.oa-upload-dlg .oa-up-hd{display:flex;align-items:center;gap:10px}
-.notif-modal.oa-upload-dlg .oa-up-ico{
+/* 「上传项目文档」「连接 XX」共用：标题带图标砖。
+   ⚠️ 作用域必须逐个列出弹层类（2026-10-20 实测踩坑）：这条规则原先只写 `.oa-upload-dlg`，
+   而连接器弹层的类是 `.oa-conn-dlg` ⇒ `.oa-up-ico` 拿不到 32x32/底色，里面的 <svg class="ic">
+   也没有全局尺寸规则 ⇒ 图标被压成一个小方块，看起来像弹层左上角多了一个残字（截图对比：
+   修复前 conn_e2e_3_dialog.png 顶部那个 “S”）。**新增任何用 .oa-up-hd 的弹层，必须把类名加进来**。 */
+.notif-modal.oa-upload-dlg .oa-up-hd,
+.notif-modal.oa-conn-dlg .oa-up-hd{display:flex;align-items:center;gap:10px}
+.notif-modal.oa-upload-dlg .oa-up-ico,
+.notif-modal.oa-conn-dlg .oa-up-ico{
   width:32px;height:32px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;
   background:var(--brand-soft);color:var(--brand-ink);font-size:17px;flex-shrink:0;
 }
+/* .ic 没有全局尺寸（各上下文各自声明），弹层头里的必须显式给，否则 svg 落到默认 300x150 被裁 */
+.notif-modal.oa-dlg .oa-up-ico .ic{width:18px;height:18px;display:block}
 /* 语音 / 上传 / 停止 / 发送按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来 */
 #oaMicBtn, #oaAttachBtn, #oaStop, #oaSendBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 /* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见（与经典侧共用类名） */
@@ -1663,6 +1677,48 @@
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .oa .mod-tip{margin:0 0 10px;padding:9px 12px;border-radius:12px;font-size:12px;line-height:1.5;
   background:var(--brand-soft);color:var(--brand-ink);border:1px solid var(--brand-line)}
+
+/* ===== 连接器与三段分段（2026-10-20） ===== */
+/* 三段分段控件：三个等宽文字按钮，选中态 brand-soft 底 + brand-ink 字（不用 .pillgroup） */
+.oa .oa-seg{display:flex;gap:6px;margin:2px 2px 12px;padding:4px;
+  background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-full)}
+.oa .oa-seg button{flex:1;min-width:0;border:0;background:transparent;font:inherit;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  height:34px;border-radius:var(--r-full);font-size:13px;font-weight:600;color:var(--text-2);
+  transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease)}
+.oa .oa-seg button.on{background:var(--brand-soft);color:var(--brand-ink)}
+.oa .oa-seg button .n{font-size:11px;font-weight:700;opacity:.7}
+.oa .oa-pane{display:none}
+.oa .oa-pane.on{display:block}
+
+/* 连接器卡片 */
+.oa .conn-card{display:flex;gap:12px;align-items:stretch;background:#fff;border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.oa .conn-ic{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:var(--brand-soft);color:var(--brand-ink)}
+.oa .conn-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;justify-content:center}
+.oa .conn-name{font-size:14px;font-weight:600;line-height:1.3}
+.oa .conn-summary{font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oa .conn-sub{font-size:11.5px;color:var(--text-2);line-height:1.5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oa .conn-err{color:var(--red)}
+.oa .conn-act{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;gap:8px;flex-shrink:0}
+.oa .conn-act .btn{min-height:30px;padding:0 14px;border-radius:var(--r-full);font-size:12px;font-weight:600}
+.oa .conn-act .btn[disabled]{opacity:.5;cursor:not-allowed}
+/* MCP 服务器卡片的小徽标（内置 / 外部）；沿用既有 token，不新造视觉体系 */
+.oa .conn-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;line-height:1.6;color:var(--text-3);background:var(--bg);border:1px solid var(--border);vertical-align:1px}
+.oa .conn-badge.ext{color:var(--brand-ink);background:var(--brand-soft);border-color:var(--brand-line)}
+
+/* 连接弹层内的表单（CREDENTIAL / OAUTH2 共用 .oa-conn-dlg）：
+   规则一律 .notif-modal.oa-dlg …（弹层在 body 下，不在 .oa 内，且须自带品牌令牌）。
+   .oa-ef-row 的 flex-direction:column 复用以验证「.oa 作用域陷阱」已规避；
+   下方断言即取该计算值。 */
+.notif-modal.oa-dlg .oa-conn-form{display:flex;flex-direction:column;gap:13px}
+.notif-modal.oa-dlg .oa-conn-form .hint{font-size:11.5px;line-height:1.6;color:var(--text-2)}
+.notif-modal.oa-dlg .oa-conn-help{font-size:11.5px;color:var(--brand);font-weight:600;text-decoration:none}
+.notif-modal.oa-dlg .oa-conn-help:hover{text-decoration:underline}
+.notif-modal.oa-dlg .oa-conn-form .oa-ef-row{display:flex;flex-direction:column;gap:6px}
+.notif-modal.oa-dlg .oa-conn-form .oa-ef-row > span{font-size:11.5px;font-weight:600;color:var(--text-2)}
 
 /* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */
 /* ============================================================================
@@ -1903,6 +1959,8 @@
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/></symbol>
     <symbol id="i-square-plus" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
     <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M9.5 4.5a2 2 0 0 1 4 0c0 .8-.5 1.2-.5 1.7 0 .5.4.8.9.8H16a1.5 1.5 0 0 1 1.5 1.5v2c0 .5.3.9.8.9.5 0 .9-.5 1.7-.5a2 2 0 0 1 0 4c-.8 0-1.2-.5-1.7-.5-.5 0-.8.4-.8.9V18A1.5 1.5 0 0 1 16 19.5h-2.6c-.5 0-.9-.3-.9-.8 0-.5.5-.9.5-1.7a2 2 0 0 0-4 0c0 .8.5 1.2.5 1.7 0 .5-.4.8-.9.8H6A1.5 1.5 0 0 1 4.5 18v-2.6c0-.5.3-.9.8-.9.5 0 .9.5 1.7.5a2 2 0 0 0 0-4c-.8 0-1.2.5-1.7.5-.5 0-.8-.4-.8-.9V8.5A1.5 1.5 0 0 1 6 7h2.6c.5 0 .9-.3.9-.8 0-.5-.5-.9-.5-1.7z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M9.5 14.5l5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M13.5 10.5l1.8-1.8a3.2 3.2 0 0 1 4.5 4.5l-1.8 1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M10.5 13.5l-1.8 1.8a3.2 3.2 0 0 1-4.5-4.5l1.8-1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 8l7 5 7-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </defs>
 </svg>
 
@@ -2532,10 +2590,17 @@
       <div id="oaTimersList"></div>
     </section>
 
-    <!-- ⑨ 插件 · 技能（抽屉进入） -->
+    <!-- ⑨ 插件 · 技能 · 连接器（抽屉进入）：三段分段控件，默认「插件」 -->
     <section class="view" id="v-skills">
-      <div class="sec-title" style="margin-left:2px">插件 · 技能 <span class="muted">可被数字员工调用</span></div>
-      <div class="card" id="oaSkillsList"></div>
+      <div class="sec-title" style="margin-left:2px">插件-技能-连接器 <span class="muted">可被数字员工调用</span></div>
+      <div class="oa-seg" id="oaSkillsSeg" role="tablist">
+        <button type="button" data-seg="plugins" role="tab">插件<span class="n" id="oaSegNPlugins"></span></button>
+        <button type="button" data-seg="skills" role="tab">技能<span class="n" id="oaSegNSkills"></span></button>
+        <button type="button" data-seg="connectors" role="tab">连接器<span class="n" id="oaSegNConnectors"></span></button>
+      </div>
+      <div class="oa-pane on" id="oaPanePlugins"><div class="card" id="oaPluginsList"></div></div>
+      <div class="oa-pane" id="oaPaneSkills"><div class="card" id="oaSkillsList"></div></div>
+      <div class="oa-pane" id="oaPaneConnectors"><div id="oaConnectorsList"></div></div>
     </section>
 
     <!-- ⑩ 最近（抽屉正文）：最近会话 -->
@@ -2634,7 +2699,7 @@
       <div class="dnav-item" id="odNewChat"><svg class="ic"><use href="#i-chat"/></svg>新对话</div>
       <div class="dnav-item" id="odModules"><svg class="ic"><use href="#i-grid"/></svg>OA 模块<span class="n" id="odModulesN"></span></div>
       <div class="dnav-item" id="odTimers"><svg class="ic"><use href="#i-clock"/></svg>定时任务<span class="n" id="odTimersN"></span></div>
-      <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能<span class="n" id="odSkillsN"></span></div>
+      <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能-连接器<span class="n" id="odSkillsN"></span></div>
       <div class="dnav-sep"></div>
       <div class="dnav-label">最近</div>
     </div>
@@ -2794,6 +2859,20 @@ const API = {
   /* 业务域 */
   experts(){ return this.req('/v1/experts'); },
   skills(){  return this.req('/v1/skills'); },
+  /* 插件-技能-连接器三分（H5 新增）：连接器两枚 + 真实插件清单 */
+  plugins(){ return this.req('/v1/plugins'); },
+  connectors(){ return this.req('/v1/connectors'); },
+  connectorDetail(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)); },
+  connectorStart(code, opts){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/connect/start',{method:'POST',body:JSON.stringify(opts||{})}); },
+  connectorConnectCredential(code, values){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/connect/credential',{method:'POST',body:JSON.stringify({values:values||{}})}); },
+  connectorVerify(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/verify',{method:'POST'}); },
+  connectorDisconnect(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/disconnect',{method:'POST'}); },
+  /* MCP 服务器（注册表 + 信任闸门）：列表/探测/信任/取消信任/工具目录 */
+  mcpServers(){ return this.req('/v1/mcp/servers'); },
+  mcpProbe(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/probe',{method:'POST'}); },
+  mcpTrust(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/trust',{method:'POST'}); },
+  mcpUntrust(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/untrust',{method:'POST'}); },
+  mcpTools(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/tools'); },
   kbDocs(){  return this.req('/v1/kb/documents'); },
   kbUpload(name, icon, size){ return this.req('/v1/kb/documents',{method:'POST',body:JSON.stringify({name,icon,sizeBytes:size})}); },
   /* 文件上传（FR-F1）：multipart 直传，由后端解析 PDF/Word/Excel/文本并切片入库 */
@@ -3143,6 +3222,7 @@ async function doLogin(){
     state.user = d.user || {username:u, nickname:d.nickname || u};
     applyRoles((state.user && state.user.roles) || []);
     try{ localStorage.setItem('aios_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
+    resetUserState();   // 换账号登录前清掉旧账号的会话/消息残留，防止串号
     document.body.classList.add('auth');
     go('page-home'); setTitle('page-home');
     await loadLiveData();
@@ -3152,8 +3232,36 @@ async function doLogin(){
     btn.disabled = false; btn.textContent = '登录';
   }
 }
+/* 清理全部用户态：会话、消息、运行上下文（经典态 + OA 态双份），
+   并清空对应 DOM，防止同浏览器换账号登录后旧账号的会话/消息残留造成「串号」假象。
+   doLogout 与 doLogin（拿到新 token 后）两处复用。 */
+function resetUserState(){
+  // —— 经典态 state ——
+  state.conversations = [];
+  state.conversationId = null;
+  state.runId = null;
+  state.controller = null;
+  state.lastAnswer = '';
+  state.lastQuery = '';
+  state.busy = false;
+  // —— 经典态 DOM：消息列表 + 历史会话弹层 ——
+  const msgs = document.getElementById('msgs');
+  if(msgs) msgs.innerHTML = '';
+  // 历史会话弹层（.notif-mask）也是旧账号残留的一部分，一并移除
+  document.querySelectorAll('.notif-mask').forEach(function(m){ m.remove(); });
+  // —— OA 态 S（若 OA 层已注入）——
+  if(typeof S !== 'undefined' && S){
+    S.convId = null; S.worker = null; S.expert = null; S.busy = false;
+    S.lastQuery = ''; S.controller = null;
+    S.projectConvId = {}; S.projectConvWorker = {};
+  }
+  if(typeof dockEl === 'function'){ const dock = dockEl(); if(dock) dock.innerHTML = ''; }
+  const recent = document.getElementById('oaRecentList');
+  if(recent) recent.innerHTML = '';
+}
 function doLogout(){
   try{ localStorage.removeItem('aios_session'); }catch(e){}
+  resetUserState();
   state.token = null; state.user = null;
   document.body.classList.remove('auth');
   go('page-login');
@@ -5836,12 +5944,36 @@ var VoiceInput = (function(){
    设计文档明确：短按（<300ms）不录音，提示「长按说话」。旧的「短按进免提」实现偏离文档，
    且配合按钮缺 touch-action:none 会在触屏上既停不下来也发不出去，本次一并回归。
    onText 由各形态传入（复用它自己的发送链路，不新开对话通路）。两形态共用这一个 bindVoice。 */
+/* 非安全上下文（navigator.mediaDevices 为 undefined）时，麦克风被浏览器硬禁。
+   不再把按钮置灰（置灰后点击不触发任何事件，用户完全无感知）；改为按钮保持可点，
+   点击时弹一个醒目的一次性引导层，告诉用户改用 https 域名或本机 localhost 打开。 */
+function showVoiceContextGuide(){
+  if(document.querySelector('.notif-mask.voice-ctx-mask')) return;  // 已打开不再叠
+  /* OA 形态弹层带 oa-dlg 标记类，与既有 OA 弹层观感一致 */
+  var isOa = (typeof S !== 'undefined' && S.mode === 'oa') || document.body.classList.contains('oa-mode');
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask voice-ctx-mask show';
+  var mcls = 'notif-modal' + (isOa ? ' perm-modal oa-dlg' : '');
+  mask.innerHTML = '<div class="'+mcls+'" role="alertdialog" aria-modal="true">'+
+    '<div class="notif-head"><b>语音输入需要在安全环境下使用</b>'+
+      '<span class="notif-close" style="margin-left:auto;cursor:pointer;font-size:18px;line-height:1;color:var(--text-2)">×</span></div>'+
+    '<div class="notif-body"><div class="perm-tip" style="margin-top:0">语音输入需要在安全环境下使用：请通过 https 域名访问，'+
+      '或在本机用 <b>http://localhost:5181</b> 打开。当前通过局域网 http 访问时浏览器会禁用麦克风。</div></div>'+
+    '<div class="lf-actions" style="margin-top:12px;padding-left:0">'+
+      '<button type="button" class="btn small" data-voice-ctx-ok>我知道了</button></div>'+
+  '</div>';
+  document.body.appendChild(mask);
+  var close = function(){ mask.remove(); };
+  mask.querySelector('.notif-close').onclick = close;
+  mask.onclick = function(e){ if(e.target === mask) close(); };
+  mask.querySelector('[data-voice-ctx-ok]').onclick = close;
+}
+
 function bindVoice(btn, inputEl, onText){
   if(!btn || !inputEl) return;
   if(!VoiceInput.supported()){
-    btn.disabled = true;
+    /* 不置灰：保留可点性，点击时弹引导层（见 pointerdown 顶部） */
     btn.title = '当前访问方式不支持麦克风（需 https 或 localhost 打开）';
-    return;
   }
   var ph = inputEl.placeholder;
   function hint(t){ inputEl.placeholder = t; }
@@ -5924,6 +6056,10 @@ function bindVoice(btn, inputEl, onText){
 
   btn.addEventListener('pointerdown', function(ev){
     ev.preventDefault();
+    if(!VoiceInput.supported()){
+      showVoiceContextGuide();          // 非安全上下文：弹醒目引导层，绝不发起 getUserMedia
+      return;
+    }
     if(asrReady === false){ toast('语音识别服务暂不可用，请联系管理员'); return; }
     if(VoiceInput.isLive()){ VoiceInput.end(); return; }   /* 录音中再按 = 结束并发送；绝不被 busy 拦 */
     if(state.busy) return;
@@ -6456,7 +6592,7 @@ function cancelClarCard(){
    text|textarea|number|amount|date|datetime|select|multiselect|file|boolean
    所有用户可见文案与字段值都经 esc() 转义，schema 内容绝不被原样拼进 DOM。
    ============================================================================ */
-const FORM_FIELD_TYPES = ['text','textarea','number','amount','date','datetime','select','multiselect','file','boolean'];
+const FORM_FIELD_TYPES = ['text','textarea','number','amount','date','datetime','select','multiselect','file','boolean','location'];
 
 /* 纯字符串渲染。返回挂到气泡里的表单卡片 HTML；所有动态值均转义。 */
 function renderFormHtml(p){
@@ -6519,6 +6655,14 @@ function renderFormHtml(p){
     } else if(type === 'file'){
       rows += '<div class="lf-row"><label>'+esc(label)+reqMark+'</label>'+
         '<input class="lf-input" type="file" name="'+esc(name)+'" data-field="'+esc(name)+'" data-type="file"'+reqAttr+'></div>';
+    } else if(type === 'location'){
+      // 定位字段：只读输入框（收集「纬度,经度」或地址文本）+「获取定位」按钮。
+      // 不内联调 geolocation（避免渲染即弹授权），点击按钮时才发起，并在下方显示用途说明与错误引导。
+      rows += '<div class="lf-row lf-loc-row"><label>'+esc(label)+reqMark+'</label>'+
+        '<input class="lf-input lf-loc-input" type="text" readonly name="'+esc(name)+'" '+
+          'data-field="'+esc(name)+'" data-type="location"'+reqAttr+' placeholder="未获取定位" value="'+esc(def)+'">'+
+        '<button type="button" class="btn small lf-loc-btn" data-get-location="'+esc(name)+'">获取定位</button>'+
+        '<div class="lf-loc-note" data-loc-note="'+esc(name)+'" style="display:none"></div></div>';
     } else { // text | number | amount
       const tp = (type === 'number' || type === 'amount') ? 'number' : 'text';
       const step = (type === 'amount') ? ' step="0.01"' : ((type === 'number') ? ' step="1"' : '');
@@ -6559,6 +6703,8 @@ function collectFormValues(card){
       vals[name] = !!c.checked;
     } else if(type === 'file'){
       vals[name] = Array.prototype.map.call(c.files || [], function(f){ return f.name; });
+    } else if(type === 'location'){
+      vals[name] = c.value;   // 定位字段按文本处理（「纬度,经度」或地址文本）
     } else if(type === 'number' || type === 'amount'){
       vals[name] = (c.value === '' || c.value == null) ? null : Number(c.value);
     } else {
@@ -6582,6 +6728,8 @@ function validateForm(card){
       if(!any) errs.push((name || '该项') + ' 为必填项');
     } else if(type === 'file'){
       if(!c.files || !c.files.length) errs.push((name || '该项') + ' 为必填项');
+    } else if(type === 'location'){
+      if(c.value === '' || c.value == null) errs.push((name || '该项') + ' 为必填项');
     } else if(type === 'boolean'){
       if(!c.checked) errs.push((name || '该项') + ' 为必填项');
     } else {
@@ -6596,11 +6744,20 @@ function formReceiptHtml(receipt){
   receipt = receipt || {};
   const no = receipt.submissionId != null ? ('#'+receipt.submissionId)
            : (receipt.receiptNo || receipt.no || (receipt.id != null ? ('#'+receipt.id) : '—'));
-  const status = receipt.status || '已提交';
+  const status = receipt.statusLabel || receipt.status || '已提交';
   let rows = '';
   if(receipt.fields && typeof receipt.fields === 'object'){
     Object.keys(receipt.fields).forEach(function(k){
       rows += '<div class="rc-row"><span>'+esc(k)+'</span><b>'+esc(String(receipt.fields[k]))+'</b></div>';
+    });
+  } else if(Array.isArray(receipt.lines)){
+    /* 后端并行修复后实际返回 lines（[{label, value}]）；旧版只渲染 fields 会丢字段行。
+       这里兼容两种形态：有 fields 走对象，没有但 lines 是数组则遍历渲染。 */
+    receipt.lines.forEach(function(ln){
+      if(!ln || typeof ln !== 'object') return;
+      const label = (ln.label != null) ? String(ln.label) : '';
+      const value = (ln.value != null) ? String(ln.value) : '';
+      rows += '<div class="rc-row"><span>'+esc(label)+'</span><b>'+esc(value)+'</b></div>';
     });
   }
   return '<div class="result-card">'+
@@ -6693,9 +6850,16 @@ function mountFormCard(host, p, opts){
       if(typeof toast === 'function') toast(msg);
     }
     function showReceipt(submission){
+      submission = submission || {};
+      let receipt = submission.receipt || {};
+      /* 防御兼容：后端并行在修 receipt 注入。若回执自身缺 submissionId，
+         但信封级 submission.submissionId 有值，则兜底注入，避免受理单号显示「—」。 */
+      if(receipt.submissionId == null && submission.submissionId != null){
+        receipt = Object.assign({}, receipt, {submissionId: submission.submissionId});
+      }
       const rc = document.createElement('div');
       rc.className = 'lf-receipt';
-      rc.innerHTML = formReceiptHtml((submission && submission.receipt) || {});
+      rc.innerHTML = formReceiptHtml(receipt);
       card.innerHTML = '';
       card.appendChild(rc);
       card.classList.add('done');
@@ -6845,6 +7009,57 @@ function mountFormCard(host, p, opts){
         resolve(null);
       });
     }
+
+    // 定位字段「获取定位」按钮：事件委托（字段由 renderFormHtml 渲染，data-get-location=字段名）
+    function findLocNote(name){
+      const ns = card.querySelectorAll('[data-loc-note]');
+      for(let i=0;i<ns.length;i++){
+        if(ns[i].getAttribute('data-loc-note') === String(name)) return ns[i];
+      }
+      return null;
+    }
+    card.addEventListener('click', function(e){
+      const btn = e.target.closest && e.target.closest('[data-get-location]');
+      if(!btn) return;
+      const name = btn.getAttribute('data-get-location');
+      const input = findCtrl(name);
+      const note = findLocNote(name);
+      // 先显示用途说明（考勤打卡用途 + 提示浏览器将弹授权）
+      if(note){
+        note.style.display = 'block';
+        note.className = 'lf-loc-note';
+        note.textContent = '考勤打卡需要获取您的当前位置，用于记录打卡地点。浏览器将弹出定位授权请求，请点击「允许」。';
+      }
+      if(!navigator.geolocation){
+        if(note){ note.className = 'lf-loc-note lf-error'; note.textContent = '当前环境不支持定位（浏览器无 geolocation API）。'; }
+        return;
+      }
+      btn.disabled = true;
+      // 用命名常量承载 geolocation 错误码，避免与 HTTP 错误码（如规则分支 40090）混淆
+      var LOC_PERMISSION_DENIED = 1, LOC_UNAVAILABLE = 2, LOC_TIMEOUT = 3;
+      navigator.geolocation.getCurrentPosition(function(pos){
+        btn.disabled = false;
+        const lat = pos && pos.coords ? pos.coords.latitude : null;
+        const lng = pos && pos.coords ? pos.coords.longitude : null;
+        if(lat == null || lng == null){
+          if(note){ note.className = 'lf-loc-note lf-error'; note.textContent = '定位失败，请检查网络或系统定位开关后重试'; }
+          return;
+        }
+        if(input){ input.value = lat.toFixed(6) + ',' + lng.toFixed(6); }  // 经纬度保留 6 位小数，data-field 可收集
+        if(note){ note.style.display = 'none'; }
+      }, function(err){
+        btn.disabled = false;
+        let msg;
+        if(err && err.code === LOC_PERMISSION_DENIED){
+          msg = '定位权限被拒绝。请点击浏览器地址栏左侧的锁形/站点设置图标，将「位置」权限改为「允许」，然后重新点击获取定位。';
+        } else if(err && (err.code === LOC_UNAVAILABLE || err.code === LOC_TIMEOUT)){
+          msg = '定位失败，请检查网络或系统定位开关后重试';
+        } else { // 其它
+          msg = '定位失败，请检查网络或系统定位开关后重试';
+        }
+        if(note){ note.className = 'lf-loc-note lf-error'; note.textContent = msg; }
+      }, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
+    });
   });
 }
 
@@ -7310,7 +7525,11 @@ var S = {
   projectConvId:{},      // projectId → conversationId（项目会话与「无项目」严格分账，互不串）
   projectConvWorker:{},  // projectId → 该会话创建时绑定的 workerId（null=未绑）；换人后必须新建会话
   projectWorkerIds:[],   // 当前项目可用的数字员工 workerId（enabled 且未缺失；渲染数字人卡时按它过滤）
-  kbOn:true               // 对话级知识库开关，默认开，随 createRun 下发
+  kbOn:true,              // 对话级知识库开关，默认开，随 createRun 下发
+  skillsTab:'plugins',     // 当前选中的三段子项（默认插件）
+  plugins:null, pluginsLoaded:false, pluginsErr:null,
+  connectors:null, connectorsLoaded:false, connectorsErr:null,
+  mcpServers:null, mcpLoaded:false, mcpErr:null, mcpOpen:{}, mcpToolsCache:{}, mcpToolsErr:{}
 };
 
 /* 对话级「知识库」开关（OA 形态自带，与经典态 state.kbOn 互不干扰）。
@@ -7411,7 +7630,7 @@ var META = {
   workers: {t:'数字员工',      tab:null, sub:1},
   experts: {t:'专家',          tab:null, sub:1},
   timers:  {t:'定时任务',      tab:null, sub:1},
-  skills:  {t:'插件 · 技能',   tab:null, sub:1},
+  skills:  {t:'插件-技能-连接器', tab:null, sub:1},
   recent:  {t:'最近会话',      tab:null, sub:1},
   appr:    {t:'审批详情',      tab:null, sub:1},
   /* 原先这四项会切回经典形态，现改为 OA 内视图：新版里不再有「悄悄跳到老版」的入口 */
@@ -8691,10 +8910,90 @@ async function oaShowRuns(id){
   }
 }
 
+/* ------------------------------------------------------------------ 8b. 插件-技能-连接器（三段分段） */
+/* 领域 → 图标（兜底 puzzle）；只挑既有图标键，不新增精灵 */
+var DOMAIN_ICON = {
+  mail:'mail', email:'mail', imap:'mail', smtp:'mail',
+  doc:'doc', document:'doc', docs:'doc',
+  calendar:'cal', schedule:'cal',
+  task:'task', todo:'task',
+  chat:'chat', message:'chat',
+  people:'people', org:'people', member:'people', contact:'people',
+  knowledge:'book', kb:'book', wiki:'book',
+  finance:'chart', stat:'chart', report:'chart',
+  tool:'puzzle', bot:'bot'
+};
+
+/* 进入 v-skills：绑定分段按钮（一次）、设计数、显示当前面板 */
 function renderSkills(){
+  var seg = $o('oaSkillsSeg');
+  if(seg && !seg._bound){
+    seg.querySelectorAll('button').forEach(function(b){
+      b.onclick = function(){ showSkillsPane(b.getAttribute('data-seg')); };
+    });
+    seg._bound = true;
+  }
+  if(!S.skillsTab) S.skillsTab = 'plugins';
+  setSkillsSegCounts();
+  showSkillsPane(S.skillsTab);
+}
+
+function setSkillsSegCounts(){
+  var np = $o('oaSegNPlugins'); if(np) np.textContent = S.pluginsLoaded ? String(arr(S.plugins).length) : '';
+  var nk = $o('oaSegNSkills');  if(nk) nk.textContent = String(arr(state.skills).length);
+  var nc = $o('oaSegNConnectors'); if(nc) nc.textContent = S.connectorsLoaded ? String(arr(S.connectors).length) : '';
+}
+
+function showSkillsPane(seg){
+  S.skillsTab = seg;
+  var segBox = $o('oaSkillsSeg');
+  if(segBox) segBox.querySelectorAll('button').forEach(function(b){
+    b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+  });
+  var map = {plugins:'oaPanePlugins', skills:'oaPaneSkills', connectors:'oaPaneConnectors'};
+  Object.keys(map).forEach(function(k){
+    var p = $o(map[k]); if(p) p.classList.toggle('on', k === seg);
+  });
+  if(seg === 'plugins') renderPlugins();
+  else if(seg === 'skills') renderSkillsList();
+  else if(seg === 'connectors') renderConnectors();
+}
+
+/* 插件面板：真实数据（GET /v1/plugins），失败显示错误文案而非空白 */
+function renderPlugins(){
+  var el = $o('oaPluginsList'); if(!el) return;
+  if(!S.pluginsLoaded && !S.pluginsErr){
+    el.innerHTML = '<div class="muted">插件加载中…</div>';
+    API.plugins().then(function(r){
+      S.plugins = arr(r); S.pluginsLoaded = true; S.pluginsErr = null;
+      setSkillsSegCounts();
+      renderPlugins();
+    }).catch(function(err){
+      S.pluginsErr = err.message || '请求失败'; S.pluginsLoaded = true;
+      setSkillsSegCounts();
+      renderPlugins();
+    });
+    return;
+  }
+  if(S.pluginsErr){ el.innerHTML = '<div class="muted">插件加载失败：'+txt(S.pluginsErr)+'</div>'; return; }
+  var list = arr(S.plugins);
+  if(!list.length){ el.innerHTML = empty('暂无插件：插件是可被数字员工调用的工具，由管理员注册后出现'); return; }
+  el.innerHTML = list.map(function(p){
+    var ik = DOMAIN_ICON[p.domain] || 'puzzle';
+    var right = (p.requiresApproval === true) ? '<span class="chip wait">需审批</span>' : '';
+    return '<div class="lrow">'+
+      '<div class="ava" style="display:flex;align-items:center;justify-content:center">'+ic(ik,18)+'</div>'+
+      '<div class="txt"><div class="t1 truncate">'+txt(p.name)+'</div>'+
+      '<div class="t2 truncate">'+txt(p.description || '')+'</div></div>'+ right +
+    '</div>';
+  }).join('');
+}
+
+/* 技能面板：沿用既有口径，仅改空态文案 */
+function renderSkillsList(){
   var el = $o('oaSkillsList'); if(!el) return;
   var ks = arr(state.skills);
-  if(!ks.length){ el.innerHTML = empty('暂无可用技能'); return; }
+  if(!ks.length){ el.innerHTML = empty('暂无技能：技能 = 预填参数的会话模板，由管理员在管理端配置'); return; }
   el.innerHTML = ks.map(function(k){
     return '<div class="lrow">'+
       '<div class="ava" style="display:flex;align-items:center;justify-content:center">'+
@@ -8702,6 +9001,381 @@ function renderSkills(){
       '<div class="txt"><div class="t1 truncate">'+txt(k.name || k.key)+'</div>'+
       '<div class="t2 truncate">'+txt(k.description || k.desc || '')+'</div></div></div>';
   }).join('');
+}
+
+/* 连接器面板：分组渲染（GET /v1/connectors）+ MCP 服务器区（GET /v1/mcp/servers）。
+   两者并行取数、各自记错：MCP 挂了只影响 MCP 区块，绝不把整面板打成错误页。 */
+function renderConnectors(){
+  var el = $o('oaConnectorsList'); if(!el) return;
+  if(!S.connectorsLoaded && !S.connectorsErr){
+    el.innerHTML = '<div class="muted">连接器加载中…</div>';
+    API.connectors().then(function(r){
+      S.connectors = arr(r); S.connectorsLoaded = true; S.connectorsErr = null;
+      setSkillsSegCounts();
+      renderConnectors();
+    }).catch(function(err){
+      S.connectorsErr = err.message || '请求失败'; S.connectorsLoaded = true;
+      setSkillsSegCounts();
+      renderConnectors();
+    });
+    return;
+  }
+  /* 连接器已就绪，但 MCP 还没拉过 → 并行补拉（不阻塞连接器渲染） */
+  if(!S.mcpLoaded && !S.mcpErr) loadMcp();
+  if(S.connectorsErr){ el.innerHTML = '<div class="muted">连接器加载失败：'+txt(S.connectorsErr)+'</div>'; return; }
+  var list = arr(S.connectors);
+  if(!list.length){ el.innerHTML = empty('暂无连接器') + mcpSectionHtml(); return; }
+  /* 按 group 出现顺序分组（先来先建组），未知 group 原样当分组名 */
+  var groups = [], gmap = {};
+  list.forEach(function(c){
+    var g = c.group || '其他';
+    if(!gmap[g]){ gmap[g] = []; groups.push(g); }
+    gmap[g].push(c);
+  });
+  el.innerHTML = groups.map(function(g){
+    return '<div class="sec-title">'+txt(g)+'</div>' + gmap[g].map(connCardHtml).join('');
+  }).join('') + mcpSectionHtml();
+  el.querySelectorAll('[data-act]').forEach(function(b){
+    b.onclick = function(){
+      var code = b.getAttribute('data-code'), act = b.getAttribute('data-act');
+      if(act === 'connect') openConnector(code);
+      else if(act === 'disconnect') disconnectConnector(code);
+      else if(act === 'verify') verifyConnector(code);
+    };
+  });
+  el.querySelectorAll('[data-mcp-act]').forEach(function(b){
+    b.onclick = function(){
+      var code = b.getAttribute('data-code'), act = b.getAttribute('data-mcp-act');
+      if(act === 'trust') mcpTrust(code);
+      else if(act === 'untrust') mcpUntrust(code);
+      else if(act === 'probe') mcpProbe(code);
+      else if(act === 'tools') mcpToggleTools(code);
+    };
+  });
+}
+
+/* MCP 服务器区：头部说明 + 列表（或加载中/失败/空态）。用 .oa-mcp-section 包住便于定位。 */
+function mcpSectionHtml(){
+  var head = '<div class="sec-title">MCP 服务器</div>' +
+    '<div class="muted" style="margin:-4px 0 10px;font-size:12px">默认不启用。启用前会做一次连通性探测（initialize + tools/list），探测通过才登记工具。</div>';
+  if(!S.mcpLoaded && !S.mcpErr) return '<div class="oa-mcp-section">'+head+'<div class="muted">MCP 服务器加载中…</div></div>';
+  if(S.mcpErr) return '<div class="oa-mcp-section">'+head+'<div class="muted">MCP 加载失败：'+txt(S.mcpErr)+'</div></div>';
+  var list = arr(S.mcpServers);
+  if(!list.length) return '<div class="oa-mcp-section">'+head+empty('暂无 MCP 服务器')+'</div>';
+  return '<div class="oa-mcp-section">'+head+list.map(mcpCardHtml).join('')+'</div>';
+}
+
+/* 状态 chip 唯一映射（严格按后端闸门顺序：未信任 > 连接器未连接 > 探测失败 > 已启用） */
+function mcpStatusChip(s){
+  if(s.trusted !== true) return chip('done','未启用');
+  if(s.trusted && s.source === 'BUILTIN' && !s.connected) return chip('wait','连接器未连接');
+  if(s.trusted && s.status === 'ERROR') return chip('wait','探测失败');
+  return chip('due','已启用');
+}
+
+/* 单台 MCP 服务器卡片（复用 .conn-card 视觉体系） */
+function mcpCardHtml(s){
+  var icKey = (s.source === 'BUILTIN') ? 'bot' : 'puzzle';
+  var badgeTxt = (s.source === 'BUILTIN') ? '内置' : '外部';
+  var summary = '工具 ' + n(s.toolCount) + ' 个';
+  if(s.lastProbeAt) summary += ' · 探测于 ' + dt(s.lastProbeAt);
+  var sub = '';
+  if(s.lastError) sub += '<div class="conn-sub conn-err">'+txt(s.lastError)+'</div>';
+  if(S.mcpOpen[s.code]){
+    var cached = S.mcpToolsCache[s.code];
+    if(cached === '__LOADING__'){
+      sub += '<div class="conn-sub">工具目录加载中…</div>';
+    } else if(S.mcpToolsErr[s.code]){
+      sub += '<div class="conn-sub conn-err">工具目录加载失败：'+txt(S.mcpToolsErr[s.code])+'</div>';
+    } else if(Array.isArray(cached) && cached.length){
+      sub += '<div class="conn-sub">'+cached.map(function(t){
+        return '<div><code style="font-family:var(--font-mono)">'+txt(t.name)+'</code> · '+(t.readOnly?'只读':'可写')+' · '+txt(t.description||'')+'</div>';
+      }).join('')+'</div>';
+    } else {
+      sub += '<div class="conn-sub">暂无工具目录</div>';
+    }
+  }
+  var act = '';
+  if(s.trusted !== true){
+    act = '<button class="btn small" data-mcp-act="trust" data-code="'+txt(s.code)+'">信任并启用</button>';
+    if(s.lastError) act += '<button class="btn ghost small" data-mcp-act="probe" data-code="'+txt(s.code)+'">测试连接</button>';
+  } else {
+    act = '<button class="btn ghost small" data-mcp-act="untrust" data-code="'+txt(s.code)+'">取消信任</button>' +
+          '<button class="btn small" data-mcp-act="tools" data-code="'+txt(s.code)+'">查看工具</button>';
+  }
+  return '<div class="conn-card">'+
+    '<div class="conn-ic">'+ic(icKey,20)+'</div>'+
+    '<div class="conn-main">'+
+      '<div class="conn-name">'+txt(s.name)+'<span class="conn-badge'+(s.source==='EXTERNAL'?' ext':'')+'">'+txt(badgeTxt)+'</span></div>'+
+      '<div class="conn-summary">'+txt(summary)+'</div>'+
+      sub +
+    '</div>'+
+    '<div class="conn-act">'+ mcpStatusChip(s) + act +'</div>'+
+  '</div>';
+}
+
+/* 拉取 MCP 服务器列表（与连接器并行，失败仅影响本区） */
+function loadMcp(){
+  if(S.mcpLoaded || S.mcpErr) return;
+  API.mcpServers().then(function(r){
+    S.mcpServers = arr(r); S.mcpLoaded = true; S.mcpErr = null;
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  }).catch(function(err){
+    S.mcpErr = err.message || '请求失败'; S.mcpLoaded = true;
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  });
+}
+
+/* 刷新 MCP 列表（信任/取消信任后调用）；只在正处连接器面板时重绘 */
+function refreshMcp(){
+  S.mcpLoaded = false; S.mcpErr = null;
+  return API.mcpServers().then(function(r){
+    S.mcpServers = arr(r); S.mcpLoaded = true; S.mcpErr = null;
+  }).catch(function(err){
+    S.mcpErr = err.message || '请求失败'; S.mcpLoaded = true;
+  }).then(function(){
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  });
+}
+
+/* 信任并启用：必须判 d.ok；探测失败 ok=false 时卡片保持「未启用」（绝不乐观置位） */
+function mcpTrust(code){
+  API.mcpTrust(code).then(function(d){
+    if(d && d.ok === true){
+      toast('已启用：登记 ' + n(d.toolCount) + ' 个工具');
+      delete S.mcpToolsCache[code]; delete S.mcpToolsErr[code];
+      refreshMcp();
+    } else {
+      toast('启用失败：' + (d && d.error ? d.error : '探测未通过'));
+    }
+  }).catch(function(e){ toast(e.message || '请求失败'); });
+}
+
+/* 取消信任：判 d.ok，成功清缓存并刷新 */
+function mcpUntrust(code){
+  API.mcpUntrust(code).then(function(d){
+    if(d && d.ok === true){
+      toast('已取消信任');
+      delete S.mcpToolsCache[code]; delete S.mcpToolsErr[code];
+      refreshMcp();
+    } else {
+      toast('取消信任失败：' + (d && d.error ? d.error : '未知错误'));
+    }
+  }).catch(function(e){ toast(e.message || '请求失败'); });
+}
+
+/* 测试连接：探测成功不改 trusted（不顺手置为已启用） */
+function mcpProbe(code){
+  API.mcpProbe(code).then(function(d){
+    if(d && d.ok === true){
+      var cnt = (d.tools ? d.tools.length : 0);
+      toast('探测通过：' + cnt + ' 个工具');
+    } else {
+      toast('探测失败：' + (d && d.error ? d.error : '未知错误'));
+    }
+  }).catch(function(e){ toast(e.message || '请求失败'); });
+}
+
+/* 查看工具：toggle 展开；展开且无缓存时拉工具目录（失败在展开区显示错误） */
+function mcpToggleTools(code){
+  S.mcpOpen[code] = !S.mcpOpen[code];
+  if(S.mcpOpen[code] && S.mcpToolsCache[code] === undefined && !S.mcpToolsErr[code]){
+    S.mcpToolsCache[code] = '__LOADING__';
+    API.mcpTools(code).then(function(r){
+      S.mcpToolsCache[code] = arr(r);
+      renderConnectors();
+    }).catch(function(err){
+      delete S.mcpToolsCache[code]; S.mcpToolsErr[code] = err.message || '请求失败';
+      renderConnectors();
+    });
+  } else {
+    renderConnectors();
+  }
+}
+
+/* 状态 chip 唯一映射（严格按 docs/58 §2.3，前端只做字典，不二次推断） */
+function connStatusChip(c){
+  if(c.configReady === false) return chip('wait','待管理员配置');
+  if(c.status === 'CONNECTED') return chip('due','已连接');
+  if(c.status === 'UNVERIFIED') return chip('wait','未通过校验');
+  return chip('done','未连接');
+}
+
+function connCardHtml(c){
+  var icKey = (c.icon === 'mail') ? 'mail' : 'people';
+  var sub = '';
+  if(c.configReady === false){
+    sub = '<div class="conn-sub">'+txt(c.configHint || '管理员尚未完成配置')+'</div>';
+  } else if(c.status === 'CONNECTED'){
+    var line = '已连接';
+    if(c.accountLabel) line += ' · ' + txt(c.accountLabel);
+    if(c.connectedAt) line += ' · ' + txt(dt(c.connectedAt));
+    sub = '<div class="conn-sub">'+line+'</div>';
+  } else if(c.status === 'UNVERIFIED'){
+    sub = '<div class="conn-sub conn-err">未通过校验：'+txt(c.lastError || '未知错误')+'</div>';
+  }
+  var act = '';
+  if(c.configReady === false){
+    act = '<button class="btn small" disabled>连接</button>';
+  } else if(c.status === 'CONNECTED'){
+    act = '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">断开</button>';
+  } else if(c.status === 'UNVERIFIED'){
+    act = '<button class="btn small" data-act="verify" data-code="'+txt(c.code)+'">重新检测</button>';
+  } else {
+    act = '<button class="btn small" data-act="connect" data-code="'+txt(c.code)+'">连接</button>';
+  }
+  return '<div class="conn-card">'+
+    '<div class="conn-ic">'+ic(icKey,20)+'</div>'+
+    '<div class="conn-main">'+
+      '<div class="conn-name">'+txt(c.name || c.code)+'</div>'+
+      '<div class="conn-summary">'+txt(c.summary || '')+'</div>'+
+      sub +
+    '</div>'+
+    '<div class="conn-act">'+ connStatusChip(c) + act +'</div>'+
+  '</div>';
+}
+
+/* 点「连接」：先取详情，再按 mode 决定弹层（CREDENTIAL / OAUTH2） */
+function openConnector(code){
+  API.connectorDetail(code).then(function(d){
+    if(d && d.mode === 'OAUTH2') openOauthModal(code, d);
+    else openCredentialModal(code, d || {});
+  }).catch(function(err){
+    toast(err.message || '读取连接详情失败');
+  });
+}
+
+/* CREDENTIAL 弹层：填表 → 前端校验必填 → 提交；失败弹层不关，红字显示服务端原文 */
+function openCredentialModal(code, d){
+  var name = d.name || code;
+  var fields = arr(d.fields);
+  var rows = fields.map(function(f){
+    var typ = (f.type === 'password') ? 'password' : 'text';
+    return '<label class="oa-ef-row"><span>'+txt(f.label || f.key)+'</span>'+
+      '<input type="'+typ+'" data-fkey="'+txt(f.key)+'" placeholder="'+txt(f.placeholder || '')+'" autocomplete="off"></label>';
+  }).join('');
+  var help = '';
+  if(d.helpText) help += '<div class="hint">'+txt(d.helpText)+'</div>';
+  if(d.helpUrl) help += '<a class="oa-conn-help" href="'+txt(d.helpUrl)+'" target="_blank" rel="noopener">如何获取授权码</a>';
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg oa-conn-dlg" role="dialog" aria-modal="true" aria-label="连接 '+txt(name)+'">'+
+      '<div class="oa-up-hd"><span class="oa-up-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
+        '<div class="notif-head">连接 '+txt(name)+'</div></div>'+
+      '<div class="notif-body"><div class="oa-conn-form">'+
+        help + rows +
+        '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" id="oaConnSubmit">连接并验证</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var errBox = mask.querySelector('#oaConnErr');
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ mask.remove(); };
+  mask.onclick = function(e){ if(e.target === mask) mask.remove(); };
+  mask.querySelector('#oaConnSubmit').onclick = function(){
+    var values = {}, missing = false;
+    fields.forEach(function(f){
+      var inp = mask.querySelector('[data-fkey="'+f.key+'"]');
+      var v = inp ? inp.value.trim() : '';
+      if(f.required !== false && !v) missing = true;
+      values[f.key] = v;
+    });
+    if(missing){ errBox.textContent = '请填写所有必填项'; errBox.style.display = ''; return; }  // 不发请求
+    errBox.style.display = 'none';
+    API.connectorConnectCredential(code, values).then(function(){
+      mask.remove();
+      toast('已连接');
+      refreshConnectors();
+    }).catch(function(err){
+      errBox.textContent = err.message || '连接失败';
+      errBox.style.display = '';   // 弹层不关
+    });
+  };
+}
+
+/* OAUTH2 弹层：说明 → 去企业微信授权（整页跳转） */
+function openOauthModal(code, d){
+  var name = d.name || code;
+  var summary = d.summary || '';
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg oa-conn-dlg" role="dialog" aria-modal="true" aria-label="连接 '+txt(name)+'">'+
+      '<div class="oa-up-hd"><span class="oa-up-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
+        '<div class="notif-head">连接 '+txt(name)+'</div></div>'+
+      '<div class="notif-body"><div class="oa-conn-form">'+
+        '<div class="hint">将授权：'+txt(summary)+'</div>'+
+        '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" id="oaConnGoOauth">去企业微信授权</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var errBox = mask.querySelector('#oaConnErr');
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ mask.remove(); };
+  mask.onclick = function(e){ if(e.target === mask) mask.remove(); };
+  mask.querySelector('#oaConnGoOauth').onclick = function(){
+    API.connectorStart(code, {returnPath: location.pathname + location.search}).then(function(r){
+      var authUrl = r && r.authUrl;
+      if(authUrl){ location.href = authUrl; }
+      else { errBox.textContent = '未获取到授权地址'; errBox.style.display = ''; }
+    }).catch(function(err){
+      errBox.textContent = err.message || '发起授权失败';  // 弹层内红字（如「缺少企业微信应用配置…」）
+      errBox.style.display = '';
+    });
+  };
+}
+
+/* 断开 / 重新检测：成功后刷新面板；失败 toast */
+function disconnectConnector(code){
+  API.connectorDisconnect(code).then(function(){
+    toast('已断开');
+    refreshConnectors();
+  }).catch(function(err){ toast(err.message || '断开失败'); });
+}
+
+function verifyConnector(code){
+  API.connectorVerify(code).then(function(r){
+    var st = r && r.status;
+    if(st === 'UNVERIFIED') toast('重新检测未通过：'+(r.lastError || '未知错误'));
+    else toast('检测通过');
+    refreshConnectors();
+  }).catch(function(err){ toast(err.message || '检测失败'); });
+}
+
+/* 刷新连接器数据并（若正在看连接器面板）重绘 */
+function refreshConnectors(){
+  S.connectorsLoaded = false; S.connectorsErr = null;
+  return API.connectors().then(function(r){
+    S.connectors = arr(r); S.connectorsLoaded = true;
+  }).catch(function(err){
+    S.connectorsErr = err.message || '请求失败'; S.connectorsLoaded = true;
+  }).then(function(){
+    setSkillsSegCounts();
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  });
+}
+
+/* 授权回跳收尾：解析 ?connector=&result=&message= → toast + 清参（防刷新重放）+ 刷新面板 */
+function oaHandleConnectorCallback(){
+  try{
+    var q = new URLSearchParams(location.search);
+    if(q.has('connector') && q.has('result')){
+      var code = q.get('connector'), result = q.get('result');
+      if(result === 'ok') toast('连接器「'+code+'」已连接');
+      else toast('连接器连接失败：'+(q.get('message') ? decodeURIComponent(q.get('message')) : '未知错误'));
+      q.delete('connector'); q.delete('result'); q.delete('message');
+      var ns = q.toString();
+      history.replaceState({}, '', location.pathname + (ns ? '?'+ns : ''));
+      if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') refreshConnectors();
+    }
+  }catch(e){}
 }
 
 function renderRecent(){
@@ -9692,6 +10366,10 @@ function fillSheet(){
   if(sn) sn.textContent = String(arr(state.skills).length);
   var mn = $o('odModulesN');
   if(mn) mn.textContent = String(oaModuleWorkers().length);
+  /* 三段分段计数：插件 / 技能 / 连接器（连接器/插件未加载时不显示数字） */
+  var np = $o('oaSegNPlugins'); if(np) np.textContent = S.pluginsLoaded ? String(arr(S.plugins).length) : '';
+  var nk = $o('oaSegNSkills');  if(nk) nk.textContent = String(arr(state.skills).length);
+  var nc = $o('oaSegNConnectors'); if(nc) nc.textContent = S.connectorsLoaded ? String(arr(S.connectors).length) : '';
 }
 
 function renderDrawer(){
@@ -9897,6 +10575,7 @@ function bind(){
 
 /* ------------------------------------------------------------------ 13. 引导 */
 function oaBoot(){
+  oaHandleConnectorCallback();   // 解析授权回跳参数并清理 URL（防刷新重放），须在重绘前完成
   applyMode();
   if(S.mode !== 'oa') return;
   loadOaExtras().then(function(){ fillSheet(); oaRender(); }).catch(function(){});
@@ -9908,6 +10587,8 @@ window.oaSetMode = setMode;
 window.oaRemoveAttach = oaRemoveAttach;   /* 附件条 × 用内联 onclick 触发，需暴露到全局作用域 */
 window.oaLayoutTails = oaLayoutTails;
 window.oaState = S;
+/* 暴露导航入口，供离线自检脚本驱动「进入某视图」（与上面自检暴露同一定位）。 */
+window.oaGo = oaGo;
 /* 自检暴露（与上面 4 个同一定位：只给离线验证脚本用，产品路径不经过它）。
    「识别到上传/上报意图 ⇒ 自动弹窗」是本轮唯一不由点击直接触发的交互，
    不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；

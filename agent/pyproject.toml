@@ -36,6 +36,12 @@ dependencies = [
     "langgraph-checkpoint-redis>=0.5",
     "redis>=5.0",
     "aiosqlite>=0.20",
+    # ★ MCP 连接器接入（docs/59 §10）：把上游 MCP server 工具变成 LangChain Tool 注入模型。
+    #   `langchain-mcp-adapters` 的 MultiServerMCPClient 依赖官方 `mcp` SDK，两者必须同时钉住版本，
+    #   否则生产镜像 `pip install .` 会因缺这两个包而起不来（与 langgraph 漏声明同款教训）。
+    #   判据：容器内 `python -c "import langchain_mcp_adapters, mcp"` 必须成功。
+    "mcp>=1.30,<2",
+    "langchain-mcp-adapters>=0.3,<0.4",
 ]
 
 [tool.setuptools.packages.find]

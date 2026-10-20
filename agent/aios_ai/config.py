@@ -70,6 +70,15 @@ class Settings(BaseModel):
     # （不挂 checkpointer、不注入 ask_user 工具），既有契约零回归。
     agent_hitl: bool = Field(default=False, alias="AIOS_HITL")
 
+    # MCP 连接器 Hub 总开关（契约 docs/59 §10.3）。**默认关** —— 关闭时工具表与改造前逐字节一致
+    # （不连 hub、不发 manifest 请求、不注入任何 mcp__* 工具），既有契约零回归。
+    # 开启后由 ToolClient 经 Java /api/v1/mcp/manifest 发现已信任服务器，工具并入模型。
+    mcp_hub_enabled: bool = Field(default=False, alias="AIOS_MCP_HUB")
+
+    # MCP 连接器清单/工具拉取超时（秒），与 ToolClient 的 _timeout 同量级。
+    # manifest 请求与每个 server 的 get_tools 都受此约束，避免 hub 抖动拖垮整轮。
+    mcp_hub_timeout: float = Field(default=8.0, alias="AIOS_MCP_TIMEOUT")
+
     # 挂起态存储连接串（仅 agent_hitl=true 时使用）；**留空 = 内存（本地默认）**：
     #    （空）/ memory        —— InMemorySaver，本地零依赖；进程重启即丢
     #    redis://host:port/db  —— 生产用（本项目生产环境的 Redis）；**必须是 Redis Stack**
@@ -98,6 +107,8 @@ def _load() -> Settings:
             "PG_DSN": os.getenv("PG_DSN", ""),
             "AIOS_HITL": os.getenv("AIOS_HITL", "false"),
             "AIOS_CHECKPOINT_URL": os.getenv("AIOS_CHECKPOINT_URL", ""),
+            "AIOS_MCP_HUB": os.getenv("AIOS_MCP_HUB", "false"),
+            "AIOS_MCP_TIMEOUT": os.getenv("AIOS_MCP_TIMEOUT", "8.0"),
             "HOST": os.getenv("HOST", "0.0.0.0"),
             "PORT": os.getenv("PORT", "8000"),
             "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),

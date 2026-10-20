@@ -42,6 +42,11 @@ public class SecurityConfig {
             // OAuth2 回调是浏览器从 Gitee 跳回，同样无 JWT；
             // 身份由发起时下发的一次性 state 承载（防 CSRF + 防重放）
             "/api/v1/gitee/bind/callback",
+            // 连接器 OAuth2 回调（企业微信）同理：浏览器从企业微信跳回，不带平台 JWT。
+            // 身份由发起时写库的一次性 state 承载（10 分钟过期 + 用后即废），
+            // 且 state 校验失败时绝不写任何 connection（见 WeComOAuthService#callback）。
+            // ⚠️ 只放行 callback 这一个子路径，目录/详情/连接/断开仍须登录态。
+            "/api/v1/connectors/*/callback",
             // 单端口部署（docs/33）下由 aios-server 自己发的两块静态前端：
             // 用户端 /aios/h5/** 与 管理端 /aios/web/**。登录页就在里面，必须匿名可读。
             // ⚠️ 这里的放行是「可读静态资源」而非「可读业务数据」：接口仍在 /api/** 之下受鉴权保护

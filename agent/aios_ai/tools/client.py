@@ -15,6 +15,11 @@ import httpx
 
 from aios_ai.config import settings
 
+# MCP 连接器接入（契约 docs/59 §10）：把上游 MCP server 的工具变成 LangChain Tool，
+# 再归一成 OpenAI function 形状注入模型。这两个包已在 agent pyproject 声明（mcp / langchain-mcp-adapters）。
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
 logger = logging.getLogger("aios.agent.tools")
 
 # 单次 run 允许的最大工具执行轮数（防模型死循环）
@@ -42,7 +47,8 @@ class ToolOutcome:
 class ToolClient:
     """面向一次 run 的工具客户端（携带该 run 用户的 token）。"""
 
-    def __init__(self, base_url: str, user_token: str | None, timeout: float = 10.0):
+    def __init__(self, base_url: str, user_token: str | None, timeout: float = 10.0,
+                 mcp_manifest: list[dict] | None = None):
         self._base_url = base_url.rstrip("/")
         self._token = (user_token or "").strip()
         self._timeout = timeout
@@ -50,6 +56,14 @@ class ToolClient:
         # 「网关不可用/非 200（本来该有工具）」—— 两者都返回 []，但后者会导致
         # 知识库被静默跳过（见 graph/nodes.py 的 kb 降级提示）。
         self.list_error: str | None = None
+        # 注入的 manifest（**仅测试用**：生产路径仍走 HTTP 拉取 /api/v1/mcp/manifest）。
+        # 哨兵脚本用它绕过不可达的 Java 后端，构造一个本地可用的 MCP server 清单。
+        self._mcp_manifest = mcp_manifest
+        # MCP 连接器的失败原因（与 list_error 同口径：不抛，供 nodes.py 显式降级）。
+        # 单个 server 连不上只记原因、其它 server 照常返回；全部失败也返回 []。
+        self.mcp_error: str | None = None
+        # 全名(mcp__<code>__<tool>) → (BaseTool 原对象, 原名)，供 invoke 按前缀回派。
+        self._mcp_tools: dict[str, tuple[object, str]] = {}
 
     @classmethod
     def from_request(cls, user_token: str | None) -> "ToolClient":
@@ -95,9 +109,108 @@ class ToolClient:
                      self.list_error)
         return []
 
+    async def list_mcp_tools(self) -> list[dict]:
+        """拉取 MCP 连接器工具并归一成 OpenAI function 形状（前缀 ``mcp__<serverCode>__<toolName>``）。
+
+        与 ``list_tools`` 的失败语义同口径（契约 docs/59 §10.4 判据 4：失败不静默、但也不让整轮挂掉）：
+          - ``mcp_hub_enabled`` 为假或无用户 token ⇒ 直接返回 ``[]`` 且 ``mcp_error is None``（不算失败）；
+          - manifest 非 200 / 异常 ⇒ 记 ``mcp_error``、**不抛**、返回 ``[]``；
+          - 单个 server 连不上 ⇒ 记原因（可拼接多个，截断 300 字），其它 server 照常；全部失败也返回 ``[]``。
+
+        多个 server 用 ``asyncio.gather(return_exceptions=True)`` 并发拉取，不串行等。
+        """
+        self.mcp_error = None
+        self._mcp_tools = {}
+        # 关闭开关或无 token ⇒ 与改造前逐字节一致：不连 hub、不发 manifest 请求、不注入任何 mcp__* 工具。
+        if not settings.mcp_hub_enabled or not self.enabled:
+            return []
+
+        # 1) 取 manifest：测试可注入，否则走 Java /api/v1/mcp/manifest。
+        try:
+            if self._mcp_manifest is None:
+                async with httpx.AsyncClient(timeout=settings.mcp_hub_timeout) as client:
+                    resp = await client.get(f"{self._base_url}/api/v1/mcp/manifest",
+                                            headers=self._headers())
+                    body = resp.json()
+                if resp.status_code != 200 or not isinstance(body.get("data"), list):
+                    self.mcp_error = f"manifest status={resp.status_code}"
+                    return []
+                servers = body["data"]
+            else:
+                servers = self._mcp_manifest
+        except Exception as exc:            # noqa: BLE001 —— 统一收敛成可读原因
+            self.mcp_error = f"{type(exc).__name__}: {exc}"
+            return []
+        if not servers:
+            return []
+
+        # 2) 并发拉每个 server 的工具，并归一成 OpenAI function 形状（加前缀）。
+        async def _load_one(srv: dict) -> list[dict]:
+            code = srv.get("code")
+            url = srv.get("url")
+            mcp_client = MultiServerMCPClient({
+                code: {"transport": "streamable_http", "url": url,
+                       "headers": {"Authorization": f"Bearer {self._token}"}}
+            })
+            raw_tools = await mcp_client.get_tools()     # list[BaseTool]
+            out: list[dict] = []
+            for t in raw_tools:
+                oai = convert_to_openai_tool(t)
+                full = f"mcp__{code}__{t.name}"
+                oai["function"]["name"] = full           # 仅改名字，description/parameters 不动
+                self._mcp_tools[full] = (t, t.name)
+                out.append(oai)
+            return out
+
+        results = await asyncio.gather(
+            *[_load_one(s) for s in servers], return_exceptions=True)
+        merged: list[dict] = []
+        reasons: list[str] = []
+        for r in results:
+            if isinstance(r, Exception):
+                reasons.append(str(r))
+            else:
+                merged.extend(r)
+        if reasons:
+            self.mcp_error = "; ".join(reasons)[:300]
+        return merged
+
     async def invoke(self, name: str, arguments: dict | None = None) -> ToolOutcome:
-        """执行单个工具；网络/契约异常统一收敛为 ok=False，交由模型组织失败回答。"""
+        """执行单个工具；网络/契约异常统一收敛为 ok=False，交由模型组织失败回答。
+
+        ``mcp__`` 前缀 ⇒ 走 MCP 连接器通道（按 _mcp_tools 回派到对应 BaseTool）；
+        其余名称 ⇒ 既有 Java 网关路径，行为完全不变。
+        """
         args = arguments or {}
+        # ★ MCP 连接器分支：前缀分流。找不到映射是负向判据（必须显式报错，不能回落 Java 网关）。
+        if name.startswith("mcp__"):
+            entry = self._mcp_tools.get(name)
+            if entry is None:
+                return ToolOutcome(name=name, arguments=args, ok=False,
+                                   error="MCP 工具不存在或服务器未就绪：" + name)
+            tool_obj = entry[0]
+            try:
+                resp = await tool_obj.ainvoke(args)     # BaseTool：内部完成 MCP tools/call
+                # 归一 content blocks（list[dict]）与直接返回值两种形状。
+                if isinstance(resp, list) and resp and isinstance(resp[0], dict):
+                    parts: list[str] = []
+                    is_error = False
+                    for c in resp:
+                        if not isinstance(c, dict):
+                            continue
+                        if c.get("type") == "text":
+                            parts.append(c.get("text", ""))
+                        if c.get("isError"):
+                            is_error = True
+                    data = "\n".join(parts)
+                    if is_error:
+                        return ToolOutcome(name=name, arguments=args, ok=False,
+                                           error=data or "MCP 工具返回错误")
+                    return ToolOutcome(name=name, arguments=args, ok=True, data=data)
+                return ToolOutcome(name=name, arguments=args, ok=True, data=resp)
+            except Exception as exc:
+                logger.warning("mcp invoke %s failed: %s", name, exc)
+                return ToolOutcome(name=name, arguments=args, ok=False, error=str(exc)[:300])
         if not self.enabled:
             return ToolOutcome(name=name, arguments=args, ok=False, error="工具网关不可用（缺少用户凭证）")
         try:

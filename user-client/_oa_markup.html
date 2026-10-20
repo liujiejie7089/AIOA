@@ -155,10 +155,17 @@
       <div id="oaTimersList"></div>
     </section>
 
-    <!-- ⑨ 插件 · 技能（抽屉进入） -->
+    <!-- ⑨ 插件 · 技能 · 连接器（抽屉进入）：三段分段控件，默认「插件」 -->
     <section class="view" id="v-skills">
-      <div class="sec-title" style="margin-left:2px">插件 · 技能 <span class="muted">可被数字员工调用</span></div>
-      <div class="card" id="oaSkillsList"></div>
+      <div class="sec-title" style="margin-left:2px">插件-技能-连接器 <span class="muted">可被数字员工调用</span></div>
+      <div class="oa-seg" id="oaSkillsSeg" role="tablist">
+        <button type="button" data-seg="plugins" role="tab">插件<span class="n" id="oaSegNPlugins"></span></button>
+        <button type="button" data-seg="skills" role="tab">技能<span class="n" id="oaSegNSkills"></span></button>
+        <button type="button" data-seg="connectors" role="tab">连接器<span class="n" id="oaSegNConnectors"></span></button>
+      </div>
+      <div class="oa-pane on" id="oaPanePlugins"><div class="card" id="oaPluginsList"></div></div>
+      <div class="oa-pane" id="oaPaneSkills"><div class="card" id="oaSkillsList"></div></div>
+      <div class="oa-pane" id="oaPaneConnectors"><div id="oaConnectorsList"></div></div>
     </section>
 
     <!-- ⑩ 最近（抽屉正文）：最近会话 -->
@@ -257,7 +264,7 @@
       <div class="dnav-item" id="odNewChat"><svg class="ic"><use href="#i-chat"/></svg>新对话</div>
       <div class="dnav-item" id="odModules"><svg class="ic"><use href="#i-grid"/></svg>OA 模块<span class="n" id="odModulesN"></span></div>
       <div class="dnav-item" id="odTimers"><svg class="ic"><use href="#i-clock"/></svg>定时任务<span class="n" id="odTimersN"></span></div>
-      <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能<span class="n" id="odSkillsN"></span></div>
+      <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能-连接器<span class="n" id="odSkillsN"></span></div>
       <div class="dnav-sep"></div>
       <div class="dnav-label">最近</div>
     </div>

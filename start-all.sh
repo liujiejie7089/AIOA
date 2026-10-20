@@ -109,6 +109,16 @@ else
   ( cd agent && "$ASR_PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --http httptools ) > logs/agent.log 2>&1 &
 fi
 
+# ---- mcp-hub :8099（MCP 网关，无状态，不落盘）----
+# 用 agent/.venv 的解释器（已装 mcp==1.30.0）。可用 AIOS_SERVER_BASE_URL 指定 Java 地址（默认 :8080）。
+# 注意：不改脚本里既有的其它启动逻辑。
+if port_up 8099; then
+  echo "[skip] mcp-hub :8099 already running"
+else
+  echo "[start] mcp-hub :8099 (logs/mcp-hub.log)"
+  ( cd mcp-hub && "$ASR_PY" run.py ) > logs/mcp-hub.log 2>&1 &
+fi
+
 # ---- 用户端 H5 :5181（读 user-client/.env）----
 if port_up 5181; then
   echo "[skip] user-client :5181 already running"

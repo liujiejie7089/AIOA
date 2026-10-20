@@ -60,6 +60,10 @@
       <artifactId>milvus-sdk-java</artifactId>
     </dependency>
 
+    <!-- 注意：QQ 邮箱收发（connector/mail）刻意**不引入** jakarta.mail / angus-mail。
+         本地仓库（D:/m2）无该坐标，且构建机常离线；实现改为纯 JDK TLS + 文本协议
+         （与既有 QqMailProbe 同款），零新依赖。若将来换库，请同时确认离线仓库可解析。 -->
+
     <!-- 单测：Milvus 过滤表达式 / RRF 融合 / HTTP 嵌入解析等纯逻辑（无 Spring 上下文、无真实 Milvus） -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

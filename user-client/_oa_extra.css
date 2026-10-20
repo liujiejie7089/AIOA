@@ -344,12 +344,20 @@
 .notif-modal.oa-dlg .notif-foot .btn.ghost{color:var(--brand-ink);border-color:var(--brand-line);background:var(--surface)}
 .notif-modal.oa-dlg .notif-foot .btn.ghost:hover{background:var(--brand-soft)}
 .notif-modal.oa-dlg .notif-foot .btn:not(.ghost){background:var(--brand);border-color:var(--brand);color:#fff}
-/* 「上传项目文档」专用：标题带图标砖 */
-.notif-modal.oa-upload-dlg .oa-up-hd{display:flex;align-items:center;gap:10px}
-.notif-modal.oa-upload-dlg .oa-up-ico{
+/* 「上传项目文档」「连接 XX」共用：标题带图标砖。
+   ⚠️ 作用域必须逐个列出弹层类（2026-10-20 实测踩坑）：这条规则原先只写 `.oa-upload-dlg`，
+   而连接器弹层的类是 `.oa-conn-dlg` ⇒ `.oa-up-ico` 拿不到 32x32/底色，里面的 <svg class="ic">
+   也没有全局尺寸规则 ⇒ 图标被压成一个小方块，看起来像弹层左上角多了一个残字（截图对比：
+   修复前 conn_e2e_3_dialog.png 顶部那个 “S”）。**新增任何用 .oa-up-hd 的弹层，必须把类名加进来**。 */
+.notif-modal.oa-upload-dlg .oa-up-hd,
+.notif-modal.oa-conn-dlg .oa-up-hd{display:flex;align-items:center;gap:10px}
+.notif-modal.oa-upload-dlg .oa-up-ico,
+.notif-modal.oa-conn-dlg .oa-up-ico{
   width:32px;height:32px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;
   background:var(--brand-soft);color:var(--brand-ink);font-size:17px;flex-shrink:0;
 }
+/* .ic 没有全局尺寸（各上下文各自声明），弹层头里的必须显式给，否则 svg 落到默认 300x150 被裁 */
+.notif-modal.oa-dlg .oa-up-ico .ic{width:18px;height:18px;display:block}
 /* 语音 / 上传 / 停止 / 发送按钮：关掉浏览器手势接管，避免触屏 pointercancel 抢手势导致录音停不下来 */
 #oaMicBtn, #oaAttachBtn, #oaStop, #oaSendBtn{ touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 /* 会话内文档附件条：仅作本轮会话的 AI 参考，不进知识库、其它会话不可见（与经典侧共用类名） */
@@ -398,3 +406,45 @@
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .oa .mod-tip{margin:0 0 10px;padding:9px 12px;border-radius:12px;font-size:12px;line-height:1.5;
   background:var(--brand-soft);color:var(--brand-ink);border:1px solid var(--brand-line)}
+
+/* ===== 连接器与三段分段（2026-10-20） ===== */
+/* 三段分段控件：三个等宽文字按钮，选中态 brand-soft 底 + brand-ink 字（不用 .pillgroup） */
+.oa .oa-seg{display:flex;gap:6px;margin:2px 2px 12px;padding:4px;
+  background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-full)}
+.oa .oa-seg button{flex:1;min-width:0;border:0;background:transparent;font:inherit;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  height:34px;border-radius:var(--r-full);font-size:13px;font-weight:600;color:var(--text-2);
+  transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease)}
+.oa .oa-seg button.on{background:var(--brand-soft);color:var(--brand-ink)}
+.oa .oa-seg button .n{font-size:11px;font-weight:700;opacity:.7}
+.oa .oa-pane{display:none}
+.oa .oa-pane.on{display:block}
+
+/* 连接器卡片 */
+.oa .conn-card{display:flex;gap:12px;align-items:stretch;background:#fff;border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.oa .conn-ic{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:var(--brand-soft);color:var(--brand-ink)}
+.oa .conn-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;justify-content:center}
+.oa .conn-name{font-size:14px;font-weight:600;line-height:1.3}
+.oa .conn-summary{font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oa .conn-sub{font-size:11.5px;color:var(--text-2);line-height:1.5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oa .conn-err{color:var(--red)}
+.oa .conn-act{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;gap:8px;flex-shrink:0}
+.oa .conn-act .btn{min-height:30px;padding:0 14px;border-radius:var(--r-full);font-size:12px;font-weight:600}
+.oa .conn-act .btn[disabled]{opacity:.5;cursor:not-allowed}
+/* MCP 服务器卡片的小徽标（内置 / 外部）；沿用既有 token，不新造视觉体系 */
+.oa .conn-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;line-height:1.6;color:var(--text-3);background:var(--bg);border:1px solid var(--border);vertical-align:1px}
+.oa .conn-badge.ext{color:var(--brand-ink);background:var(--brand-soft);border-color:var(--brand-line)}
+
+/* 连接弹层内的表单（CREDENTIAL / OAUTH2 共用 .oa-conn-dlg）：
+   规则一律 .notif-modal.oa-dlg …（弹层在 body 下，不在 .oa 内，且须自带品牌令牌）。
+   .oa-ef-row 的 flex-direction:column 复用以验证「.oa 作用域陷阱」已规避；
+   下方断言即取该计算值。 */
+.notif-modal.oa-dlg .oa-conn-form{display:flex;flex-direction:column;gap:13px}
+.notif-modal.oa-dlg .oa-conn-form .hint{font-size:11.5px;line-height:1.6;color:var(--text-2)}
+.notif-modal.oa-dlg .oa-conn-help{font-size:11.5px;color:var(--brand);font-weight:600;text-decoration:none}
+.notif-modal.oa-dlg .oa-conn-help:hover{text-decoration:underline}
+.notif-modal.oa-dlg .oa-conn-form .oa-ef-row{display:flex;flex-direction:column;gap:6px}
+.notif-modal.oa-dlg .oa-conn-form .oa-ef-row > span{font-size:11.5px;font-weight:600;color:var(--text-2)}

@@ -253,6 +253,21 @@ aios:
     trust-store-password: ${AIOS_GITEA_TRUST_STORE_PASSWORD:}
     trust-store-type: ${AIOS_GITEA_TRUST_STORE_TYPE:PKCS12}
 
+  connector:
+    # 连接器用户凭据加密密钥（AES-256-GCM，与 GiteeCrypto 同口径）。生产必须通过环境变量覆盖
+    secret-key: ${AIOS_CONNECTOR_SECRET_KEY:aios-dev-connector-secret-key-please-change}
+    # OAuth2 回调公网基址：拼接企业微信回调地址用；为空则回退到发起授权请求的 Origin
+    public-base: ${AIOS_CONNECTOR_PUBLIC_BASE:}
+    wechat-work:
+      # 企业微信自建应用配置（平台级）；租户级优先于它，见 connector_tenant_config 表
+      corp-id: ${AIOS_CONNECTOR_WECOM_CORP_ID:}
+      agent-id: ${AIOS_CONNECTOR_WECOM_AGENT_ID:}
+      corp-secret: ${AIOS_CONNECTOR_WECOM_CORP_SECRET:}
+
+  mcp:
+    # 内置连接器的 MCP 服务（mcp-hub）基址；信任探活与运行期都由它代理
+    hub-url: ${AIOS_MCP_HUB_URL:http://127.0.0.1:8099}
+
 management:
   endpoints:
     web:

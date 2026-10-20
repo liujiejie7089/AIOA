@@ -56,6 +56,15 @@ KB_DEGRADED_NOTE = (
     "禁止虚构制度条款、数字或来源。"
 )
 
+# MCP 连接器（邮箱 / 企业微信等）拉取失败时追加到 system 的降级声明（契约 docs/59 §10.4 判据 4）。
+# 与 KB_DEGRADED_NOTE 同口径：hub 抖动不该打死整轮，但**绝不能静默**——
+# 旧行为是返回 [] 后照常推理，模型会假装查过邮件/企微消息，用户得到一段编造的连接器结果。
+MCP_DEGRADED_NOTE = (
+    "\n\n【本轮连接器不可用】MCP 连接器服务（邮箱 / 企业微信等）本轮拉取失败，你**没有**任何连接器工具可用。"
+    "若用户询问邮件、企业微信等连接器相关事宜，必须如实说明「连接器服务暂时不可用，我无法查询」，"
+    "禁止假装已查询、禁止编造邮件内容或消息记录。"
+)
+
 
 def _tool_name(t: dict) -> str | None:
     """工具名提取（兼容两种 schema 形态，与 knowledge.retrieval 同口径）。"""
@@ -183,6 +192,20 @@ async def prepare(state: dict) -> dict:
     messages = build_messages(req, getattr(provider, "max_context", 0) or 0)
     tool_client = ToolClient.from_request(req.user_token)
     tools = await tool_client.list_tools()
+
+    # MCP 连接器独立通道（契约 docs/59 §10）：manifest 不可达时内部已吞异常，
+    # 失败通过 tool_client.mcp_error 反映，工具表与改造前逐字节一致（关闭开关时整段不进入）。
+    # 关闭 mcp_hub_enabled 时不连 hub、不发 manifest 请求 ⇒ tools 与既有实现完全相同。
+    mcp_tools = await tool_client.list_mcp_tools()
+    if mcp_tools:
+        tools = list(mcp_tools) + list(tools)
+    mcp_degraded = bool(settings.mcp_hub_enabled and tool_client.enabled and tool_client.mcp_error)
+    if mcp_degraded:
+        effective["mcpDegraded"] = True
+        if messages:
+            messages[0]["content"] = (messages[0].get("content") or "") + MCP_DEGRADED_NOTE
+        logger.error("run %s: MCP 连接器清单不可用（%s）⇒ 本轮连接器工具不可用，已在提示中显式降级",
+                     req.run_id, tool_client.mcp_error)
 
     # HITL：注入内置澄清工具（不由业务工具网关执行，命中即暂停等待用户选择）。
     # 只在开关打开时注入 —— 关闭时工具表与既有实现逐字节一致（零回归）。

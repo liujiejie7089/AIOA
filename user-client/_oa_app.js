@@ -37,7 +37,11 @@ var S = {
   projectConvId:{},      // projectId → conversationId（项目会话与「无项目」严格分账，互不串）
   projectConvWorker:{},  // projectId → 该会话创建时绑定的 workerId（null=未绑）；换人后必须新建会话
   projectWorkerIds:[],   // 当前项目可用的数字员工 workerId（enabled 且未缺失；渲染数字人卡时按它过滤）
-  kbOn:true               // 对话级知识库开关，默认开，随 createRun 下发
+  kbOn:true,              // 对话级知识库开关，默认开，随 createRun 下发
+  skillsTab:'plugins',     // 当前选中的三段子项（默认插件）
+  plugins:null, pluginsLoaded:false, pluginsErr:null,
+  connectors:null, connectorsLoaded:false, connectorsErr:null,
+  mcpServers:null, mcpLoaded:false, mcpErr:null, mcpOpen:{}, mcpToolsCache:{}, mcpToolsErr:{}
 };
 
 /* 对话级「知识库」开关（OA 形态自带，与经典态 state.kbOn 互不干扰）。
@@ -138,7 +142,7 @@ var META = {
   workers: {t:'数字员工',      tab:null, sub:1},
   experts: {t:'专家',          tab:null, sub:1},
   timers:  {t:'定时任务',      tab:null, sub:1},
-  skills:  {t:'插件 · 技能',   tab:null, sub:1},
+  skills:  {t:'插件-技能-连接器', tab:null, sub:1},
   recent:  {t:'最近会话',      tab:null, sub:1},
   appr:    {t:'审批详情',      tab:null, sub:1},
   /* 原先这四项会切回经典形态，现改为 OA 内视图：新版里不再有「悄悄跳到老版」的入口 */
@@ -1418,10 +1422,90 @@ async function oaShowRuns(id){
   }
 }
 
+/* ------------------------------------------------------------------ 8b. 插件-技能-连接器（三段分段） */
+/* 领域 → 图标（兜底 puzzle）；只挑既有图标键，不新增精灵 */
+var DOMAIN_ICON = {
+  mail:'mail', email:'mail', imap:'mail', smtp:'mail',
+  doc:'doc', document:'doc', docs:'doc',
+  calendar:'cal', schedule:'cal',
+  task:'task', todo:'task',
+  chat:'chat', message:'chat',
+  people:'people', org:'people', member:'people', contact:'people',
+  knowledge:'book', kb:'book', wiki:'book',
+  finance:'chart', stat:'chart', report:'chart',
+  tool:'puzzle', bot:'bot'
+};
+
+/* 进入 v-skills：绑定分段按钮（一次）、设计数、显示当前面板 */
 function renderSkills(){
+  var seg = $o('oaSkillsSeg');
+  if(seg && !seg._bound){
+    seg.querySelectorAll('button').forEach(function(b){
+      b.onclick = function(){ showSkillsPane(b.getAttribute('data-seg')); };
+    });
+    seg._bound = true;
+  }
+  if(!S.skillsTab) S.skillsTab = 'plugins';
+  setSkillsSegCounts();
+  showSkillsPane(S.skillsTab);
+}
+
+function setSkillsSegCounts(){
+  var np = $o('oaSegNPlugins'); if(np) np.textContent = S.pluginsLoaded ? String(arr(S.plugins).length) : '';
+  var nk = $o('oaSegNSkills');  if(nk) nk.textContent = String(arr(state.skills).length);
+  var nc = $o('oaSegNConnectors'); if(nc) nc.textContent = S.connectorsLoaded ? String(arr(S.connectors).length) : '';
+}
+
+function showSkillsPane(seg){
+  S.skillsTab = seg;
+  var segBox = $o('oaSkillsSeg');
+  if(segBox) segBox.querySelectorAll('button').forEach(function(b){
+    b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+  });
+  var map = {plugins:'oaPanePlugins', skills:'oaPaneSkills', connectors:'oaPaneConnectors'};
+  Object.keys(map).forEach(function(k){
+    var p = $o(map[k]); if(p) p.classList.toggle('on', k === seg);
+  });
+  if(seg === 'plugins') renderPlugins();
+  else if(seg === 'skills') renderSkillsList();
+  else if(seg === 'connectors') renderConnectors();
+}
+
+/* 插件面板：真实数据（GET /v1/plugins），失败显示错误文案而非空白 */
+function renderPlugins(){
+  var el = $o('oaPluginsList'); if(!el) return;
+  if(!S.pluginsLoaded && !S.pluginsErr){
+    el.innerHTML = '<div class="muted">插件加载中…</div>';
+    API.plugins().then(function(r){
+      S.plugins = arr(r); S.pluginsLoaded = true; S.pluginsErr = null;
+      setSkillsSegCounts();
+      renderPlugins();
+    }).catch(function(err){
+      S.pluginsErr = err.message || '请求失败'; S.pluginsLoaded = true;
+      setSkillsSegCounts();
+      renderPlugins();
+    });
+    return;
+  }
+  if(S.pluginsErr){ el.innerHTML = '<div class="muted">插件加载失败：'+txt(S.pluginsErr)+'</div>'; return; }
+  var list = arr(S.plugins);
+  if(!list.length){ el.innerHTML = empty('暂无插件：插件是可被数字员工调用的工具，由管理员注册后出现'); return; }
+  el.innerHTML = list.map(function(p){
+    var ik = DOMAIN_ICON[p.domain] || 'puzzle';
+    var right = (p.requiresApproval === true) ? '<span class="chip wait">需审批</span>' : '';
+    return '<div class="lrow">'+
+      '<div class="ava" style="display:flex;align-items:center;justify-content:center">'+ic(ik,18)+'</div>'+
+      '<div class="txt"><div class="t1 truncate">'+txt(p.name)+'</div>'+
+      '<div class="t2 truncate">'+txt(p.description || '')+'</div></div>'+ right +
+    '</div>';
+  }).join('');
+}
+
+/* 技能面板：沿用既有口径，仅改空态文案 */
+function renderSkillsList(){
   var el = $o('oaSkillsList'); if(!el) return;
   var ks = arr(state.skills);
-  if(!ks.length){ el.innerHTML = empty('暂无可用技能'); return; }
+  if(!ks.length){ el.innerHTML = empty('暂无技能：技能 = 预填参数的会话模板，由管理员在管理端配置'); return; }
   el.innerHTML = ks.map(function(k){
     return '<div class="lrow">'+
       '<div class="ava" style="display:flex;align-items:center;justify-content:center">'+
@@ -1429,6 +1513,381 @@ function renderSkills(){
       '<div class="txt"><div class="t1 truncate">'+txt(k.name || k.key)+'</div>'+
       '<div class="t2 truncate">'+txt(k.description || k.desc || '')+'</div></div></div>';
   }).join('');
+}
+
+/* 连接器面板：分组渲染（GET /v1/connectors）+ MCP 服务器区（GET /v1/mcp/servers）。
+   两者并行取数、各自记错：MCP 挂了只影响 MCP 区块，绝不把整面板打成错误页。 */
+function renderConnectors(){
+  var el = $o('oaConnectorsList'); if(!el) return;
+  if(!S.connectorsLoaded && !S.connectorsErr){
+    el.innerHTML = '<div class="muted">连接器加载中…</div>';
+    API.connectors().then(function(r){
+      S.connectors = arr(r); S.connectorsLoaded = true; S.connectorsErr = null;
+      setSkillsSegCounts();
+      renderConnectors();
+    }).catch(function(err){
+      S.connectorsErr = err.message || '请求失败'; S.connectorsLoaded = true;
+      setSkillsSegCounts();
+      renderConnectors();
+    });
+    return;
+  }
+  /* 连接器已就绪，但 MCP 还没拉过 → 并行补拉（不阻塞连接器渲染） */
+  if(!S.mcpLoaded && !S.mcpErr) loadMcp();
+  if(S.connectorsErr){ el.innerHTML = '<div class="muted">连接器加载失败：'+txt(S.connectorsErr)+'</div>'; return; }
+  var list = arr(S.connectors);
+  if(!list.length){ el.innerHTML = empty('暂无连接器') + mcpSectionHtml(); return; }
+  /* 按 group 出现顺序分组（先来先建组），未知 group 原样当分组名 */
+  var groups = [], gmap = {};
+  list.forEach(function(c){
+    var g = c.group || '其他';
+    if(!gmap[g]){ gmap[g] = []; groups.push(g); }
+    gmap[g].push(c);
+  });
+  el.innerHTML = groups.map(function(g){
+    return '<div class="sec-title">'+txt(g)+'</div>' + gmap[g].map(connCardHtml).join('');
+  }).join('') + mcpSectionHtml();
+  el.querySelectorAll('[data-act]').forEach(function(b){
+    b.onclick = function(){
+      var code = b.getAttribute('data-code'), act = b.getAttribute('data-act');
+      if(act === 'connect') openConnector(code);
+      else if(act === 'disconnect') disconnectConnector(code);
+      else if(act === 'verify') verifyConnector(code);
+    };
+  });
+  el.querySelectorAll('[data-mcp-act]').forEach(function(b){
+    b.onclick = function(){
+      var code = b.getAttribute('data-code'), act = b.getAttribute('data-mcp-act');
+      if(act === 'trust') mcpTrust(code);
+      else if(act === 'untrust') mcpUntrust(code);
+      else if(act === 'probe') mcpProbe(code);
+      else if(act === 'tools') mcpToggleTools(code);
+    };
+  });
+}
+
+/* MCP 服务器区：头部说明 + 列表（或加载中/失败/空态）。用 .oa-mcp-section 包住便于定位。 */
+function mcpSectionHtml(){
+  var head = '<div class="sec-title">MCP 服务器</div>' +
+    '<div class="muted" style="margin:-4px 0 10px;font-size:12px">默认不启用。启用前会做一次连通性探测（initialize + tools/list），探测通过才登记工具。</div>';
+  if(!S.mcpLoaded && !S.mcpErr) return '<div class="oa-mcp-section">'+head+'<div class="muted">MCP 服务器加载中…</div></div>';
+  if(S.mcpErr) return '<div class="oa-mcp-section">'+head+'<div class="muted">MCP 加载失败：'+txt(S.mcpErr)+'</div></div>';
+  var list = arr(S.mcpServers);
+  if(!list.length) return '<div class="oa-mcp-section">'+head+empty('暂无 MCP 服务器')+'</div>';
+  return '<div class="oa-mcp-section">'+head+list.map(mcpCardHtml).join('')+'</div>';
+}
+
+/* 状态 chip 唯一映射（严格按后端闸门顺序：未信任 > 连接器未连接 > 探测失败 > 已启用） */
+function mcpStatusChip(s){
+  if(s.trusted !== true) return chip('done','未启用');
+  if(s.trusted && s.source === 'BUILTIN' && !s.connected) return chip('wait','连接器未连接');
+  if(s.trusted && s.status === 'ERROR') return chip('wait','探测失败');
+  return chip('due','已启用');
+}
+
+/* 单台 MCP 服务器卡片（复用 .conn-card 视觉体系） */
+function mcpCardHtml(s){
+  var icKey = (s.source === 'BUILTIN') ? 'bot' : 'puzzle';
+  var badgeTxt = (s.source === 'BUILTIN') ? '内置' : '外部';
+  var summary = '工具 ' + n(s.toolCount) + ' 个';
+  if(s.lastProbeAt) summary += ' · 探测于 ' + dt(s.lastProbeAt);
+  var sub = '';
+  if(s.lastError) sub += '<div class="conn-sub conn-err">'+txt(s.lastError)+'</div>';
+  if(S.mcpOpen[s.code]){
+    var cached = S.mcpToolsCache[s.code];
+    if(cached === '__LOADING__'){
+      sub += '<div class="conn-sub">工具目录加载中…</div>';
+    } else if(S.mcpToolsErr[s.code]){
+      sub += '<div class="conn-sub conn-err">工具目录加载失败：'+txt(S.mcpToolsErr[s.code])+'</div>';
+    } else if(Array.isArray(cached) && cached.length){
+      sub += '<div class="conn-sub">'+cached.map(function(t){
+        return '<div><code style="font-family:var(--font-mono)">'+txt(t.name)+'</code> · '+(t.readOnly?'只读':'可写')+' · '+txt(t.description||'')+'</div>';
+      }).join('')+'</div>';
+    } else {
+      sub += '<div class="conn-sub">暂无工具目录</div>';
+    }
+  }
+  var act = '';
+  if(s.trusted !== true){
+    act = '<button class="btn small" data-mcp-act="trust" data-code="'+txt(s.code)+'">信任并启用</button>';
+    if(s.lastError) act += '<button class="btn ghost small" data-mcp-act="probe" data-code="'+txt(s.code)+'">测试连接</button>';
+  } else {
+    act = '<button class="btn ghost small" data-mcp-act="untrust" data-code="'+txt(s.code)+'">取消信任</button>' +
+          '<button class="btn small" data-mcp-act="tools" data-code="'+txt(s.code)+'">查看工具</button>';
+  }
+  return '<div class="conn-card">'+
+    '<div class="conn-ic">'+ic(icKey,20)+'</div>'+
+    '<div class="conn-main">'+
+      '<div class="conn-name">'+txt(s.name)+'<span class="conn-badge'+(s.source==='EXTERNAL'?' ext':'')+'">'+txt(badgeTxt)+'</span></div>'+
+      '<div class="conn-summary">'+txt(summary)+'</div>'+
+      sub +
+    '</div>'+
+    '<div class="conn-act">'+ mcpStatusChip(s) + act +'</div>'+
+  '</div>';
+}
+
+/* 拉取 MCP 服务器列表（与连接器并行，失败仅影响本区） */
+function loadMcp(){
+  if(S.mcpLoaded || S.mcpErr) return;
+  API.mcpServers().then(function(r){
+    S.mcpServers = arr(r); S.mcpLoaded = true; S.mcpErr = null;
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  }).catch(function(err){
+    S.mcpErr = err.message || '请求失败'; S.mcpLoaded = true;
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  });
+}
+
+/* 刷新 MCP 列表（信任/取消信任后调用）；只在正处连接器面板时重绘 */
+function refreshMcp(){
+  S.mcpLoaded = false; S.mcpErr = null;
+  return API.mcpServers().then(function(r){
+    S.mcpServers = arr(r); S.mcpLoaded = true; S.mcpErr = null;
+  }).catch(function(err){
+    S.mcpErr = err.message || '请求失败'; S.mcpLoaded = true;
+  }).then(function(){
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  });
+}
+
+/* 信任并启用：必须判 d.ok；探测失败 ok=false 时卡片保持「未启用」（绝不乐观置位） */
+function mcpTrust(code){
+  API.mcpTrust(code).then(function(d){
+    if(d && d.ok === true){
+      toast('已启用：登记 ' + n(d.toolCount) + ' 个工具');
+      delete S.mcpToolsCache[code]; delete S.mcpToolsErr[code];
+      refreshMcp();
+    } else {
+      toast('启用失败：' + (d && d.error ? d.error : '探测未通过'));
+    }
+  }).catch(function(e){ toast(e.message || '请求失败'); });
+}
+
+/* 取消信任：判 d.ok，成功清缓存并刷新 */
+function mcpUntrust(code){
+  API.mcpUntrust(code).then(function(d){
+    if(d && d.ok === true){
+      toast('已取消信任');
+      delete S.mcpToolsCache[code]; delete S.mcpToolsErr[code];
+      refreshMcp();
+    } else {
+      toast('取消信任失败：' + (d && d.error ? d.error : '未知错误'));
+    }
+  }).catch(function(e){ toast(e.message || '请求失败'); });
+}
+
+/* 测试连接：探测成功不改 trusted（不顺手置为已启用） */
+function mcpProbe(code){
+  API.mcpProbe(code).then(function(d){
+    if(d && d.ok === true){
+      var cnt = (d.tools ? d.tools.length : 0);
+      toast('探测通过：' + cnt + ' 个工具');
+    } else {
+      toast('探测失败：' + (d && d.error ? d.error : '未知错误'));
+    }
+  }).catch(function(e){ toast(e.message || '请求失败'); });
+}
+
+/* 查看工具：toggle 展开；展开且无缓存时拉工具目录（失败在展开区显示错误） */
+function mcpToggleTools(code){
+  S.mcpOpen[code] = !S.mcpOpen[code];
+  if(S.mcpOpen[code] && S.mcpToolsCache[code] === undefined && !S.mcpToolsErr[code]){
+    S.mcpToolsCache[code] = '__LOADING__';
+    API.mcpTools(code).then(function(r){
+      S.mcpToolsCache[code] = arr(r);
+      renderConnectors();
+    }).catch(function(err){
+      delete S.mcpToolsCache[code]; S.mcpToolsErr[code] = err.message || '请求失败';
+      renderConnectors();
+    });
+  } else {
+    renderConnectors();
+  }
+}
+
+/* 状态 chip 唯一映射（严格按 docs/58 §2.3，前端只做字典，不二次推断） */
+function connStatusChip(c){
+  if(c.configReady === false) return chip('wait','待管理员配置');
+  if(c.status === 'CONNECTED') return chip('due','已连接');
+  if(c.status === 'UNVERIFIED') return chip('wait','未通过校验');
+  return chip('done','未连接');
+}
+
+function connCardHtml(c){
+  var icKey = (c.icon === 'mail') ? 'mail' : 'people';
+  var sub = '';
+  if(c.configReady === false){
+    sub = '<div class="conn-sub">'+txt(c.configHint || '管理员尚未完成配置')+'</div>';
+  } else if(c.status === 'CONNECTED'){
+    var line = '已连接';
+    if(c.accountLabel) line += ' · ' + txt(c.accountLabel);
+    if(c.connectedAt) line += ' · ' + txt(dt(c.connectedAt));
+    sub = '<div class="conn-sub">'+line+'</div>';
+  } else if(c.status === 'UNVERIFIED'){
+    sub = '<div class="conn-sub conn-err">未通过校验：'+txt(c.lastError || '未知错误')+'</div>';
+  }
+  var act = '';
+  if(c.configReady === false){
+    act = '<button class="btn small" disabled>连接</button>';
+  } else if(c.status === 'CONNECTED'){
+    act = '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">断开</button>';
+  } else if(c.status === 'UNVERIFIED'){
+    act = '<button class="btn small" data-act="verify" data-code="'+txt(c.code)+'">重新检测</button>';
+  } else {
+    act = '<button class="btn small" data-act="connect" data-code="'+txt(c.code)+'">连接</button>';
+  }
+  return '<div class="conn-card">'+
+    '<div class="conn-ic">'+ic(icKey,20)+'</div>'+
+    '<div class="conn-main">'+
+      '<div class="conn-name">'+txt(c.name || c.code)+'</div>'+
+      '<div class="conn-summary">'+txt(c.summary || '')+'</div>'+
+      sub +
+    '</div>'+
+    '<div class="conn-act">'+ connStatusChip(c) + act +'</div>'+
+  '</div>';
+}
+
+/* 点「连接」：先取详情，再按 mode 决定弹层（CREDENTIAL / OAUTH2） */
+function openConnector(code){
+  API.connectorDetail(code).then(function(d){
+    if(d && d.mode === 'OAUTH2') openOauthModal(code, d);
+    else openCredentialModal(code, d || {});
+  }).catch(function(err){
+    toast(err.message || '读取连接详情失败');
+  });
+}
+
+/* CREDENTIAL 弹层：填表 → 前端校验必填 → 提交；失败弹层不关，红字显示服务端原文 */
+function openCredentialModal(code, d){
+  var name = d.name || code;
+  var fields = arr(d.fields);
+  var rows = fields.map(function(f){
+    var typ = (f.type === 'password') ? 'password' : 'text';
+    return '<label class="oa-ef-row"><span>'+txt(f.label || f.key)+'</span>'+
+      '<input type="'+typ+'" data-fkey="'+txt(f.key)+'" placeholder="'+txt(f.placeholder || '')+'" autocomplete="off"></label>';
+  }).join('');
+  var help = '';
+  if(d.helpText) help += '<div class="hint">'+txt(d.helpText)+'</div>';
+  if(d.helpUrl) help += '<a class="oa-conn-help" href="'+txt(d.helpUrl)+'" target="_blank" rel="noopener">如何获取授权码</a>';
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg oa-conn-dlg" role="dialog" aria-modal="true" aria-label="连接 '+txt(name)+'">'+
+      '<div class="oa-up-hd"><span class="oa-up-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
+        '<div class="notif-head">连接 '+txt(name)+'</div></div>'+
+      '<div class="notif-body"><div class="oa-conn-form">'+
+        help + rows +
+        '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" id="oaConnSubmit">连接并验证</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var errBox = mask.querySelector('#oaConnErr');
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ mask.remove(); };
+  mask.onclick = function(e){ if(e.target === mask) mask.remove(); };
+  mask.querySelector('#oaConnSubmit').onclick = function(){
+    var values = {}, missing = false;
+    fields.forEach(function(f){
+      var inp = mask.querySelector('[data-fkey="'+f.key+'"]');
+      var v = inp ? inp.value.trim() : '';
+      if(f.required !== false && !v) missing = true;
+      values[f.key] = v;
+    });
+    if(missing){ errBox.textContent = '请填写所有必填项'; errBox.style.display = ''; return; }  // 不发请求
+    errBox.style.display = 'none';
+    API.connectorConnectCredential(code, values).then(function(){
+      mask.remove();
+      toast('已连接');
+      refreshConnectors();
+    }).catch(function(err){
+      errBox.textContent = err.message || '连接失败';
+      errBox.style.display = '';   // 弹层不关
+    });
+  };
+}
+
+/* OAUTH2 弹层：说明 → 去企业微信授权（整页跳转） */
+function openOauthModal(code, d){
+  var name = d.name || code;
+  var summary = d.summary || '';
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg oa-conn-dlg" role="dialog" aria-modal="true" aria-label="连接 '+txt(name)+'">'+
+      '<div class="oa-up-hd"><span class="oa-up-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
+        '<div class="notif-head">连接 '+txt(name)+'</div></div>'+
+      '<div class="notif-body"><div class="oa-conn-form">'+
+        '<div class="hint">将授权：'+txt(summary)+'</div>'+
+        '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" id="oaConnGoOauth">去企业微信授权</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var errBox = mask.querySelector('#oaConnErr');
+  mask.querySelector('[data-dlg-cancel]').onclick = function(){ mask.remove(); };
+  mask.onclick = function(e){ if(e.target === mask) mask.remove(); };
+  mask.querySelector('#oaConnGoOauth').onclick = function(){
+    API.connectorStart(code, {returnPath: location.pathname + location.search}).then(function(r){
+      var authUrl = r && r.authUrl;
+      if(authUrl){ location.href = authUrl; }
+      else { errBox.textContent = '未获取到授权地址'; errBox.style.display = ''; }
+    }).catch(function(err){
+      errBox.textContent = err.message || '发起授权失败';  // 弹层内红字（如「缺少企业微信应用配置…」）
+      errBox.style.display = '';
+    });
+  };
+}
+
+/* 断开 / 重新检测：成功后刷新面板；失败 toast */
+function disconnectConnector(code){
+  API.connectorDisconnect(code).then(function(){
+    toast('已断开');
+    refreshConnectors();
+  }).catch(function(err){ toast(err.message || '断开失败'); });
+}
+
+function verifyConnector(code){
+  API.connectorVerify(code).then(function(r){
+    var st = r && r.status;
+    if(st === 'UNVERIFIED') toast('重新检测未通过：'+(r.lastError || '未知错误'));
+    else toast('检测通过');
+    refreshConnectors();
+  }).catch(function(err){ toast(err.message || '检测失败'); });
+}
+
+/* 刷新连接器数据并（若正在看连接器面板）重绘 */
+function refreshConnectors(){
+  S.connectorsLoaded = false; S.connectorsErr = null;
+  return API.connectors().then(function(r){
+    S.connectors = arr(r); S.connectorsLoaded = true;
+  }).catch(function(err){
+    S.connectorsErr = err.message || '请求失败'; S.connectorsLoaded = true;
+  }).then(function(){
+    setSkillsSegCounts();
+    if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
+  });
+}
+
+/* 授权回跳收尾：解析 ?connector=&result=&message= → toast + 清参（防刷新重放）+ 刷新面板 */
+function oaHandleConnectorCallback(){
+  try{
+    var q = new URLSearchParams(location.search);
+    if(q.has('connector') && q.has('result')){
+      var code = q.get('connector'), result = q.get('result');
+      if(result === 'ok') toast('连接器「'+code+'」已连接');
+      else toast('连接器连接失败：'+(q.get('message') ? decodeURIComponent(q.get('message')) : '未知错误'));
+      q.delete('connector'); q.delete('result'); q.delete('message');
+      var ns = q.toString();
+      history.replaceState({}, '', location.pathname + (ns ? '?'+ns : ''));
+      if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') refreshConnectors();
+    }
+  }catch(e){}
 }
 
 function renderRecent(){
@@ -2419,6 +2878,10 @@ function fillSheet(){
   if(sn) sn.textContent = String(arr(state.skills).length);
   var mn = $o('odModulesN');
   if(mn) mn.textContent = String(oaModuleWorkers().length);
+  /* 三段分段计数：插件 / 技能 / 连接器（连接器/插件未加载时不显示数字） */
+  var np = $o('oaSegNPlugins'); if(np) np.textContent = S.pluginsLoaded ? String(arr(S.plugins).length) : '';
+  var nk = $o('oaSegNSkills');  if(nk) nk.textContent = String(arr(state.skills).length);
+  var nc = $o('oaSegNConnectors'); if(nc) nc.textContent = S.connectorsLoaded ? String(arr(S.connectors).length) : '';
 }
 
 function renderDrawer(){
@@ -2624,6 +3087,7 @@ function bind(){
 
 /* ------------------------------------------------------------------ 13. 引导 */
 function oaBoot(){
+  oaHandleConnectorCallback();   // 解析授权回跳参数并清理 URL（防刷新重放），须在重绘前完成
   applyMode();
   if(S.mode !== 'oa') return;
   loadOaExtras().then(function(){ fillSheet(); oaRender(); }).catch(function(){});
@@ -2635,6 +3099,8 @@ window.oaSetMode = setMode;
 window.oaRemoveAttach = oaRemoveAttach;   /* 附件条 × 用内联 onclick 触发，需暴露到全局作用域 */
 window.oaLayoutTails = oaLayoutTails;
 window.oaState = S;
+/* 暴露导航入口，供离线自检脚本驱动「进入某视图」（与上面自检暴露同一定位）。 */
+window.oaGo = oaGo;
 /* 自检暴露（与上面 4 个同一定位：只给离线验证脚本用，产品路径不经过它）。
    「识别到上传/上报意图 ⇒ 自动弹窗」是本轮唯一不由点击直接触发的交互，
    不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；
