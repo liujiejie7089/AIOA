@@ -436,6 +436,34 @@ public interface OrgStatMapper {
             + "AND user_id = #{userId} AND status = 'PENDING'")
     long countMyPendingOrders(@Param("userId") Long userId);
 
+    /**
+     * 我的「已办」任务列表（我审批过且已终态的审批节点）—— OA 工作台「已办」分区。
+     *
+     * <p>口径：{@code approval_task} 里 {@code approver_id = 我} 且 {@code task_role='APPROVE'}，
+     * 且本人节点已决（{@code status IN ('APPROVED','REJECTED')}）；关联 {@code approval_order}
+     * 取业务标题 / 类型 / 申请人 / 完成时间。仅取活行（双方 {@code deleted_at IS NULL}）。</p>
+     */
+    @Select("SELECT t.id AS taskId, t.order_id AS orderId, t.seq, t.approver_type AS approverType, "
+            + "t.approver_name AS approverName, t.status AS taskStatus, t.note AS taskNote, "
+            + "t.decided_at AS decidedAt, "
+            + "o.tenant_id AS tenantId, o.user_id AS userId, o.applicant_name AS applicantName, "
+            + "o.applicant_type AS applicantType, o.biz_type AS bizType, o.title, o.content, "
+            + "o.status AS orderStatus, o.approver, o.decision_note AS decisionNote, "
+            + "o.created_at AS createdAt "
+            + "FROM approval_task t JOIN approval_order o ON o.id = t.order_id "
+            + "WHERE t.deleted_at IS NULL AND o.deleted_at IS NULL "
+            + "AND t.task_role = 'APPROVE' AND t.approver_id = #{userId} "
+            + "AND t.status IN ('APPROVED','REJECTED') "
+            + "ORDER BY t.decided_at DESC LIMIT 200")
+    List<Map<String, Object>> selectDoneTasksOfUser(@Param("userId") Long userId);
+
+    /** 我的「已办」任务数（与 {@link #selectDoneTasksOfUser} 同口径）。 */
+    @Select("SELECT COUNT(*) FROM approval_task t JOIN approval_order o ON o.id = t.order_id "
+            + "WHERE t.deleted_at IS NULL AND o.deleted_at IS NULL "
+            + "AND t.task_role = 'APPROVE' AND t.approver_id = #{userId} "
+            + "AND t.status IN ('APPROVED','REJECTED')")
+    long countMyDoneTasks(@Param("userId") Long userId);
+
     @Select("SELECT u.id FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id "
             + "JOIN sys_user u ON u.id = ur.user_id "
             + "WHERE ur.deleted_at IS NULL AND r.deleted_at IS NULL AND u.deleted_at IS NULL "

@@ -95,7 +95,82 @@ public class ApprovalFlowProvisioner {
                     "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1}]"),
             new Seed("TENANT_DELETE",
                     "租户默认租户删除审批流（上一级审批）",
-                    "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1}]")
+                    "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1}]"),
+
+            // ---- 员工侧业务（2026-10-19 docs/57：四段断裂修复）----
+            // 背景：43 个模块的 worker_capability 已指向这些 biz_type，但此前**没有对应流程定义**，
+            //   ApprovalFlowService.expandNodes 会退化成单节点 ORG_ADMIN（审批人指错且无法分级）。
+            //   老租户由 V89 回填补齐，新租户靠本播种器拿到同一口径。
+            // 口径：涉钱/涉章/涉合同 = 两级（部门负责人 → 企业管理员）；
+            //       一般申请 = 一级（部门负责人，抄送企业管理员可督办）。
+            new Seed("EXPENSE",
+                    "租户默认费用报销审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("SEAL",
+                    "租户默认用印审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("CONTRACT",
+                    "租户默认合同审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("PURCHASE",
+                    "租户默认采购审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("FINANCE_APPLY",
+                    "租户默认财务审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("ASSET",
+                    "租户默认资产领用审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("PROJECT_CREATE",
+                    "租户默认项目立项审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("HR_REGISTER",
+                    "租户默认人事审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("RECRUIT_REQ",
+                    "租户默认招聘需求审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("INTEGRATION_REQ",
+                    "租户默认系统集成审批流（部门负责人 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}, "
+                            + "{\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]"),
+            new Seed("TRAVEL",
+                    "租户默认出差审批流（部门负责人，抄送企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("VEHICLE",
+                    "租户默认用车审批流（部门负责人，抄送企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("ARCHIVE_BORROW",
+                    "租户默认档案借阅审批流（部门负责人，抄送企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("ATTENDANCE_APPEAL",
+                    "租户默认考勤申诉审批流（部门负责人，抄送企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("TRAIN_SIGNUP",
+                    "租户默认培训报名审批流（部门负责人，抄送企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("MEETING_BOOK",
+                    "租户默认会议预定审批流（部门负责人）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("UNION_APPLY",
+                    "租户默认工会审批流（部门负责人）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("PARTY_APPLY",
+                    "租户默认党务审批流（部门负责人）",
+                    "[{\"seq\": 1, \"approver_type\": \"DEPT_LEADER\", \"cc\": [\"ORG_ADMIN\"]}]"),
+            new Seed("SECURITY_APPLY",
+                    "租户默认安全与权限审批流（上一级 → 企业管理员）",
+                    "[{\"seq\": 1, \"approver_type\": \"APPLICANT_SUPERIOR\", \"levels\": 1, "
+                            + "\"cc\": [\"ORG_ADMIN\"]}, {\"seq\": 2, \"approver_type\": \"ORG_ADMIN\"}]")
     );
 
     private final ApprovalFlowDefMapper defMapper;

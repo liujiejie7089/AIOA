@@ -294,7 +294,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { tenantState } from '@/api/tenantScope'
@@ -364,14 +364,14 @@ const notifications = ref<NotificationItem[]>([])
 const unreadCount = ref(0)
 const notiLoading = ref(false)
 
-async function loadNotifications() {
-  notiLoading.value = true
+async function loadNotifications(silent = false) {
+  if (!silent) notiLoading.value = true
   try {
     const res = await listNotifications(50)
     notifications.value = res.items || []
     unreadCount.value = res.unread || 0
   } catch (e: unknown) {
-    ElMessage.error(notiErrMsg(e, '加载通知失败'))
+    if (!silent) ElMessage.error(notiErrMsg(e, '加载通知失败'))
   } finally {
     notiLoading.value = false
   }
@@ -578,6 +578,7 @@ async function savePreferences() {
 }
 
 // ---------------------------------------------------------------- 初始化
+let notiTimer: number | undefined
 onMounted(async () => {
   // 每个数据块独立 try/catch：一块失败不拖垮整页。
   await loadNotifications()
@@ -587,6 +588,11 @@ onMounted(async () => {
     await loadChannels()
     await loadDeliveries()
   }
+  // 停在消息中心时也要能「收到」新审批通知：60s 静默刷新（不闪 loading、不弹错）
+  notiTimer = window.setInterval(() => void loadNotifications(true), 60000)
+})
+onUnmounted(() => {
+  if (notiTimer !== undefined) window.clearInterval(notiTimer)
 })
 </script>
 

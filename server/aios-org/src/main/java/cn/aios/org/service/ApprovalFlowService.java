@@ -1112,6 +1112,36 @@ public class ApprovalFlowService {
     }
 
     /**
+     * 「已办」：我审批过且已终态的审批节点（OA 工作台「已办」分区）。
+     *
+     * <p>口径与 {@code OrgStatMapper.selectDoneTasksOfUser} 一致：{@code approval_task}
+     * 里 {@code approver_id = 我} 且 {@code task_role='APPROVE'}，本人节点已决
+     * （{@code status IN ('APPROVED','REJECTED')}）。返回业务标题 / 类型 / 完成时间，
+     * 并附流转路径（timeline）供前端渲染「我何时、以何意见处理了这一单」。</p>
+     */
+    public List<Map<String, Object>> done(AuthUser actor) {
+        List<Map<String, Object>> rows = statMapper.selectDoneTasksOfUser(actor.getUserId());
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>(r);
+            Long orderId = lng(r.get("orderId"));
+            m.put("id", orderId);
+            m.put("done", true);
+            m.put("creatorName", r.get("applicantName"));
+            m.put("myDecision", r.get("taskStatus"));
+            m.put("myNote", r.get("taskNote"));
+            // 完成时间：本人节点的 decided_at（OA「已办」列表读 completedAt 展示审批时间）
+            Object decided = r.get("decidedAt");
+            m.put("completedAt", decided == null ? null : String.valueOf(decided));
+            m.put("decisionNote", r.get("decisionNote"));
+            m.put("totalNodes", orderId == null ? 0L : statMapper.countTasksOfOrder(orderId));
+            m.put("timeline", orderId == null ? List.of() : timeline(orderId));
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
      * 标记知会（抄送）条目为已读 —— 三期 C-04/C-09。
      *
      * <p>语义：知会「点开即已读」，降噪优先，但条目仍可回查（{@link #cc}）。</p>
@@ -2001,6 +2031,127 @@ public class ApprovalFlowService {
                 .eq(OrgMember::getInstitutionId, institutionId)
                 .eq(OrgMember::getStatus, OrgMember.STATUS_ACTIVE)
                 .orderByAsc(OrgMember::getId));
+    }
+
+    // =========================================================================
+    // 催办 与 超时扫描（2026-10-19 docs/57：审批引擎时效治理为空）
+    //
+    // 背景：引擎此前只有「提交时通知一次」，单据挂住后没有任何提醒手段 ——
+    // 用户感知到的就是「流程不完善」。这里补两件事：
+    //   ① remind()：申请人/管理员手动催办当前节点
+    //   ② scanOverdueAndRemind()：定时扫描超时未处理的当前节点，自动催办（24 小时节流）
+    // =========================================================================
+
+    /** 同一节点的自动催办节流窗口（小时）：避免每轮扫描都重复打扰审批人。 */
+    public static final int REMIND_THROTTLE_HOURS = 24;
+
+    /**
+     * 手动催办：给当前待处理节点的审批人发一条催办通知，并累加 {@code remind_count}。
+     *
+     * <p>可催办人 = 单据申请人 / 租户管理员 / 平台管理员。审批人自己催自己没有意义，
+     * 管理员则用于「督办」场景（如部门负责人长期未处理）。</p>
+     */
+    public Map<String, Object> remind(Long taskId, AuthUser actor) {
+        ApprovalTask task = taskMapper.selectById(taskId);
+        if (task == null) {
+            throw BizException.notFound("审批任务不存在：" + taskId);
+        }
+        if (!ApprovalTask.PENDING.equals(task.getStatus())) {
+            throw BizException.badRequest("该节点已处理（" + task.getStatus() + "），无需催办");
+        }
+        if (!isCurrentNode(task)) {
+            throw BizException.badRequest("前序节点尚未通过，本节点暂不可催办");
+        }
+        Map<String, Object> order = statMapper.selectApprovalOrder(task.getOrderId());
+        if (order == null) {
+            throw BizException.notFound("审批单不存在：" + task.getOrderId());
+        }
+        if (!"PENDING".equals(order.get("status"))) {
+            throw BizException.badRequest("审批单已终态（" + order.get("status") + "），无需催办");
+        }
+        boolean isApplicant = order.get("applicantId") != null
+                && Objects.equals(order.get("applicantId"), actor.getUserId());
+        boolean isAdmin = OrgGuard.hasRole(actor, OrgGuard.ROLE_TENANT_ADMIN)
+                || OrgGuard.hasRole(actor, "ROLE_ADMIN");
+        if (!isApplicant && !isAdmin) {
+            throw BizException.forbidden("只有单据申请人或租户 / 平台管理员可以催办");
+        }
+        return doRemind(task, order, AuditRecorder.displayName(actor), false);
+    }
+
+    /**
+     * 超时扫描：找出「当前节点」且挂起超过 {@code overdueHours} 小时的任务自动催办。
+     *
+     * <p>只催**当前节点**（前序未通过的节点催了也没用），并按 {@link #REMIND_THROTTLE_HOURS}
+     * 节流：同一节点 24 小时内最多催一次，避免变成骚扰。</p>
+     *
+     * @return 实际发出催办的节点数
+     */
+    public int scanOverdueAndRemind(int overdueHours) {
+        int hours = Math.max(1, overdueHours);
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(hours);
+        LocalDateTime throttle = LocalDateTime.now().minusHours(REMIND_THROTTLE_HOURS);
+        List<ApprovalTask> tasks = taskMapper.selectList(
+                new LambdaQueryWrapper<ApprovalTask>()
+                        .eq(ApprovalTask::getStatus, ApprovalTask.PENDING)
+                        .eq(ApprovalTask::getTaskRole, ApprovalTask.ROLE_APPROVE)
+                        .lt(ApprovalTask::getCreatedAt, cutoff)
+                        .and(w -> w.isNull(ApprovalTask::getLastRemindAt)
+                                .or().lt(ApprovalTask::getLastRemindAt, throttle))
+                        .last("limit 500"));
+        int n = 0;
+        for (ApprovalTask task : tasks) {
+            try {
+                Map<String, Object> order = statMapper.selectApprovalOrder(task.getOrderId());
+                if (order == null || !"PENDING".equals(order.get("status"))) {
+                    continue;
+                }
+                if (!isCurrentNode(task)) {
+                    continue;
+                }
+                doRemind(task, order, "系统（超时自动催办）", true);
+                n++;
+            } catch (Exception ex) {
+                log.warn("超时催办失败 taskId={} err={}", task.getId(), ex.getMessage());
+            }
+        }
+        if (n > 0) {
+            log.info("审批超时扫描：{} 个节点挂起超过 {} 小时，已自动催办", n, hours);
+        }
+        return n;
+    }
+
+    /** 发催办通知 + 记账。{@code system} 为 true 时记的是系统扫描，否则是人工催办。 */
+    private Map<String, Object> doRemind(ApprovalTask task, Map<String, Object> order,
+                                         String who, boolean system) {
+        int count = (task.getRemindCount() == null ? 0 : task.getRemindCount()) + 1;
+        LocalDateTime now = LocalDateTime.now();
+        task.setRemindCount(count);
+        task.setLastRemindAt(now);
+        task.setUpdatedAt(now);
+        taskMapper.updateById(task);
+
+        String title = titleOf(task.getOrderId());
+        String prefix = system ? "【超时提醒】" : "【催办】";
+        notify(task.getApproverId(), task.getTenantId(),
+                prefix + "《" + title + "》待你处理",
+                who + " 提醒你处理《" + title + "》"
+                        + (system ? "（已等待超过阈值，请尽快处理）" : "，请尽快处理"),
+                task.getOrderId());
+
+        audit.record(task.getTenantId(), task.getInstitutionId(), null,
+                system ? "WORKFLOW_OVERDUE_REMIND" : "WORKFLOW_REMIND",
+                "APPROVAL_TASK", task.getId(),
+                who + " 催办第 " + count + " 次（审批人 #" + task.getApproverId() + "）",
+                null, Map.of("orderId", task.getOrderId(), "remindCount", count));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("taskId", task.getId());
+        out.put("orderId", task.getOrderId());
+        out.put("remindCount", count);
+        out.put("lastRemindAt", now.toString());
+        out.put("approverName", nameOf(task.getApproverId()));
+        return out;
     }
 
     private String nameOf(Long userId) {

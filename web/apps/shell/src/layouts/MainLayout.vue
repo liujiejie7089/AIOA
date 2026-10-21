@@ -55,6 +55,21 @@
           {{ currentTenantName || auth.tenantName }}
         </el-tag>
         <el-tag v-else size="small" type="info" effect="plain">{{ auth.tenantName }}</el-tag>
+        <!--
+          消息铃铛（审批通知的**全局可见入口**）：
+          后端在审批提交/审批完成时已落 notification 行，但新版「首页」没有任何通知表面
+          （菜单里的「消息中心」要主动点进去才看得到，且页内不轮询）⇒ 管理员停留在首页时
+          表现为「收不到审批通知」。这里补上未读角标 + 30s 轮询，与消息中心同一接口。
+        -->
+        <el-badge
+          :value="noticeUnread > 99 ? '99+' : noticeUnread"
+          :hidden="noticeUnread <= 0"
+          class="notice-bell"
+        >
+          <el-button text circle title="消息中心" @click="goNotifications">
+            <el-icon :size="17"><Bell /></el-icon>
+          </el-button>
+        </el-badge>
         <el-button type="primary" plain size="small" @click="assistant.openDrawer()">
           <el-icon><ChatDotRound /></el-icon>
           <span style="margin-left: 4px">AI 助手</span>
@@ -374,6 +389,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AssistantDrawer from '@/components/assistant/AssistantDrawer.vue'
 import { workflowTodoSummary } from '@/api/resource'
+import { listNotifications } from '@/api/notifications'
 import { useAppsStore } from '@/stores/apps'
 import { useAuthStore } from '@/stores/auth'
 import { useAssistantStore } from '@/stores/assistant'
@@ -584,8 +600,35 @@ async function refreshTodo() {
   }
 }
 
-// 处理完一单跳回列表时要立刻回落，不能等下一次轮询（否则红点看着像没消）
-watch(() => route.fullPath, () => void refreshTodo())
+// 处理完一单 / 从消息中心返回时要立刻回落，不能等下一次轮询（否则角标看着像没消）
+watch(() => route.fullPath, () => {
+  void refreshTodo()
+  void refreshNotices()
+})
+
+/**
+ * 「消息」未读角标。
+ *
+ * <p>与「消息中心」同一接口 `GET /notifications`（按当前用户过滤），只取 limit=1 拿
+ * `unread` 计数，代价极小，所以可以 30s 轮询。审批通知就在这批数据里：
+ *   · 审批人收到「新审批待处理」  · 发起人收到「审批进度更新」
+ * 失败一律熄灭而不是弹错 —— 后端不可达不该打断工作。</p>
+ */
+const noticeUnread = ref(0)
+let noticeTimer: number | undefined
+
+async function refreshNotices() {
+  try {
+    const res = await listNotifications(1)
+    noticeUnread.value = Number(res?.unread || 0)
+  } catch {
+    noticeUnread.value = 0
+  }
+}
+
+function goNotifications() {
+  void router.push('/notifications')
+}
 
 async function onCommand(command: string | number | object) {
   if (command === 'logout') {
@@ -615,6 +658,9 @@ onMounted(async () => {
   // 红点：进入即拉一次，之后每 60s 兜底刷新（另有路由切换时的即时刷新）
   void refreshTodo()
   todoTimer = window.setInterval(() => void refreshTodo(), 60000)
+  // 消息未读：进入即拉一次，30s 轮询（通知是「到达型」的，间隔要比待办更短）
+  void refreshNotices()
+  noticeTimer = window.setInterval(() => void refreshNotices(), 30000)
   // 租户端页面（机构/入驻/授权/分摊）依赖作用域，先解析再放行子路由
   if (showTenantMenu.value) {
     try {
@@ -644,6 +690,9 @@ onMounted(async () => {
 onUnmounted(() => {
   if (todoTimer !== undefined) {
     window.clearInterval(todoTimer)
+  }
+  if (noticeTimer !== undefined) {
+    window.clearInterval(noticeTimer)
   }
 })
 </script>

@@ -78,6 +78,23 @@ public class PmExpense {
 
     private String remark;
 
+    // ---- 审批（V91，docs/57）----
+
+    /** 无需审批（直接入账的老流水）。 */
+    public static final String APPR_NONE = "NONE";
+    /** 审批中。 */
+    public static final String APPR_PENDING = "PENDING";
+    /** 审批通过。 */
+    public static final String APPR_APPROVED = "APPROVED";
+    /** 审批驳回（可重新提交）。 */
+    public static final String APPR_REJECTED = "REJECTED";
+
+    /** 审批状态：NONE / PENDING / APPROVED / REJECTED。 */
+    private String approvalStatus;
+
+    /** 关联的审批单 id（bizType = EXPENSE），回调据此回写。 */
+    private Long orderId;
+
     private Long createdBy;
 
     private LocalDateTime createdAt;

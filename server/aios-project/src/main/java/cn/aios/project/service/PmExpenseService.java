@@ -1,6 +1,8 @@
 package cn.aios.project.service;
 
 import cn.aios.common.exception.BizException;
+import cn.aios.org.service.ApprovalFlowService;
+import cn.aios.org.support.AuditRecorder;
 import cn.aios.org.support.OrgGuard;
 import cn.aios.project.entity.PmExpense;
 import cn.aios.project.entity.PmProject;
@@ -8,6 +10,7 @@ import cn.aios.project.mapper.PmExpenseMapper;
 import cn.aios.security.AuthUser;
 import cn.aios.security.PermissionCatalog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,9 +44,13 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class PmExpenseService {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final PmExpenseMapper expenseMapper;
     private final PmProjectService projectService;
     private final OrgGuard guard;
+    /** 审批引擎（催办 / 报销审批接入用；与提交方通过 ObjectProvider 解耦，不构成循环依赖）。 */
+    private final ApprovalFlowService flowService;
 
     // ======================================================================
     // 读
@@ -117,6 +124,8 @@ public class PmExpenseService {
         m.put("reversalOf", e.getReversalOf());
         m.put("isReversal", e.getReversalOf() != null);
         m.put("remark", e.getRemark());
+        m.put("approvalStatus", e.getApprovalStatus());
+        m.put("orderId", e.getOrderId());
         m.put("createdAt", e.getCreatedAt());
         return m;
     }
@@ -207,10 +216,117 @@ public class PmExpenseService {
         e.setVoucherFileId(asLong(body.get("voucherFileId")));
         e.setReversalOf(reversalOf);
         e.setRemark(str(body.get("remark")));
+        // V91：默认「无需审批」（老语义：直接入账）。走 submitForApproval 的会改成 PENDING。
+        e.setApprovalStatus(PmExpense.APPR_NONE);
         e.setCreatedBy(actorId);
         e.setCreatedAt(LocalDateTime.now());
         expenseMapper.insert(e);
         return e;
+    }
+
+    // ======================================================================
+    // 审批（docs/57 阶段一 A3，配套 V91 / ExpenseApprovalCallback）
+    // ======================================================================
+
+    /**
+     * 提交报销审批：落一条流水（状态 PENDING）→ 提交 EXPENSE 审批流 → 回写审批单 id。
+     *
+     * <p>与 {@link #create} 的区别：{@code create} 是直接入账的老路径（状态 NONE，不动）；
+     * 本方法走审批，审批通过后由回调改成 APPROVED，驳回改成 REJECTED（可 {@link #resubmit}）。</p>
+     *
+     * @return 流水视图 + {@code orderId} / {@code nodeCount} / {@code currentApproverName}
+     */
+    @Transactional
+    public Map<String, Object> submitForApproval(AuthUser user, Long projectId, Map<String, Object> body) {
+        PmProject p = projectService.requireVisible(user, projectId, false);
+        requireWrite(user, p);
+
+        PmExpense e = append(p.getTenantId(), projectId, body, user.getUserId(), null, null);
+        e.setApprovalStatus(PmExpense.APPR_PENDING);
+        e.setUpdatedAt(LocalDateTime.now());
+        expenseMapper.updateById(e);
+
+        Map<String, Object> flow = flowService.submit(p.getTenantId(), user,
+                new ApprovalFlowService.SubmitReq(ExpenseApprovalCallback.BIZ_TYPE,
+                        "费用报销 ¥" + e.getAmount() + "（" + categoryLabel(e.getCategory()) + "）",
+                        "项目 #" + projectId + " 报销：" + (e.getRemark() == null ? "无备注" : e.getRemark()),
+                        toFormData(e), institutionIdOf(p), null,
+                        e.getAmount() == null ? null : e.getAmount().doubleValue(),
+                        user.getUserId(), AuditRecorder.displayName(user), null, null, null));
+        Long orderId = flow.get("orderId") instanceof Number n ? n.longValue() : null;
+        e.setOrderId(orderId);
+        e.setUpdatedAt(LocalDateTime.now());
+        expenseMapper.updateById(e);
+
+        Map<String, Object> out = view(e);
+        out.put("orderId", orderId);
+        out.put("nodeCount", flow.get("nodeCount"));
+        out.put("currentApproverId", flow.get("currentApproverId"));
+        out.put("currentApproverName", flow.get("currentApproverName"));
+        out.put("timeline", flow.get("timeline"));
+        return out;
+    }
+
+    /**
+     * 驳回后重新提交：只有 REJECTED 的流水可以重提（PENDING 已在审批中、APPROVED 已完成）。
+     *
+     * <p>不新增流水，沿用原行重新发起一张审批单 —— 否则「驳回一次就多一条账」，
+     * 项目经费账目会出现幽灵支出。</p>
+     */
+    @Transactional
+    public Map<String, Object> resubmit(AuthUser user, Long projectId, Long expenseId) {
+        PmProject p = projectService.requireVisible(user, projectId, false);
+        requireWrite(user, p);
+
+        PmExpense e = expenseMapper.selectById(expenseId);
+        if (e == null || !Objects.equals(e.getTenantId(), p.getTenantId())
+                || !Objects.equals(e.getProjectId(), projectId)) {
+            throw BizException.notFound("流水不存在");
+        }
+        if (!PmExpense.APPR_REJECTED.equals(e.getApprovalStatus())) {
+            throw BizException.badRequest("只有被驳回的报销可以重新提交（当前状态："
+                    + e.getApprovalStatus() + "）");
+        }
+        Map<String, Object> flow = flowService.submit(p.getTenantId(), user,
+                new ApprovalFlowService.SubmitReq(ExpenseApprovalCallback.BIZ_TYPE,
+                        "费用报销 ¥" + e.getAmount() + "（重新提交）",
+                        "项目 #" + projectId + " 报销（重新提交）："
+                                + (e.getRemark() == null ? "无备注" : e.getRemark()),
+                        toFormData(e), institutionIdOf(p), null,
+                        e.getAmount() == null ? null : e.getAmount().doubleValue(),
+                        user.getUserId(), AuditRecorder.displayName(user), null, null, null));
+        Long orderId = flow.get("orderId") instanceof Number n ? n.longValue() : null;
+        e.setOrderId(orderId);
+        e.setApprovalStatus(PmExpense.APPR_PENDING);
+        e.setUpdatedAt(LocalDateTime.now());
+        expenseMapper.updateById(e);
+
+        Map<String, Object> out = view(e);
+        out.put("orderId", orderId);
+        out.put("currentApproverName", flow.get("currentApproverName"));
+        return out;
+    }
+
+    /** 审批单 form_data 是 **JSON 字符串**（与 LeaveService 同口径），不是 Map。 */
+    private String toFormData(PmExpense e) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("expenseId", e.getId());
+        m.put("projectId", e.getProjectId());
+        m.put("amount", e.getAmount());
+        m.put("category", e.getCategory());
+        m.put("direction", e.getDirection());
+        m.put("occurredAt", e.getOccurredAt() == null ? null : e.getOccurredAt().toString());
+        m.put("remark", e.getRemark() == null ? "" : e.getRemark());
+        try {
+            return MAPPER.writeValueAsString(m);
+        } catch (Exception ex) {
+            log.warn("报销 formData 序列化失败，退回空对象：{}", ex.getMessage());
+            return "{}";
+        }
+    }
+
+    private Long institutionIdOf(PmProject p) {
+        return p.getInstitutionId() == null ? 0L : p.getInstitutionId();
     }
 
     private List<Map<String, Object>> categoryOptions() {

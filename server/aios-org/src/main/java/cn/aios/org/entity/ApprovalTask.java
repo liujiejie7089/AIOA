@@ -173,6 +173,12 @@ public class ApprovalTask {
 
     private String skipReason;
 
+    /** 已被催办次数（V90）。用于前端展示「已催办 N 次」，以及超时扫描的节流判断。 */
+    private Integer remindCount;
+
+    /** 上次催办时间（V90）。超时扫描据此保证同一节点 24 小时内最多催一次。 */
+    private LocalDateTime lastRemindAt;
+
     private LocalDateTime decidedAt;
 
     private LocalDateTime createdAt;

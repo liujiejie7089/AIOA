@@ -51,6 +51,27 @@ public class PmExpenseController {
     }
 
     /**
+     * 提交费用报销审批（docs/57 阶段一 A3）：落一条 PENDING 流水并送审，
+     * 审批通过后由回调改成 APPROVED，驳回改成 REJECTED（可重新提交）。
+     *
+     * <p>与 {@code create} 的区别：{@code create} 是直接入账（状态 NONE，语义不变）。</p>
+     */
+    @PostMapping("/projects/{id}/expenses/submit")
+    public ApiResponse<Map<String, Object>> submit(@PathVariable Long id,
+                                                   @RequestBody Map<String, Object> body) {
+        AuthUser u = guard.requireOrgUser();
+        return ApiResponse.ok(expenseService.submitForApproval(u, id, body));
+    }
+
+    /** 重新提交被驳回的报销（只有 REJECTED 可重提，不新增流水）。 */
+    @PostMapping("/projects/{id}/expenses/{expenseId}/resubmit")
+    public ApiResponse<Map<String, Object>> resubmit(@PathVariable Long id,
+                                                     @PathVariable Long expenseId) {
+        AuthUser u = guard.requireOrgUser();
+        return ApiResponse.ok(expenseService.resubmit(u, id, expenseId));
+    }
+
+    /**
      * 红冲一条流水（原行不改，追加反向行）。
      *
      * <p>负向约束（可断言）：红冲行不能再被红冲；同一原行不能重复红冲（重复调用 → 409）。</p>

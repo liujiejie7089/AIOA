@@ -61,6 +61,7 @@ public class WorkflowController {
         // ccUnread = 未读知会数（三期 C-06，随标记已读递减）。
         out.put("cc", statMapper.countMyCcTasks(u.getUserId()));
         out.put("ccUnread", statMapper.countMyUnreadCcTasks(u.getUserId()));
+        out.put("done", statMapper.countMyDoneTasks(u.getUserId()));
         out.put("generatedAt", LocalDateTime.now().toString());
         return ApiResponse.ok(out);
     }
@@ -75,6 +76,9 @@ public class WorkflowController {
         }
         if ("cc".equalsIgnoreCase(scope)) {
             return ApiResponse.ok(flowService.cc(u));
+        }
+        if ("done".equalsIgnoreCase(scope)) {
+            return ApiResponse.ok(flowService.done(u));
         }
         return ApiResponse.ok(flowService.todo(u));
     }
@@ -144,6 +148,17 @@ public class WorkflowController {
         String type = b.get("type") == null ? "AFTER" : String.valueOf(b.get("type"));
         String reason = b.get("reason") == null ? null : String.valueOf(b.get("reason"));
         return ApiResponse.ok(flowService.addSign(id, u, type, userId, reason));
+    }
+
+    /**
+     * 催办：给当前待处理节点的审批人发一条催办通知，并累加催办次数。
+     *
+     * <p>可催办人 = 单据申请人 / 租户管理员 / 平台管理员（服务层判定）。
+     * 返回 {@code remindCount}（第几次催办）与 {@code approverName}，供前端直接提示。</p>
+     */
+    @PostMapping("/workflow/tasks/{id}/remind")
+    public ApiResponse<Map<String, Object>> remind(@PathVariable Long id) {
+        return ApiResponse.ok(flowService.remind(id, guard.requireOrgUser()));
     }
 
     /**

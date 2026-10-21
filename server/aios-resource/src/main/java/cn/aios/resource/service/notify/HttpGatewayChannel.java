@@ -57,6 +57,10 @@ public abstract class HttpGatewayChannel implements NotificationChannel {
     private final HttpClient http = HttpClient.newBuilder()
             .proxy(NO_PROXY)
             .followRedirects(HttpClient.Redirect.NEVER)
+            // 2026-10-19（docs/55 P0-1）：JDK HttpClient 默认优先 HTTP/2；对明文 http:// 的内网
+            // 通知网关会先发 h2c 升级请求，对方不支持时 body 会被推迟到升级成功，5 秒超时后
+            // 全部为空 —— 表现为「邮件/短信/推送整批静默丢失」。固定为 HTTP/1.1 消除该路径。
+            .version(HttpClient.Version.HTTP_1_1)
             .build();
 
     @Override
@@ -83,6 +87,8 @@ public abstract class HttpGatewayChannel implements NotificationChannel {
 
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                // 同上：请求级再钉一次 HTTP/1.1，避免任何 HttpClient 复用路径回退到 HTTP/2。
+                .version(HttpClient.Version.HTTP_1_1)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .header("Authorization", "Bearer " + (token == null ? "" : token))
