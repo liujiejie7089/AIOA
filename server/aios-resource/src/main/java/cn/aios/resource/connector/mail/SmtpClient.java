@@ -55,7 +55,7 @@ public class SmtpClient {
             expect(c, 220);
             String domain = email.contains("@") ? email.substring(email.indexOf('@') + 1) : "localhost";
             sendLine(c, "EHLO " + domain);
-            expectMultiline(c, 250);
+            expect(c, 250);
             sendLine(c, "AUTH LOGIN");
             expect(c, 334);
             sendLine(c, Base64.getEncoder().encodeToString(email.getBytes(StandardCharsets.UTF_8)));
@@ -147,26 +147,21 @@ public class SmtpClient {
         }
     }
 
+    /**
+     * 读取一个完整 SMTP 应答并断言码值（RFC 5321：{@code 250-…} 为续行、{@code 250 …} 为末行）。
+     * QQ 服务器的 250 应答是多行的（首行 {@code 250-hostname}），此前按「空格分隔单行」解析，
+     * {@code expect(250)} 遇到 {@code 250-newx…qq.com} 直接判「SMTP 响应异常」——
+     * 现象是 AUTH/MAIL FROM 阶段必失败。故 expect 与 expectMultiline 统一为多行循环。
+     */
     private void expect(Conn c, int code) {
-        String line = readLine(c);
-        if (line == null) throw new MailException("SMTP 连接中断");
-        int sp = line.indexOf(' ');
-        if (sp < 0) throw new MailException("SMTP 响应异常：" + line);
-        int got;
-        try { got = Integer.parseInt(line.substring(0, sp)); } catch (Exception e) { throw new MailException("SMTP 响应异常：" + line); }
-        if (got != code) throw new MailException("SMTP 错误 " + got + "：" + line.substring(sp + 1).trim());
-    }
-
-    private void expectMultiline(Conn c, int code) {
         while (true) {
             String line = readLine(c);
             if (line == null) throw new MailException("SMTP 连接中断");
-            int sp = line.indexOf(' ');
-            if (sp < 0) throw new MailException("SMTP 响应异常：" + line);
+            if (line.length() < 3) throw new MailException("SMTP 响应异常：" + line);
             int got;
-            try { got = Integer.parseInt(line.substring(0, sp)); } catch (Exception e) { throw new MailException("SMTP 响应异常：" + line); }
-            if (got != code) throw new MailException("SMTP 错误 " + got + "：" + line.substring(sp + 1).trim());
-            if (!line.startsWith(code + "-")) break;
+            try { got = Integer.parseInt(line.substring(0, 3)); } catch (Exception e) { throw new MailException("SMTP 响应异常：" + line); }
+            if (got != code) throw new MailException("SMTP 错误 " + got + "：" + line.substring(Math.min(4, line.length())).trim());
+            if (line.length() <= 3 || line.charAt(3) != '-') break;   // 末行（空格或裸码）⇒ 应答结束
         }
     }
 

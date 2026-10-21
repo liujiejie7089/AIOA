@@ -47,6 +47,13 @@ class ToolOutcome:
 class ToolClient:
     """面向一次 run 的工具客户端（携带该 run 用户的 token）。"""
 
+    # ★ 跨节点 MCP 工具缓存（2026-10-21 修根因）：graph 的 tools 节点与执行节点各自
+    # from_request() 重建实例（运行期对象不进 checkpointer 状态），实例属性 _mcp_tools
+    # 只存在于拉清单的那个实例上 ⇒ 执行节点的新实例查不到 —— 模型明明看到了工具，
+    # invoke 却报「MCP 工具不存在或服务器未就绪」（实测复现）。故镜像一份按 token 键
+    # （与 from_request 的配对键一致）挂在类上；同 token 每次 list 覆盖，不跨用户泄漏。
+    _MCP_TOOLS_BY_TOKEN: dict[str, dict[str, tuple[object, str]]] = {}
+
     def __init__(self, base_url: str, user_token: str | None, timeout: float = 10.0,
                  mcp_manifest: list[dict] | None = None):
         self._base_url = base_url.rstrip("/")
@@ -121,6 +128,9 @@ class ToolClient:
         """
         self.mcp_error = None
         self._mcp_tools = {}
+        # 任何一次 list 都先作废该 token 的跨节点缓存：开关关闭/清单拉取失败时，
+        # 执行节点不得回落到上一轮的旧工具（W6 负向判据）。
+        ToolClient._MCP_TOOLS_BY_TOKEN.pop(self._token, None)
         # 关闭开关或无 token ⇒ 与改造前逐字节一致：不连 hub、不发 manifest 请求、不注入任何 mcp__* 工具。
         if not settings.mcp_hub_enabled or not self.enabled:
             return []
@@ -173,6 +183,8 @@ class ToolClient:
                 merged.extend(r)
         if reasons:
             self.mcp_error = "; ".join(reasons)[:300]
+        if self._token:
+            ToolClient._MCP_TOOLS_BY_TOKEN[self._token] = self._mcp_tools
         return merged
 
     async def invoke(self, name: str, arguments: dict | None = None) -> ToolOutcome:
@@ -182,9 +194,12 @@ class ToolClient:
         其余名称 ⇒ 既有 Java 网关路径，行为完全不变。
         """
         args = arguments or {}
-        # ★ MCP 连接器分支：前缀分流。找不到映射是负向判据（必须显式报错，不能回落 Java 网关）。
+        # ★ MCP 连接器分支：前缀分流。先查本实例（同一实例拉过清单，如哨兵 W3/W5），
+        #   再查类级跨节点缓存（生产主路径：tools 节点拉清单、执行节点新实例）。
+        #   找不到映射是负向判据（必须显式报错，不能回落 Java 网关）。
         if name.startswith("mcp__"):
-            entry = self._mcp_tools.get(name)
+            entry = self._mcp_tools.get(name) or \
+                ToolClient._MCP_TOOLS_BY_TOKEN.get(self._token, {}).get(name)
             if entry is None:
                 return ToolOutcome(name=name, arguments=args, ok=False,
                                    error="MCP 工具不存在或服务器未就绪：" + name)
@@ -201,6 +216,13 @@ class ToolClient:
                         if c.get("type") == "text":
                             parts.append(c.get("text", ""))
                         if c.get("isError"):
+                            is_error = True
+                        # hub 按 docs/59 §10.3 返回 isError=True 的 CallToolResult，但
+                        # langchain-mcp-adapters 归一成纯 text block 时**丢掉 isError 标记**，
+                        # 只留下 FastMCP 客户端的固定错误前缀（实测：空参调用返回
+                        # ok=true + "Error executing tool …" 文本，模型误以为成功）。
+                        # 该前缀是 FastMCP 客户端包装层固有的，按前缀判失败不是猜。
+                        if str(c.get("text", "")).startswith("Error executing tool"):
                             is_error = True
                     data = "\n".join(parts)
                     if is_error:
