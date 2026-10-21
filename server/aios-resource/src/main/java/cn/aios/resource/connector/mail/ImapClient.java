@@ -46,6 +46,9 @@ public class ImapClient {
     private static final int CONNECT_TIMEOUT_MS = 6000;
     private static final int READ_TIMEOUT_MS = 15000;
 
+    /** FETCH 响应里那一段原始头字节（解析用），对外输出前会被摘掉，见 parseFetchHeaders。 */
+    private static final String KEY_RAW = "__rawHeaders";
+
     /** 行尾的 {@code {N}} 字面量标记。 */
     private static final Pattern LITERAL = Pattern.compile("\\{(\\d+)\\}\\s*$");
     private static final Pattern UID_PAT = Pattern.compile("\\bUID\\s+(\\d+)");
@@ -281,12 +284,12 @@ public class ImapClient {
                     cur.put("unread", !seen);
                     cur.put("flags", fl == null ? Collections.emptyList()
                             : Arrays.asList(fl.trim().split("\\s+")));
-                    cur.put("literal", null);
+                    cur.put(KEY_RAW, null);
                     out.add(cur);
                 }
             } else if (p instanceof byte[] b) {
-                if (cur != null && cur.get("literal") == null) {
-                    cur.put("literal", b);
+                if (cur != null && cur.get(KEY_RAW) == null) {
+                    cur.put(KEY_RAW, b);
                     Map<String, String> hdr = parseHeaders(b);
                     cur.put("from", hdr.get("from"));
                     cur.put("to", hdr.get("to"));
@@ -296,6 +299,9 @@ public class ImapClient {
                 }
             }
         }
+        // 原始头字节只用来解析，不对外暴露：Jackson 会把 byte[] 编码成 base64，
+        // 每条消息多出几百字节不可读的噪声（模型读到的就是一串 base64），故解析完即摘掉。
+        for (Map<String, Object> m : out) m.remove(KEY_RAW);
         return out;
     }
 
@@ -342,8 +348,8 @@ public class ImapClient {
         return map;
     }
 
-    /** 从整封（BODY.PEEK[] 取回的）RFC822 报文里抽取纯文本正文。 */
-    private String extractPlainText(byte[] raw) {
+    /** 从整封（BODY.PEEK[] 取回的）RFC822 报文里抽取纯文本正文。包级可见：供无网络的解析单测驱动。 */
+    String extractPlainText(byte[] raw) {
         try {
             String full = new String(raw, StandardCharsets.ISO_8859_1);
             int sep = full.indexOf("\r\n\r\n");
@@ -351,11 +357,19 @@ public class ImapClient {
             if (sep < 0) { sep = full.indexOf("\n\n"); sepLen = 2; }
             String headerStr = sep >= 0 ? full.substring(0, sep) : full;
             String bodyStr = sep >= 0 ? full.substring(sep + sepLen) : "";
-            String ct = headerField(headerStr, "Content-Type");
+            // ★ 折行头必须先拼回一行再取字段。RFC5322 允许 header 用 CRLF + 空白（空格/Tab）续行，
+            //   QQ / 钉钉这类 MUA 就会把 Content-Type 折成：
+            //       Content-Type: multipart/alternative;
+            //            boundary="----=_Part_4820_..."
+            //   而 headerField 的正则用 `(.*)$`（`.` 不跨行）⇒ 只拿到 "multipart/alternative; "，
+            //   boundary 丢失 ⇒ extractFromMultipart 拿到 null 直接返回 ""，
+            //   现象就是 read_message 的 body 恒为空串（邮件能列出、能看标题，点进去没正文）。
+            String headers = unfold(headerStr);
+            String ct = headerField(headers, "Content-Type");
             if (ct.toLowerCase().contains("multipart")) {
                 return extractFromMultipart(bodyStr, boundaryOf(ct));
             }
-            String te = headerField(headerStr, "Content-Transfer-Encoding");
+            String te = headerField(headers, "Content-Transfer-Encoding");
             return decodeBodyPart(bodyStr, te, charsetOf(ct));
         } catch (Exception e) {
             return "";
@@ -373,7 +387,8 @@ public class ImapClient {
             int l = 4;
             if (idx < 0) { idx = part.indexOf("\n\n"); l = 2; }
             if (idx < 0) continue;
-            String ph = part.substring(0, idx);
+            // 每个 part 的头也可能折行（内层 part 的 Content-Type 同样会出现 `;\r\n\tboundary=`）
+            String ph = unfold(part.substring(0, idx));
             String pb = part.substring(idx + l);
             String ct = headerField(ph, "Content-Type").toLowerCase();
             String te = headerField(ph, "Content-Transfer-Encoding");
@@ -383,9 +398,29 @@ public class ImapClient {
                 html = decodeBodyPart(pb, te, charsetOf(headerField(ph, "Content-Type")));
             }
         }
-        if (plain != null) return plain;
-        if (html != null) return stripHtml(html);
-        return "";
+        // 纯文本段经常只是「你的客户端不支持 HTML」这类占位（钉钉等国内 MUA 的常见写法，
+        // 实测只有 48 字节），直接返回它等于让读信正文变成一句废话。占位时改用 HTML 段。
+        if (plain != null && !isStubPlain(plain)) return plain;
+        if (html != null) {
+            String text = stripHtml(html);
+            if (!text.isBlank()) return text;
+        }
+        return plain == null ? "" : plain;
+    }
+
+    /**
+     * 判断 text/plain 段是否只是「不支持 HTML」的占位文本。
+     *
+     * <p>只对<b>短</b>文本做判断（超过 120 字符一律当真正文），避免把正常的简短邮件误判掉。</p>
+     */
+    private boolean isStubPlain(String s) {
+        String t = s.replaceAll("\\s+", " ").trim().toLowerCase();
+        if (t.isEmpty()) return true;
+        if (t.length() > 120) return false;
+        return t.contains("does not support html")
+                || t.contains("不支持 html") || t.contains("不支持html")
+                || t.contains("cannot display html")
+                || t.contains("无法显示 html") || t.contains("无法显示html");
     }
 
     private String decodeBodyPart(String content, String te, String charset) {
@@ -471,6 +506,16 @@ public class ImapClient {
     private String headerField(String block, String name) {
         Matcher m = Pattern.compile("(?im)^" + Pattern.quote(name) + "\\s*:\\s*(.*)$").matcher(block);
         return m.find() ? m.group(1).trim() : "";
+    }
+
+    /**
+     * 展开折行头（header folding）：把 {@code CRLF + 空格/Tab} 续行拼回同一行。
+     *
+     * <p>不做这一步，任何跨行的 header 都只会被读到第一行（见 extractPlainText 里的说明）。
+     * 只用于解析、不用于改写报文，故直接对视图做替换即可。</p>
+     */
+    private String unfold(String block) {
+        return block == null ? "" : block.replaceAll("\r?\n[ \t]+", " ");
     }
 
     private String boundaryOf(String ct) {

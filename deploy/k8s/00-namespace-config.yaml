@@ -33,6 +33,13 @@ data:
   AIOS_AGENT_BASE_URL: "http://aios-agent:8000"
   SERVER_BASE_URL: "http://aios-server:8080"
 
+  # ---- MCP 网关（内置连接器工具：QQ邮箱 / 企业微信）----
+  # AIOS_MCP_HUB 是 agent 侧开关，代码默认 false ⇒ 不设则永不注入 mcp__* 工具（静默失效）。
+  # URL 给 server 探活用；集群内必须用 Service 名（Pod 的 127.0.0.1 是它自己）。
+  AIOS_MCP_HUB: "true"
+  AIOS_MCP_HUB_URL: "http://aios-mcp-hub:8099"
+  MCP_HUB_SERVER_BASE_URL: "http://aios-server:8080"
+
   # ---- 对象存储 ----
   MINIO_ENDPOINT: "http://aios-minio:9000"
   MINIO_ROOT_USER: "aios"

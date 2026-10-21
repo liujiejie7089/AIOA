@@ -39,6 +39,11 @@ spec:
             - secretRef:
                 name: aios-secrets
           env:
+            - name: AIOS_MCP_HUB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aios-config
+                  key: AIOS_MCP_HUB_URL
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:mysql://$(MYSQL_HOST):$(MYSQL_PORT)/$(MYSQL_DB)?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false"
             - name: SPRING_DATASOURCE_USERNAME

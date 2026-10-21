@@ -99,7 +99,7 @@ public class McpRegistryService {
             //    代价是 agent 能看到上游地址。真遇到「上游必须带密钥」时，再按 docs/59 §10.2 补代理。
             String url;
             if (McpServer.SOURCE_BUILTIN.equals(s.getSource())) {
-                url = props.getHubUrl().replaceAll("/+$/", "") + "/mcp/" + s.getCode();
+                url = trimHubBase(props.getHubUrl()) + "/mcp/" + s.getCode();
             } else {
                 url = s.getUrl();
                 if (url == null || url.isBlank()) {
@@ -269,6 +269,19 @@ public class McpRegistryService {
     }
 
     // ---------------- 内部 ----------------
+
+    /**
+     * 去掉 hub 基址末尾的斜杠。
+     *
+     * <p><b>为什么单独抽出来</b>：原写法 {@code replaceAll("/+$/", "")} 里的正则串多了一个结尾斜杠，
+     * 模式实际是「一个或多个 / → 行尾 → /」，**永不匹配**（也不报错），于是
+     * {@code AIOS_MCP_HUB_URL=http://mcp-hub:8099/} 会被拼成 {@code …:8099//mcp/qq_mail}，
+     * hub 侧 404 ⇒ agent 发现不到任何内置工具（现象是「AI 没有邮件工具」，不是报错）。
+     * 正确正则是 {@code /+$}；抽成纯函数是为了能被单测钉住。</p>
+     */
+    static String trimHubBase(String url) {
+        return url == null ? "" : url.replaceAll("/+$", "");
+    }
 
     /** 事务内按 name 覆盖写工具目录：存在则更新描述/结构/只读，多余则逻辑删除。 */
     private int syncTools(McpServer s, List<McpProbeClient.Tool> tools) {

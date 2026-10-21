@@ -56,6 +56,12 @@ spec:
                 secretKeyRef:
                   name: aios-secrets
                   key: SERVICE_JWT_SECRET
+            # MCP 网关开关（代码默认 false）。不设 ⇒ 永不发 manifest、永不注入 mcp__* 工具。
+            - name: AIOS_MCP_HUB
+              valueFrom:
+                configMapKeyRef:
+                  name: aios-config
+                  key: AIOS_MCP_HUB
           resources:
             requests: { cpu: "500m", memory: "1Gi" }
             limits:   { cpu: "1", memory: "2Gi" }

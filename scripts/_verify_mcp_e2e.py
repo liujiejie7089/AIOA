@@ -231,9 +231,14 @@ def main():
         codes = [i.get("code") for i in ((jload(raw2) or {}).get("data") or [])]
         client2 = ToolClient(base, token)
         names2 = asyncio.run(client2.list_mcp_tools())
-        rec("E7（负向）取消信任 ⇒ manifest 与 agent 工具表都立刻清空",
-            CODE not in codes and names2 == [],
-            "manifest=%s agent_tools=%s" % (codes, [((t.get('function') or {}).get('name')) for t in names2]))
+        all_names = [((t.get("function") or {}).get("name")) for t in names2]
+        # 判据只能落在「这一台」上。早期版本断言 `names2 == []`（全局必须为空），
+        # 那只在「没有任何已授权连接器」的干净环境里碰巧成立：
+        # 一旦 qq_mail 授权成功、合法地出现在 manifest 里，这条就会假红。
+        echo_tools = [n for n in all_names if n and n.startswith("mcp__%s__" % CODE)]
+        rec("E7（负向）取消信任 ⇒ 该服务器的 manifest 项与 agent 工具都立刻消失",
+            CODE not in codes and not echo_tools,
+            "manifest=%s agent_tools=%s" % (codes, all_names))
 
         # ---------- E8 清理 ----------
         st, raw = call(base, "/api/v1/mcp/servers/" + CODE, "DELETE", token=token)

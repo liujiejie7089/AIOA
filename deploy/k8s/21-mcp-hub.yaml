@@ -1,0 +1,62 @@
+# mcp-hub：MCP 网关（内置连接器工具：QQ邮箱 / 企业微信）
+# 无状态、不落盘、不持凭据；只把 mcp__<code>__<tool> 调用转给
+# POST /api/v1/mcp/builtin/<code>/call，并透传调用方的 Authorization。
+#
+# ⚠️ 为什么不启它「看起来也能跑」：H5 上「信任并启用」要先探测 hub，
+#    hub 不在 ⇒ 卡片显示「未知 transport」/探测失败（不是代码 bug）；
+#    agent 侧则永远发现不到 mcp__* 工具。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aios-mcp-hub
+  namespace: aios
+  labels: { app: aios-mcp-hub }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: aios-mcp-hub }
+  template:
+    metadata:
+      labels: { app: aios-mcp-hub }
+    spec:
+      containers:
+        - name: mcp-hub
+          # 构建：docker build -t aios/mcp-hub:latest mcp-hub/
+          image: aios/mcp-hub:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8099
+          env:
+            # 转发目标：集群内 Service 名
+            - name: AIOS_SERVER_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: aios-config
+                  key: MCP_HUB_SERVER_BASE_URL
+            - name: MCP_HUB_PORT
+              value: "8099"
+            - name: TZ
+              value: Asia/Shanghai
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8099 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8099 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aios-mcp-hub
+  namespace: aios
+spec:
+  selector: { app: aios-mcp-hub }
+  ports:
+    - name: http
+      port: 8099
+      targetPort: 8099

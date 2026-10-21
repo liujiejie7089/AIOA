@@ -57,10 +57,18 @@ def _base_url() -> str:
 
 
 def _get_auth_header(ctx: Context) -> "str | None":
-    """从入站 MCP 请求取 Authorization，原样透传。失败返回 None（Java 会以自己的逻辑鉴权）。"""
+    """从入站 MCP 请求取 Authorization，原样透传（只在缺 `Bearer ` 前缀时补上）。失败返回 None。
+
+    补前缀不是洁癖：MCP 客户端可能把「已拼好的凭据」塞进 header（如直接把 env 里的
+    `Bearer xxx` 传进来），原样透传会变成 `Bearer Bearer xxx`，Java 的 JWT 过滤器
+    只会静默 401 —— 现象是「工具调了但全部失败」，没有更具体的报错。
+    """
     try:
         request = ctx.request_context.request
-        return request.headers.get("authorization")
+        auth = request.headers.get("authorization")
+        if auth and not auth.lower().startswith("bearer "):
+            return "Bearer " + auth
+        return auth
     except Exception:
         return None
 

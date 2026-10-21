@@ -82,6 +82,10 @@ else
 fi
 
 # ---- Python Agent :8000 ----
+# MCP 网关开关：agent 侧 mcp_hub_enabled 默认 False（agent/aios_ai/config.py），
+# 不显式打开 ⇒ 永不发 /api/v1/mcp/manifest、永不注入 mcp__* 工具（HTTP 层一切正常，
+# 只是模型手里没有邮箱/企微工具）。本脚本会起 :8099 的 hub，所以默认开。
+export AIOS_MCP_HUB="${AIOS_MCP_HUB:-true}"
 # --http 必须显式钉成 httptools：它决定「后端的 h2c 升级请求体会不会丢」——
 # 跑 httptools（= uvicorn[standard]，与 deploy/Dockerfile.agent 的生产镜像一致）时会丢，
 # 跑 h11 时会被 h11 悄悄兜住。auto 会让这个差异随 venv 是否装了 httptools 而漂移，
