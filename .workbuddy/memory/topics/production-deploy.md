@@ -406,3 +406,15 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 验收：logs 里 Flyway 到 **V98**、`curl :8080/actuator/health`、`/aios/h5/`、`/aios/web/`、
 `exec server ls /app/uploads | wc -l` 与拷贝数一致。该机**没有 `ss`**，用
 `docker ps --filter publish=<port>` 查占用者。
+
+## ★ 镜像真实性判据（2026-10-21）：别信镜像名，信 jar 名/包名/镜像 ID
+
+升级时 `aios-server` 容器崩溃，堆栈里是 `/app/aioa-server.jar` + `cn/aioa/**` ——
+当前仓库 `cn.aioa` 0 命中、Dockerfile 产出 `/app/aios-server.jar` ⇒ 本机镜像是
+**换名旧镜像**（`docker tag` 或旧导出包），从没 build 过当前代码。三个判据：
+① `docker image inspect aios-server aioa-server --format '{{.Id}} {{.Created}}'` 比 ID；
+② 崩溃堆栈/启动日志里的 jar 路径与包名；
+③ 起来后 Flyway 版本（应到仓库最高 V*）。**同名镜像 ≠ 新代码**，与铁律 18/24 同源。
+另外：新部署目录的 `.env` 是 gitignore 的、不会随代码过来；缺 `.env` 时空口令的现象是
+`Access denied`(28000)，**不是** `Communications link failure`(08S01) —— 后者指向
+MYSQL_HOST/PORT 写错或数据库真不可达，金标准是旧容器 `docker inspect` 的环境变量。
