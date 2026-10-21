@@ -383,3 +383,26 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
   但 `minio/minio` 与 `nginx` **本次不需要**（MinIO 代码不读、边缘 nginx 用户已有）。
 - ★ **`docker ps` ≠ 镜像清单**：它只列运行中容器，机器上可能有没在跑的 `nginx`/`minio` 镜像；
   用 `docker ps` 判断齐备会误判成「什么都没有」而白搬整个包。**判断只能用 `docker images`。**
+
+## ★ 改名换代升级（2026-10-21 实测定位）：旧栈容器叫 `aioa-*`，卷也按项目名隔离
+
+`docker compose up -d` 报 `Bind for 0.0.0.0:8080 failed: port is already allocated`，
+占用者 `docker ps -a --filter "publish=8080"` 一看就是 **`aioa-server`（改名前的旧栈，
+正常服役中）**。compose 项目名恒为 `aios`（文件级 `name:`）⇒ 同项目旧容器会被原地重建，
+**撞端口只可能是外来服务或旧项目（aioa）的容器**——本例正是后者。
+
+升级三部（停机窗口 = 旧栈停到新栈 healthy，约 1–3 分钟，Flyway V89–V98 首启）：
+1. `docker stop aioa-server aioa-agent`（**先停不删**，留回滚 `docker start`；
+   不停旧 agent，新 agent 绑 `127.0.0.1:8000` 会二次撞端口）；
+2. **搬上传卷**：卷按项目名隔离，`aioa_serveruploads` → `aios_serveruploads`
+   （`docker volume create aios_serveruploads` + 拿**旧镜像**跑一次性
+   `docker run --rm -v aioa_serveruploads:/from -v aios_serveruploads:/to aioa-server sh -c 'cp -a /from/. /to/'`
+   —— 离线机别拉 alpine。MySQL 在外部共享，业务数据不用搬）；
+3. `docker compose up -d`（**离线机禁加 `--build`**）。
+
+新栈默认起 **server + agent + mcp-hub** 三个容器（mcp-hub 未门控）：8080 硬编码
+（公网唯一入口，隧道机 openresty 反代 `10.0.0.3:8080`）、8000 与 8099 参数化
+（`AIOS_AGENT_HOST_PORT` / `AIOS_MCP_HUB_HOST_PORT`，仅绑 127.0.0.1）。
+验收：logs 里 Flyway 到 **V98**、`curl :8080/actuator/health`、`/aios/h5/`、`/aios/web/`、
+`exec server ls /app/uploads | wc -l` 与拷贝数一致。该机**没有 `ss`**，用
+`docker ps --filter publish=<port>` 查占用者。
