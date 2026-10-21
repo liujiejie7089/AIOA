@@ -155,6 +155,11 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
 
         // ⑤ 渲染回执
         Map<String, Object> receipt = renderReceipt(template, sub.getId(), data);
+        // 回执透出 submissionId / status，供前端 formReceiptHtml 显示受理单号与当前状态
+        // （前端按 receipt.submissionId / receipt.status 取值，否则恒显示「—」）。
+        receipt.put("submissionId", sub.getId());
+        receipt.put("status", sub.getStatus());
+        receipt.put("statusLabel", statusLabel(sub.getStatus()));
         return new SubmitResult(sub.getId(), sub.getStatus(), resume, approvalOrderId, receipt);
     }
 
@@ -276,6 +281,23 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
             }
         }
         return fallbackReceipt(template, submissionId);
+    }
+
+    /** 提交状态中文展示（回执 statusLabel 用）。未知状态原样回退，避免遮蔽端上兜底。 */
+    private String statusLabel(String status) {
+        if (status == null) {
+            return "已提交";
+        }
+        return switch (status) {
+            case FormSubmission.STATUS_SUBMITTED -> "已提交";
+            case FormSubmission.STATUS_APPROVING -> "审批中";
+            case FormSubmission.STATUS_APPROVED -> "审批通过";
+            case FormSubmission.STATUS_REJECTED -> "审批驳回";
+            case FormSubmission.STATUS_DONE -> "已完成";
+            case FormSubmission.STATUS_CANCELED -> "已撤销";
+            case FormSubmission.STATUS_FAILED -> "提交失败";
+            default -> status;
+        };
     }
 
     private Map<String, Object> fallbackReceipt(FormTemplate template, Long submissionId) {

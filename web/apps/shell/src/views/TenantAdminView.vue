@@ -100,8 +100,13 @@
           <el-form-item label="管理员姓名">
             <el-input v-model="form.adminName" placeholder="如：赵文博" />
           </el-form-item>
-          <el-form-item label="初始密码">
-            <el-input v-model="form.adminPassword" placeholder="留空则使用 User@123" />
+          <el-form-item label="初始密码" required>
+            <el-input
+              v-model="form.adminPassword"
+              type="password"
+              show-password
+              placeholder="必填，至少 8 位"
+            />
           </el-form-item>
           <el-divider content-position="left">初始化资源池</el-divider>
           <el-form-item label="统计期">
@@ -232,6 +237,23 @@ async function submit() {
   if (!form.value.name || !form.value.code) {
     ElMessage.warning('租户名称与编码必填')
     return
+  }
+  // 新建租户必须显式指定管理员账号与初始密码：后端已不再提供默认密码兜底，
+  // 前端先拦一次，避免用户填一半提交后收到「密码必填」的远端错误。
+  if (!form.value.id) {
+    if (!String(form.value.adminUsername || '').trim()) {
+      ElMessage.warning('请指定租户管理员账号')
+      return
+    }
+    const pwd = String(form.value.adminPassword || '')
+    if (!pwd) {
+      ElMessage.warning('请设置租户管理员初始密码')
+      return
+    }
+    if (pwd.length < 8) {
+      ElMessage.warning('初始密码至少 8 位')
+      return
+    }
   }
   saving.value = true
   try {

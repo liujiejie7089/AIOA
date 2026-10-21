@@ -6,6 +6,8 @@ import cn.aios.resource.entity.SysFile;
 import cn.aios.resource.mapper.SysFileMapper;
 import cn.aios.security.AuthUser;
 import cn.aios.security.AuthUserContext;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -30,6 +32,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -115,6 +120,82 @@ public class FileController {
                 "name", original,
                 "url", rec.getUrl(),
                 "size", file.getSize()));
+    }
+
+    /**
+     * 网盘文件列表（管理端首页「网盘」分区）。
+     *
+     * <p>按当前登录用户过滤（{@code user_id = 我}），仅取活行（{@code @TableLogic} 软删自动排除）；
+     * 支持分页（{@code page}/{@code size}）与按文件名模糊（{@code keyword}）。</p>
+     *
+     * <p>返回 {@code {list,total,page,size}}；{@code list} 每行含
+     * {@code id,name,sizeBytes,contentType,createdAt}。注：{@code sys_file} 表无独立
+     * content_type 列，{@code contentType} 由文件名后缀推导（best-effort）。</p>
+     */
+    @GetMapping
+    public ApiResponse<Map<String, Object>> list(
+            @RequestParam(name = "page", defaultValue = "1") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size,
+            @RequestParam(name = "keyword", required = false) String keyword) {
+        AuthUser user = AuthUserContext.require();
+        LambdaQueryWrapper<SysFile> w = new LambdaQueryWrapper<SysFile>()
+                .eq(SysFile::getUserId, user.getUserId())
+                .orderByDesc(SysFile::getCreatedAt);
+        if (keyword != null && !keyword.isBlank()) {
+            w.like(SysFile::getOriginalName, keyword);
+        }
+        Page<SysFile> p = fileMapper.selectPage(
+                new Page<>(Math.max(page, 1), Math.max(size, 1)), w);
+        List<Map<String, Object>> list = new ArrayList<>(p.getRecords().size());
+        for (SysFile f : p.getRecords()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", f.getId());
+            m.put("name", f.getOriginalName());
+            m.put("sizeBytes", f.getSize());
+            m.put("contentType", deriveContentType(f.getOriginalName()));
+            m.put("createdAt", f.getCreatedAt() == null ? null : f.getCreatedAt().toString());
+            list.add(m);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("list", list);
+        out.put("total", p.getTotal());
+        out.put("page", p.getCurrent());
+        out.put("size", p.getSize());
+        return ApiResponse.ok(out);
+    }
+
+    /** 由文件名后缀推导 MIME（sys_file 未存 content_type，前端列表展示用 best-effort 值）。 */
+    private static String deriveContentType(String originalName) {
+        if (originalName == null) {
+            return "application/octet-stream";
+        }
+        String n = originalName.toLowerCase();
+        if (n.endsWith(".pdf")) return "application/pdf";
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+        if (n.endsWith(".gif")) return "image/gif";
+        if (n.endsWith(".webp")) return "image/webp";
+        if (n.endsWith(".bmp")) return "image/bmp";
+        if (n.endsWith(".doc")) return "application/msword";
+        if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (n.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (n.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (n.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
+        if (n.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        if (n.endsWith(".txt")) return "text/plain";
+        if (n.endsWith(".csv")) return "text/csv";
+        if (n.endsWith(".html") || n.endsWith(".htm")) return "text/html";
+        if (n.endsWith(".json")) return "application/json";
+        if (n.endsWith(".xml")) return "application/xml";
+        if (n.endsWith(".zip")) return "application/zip";
+        if (n.endsWith(".rar")) return "application/x-rar-compressed";
+        if (n.endsWith(".7z")) return "application/x-7z-compressed";
+        if (n.endsWith(".mp3")) return "audio/mpeg";
+        if (n.endsWith(".wav")) return "audio/wav";
+        if (n.endsWith(".mp4")) return "video/mp4";
+        if (n.endsWith(".mov")) return "video/quicktime";
+        if (n.endsWith(".webm")) return "video/webm";
+        return "application/octet-stream";
     }
 
     @GetMapping("/{id}")

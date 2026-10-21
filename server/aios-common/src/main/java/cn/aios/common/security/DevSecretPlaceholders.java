@@ -35,6 +35,9 @@ public final class DevSecretPlaceholders {
     /** 模型 API Key 落库加密的内置 fallback 密钥（无 env 覆盖时使用，弱保护）。 */
     public static final String MODEL_KEY_FALLBACK = "aios-model-key-dev-only";
 
+    /** 连接器凭据加密密钥的占位默认值（aios.connector.secret-key）。 */
+    public static final String CONNECTOR_SECRET_KEY = "aios-dev-connector-secret-key-please-change";
+
     /**
      * 模型密钥的取值来源环境变量候选（优先级由高到低）。
      * {@code ModelKeyCodec} 的读取与启动自检都引用此清单，避免两份候选列表漂移。

@@ -131,11 +131,14 @@ public class TenantController {
 
     /**
      * 开通租户：建租户 + 开管理员账号（授 ROLE_TENANT_ADMIN）+ 初始化资源池，同一事务。
-     * body: { code, name, domain?, adminUsername, adminName, adminPassword?, tokenTotal?, expertSeats?, skillSeats?, period? }
+     * body: { code, name, domain?, adminUsername, adminName?, adminPassword, tokenTotal?, expertSeats?, skillSeats?, period? }
      *
      * <p>V66：新增 {@code domain}（平台分配的登录域名，可选但必须唯一）。
      * 平台开通的是<b>唯一一层</b>租户；「子租户」能力已于 2026-09-28 按决定移除（含 V68 删列），
      * 租户侧不再有「在本租户下再开一层」的入口。</p>
+     *
+     * <p>2026-10-20：{@code adminUsername} / {@code adminPassword} 均为<b>必填</b>
+     * （密码至少 8 位）—— 取消原先「留空即 User@123」的兜底。</p>
      */
     @PostMapping
     @Transactional(rollbackFor = Exception.class)
@@ -145,6 +148,12 @@ public class TenantController {
         String name = str(body.get("name"), "租户名称");
         String adminUsername = str(body.get("adminUsername"), "租户管理员账号");
         String adminName = body.get("adminName") == null ? adminUsername : String.valueOf(body.get("adminName"));
+        // 开通租户必须同时指定管理员与初始密码：不再用 User@123 兜底。
+        // 兜底 = 所有新租户管理员共用同一个公开口令，属可预测凭据（越权风险），且事后无人知道改没改。
+        String adminPassword = str(body.get("adminPassword"), "租户管理员初始密码");
+        if (adminPassword.length() < 8) {
+            throw BizException.badRequest("租户管理员初始密码至少 8 位");
+        }
         String domain = domainOf(body.get("domain"), null);
 
         if (tenantMapper.selectCount(new LambdaQueryWrapper<SysTenant>().eq(SysTenant::getCode, code)) > 0) {
@@ -173,9 +182,7 @@ public class TenantController {
         u.setTenantId(t.getId());
         u.setUsername(adminUsername);
         u.setNickname(adminName);
-        u.setPasswordHash(passwordEncoder.encode(
-                body.get("adminPassword") == null || String.valueOf(body.get("adminPassword")).isBlank()
-                        ? "User@123" : String.valueOf(body.get("adminPassword"))));
+        u.setPasswordHash(passwordEncoder.encode(adminPassword));
         u.setStatus("ENABLED");
         userMapper.insert(u);
         bindRole(u.getId(), "ROLE_TENANT_ADMIN");

@@ -33,7 +33,7 @@ public final class FormSchemaValidator {
     /** 字段类型白名单（与既有前端控件对齐，禁止新造词）。 */
     private static final Set<String> WHITELIST = Set.of(
             "text", "textarea", "number", "amount", "date", "datetime",
-            "select", "multiselect", "file", "boolean");
+            "select", "multiselect", "file", "boolean", "location");
 
     /** 单条字段错误：指出字段名与中文原因。 */
     public record FieldError(String field, String message) {
@@ -176,13 +176,19 @@ public final class FormSchemaValidator {
                     errors.add(new FieldError(field, "字段「" + label + "」格式不正确（应为数组或字符串）"));
                 }
             }
-            case "text", "textarea", "select" -> {
+            case "text", "textarea", "select", "location" -> {
                 if (!(value instanceof String)) {
                     errors.add(new FieldError(field, "字段「" + label + "」必须是文本"));
                 } else {
                     String s = (String) value;
-                    checkMaxLength(field, label, def, s, errors);
-                    checkPattern(field, label, def, s, errors);
+                    if ("location".equals(type)) {
+                        // 定位字段：内容是「纬度,经度」或地址文本，按字符串处理，非空即可。
+                        // 不强制经纬度格式（兼容地址文本），仅做最大长度保护。
+                        checkMaxLength(field, label, def, s, errors);
+                    } else {
+                        checkMaxLength(field, label, def, s, errors);
+                        checkPattern(field, label, def, s, errors);
+                    }
                 }
             }
             default -> {

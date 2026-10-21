@@ -20,7 +20,7 @@ public final class FormFieldMeta {
     /** 控件类型白名单（与前端渲染器一致，禁止新造词）。 */
     public static final Set<String> CONTROL_TYPES = Set.of(
             "text", "textarea", "number", "amount", "date", "datetime",
-            "select", "multiselect", "file", "boolean");
+            "select", "multiselect", "file", "boolean", "location");
 
     private FormFieldMeta() {
     }

@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -51,6 +52,19 @@ public class FormController {
     public ApiResponse<FormRender> getForm(@PathVariable String code) {
         AuthUser user = AuthUserContext.require();
         return ApiResponse.ok(templateService.resolveForRender(user.getTenantId(), code));
+    }
+
+    /**
+     * 管理端首页「发起流程」弹层：当前租户可发起的 ACTIVE 表单。
+     *
+     * <p>登录即可（无需 form:manage）。{@code policy} 可选，如 {@code APPROVAL} 命中
+     * APPROVAL / APPROVAL+RESUME。返回轻量字段：code / name / module_code / biz_type / submit_policy。</p>
+     */
+    @GetMapping("/forms/launchable")
+    public ApiResponse<List<Map<String, Object>>> listLaunchableForms(
+            @RequestParam(name = "policy", required = false) String policy) {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(templateService.listLaunchable(user.getTenantId(), policy));
     }
 
     /** 列表/筛选（管理端）。 */
