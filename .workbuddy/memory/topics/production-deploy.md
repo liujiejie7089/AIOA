@@ -418,3 +418,13 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 另外：新部署目录的 `.env` 是 gitignore 的、不会随代码过来；缺 `.env` 时空口令的现象是
 `Access denied`(28000)，**不是** `Communications link failure`(08S01) —— 后者指向
 MYSQL_HOST/PORT 写错或数据库真不可达，金标准是旧容器 `docker inspect` 的环境变量。
+
+### `.env` 来源陷阱（2026-10-21）：三个模板三个地址，拷错就 08S01
+
+`deploy/.env.development` = `127.0.0.1:3306`（开发档）· `.env.example` = `192.168.31.129:3306`
+（冻结旧文件）· `.env.production` = `10.0.0.5:13049`（唯一正确）。新部署目录若从
+**开发模板**拷 `.env`，容器内连自己的 localhost:3306 ⇒ `Communications link failure (08S01)`。
+compose 默认值反而是对的（`:-10.0.0.5`/`:-13049`/`:-aios`/空口令）⇒ **没有 `.env` 只会
+Access denied(28000)，会 08S01 就说明 `.env` 存在且 MYSQL_HOST/PORT 是错的**。
+另：在 `.env` 里改 `SPRING_DATASOURCE_URL` **不生效**（compose `environment:` 现拼、
+同名覆盖）——只有 `MYSQL_HOST/PORT/DB/USER/PASSWORD` 五个键算数。
