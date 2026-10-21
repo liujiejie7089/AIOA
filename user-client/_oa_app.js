@@ -1562,33 +1562,83 @@ function renderConnectors(){
       else if(act === 'untrust') mcpUntrust(code);
       else if(act === 'probe') mcpProbe(code);
       else if(act === 'tools') mcpToggleTools(code);
+      else if(act === 'auth') openConnector(code);   // 内置：跳连接器授权（两步闸门的第一步）
     };
   });
 }
 
-/* MCP 服务器区：头部说明 + 列表（或加载中/失败/空态）。用 .oa-mcp-section 包住便于定位。 */
+/* MCP 服务器区：只列**外部**服务器。内置的（QQ邮箱/企业微信）已并入上方对应连接器卡
+   —— 否则同一能力在面板里出现两对同名卡，用户分不清「连接器」与「MCP 服务器」的关系。
+   两道闸本身不变：连接器授权（连接器卡的「连接」）→ MCP 信任（卡内「启用 MCP」）。 */
 function mcpSectionHtml(){
-  var head = '<div class="sec-title">MCP 服务器</div>' +
-    '<div class="muted" style="margin:-4px 0 10px;font-size:12px">默认不启用。启用前会做一次连通性探测（initialize + tools/list），探测通过才登记工具。</div>';
-  if(!S.mcpLoaded && !S.mcpErr) return '<div class="oa-mcp-section">'+head+'<div class="muted">MCP 服务器加载中…</div></div>';
-  if(S.mcpErr) return '<div class="oa-mcp-section">'+head+'<div class="muted">MCP 加载失败：'+txt(S.mcpErr)+'</div></div>';
-  var list = arr(S.mcpServers);
-  if(!list.length) return '<div class="oa-mcp-section">'+head+empty('暂无 MCP 服务器')+'</div>';
-  return '<div class="oa-mcp-section">'+head+list.map(mcpCardHtml).join('')+'</div>';
+  if(!S.mcpLoaded || S.mcpErr) return '';
+  var ext = arr(S.mcpServers).filter(function(s){ return s.source !== 'BUILTIN'; });
+  if(!ext.length) return '';
+  return '<div class="oa-mcp-section"><div class="sec-title">MCP 服务器（外部）</div>' +
+    '<div class="muted" style="margin:-4px 0 10px;font-size:12px">启用前会做一次连通性探测（initialize + tools/list），探测通过才登记工具。</div>' +
+    ext.map(mcpCardHtml).join('') + '</div>';
 }
 
 /* 状态 chip 唯一映射（严格按后端闸门顺序：未信任 > 连接器未连接 > 探测失败 > 已启用） */
 function mcpStatusChip(s){
   if(s.trusted !== true) return chip('done','未启用');
-  if(s.trusted && s.source === 'BUILTIN' && !s.connected) return chip('wait','连接器未连接');
-  if(s.trusted && s.status === 'ERROR') return chip('wait','探测失败');
+  if(s.source === 'BUILTIN' && !s.connected) return chip('wait','连接器未连接');
+  if(s.status === 'ERROR') return chip('wait','探测失败');
   return chip('due','已启用');
 }
 
-/* 单台 MCP 服务器卡片（复用 .conn-card 视觉体系） */
+/* 按连接器 code 找对应内置 MCP 服务器（无则 null） */
+function mcpByConnector(code){
+  var list = arr(S.mcpServers);
+  for(var i = 0; i < list.length; i++){
+    var s = list[i];
+    if(s.source === 'BUILTIN' && s.connectorCode === code) return s;
+  }
+  return null;
+}
+
+/* 连接器卡内的 MCP 内嵌块：状态 chip + 启用/停用/工具 + 精简工具目录。
+   三态：MCP 未加载完（不显示）/ 加载失败（一行红字，不把连接器卡打成错误页）/ 无内置 MCP（不显示）。 */
+function mcpInlineHtml(c){
+  if(S.mcpErr) return '<div class="oa-mcp-inline"><div class="conn-sub conn-err">MCP 加载失败：'+txt(S.mcpErr)+'</div></div>';
+  if(!S.mcpLoaded) return '';
+  var s = mcpByConnector(c.code);
+  if(!s) return '';
+  var tools = '';
+  if(S.mcpOpen[s.code]){
+    var cached = S.mcpToolsCache[s.code];
+    if(cached === '__LOADING__'){
+      tools = '<div class="conn-sub">工具目录加载中…</div>';
+    } else if(S.mcpToolsErr[s.code]){
+      tools = '<div class="conn-sub conn-err">工具目录加载失败：'+txt(S.mcpToolsErr[s.code])+'</div>';
+    } else if(Array.isArray(cached) && cached.length){
+      /* 精简：一行 code 列表，只读不标注、可写标「·写」，不再逐条罗列长描述 */
+      tools = '<div class="conn-sub" style="white-space:normal">'+cached.map(function(t){
+        return '<code style="font-family:var(--font-mono)">'+txt(t.name)+'</code>'+(t.readOnly?'':'·写');
+      }).join('、')+'</div>';
+    } else {
+      tools = '<div class="conn-sub">暂无工具目录</div>';
+    }
+  }
+  var act = '';
+  if(s.trusted !== true){
+    act = '<button class="btn ghost small" data-mcp-act="trust" data-code="'+txt(s.code)+'">启用 MCP</button>';
+  } else {
+    act = '<button class="btn ghost small" data-mcp-act="untrust" data-code="'+txt(s.code)+'">停用</button>' +
+          '<button class="btn ghost small" data-mcp-act="tools" data-code="'+txt(s.code)+'">'+(S.mcpOpen[s.code]?'收起工具':'查看工具')+'</button>';
+  }
+  var tip = '';
+  if(s.trusted === true && s.connected !== true) tip += '<div class="conn-sub">连接器连接后才会对 AI 生效</div>';
+  if(s.lastError) tip += '<div class="conn-sub conn-err">'+txt(s.lastError)+'</div>';
+  return '<div class="oa-mcp-inline" style="flex-basis:100%;min-width:0;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">'+
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+      '<span class="conn-badge">MCP</span>'+ mcpStatusChip(s) + act +
+    '</div>'+ tip + tools +
+  '</div>';
+}
+
+/* 外部 MCP 服务器卡片（内置服务器不再走这里，见 mcpInlineHtml） */
 function mcpCardHtml(s){
-  var icKey = (s.source === 'BUILTIN') ? 'bot' : 'puzzle';
-  var badgeTxt = (s.source === 'BUILTIN') ? '内置' : '外部';
   var summary = '工具 ' + n(s.toolCount) + ' 个';
   if(s.lastProbeAt) summary += ' · 探测于 ' + dt(s.lastProbeAt);
   var sub = '';
@@ -1600,9 +1650,9 @@ function mcpCardHtml(s){
     } else if(S.mcpToolsErr[s.code]){
       sub += '<div class="conn-sub conn-err">工具目录加载失败：'+txt(S.mcpToolsErr[s.code])+'</div>';
     } else if(Array.isArray(cached) && cached.length){
-      sub += '<div class="conn-sub">'+cached.map(function(t){
-        return '<div><code style="font-family:var(--font-mono)">'+txt(t.name)+'</code> · '+(t.readOnly?'只读':'可写')+' · '+txt(t.description||'')+'</div>';
-      }).join('')+'</div>';
+      sub += '<div class="conn-sub" style="white-space:normal">'+cached.map(function(t){
+        return '<code style="font-family:var(--font-mono)">'+txt(t.name)+'</code>'+(t.readOnly?'':'·写');
+      }).join('、')+'</div>';
     } else {
       sub += '<div class="conn-sub">暂无工具目录</div>';
     }
@@ -1616,9 +1666,9 @@ function mcpCardHtml(s){
           '<button class="btn small" data-mcp-act="tools" data-code="'+txt(s.code)+'">查看工具</button>';
   }
   return '<div class="conn-card">'+
-    '<div class="conn-ic">'+ic(icKey,20)+'</div>'+
+    '<div class="conn-ic">'+ic('puzzle',20)+'</div>'+
     '<div class="conn-main">'+
-      '<div class="conn-name">'+txt(s.name)+'<span class="conn-badge'+(s.source==='EXTERNAL'?' ext':'')+'">'+txt(badgeTxt)+'</span></div>'+
+      '<div class="conn-name">'+txt(s.name)+'<span class="conn-badge ext">外部</span></div>'+
       '<div class="conn-summary">'+txt(summary)+'</div>'+
       sub +
     '</div>'+
@@ -1744,6 +1794,7 @@ function connCardHtml(c){
       sub +
     '</div>'+
     '<div class="conn-act">'+ connStatusChip(c) + act +'</div>'+
+    mcpInlineHtml(c)+
   '</div>';
 }
 
@@ -1870,6 +1921,10 @@ function refreshConnectors(){
     S.connectorsErr = err.message || '请求失败'; S.connectorsLoaded = true;
   }).then(function(){
     setSkillsSegCounts();
+    /* MCP 卡片的「连接器未连接」来自 /mcp/servers 的 connected 字段，而该区只加载一次
+       （loadMcp 里有 mcpLoaded 幂等闸）。授权成功后若不让它失效，卡片会一直停在旧状态，
+       用户看到的就是「刚填完授权码、明明连上了，还说未连接」。故这里一并失效。 */
+    if(S.mcpLoaded || S.mcpErr){ S.mcpLoaded = false; S.mcpErr = null; }
     if(S.mode === 'oa' && S.view === 'skills' && S.skillsTab === 'connectors') renderConnectors();
   });
 }
@@ -2878,10 +2933,7 @@ function fillSheet(){
   if(sn) sn.textContent = String(arr(state.skills).length);
   var mn = $o('odModulesN');
   if(mn) mn.textContent = String(oaModuleWorkers().length);
-  /* 三段分段计数：插件 / 技能 / 连接器（连接器/插件未加载时不显示数字） */
-  var np = $o('oaSegNPlugins'); if(np) np.textContent = S.pluginsLoaded ? String(arr(S.plugins).length) : '';
-  var nk = $o('oaSegNSkills');  if(nk) nk.textContent = String(arr(state.skills).length);
-  var nc = $o('oaSegNConnectors'); if(nc) nc.textContent = S.connectorsLoaded ? String(arr(S.connectors).length) : '';
+  setSkillsSegCounts();   /* 三段分段计数（插件/技能/连接器），唯一实现在 8b 节 */
 }
 
 function renderDrawer(){

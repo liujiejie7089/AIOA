@@ -421,8 +421,10 @@
 .oa .oa-pane.on{display:block}
 
 /* 连接器卡片 */
-.oa .conn-card{display:flex;gap:12px;align-items:stretch;background:#fff;border:1px solid var(--border);
+.oa .conn-card{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;background:#fff;border:1px solid var(--border);
   border-radius:12px;padding:12px 14px;margin-bottom:10px}
+/* 内置 MCP 内嵌块独占卡片第二行（flex-basis:100% + flex-wrap 于 .conn-card） */
+.oa .conn-card .oa-mcp-inline{gap:0}
 .oa .conn-ic{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
   background:var(--brand-soft);color:var(--brand-ink)}
 .oa .conn-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;justify-content:center}
