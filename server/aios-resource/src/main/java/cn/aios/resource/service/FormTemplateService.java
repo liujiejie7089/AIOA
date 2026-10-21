@@ -141,6 +141,62 @@ public class FormTemplateService {
     }
 
     /**
+     * 管理端首页「发起流程」弹层可用的表单（任意登录用户可见，无需 form:manage）。
+     *
+     * <p>口径：{@code status=ACTIVE} 且 {@code tenant_id IN (tenantId, 0)}（本租户优先，平台默认回退）；
+     * 可选 {@code policy} 过滤（{@code submit_policy LIKE %policy%}，如 APPROVAL 命中
+     * APPROVAL / APPROVAL+RESUME）。返回轻量字段：code / name / module_code / biz_type /
+     * submit_policy（form_template 无独立 description 列，故不含该键）。按 code 去重，上限 200。</p>
+     */
+    public List<Map<String, Object>> listLaunchable(Long tenantId, String policy) {
+        LambdaQueryWrapper<FormTemplate> w = new LambdaQueryWrapper<FormTemplate>()
+                .eq(FormTemplate::getStatus, FormTemplate.STATUS_ACTIVE)
+                .in(FormTemplate::getTenantId, tenantId, 0L);
+        if (policy != null && !policy.isBlank()) {
+            w.like(FormTemplate::getSubmitPolicy, policy);
+        }
+        List<FormTemplate> rows = templateMapper.selectList(w);
+
+        // 本租户行优先于平台默认：先放本租户，再放 tenant_id=0，putIfAbsent 保证留的是本租户行
+        Map<String, Map<String, Object>> byCode = new LinkedHashMap<>();
+        for (FormTemplate t : rows) {
+            if (t.getTenantId() != null && t.getTenantId().equals(tenantId)) {
+                byCode.putIfAbsent(t.getCode(), toFormInfoFull(t));
+            }
+        }
+        for (FormTemplate t : rows) {
+            if (t.getTenantId() == null || t.getTenantId() == 0L) {
+                byCode.putIfAbsent(t.getCode(), toFormInfoFull(t));
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>(byCode.values());
+        result.sort((a, b) -> {
+            int c = String.valueOf(a.get("module_code")).compareTo(String.valueOf(b.get("module_code")));
+            if (c != 0) {
+                return c;
+            }
+            return String.valueOf(a.get("code")).compareTo(String.valueOf(b.get("code")));
+        });
+        if (result.size() > 200) {
+            log.info("可发起表单清单超过 200 条，已截断：tenantId={} total={}", tenantId, result.size());
+            result = new ArrayList<>(result.subList(0, 200));
+        }
+        return result;
+    }
+
+    /** 把一行模板收敛成「发起流程」弹层信息（含 submit_policy）。 */
+    private static Map<String, Object> toFormInfoFull(FormTemplate t) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("code", t.getCode());
+        m.put("name", t.getName());
+        m.put("module_code", t.getModuleCode());
+        m.put("biz_type", t.getBizType());
+        m.put("submit_policy", t.getSubmitPolicy());
+        return m;
+    }
+
+    /**
      * 渲染表单定义（把 schema 转成 fields[]，并把 x-options-ref 由后端解析内联为 options）。
      *
      * <p>不认识的 ref 直接报错（而不是返回空 options），避免前端拿到空下拉还以为正常。</p>

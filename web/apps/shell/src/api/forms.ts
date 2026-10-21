@@ -43,6 +43,8 @@ export interface FormTemplate {
   id?: number
   code: string
   name: string
+  /** 表单说明（门户「发起流程」列表展示用，后端契约含此字段）。 */
+  description?: string
   moduleCode?: string
   bizType?: string
   submitPolicy?: string
