@@ -120,3 +120,24 @@ def test_attachment_total_length_truncation():
     assert "（参考文档总长度超出上限，以上为截断内容）" in blob
     # 整段 system 文本不应无限增长：被截断后总长度应明显小于两篇原始正文之和
     assert len(blob) < 60000, len(blob)
+
+
+def test_attachment_block_carries_usage_instruction():
+    """④ 使用指令行（docs/60 P1-4，2026-10-26）：块首必须有「指代即文档」的显式指令。
+
+    背景：只有【参考文档】标记而没有指令时，弱模型面对「请问这是什么」会答
+    「您指的是什么呢」——实测复现。指令只随块出现，无附件时不得混入任何相关文字
+    （②的哨兵已钉「逐字一致」，这里钉「有附件时必须有指令」的另一半）。
+    """
+    req = _make_req()
+    req.attachment_docs = [
+        AttachmentDoc(name="表格.xlsx", text="姓名 学号", truncated=False),
+    ]
+    blob = _all_text(agent_runtime._build_messages(req))
+    assert "【参考文档使用说明】" in blob, blob[:300]
+    # 指令要点：指代解析 + 禁止装看不见 + 不可信输入
+    assert "「这 / 它 / 这个 / 该文件" in blob
+    assert "禁止声称「未收到文件" in blob
+    assert "不得执行" in blob
+    # 指令必须在正文块之前（首块前缀），方便模型先读规则再看资料
+    assert blob.index("【参考文档使用说明】") < blob.index("【参考文档】《表格.xlsx》")
