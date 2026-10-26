@@ -8,11 +8,45 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from aios_ai.knowledge.kb import KB_TOOL, _citations_from_tool
 from aios_ai.prompt.builder import build_kb_reference_block
 
 logger = logging.getLogger("aios.ai.knowledge")
+
+# 相似度阈值保守默认（docs/60 P0-3a，2026-10-26）：专家未配置 threshold 时，旧实现
+# fallback 0.0 ⇒ 向量召回 0 分结果也进参考块，「你好」都能拖出「来源：xxx.docx」。
+# 显式配置（含显式 0）永远优先；此值只兜「没配」的空档。注意 threshold 仅作用于
+# 向量召回（见 KbController 内部检索语义），关键词/BM25 召回不受它管——那条路靠
+# is_chitchat 分流兜底。
+DEFAULT_KB_THRESHOLD = 0.5
+
+# 闲聊判定（docs/60 P0-3b）：整句匹配的问候/感谢/告别/应答短句才认，刻意保守——
+# 任何带实际内容的消息（哪怕很短，如「报销流程」）都不会命中。
+_CHITCHAT_RE = re.compile(
+    r"^(?:你?好|您好|hi|hello|嗨|哈喽|hiya|hey|在吗|在么|有人吗"
+    r"|谢(?:谢|了|啦)|多谢|感谢|辛苦了|麻烦了"
+    r"|再(?:见|会)|拜拜|晚安|早安|早上好|下午好|晚上好"
+    r"|好(?:的|滴|呀|嘞|勒)|嗯+|哦+|噢+|ok|okay|收到|明白|了解了?"
+    r"|[!！。.，,~～?？\s呀啦哈哟呢了]"
+    r")+$",
+    re.IGNORECASE,
+)
+
+
+def is_chitchat(text: str | None) -> bool:
+    """问候/寒暄/感谢/告别类短句：对知识库检索没有价值，调用方应跳过预检索。
+
+    只认**整句**由寒暄词与标点构成的短消息（长度上限 24 字符），长句、含实词的
+    短句（如「报销流程」「表格第三行是什么」）一律不命中——宁可漏判（多检索一次，
+    无害）也不误判（该检索的不检索）。"""
+    if not text:
+        return False
+    t = text.strip()
+    if not t or len(t) > 24:
+        return False
+    return bool(_CHITCHAT_RE.match(t))
 
 
 def inject_search_params(name: str, arguments: dict, top_k: int, threshold: float,

@@ -174,7 +174,13 @@ async def prepare(state: dict) -> dict:
     # 温度优先级：专家配置（会话级）> 模型配置（管理端）> 默认值 0.3
     temperature = float(es.get("temperature") or getattr(provider, "temperature", 0.3) or 0.3)
     top_k = int(es.get("topK") or 5)
-    threshold = float(es.get("threshold") or 0.0)
+    # 阈值：显式配置优先（含显式 0——运营在管理端配了就尊重），未配置时用保守默认
+    # （docs/60 P0-3a）。旧实现 `or 0.0` 把「没配」和「配了 0」混为一谈，问候语都能
+    # 拖出 0 分命中。
+    _raw_threshold = es.get("threshold")
+    threshold = (float(_raw_threshold)
+                 if _raw_threshold is not None and str(_raw_threshold).strip() != ""
+                 else retrieval.DEFAULT_KB_THRESHOLD)
     retrieval_mode = str(es.get("retrievalMode") or "hybrid")
     kb_scope = es.get("kbScope") or "ALL"
     enabled_tools = es.get("tools") or {}
@@ -236,6 +242,11 @@ async def prepare(state: dict) -> dict:
     citations: list[dict] = []
     if not kb_on:
         tools = retrieval.strip_kb_tool(tools)
+    elif retrieval.is_chitchat(req.text):
+        # 闲聊分流（docs/60 P0-3b）：问候/感谢/告别类短句没有检索价值，跳过预检索——
+        # 旧行为下「你好」也会拖出「来源：策划书.docx」，观感差且污染上下文。
+        logger.info("run %s: kb pre-retrieval skipped (chit-chat, %d chars)",
+                    req.run_id, len(req.text or ""))
     elif tool_client.enabled and retrieval.has_kb_tool(tools):
         kb_block, kb_citations = await retrieval.pre_retrieve(
             tool_client, req.text, top_k, threshold, retrieval_mode, kb_scope)
@@ -256,8 +267,14 @@ async def prepare(state: dict) -> dict:
     # 这是确定性闸（不给工具），绑了数字员工（scope 非空）的办理类会话原样返回，零回归。
     tools = filter_expert_tools(tools, req.expert, req.scope)
 
-    logger.info("run %s: history=%d turns, tools=%d, kbOn=%s, temperature=%s, topK=%s, mode=%s",
-                req.run_id, len(req.history or []), len(tools), kb_on, temperature, top_k, retrieval_mode)
+    # 观测（docs/60 P2-12）：附件注入量与检索参数进同一条 run 日志，线上排查
+    # 「模型为什么看不见附件」不再靠猜。
+    _att_count = len(req.attachment_docs or [])
+    _att_chars = sum(len(d.text or "") for d in (req.attachment_docs or []))
+    logger.info("run %s: history=%d turns, tools=%d, kbOn=%s, temperature=%s, topK=%s, "
+                "mode=%s, threshold=%s, atts=%d docs/%d chars",
+                req.run_id, len(req.history or []), len(tools), kb_on, temperature, top_k,
+                retrieval_mode, threshold, _att_count, _att_chars)
 
     return {
         "messages": messages,
