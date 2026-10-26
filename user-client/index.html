@@ -6145,9 +6145,20 @@ function removeAttach(id){
   pendingFiles = pendingFiles.filter(function(f){ return f.id !== id; });
   renderAttachStrip();
 }
+/* 对话附件类型白名单（与服务端 KbFileParser.SUPPORTED 同源口径，docs/60 P1-5）：
+   accept 只是选择器的**提示**，拖拽/「所有文件」仍可选进非法类型——这里做硬校验，
+   非白名单直接拒收并说明原因（尤其图片：当前无 OCR/视觉通道，传了模型也看不见，
+   与其上传后得到「您指的是什么呢」，不如当场说清支持范围）。 */
+var CHAT_ATTACH_EXTS = ['pdf','docx','doc','xlsx','xls','txt','md','csv','json','log'];
 function onAttachFiles(input){
   var files = input.files ? Array.prototype.slice.call(input.files) : [];
   files.forEach(function(file){
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+    if(CHAT_ATTACH_EXTS.indexOf(ext) < 0){
+      toast('暂不支持 ' + (ext ? '.' + ext : '该类型') + ' 文件，AI 可读取：' + CHAT_ATTACH_EXTS.join(' / ') +
+            '（图片暂不支持解析）');
+      return;
+    }
     var ph = {id:'__up_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name:file.name, pending:true};
     pendingFiles.push(ph); renderAttachStrip();
     API.fileUpload(file).then(function(d){
@@ -9684,6 +9695,13 @@ function onOaAttachFiles(input){
   var files = input.files ? Array.prototype.slice.call(input.files) : [];
   S.pendingFiles = S.pendingFiles || [];
   files.forEach(function(file){
+    /* 类型白名单与经典 onAttachFiles 同源（CHAT_ATTACH_EXTS，docs/60 P1-5）。 */
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+    if(CHAT_ATTACH_EXTS.indexOf(ext) < 0){
+      toast('暂不支持 ' + (ext ? '.' + ext : '该类型') + ' 文件，AI 可读取：' + CHAT_ATTACH_EXTS.join(' / ') +
+            '（图片暂不支持解析）');
+      return;
+    }
     var ph = {id:'__up_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name:file.name, pending:true};
     S.pendingFiles.push(ph); oaRenderAttachStrip();
     API.fileUpload(file).then(function(d){
