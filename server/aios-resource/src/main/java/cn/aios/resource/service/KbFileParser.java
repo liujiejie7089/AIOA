@@ -133,23 +133,62 @@ public class KbFileParser {
         return readSheet(new HSSFWorkbook(new ByteArrayInputStream(bytes)));
     }
 
-    /** Excel：逐行拼接单元格，行内以空格分隔，行间换行。 */
+    /** Excel：逐 Sheet 输出 Markdown 表格（表名标题 + 表头 + 对齐行 + 数据行）。
+     *
+     * <p>旧实现「行内以空格拼接」丢掉了列对齐：多列表（如报名表）抽出来的文本列错位，
+     * 模型无法按行按列读表（docs/60 P2-10，2026-10-26）。Markdown 表格对模型显著更友好。</p>
+     *
+     * <p>细节：单元格里的 {@code |} 与换行做转义（否则破坏表格结构）；整行空白跳过；
+     * 列数取「最右非空单元格」的最大值（尾部空列不撑宽表格，但行内空洞保留以维持对齐）。</p>
+     */
     private String readSheet(Workbook wb) throws Exception {
         DataFormatter formatter = new DataFormatter();
         StringBuilder sb = new StringBuilder();
         try (wb) {
             for (int s = 0; s < wb.getNumberOfSheets(); s++) {
                 Sheet sheet = wb.getSheetAt(s);
+                int maxCols = 0;
                 for (Row row : sheet) {
-                    List<String> cells = new ArrayList<>();
-                    for (Cell cell : row) {
-                        String v = formatter.formatCellValue(cell);
-                        if (v != null && !v.isBlank()) {
-                            cells.add(v.trim());
+                    int last = row.getLastCellNum(); // short；-1 = 行内无单元格
+                    for (int c = last - 1; c >= 0; c--) {
+                        Cell cell = row.getCell(c);
+                        String v = cell == null ? "" : formatter.formatCellValue(cell).trim();
+                        if (!v.isEmpty()) {
+                            if (c + 1 > maxCols) {
+                                maxCols = c + 1;
+                            }
+                            break;
                         }
                     }
-                    if (!cells.isEmpty()) {
-                        sb.append(String.join(" ", cells)).append('\n');
+                }
+                if (maxCols == 0) {
+                    continue; // 整表皆空（只有格式没有内容）
+                }
+                sb.append("### ").append(sheet.getSheetName()).append('\n');
+                boolean headerDone = false;
+                for (Row row : sheet) {
+                    List<String> cells = new ArrayList<>(maxCols);
+                    boolean hasValue = false;
+                    for (int c = 0; c < maxCols; c++) {
+                        Cell cell = row.getCell(c);
+                        String v = cell == null ? "" : formatter.formatCellValue(cell).trim();
+                        if (!v.isEmpty()) {
+                            hasValue = true;
+                        }
+                        v = v.replace("|", "\\|").replace("\n", " ").replace("\r", " ");
+                        cells.add(v);
+                    }
+                    if (!hasValue) {
+                        continue; // 整行空白跳过
+                    }
+                    sb.append("| ").append(String.join(" | ", cells)).append(" |\n");
+                    if (!headerDone) {
+                        sb.append("|");
+                        for (int c = 0; c < maxCols; c++) {
+                            sb.append(" --- |");
+                        }
+                        sb.append('\n');
+                        headerDone = true;
                     }
                 }
             }
