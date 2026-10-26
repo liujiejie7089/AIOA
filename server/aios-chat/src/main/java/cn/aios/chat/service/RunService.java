@@ -740,23 +740,63 @@ public class RunService {
                     .orderByDesc(ChatMessage::getSeq)
                     .last("limit " + HISTORY_TURNS));
             java.util.Collections.reverse(recent);
-            return recent.stream()
-                    .map(m -> {
-                        String content = m.getContent();
-                        List<Object> atts = m.getAttachments();
-                        // 历史轮次只能回填文本：把该轮 user 消息已落库的文档正文前置到 content，
-                        // 否则「重新打开会话后 AI 看不到文档」不成立。解析/截断已完成于 resolveAttachments，
-                        // 这里只做格式化（单一来源，不复制第二份逻辑）。
-                        if (atts != null && !atts.isEmpty()) {
-                            content = formatAttachmentDocs(atts) + (content == null ? "" : content);
-                        }
-                        return new AgentRunRequest.ChatTurn(m.getRole(), content);
-                    })
-                    .toList();
+            return toChatTurns(recent);
         } catch (Exception e) {
             log.warn("load history failed for conversation {}: {}", conversationId, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 历史消息 → Agent 轮次（含附件回填策略，docs/60 P1-6a，2026-10-26）。
+     *
+     * <p>旧行为：每个带附件的历史轮都前置**全文**（单份最多 {@link KbController#VIEW_MAX_CHARS}
+     * = 20000 字）⇒ 同一份文档在 10 轮历史里重复出现 10 次，prompt 被撑到几十万字符，
+     * 弱模型直接被淹没（也是「模型看不见附件」的诱因之一）。</p>
+     *
+     * <p>现在：全文只回填到**最近一个**带附件的轮次（时间正序里最后一个）；更早的带附件轮次
+     * 只留「文件名 + 已省略」占位，模型仍知道该轮上传过哪些文档，需要全文时由最近的轮次提供。</p>
+     */
+    static List<AgentRunRequest.ChatTurn> toChatTurns(List<ChatMessage> recentAsc) {
+        int lastAttachmentIdx = -1;
+        for (int i = recentAsc.size() - 1; i >= 0; i--) {
+            List<Object> atts = recentAsc.get(i).getAttachments();
+            if (atts != null && !atts.isEmpty()) {
+                lastAttachmentIdx = i;
+                break;
+            }
+        }
+        List<AgentRunRequest.ChatTurn> out = new ArrayList<>(recentAsc.size());
+        for (int i = 0; i < recentAsc.size(); i++) {
+            ChatMessage m = recentAsc.get(i);
+            String content = m.getContent();
+            List<Object> atts = m.getAttachments();
+            if (atts != null && !atts.isEmpty()) {
+                String prefix = (i == lastAttachmentIdx)
+                        ? formatAttachmentDocs(atts)          // 最近一轮：全文（单一来源，不复制逻辑）
+                        : formatAttachmentDocsBrief(atts);    // 更早轮次：占位
+                content = prefix + (content == null ? "" : content);
+            }
+            out.add(new AgentRunRequest.ChatTurn(m.getRole(), content));
+        }
+        return out;
+    }
+
+    /** 历史轮附件的「省略占位」：只留文件名，不重复正文（见 {@link #toChatTurns} 的策略说明）。 */
+    private static String formatAttachmentDocsBrief(List<?> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Object o : attachments) {
+            if (!(o instanceof Map<?, ?> doc)) {
+                continue;
+            }
+            Object name = doc.get("name");
+            sb.append("【参考文档】《").append(name == null ? "" : String.valueOf(name))
+                    .append("》（全文已在更近的轮次提供，此处省略）\n");
+        }
+        return sb.toString();
     }
 
     /**

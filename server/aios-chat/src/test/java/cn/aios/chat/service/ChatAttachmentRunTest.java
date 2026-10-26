@@ -251,4 +251,61 @@ class ChatAttachmentRunTest {
         // 失败项也回显原因，不静默
         assertTrue(prefix.contains("（解析失败：文件不存在）"), prefix);
     }
+
+    // --------------------------------------------- 契约5：历史附件回填只留一份全文（P1-6a）
+
+    /** 历史轮附件（List<Object>，元素为 Map）：既测试也演示 attachments 列的真实形态。 */
+    private static List<Object> att(Object fileId, String name, String text) {
+        return new java.util.ArrayList<>(List.<Object>of(
+                Map.of("file_id", fileId, "name", name, "text", text, "truncated", false)));
+    }
+
+    @Test
+    @DisplayName("★toChatTurns：附件全文只回填最近一个带附件轮次，更早轮次只留文件名占位（防 prompt 膨胀）")
+    void historyAttachmentFullTextOnlyOnce() {
+        ChatMessage early = new ChatMessage();
+        early.setRole(ChatMessage.ROLE_USER);
+        early.setContent("第一问");
+        early.setAttachments(att(1L, "报告.pdf", "正文A"));
+
+        ChatMessage mid = new ChatMessage();
+        mid.setRole(ChatMessage.ROLE_ASSISTANT);
+        mid.setContent("第一答");
+
+        ChatMessage late = new ChatMessage();
+        late.setRole(ChatMessage.ROLE_USER);
+        late.setContent("第二问");
+        late.setAttachments(att(2L, "表格.xlsx", "正文B"));
+
+        List<AgentRunRequest.ChatTurn> turns =
+                RunService.toChatTurns(List.of(early, mid, late));
+
+        assertEquals(3, turns.size());
+        // 更早的带附件轮次：只留占位（有文件名、无正文），模型仍知道该轮传过什么
+        assertTrue(turns.get(0).content().contains("《报告.pdf》"), turns.get(0).content());
+        assertTrue(turns.get(0).content().contains("此处省略"), turns.get(0).content());
+        assertFalse(turns.get(0).content().contains("正文A"), "早期轮次不应重复正文");
+        // 最近一个带附件轮次：全文照旧（含边界标记）
+        assertTrue(turns.get(2).content().contains("正文B"), turns.get(2).content());
+        assertTrue(turns.get(2).content().contains("【以上为参考文档】"), turns.get(2).content());
+        assertFalse(turns.get(2).content().contains("此处省略"), "最近轮次不该被省略");
+        // 无附件轮次不受影响
+        assertEquals("第一答", turns.get(1).content());
+    }
+
+    @Test
+    @DisplayName("★toChatTurns：只有一个带附件轮次时行为与旧实现等价（全文回填，零回归）")
+    void singleAttachmentTurnStillFullText() {
+        ChatMessage u = new ChatMessage();
+        u.setRole(ChatMessage.ROLE_USER);
+        u.setContent("第一问");
+        u.setAttachments(att(1L, "报告.pdf", "正文A"));
+        ChatMessage a = new ChatMessage();
+        a.setRole(ChatMessage.ROLE_ASSISTANT);
+        a.setContent("第一答");
+
+        List<AgentRunRequest.ChatTurn> turns = RunService.toChatTurns(List.of(u, a));
+        assertTrue(turns.get(0).content().contains("正文A"), turns.get(0).content());
+        assertFalse(turns.get(0).content().contains("此处省略"), turns.get(0).content());
+    }
 }
