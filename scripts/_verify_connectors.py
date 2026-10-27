@@ -22,6 +22,8 @@ C7 的真实 IMAP 登录失败用例，它天然不写库）。
   C13 GET  /api/v1/connectors（无 token）         HTTP 401（用户维度隔离，未登录不可读）
   C14 GET  /api/v1/plugins                      200 + 每项键**恰好**为 code/name/description/domain/riskLevel/requiresApproval
                                                 （绝不泄露 endpoint / auth_ref / input_schema）
+  C15 GET  /api/v1/mcp/servers/wechat_work/tools 200 + 恰好 3 个（check_connection/get_my_profile/send_text_message），
+                                                get_my_profile 只读（V99，snsapi_privateinfo 链路产物）
 
 用法：
     python scripts/_verify_connectors.py [--base http://127.0.0.1:8080]
@@ -242,6 +244,19 @@ def main():
     rec("C14 /v1/plugins 字段白名单", st == 200 and d.get("code") == 0 and not bad and not leaks,
         "HTTP=%s 条数=%s 多余键=%s 泄露关键字=%s" % (st, len(plist), sorted(bad) or "无",
                                                     leaks or "无"))
+
+    # ---------- C15 企业微信工具目录（V99：+get_my_profile，与 WeComMcpHandler.supports 对齐） ----------
+    st, _, raw = call(base, "/api/v1/mcp/servers/wechat_work/tools", token=token)
+    d = jload(raw) or {}
+    tools = d.get("data") or []
+    tnames = sorted(t.get("name") for t in tools) if isinstance(tools, list) else []
+    prof = next((t for t in tools if isinstance(t, dict) and t.get("name") == "get_my_profile"), None)
+    ok15 = (st == 200 and d.get("code") == 0
+            and tnames == ["check_connection", "get_my_profile", "send_text_message"]
+            and prof is not None and prof.get("readOnly") is True)
+    rec("C15 wechat_work 工具目录 = 3 个含 get_my_profile（只读）", ok15,
+        "HTTP=%s code=%s tools=%s readOnly=%s" % (st, d.get("code"), tnames,
+                                                  (prof or {}).get("readOnly")))
 
     fails = [r for r in RESULTS if not r[1]]
     print("\n== 汇总：%d 项，通过 %d，失败 %d ==" % (len(RESULTS), len(RESULTS) - len(fails), len(fails)))

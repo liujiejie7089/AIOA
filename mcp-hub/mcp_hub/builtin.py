@@ -49,6 +49,7 @@ _PROPS_ORDER = {
     "send_draft": ["draftId", "requestId"],
     "check_connection": [],
     "send_text_message": ["touser", "content"],
+    "get_my_profile": [],
 }
 
 

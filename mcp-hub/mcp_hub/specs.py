@@ -113,6 +113,12 @@ BUILTIN_SERVERS = {
                 },
                 "read_only": False,
             },
+            {
+                "name": "get_my_profile",
+                "description": "获取当前用户的企业微信身份（userid / 企业邮箱 biz_mail），来自 OAuth 网页授权 snsapi_privateinfo 授权后的 getuserdetail",
+                "input_schema": {"type": "object", "properties": {}},
+                "read_only": True,
+            },
         ],
     },
 }

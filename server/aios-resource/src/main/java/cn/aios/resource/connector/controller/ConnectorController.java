@@ -70,7 +70,8 @@ public class ConnectorController {
         String returnPath = body == null ? null : body.returnPath();
         String origin = resolveOrigin(request);
         String host = request.getHeader("Host");
-        return ApiResponse.ok(weComService.start(user, code, returnPath, origin, host));
+        String userAgent = request.getHeader("User-Agent");
+        return ApiResponse.ok(weComService.start(user, code, returnPath, origin, host, userAgent));
     }
 
     @PostMapping("/{code}/connect/credential")
