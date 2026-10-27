@@ -226,6 +226,7 @@
             </template>
             <el-menu-item index="/kpi">经营数据</el-menu-item>
             <el-menu-item index="/quotas">配额管理</el-menu-item>
+            <el-menu-item index="/connector-configs">连接器配置</el-menu-item>
           </el-sub-menu>
 
           <!-- 租户与机构：仅平台管理员 / 租户管理员可见 -->

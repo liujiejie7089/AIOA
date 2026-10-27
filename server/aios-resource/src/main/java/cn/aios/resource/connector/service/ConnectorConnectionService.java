@@ -101,12 +101,16 @@ public class ConnectorConnectionService {
         if (c == null) {
             return; // 本就没有连接，幂等
         }
-        c.setStatus(ConnectorConnection.STATUS_NEED_AUTH);
-        c.setCredentialJson(null);
-        c.setAccountLabel(null);
-        c.setLastError(null);
-        c.setDisconnectedAt(LocalDateTime.now());
-        connectionMapper.updateById(c);
+        // 坑：updateById 走 NOT_NULL 字段策略，null 字段（accountLabel/credentialJson/lastError）
+        // 会被静默跳过 ⇒ 断开后残留标签。必须 LambdaUpdateWrapper.set(...) 显式写 NULL。
+        connectionMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConnectorConnection>()
+                        .eq(ConnectorConnection::getId, c.getId())
+                        .set(ConnectorConnection::getStatus, ConnectorConnection.STATUS_NEED_AUTH)
+                        .set(ConnectorConnection::getCredentialJson, null)
+                        .set(ConnectorConnection::getAccountLabel, null)
+                        .set(ConnectorConnection::getLastError, null)
+                        .set(ConnectorConnection::getDisconnectedAt, LocalDateTime.now()));
     }
 
     /** 重新检测：CREDENTIAL 用解密后的凭据再跑一次探针；OAUTH2 无刷新令牌，仅返回当前状态。 */

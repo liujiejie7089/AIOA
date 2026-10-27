@@ -136,6 +136,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '模型管理', section: 'models', allowRoles: PLATFORM_ONLY_ROLES }
       },
       {
+        path: 'connector-configs',
+        name: 'connector-configs',
+        component: () => import('@/views/ConnectorConfigView.vue'),
+        meta: { title: '连接器配置', allowRoles: TENANT_SCOPE_ROLES }
+      },
+      {
         path: 'sys-permissions',
         redirect: '/sys-roles',
         meta: { title: '权限点', allowRoles: PLATFORM_ONLY_ROLES }
