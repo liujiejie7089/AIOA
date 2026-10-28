@@ -136,39 +136,6 @@ public class AuthService {
     }
 
     /**
-     * 外部身份（企业微信 OAuth 静默登录）签发本地令牌：账号已通过绑定校验，无需密码。
-     *
-     * <p>与 {@link #login} 共用令牌签发 / 登录日志 / lastLoginAt 链路，只跳过密码校验，
-     * 登录日志原因固定为「企业微信OAuth登录」，便于审计区分。</p>
-     *
-     * @throws cn.aios.common.exception.BizException 账号不存在或已禁用
-     */
-    public LoginData issueForExternalUser(long userId, String ip, String ua) {
-        SysUser user = userMapper.selectById(userId);
-        if (user == null) {
-            loginLog(null, ip, ua, false, "企微登录账号不存在");
-            throw BizException.unauthorized("账号不存在");
-        }
-        String st = user.getStatus();
-        if (st == null || (!"ENABLED".equals(st) && !"ACTIVE".equals(st))) {
-            loginLog(user.getId(), ip, ua, false, "账号已禁用");
-            throw new BizException(1002, "账号已禁用");
-        }
-        List<String> roles = roleCodesOf(user.getId());
-        AuthUser auth = toAuthUser(user, roles);
-        String access = jwtTokenProvider.generateAccessToken(auth);
-        String refresh = jwtTokenProvider.generateRefreshToken(auth);
-        user.setLastLoginAt(LocalDateTime.now());
-        userMapper.updateById(user);
-        loginLog(user.getId(), ip, ua, true, "企业微信OAuth登录");
-        return new LoginData(access, refresh, jwtTokenProvider.accessTtlSeconds(),
-                new UserBrief(user.getId(), user.getUsername(), user.getNickname(), roles,
-                        user.getTenantId() == null ? 0L : user.getTenantId(),
-                        tenantNameOf(user.getTenantId()),
-                        institutionIdOf(user.getId()), institutionNameOf(user.getId())));
-    }
-
-    /**
      * 租户名称校验（管理端登录的「相关校验」落地）。
      *
      * <p>租户侧账号（tenantId ≥ 2）必须给出与所属租户一致的名称；平台侧账号

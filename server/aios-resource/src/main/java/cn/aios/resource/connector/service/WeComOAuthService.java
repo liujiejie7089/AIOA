@@ -9,12 +9,16 @@ import cn.aios.resource.connector.mapper.ConnectorConnectionMapper;
 import cn.aios.resource.connector.mapper.ConnectorOauthStateMapper;
 import cn.aios.security.AuthUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -41,15 +45,22 @@ public class WeComOAuthService {
     private static final String AUTH_BASE = "https://open.work.weixin.qq.com/wwopen/sso/qrConnect";
     /** 移动端网页授权（企微客户端内）：scope 固定 snsapi_privateinfo（docs/58 §3.3）。 */
     private static final String WEB_AUTH_BASE = "https://open.weixin.qq.com/connect/oauth2/authorize";
+    private static final String GETTOKEN_URL = "https://qyapi.weixin.qq.com/cgi-bin/gettoken";
+    private static final String GETUSERINFO_URL = "https://qyapi.weixin.qq.com/cgi-bin/auth/getuserinfo";
+    /** snsapi_privateinfo 授权后 user_ticket 换详细身份（POST），含 biz_mail。 */
+    private static final String GETUSERDETAIL_URL = "https://qyapi.weixin.qq.com/cgi-bin/auth/getuserdetail";
     private static final Duration STATE_TTL = Duration.ofMinutes(10);
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(8);
+
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(HTTP_TIMEOUT)
+            .build();
 
     private final ConnectorOauthStateMapper stateMapper;
     private final ConnectorConnectionMapper connectionMapper;
     private final ConnectorCatalogService catalogService;
     private final SecretCodec secretCodec;
     private final ConnectorProperties props;
-    /** 企业微信官方接口唯一客户端（与 admin 侧企微登录共用，见 aios-common）。 */
-    private final cn.aios.common.wecom.WeComAuthClient weComAuth = new cn.aios.common.wecom.WeComAuthClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public WeComOAuthService(ConnectorOauthStateMapper stateMapper,
@@ -161,34 +172,34 @@ public class WeComOAuthService {
         } catch (Exception e) {
             return buildLocation(st, "fail", "获取 access_token 失败：" + e.getMessage());
         }
-        cn.aios.common.wecom.WeComAuthClient.UserInfo info;
-        try {
-            info = weComAuth.getUserInfo(accessToken, code);
-        } catch (Exception e) {
-            return buildLocation(st, "fail", "企业微信授权信息获取失败：" + e.getMessage());
-        }
-        String userid = info.userid();
+        String infoResp = httpGet(GETUSERINFO_URL + "?access_token=" + urlEncode(accessToken)
+                + "&code=" + urlEncode(code));
+        JsonNode info = parse(infoResp);
+        String userid = info == null ? null : info.path("userid").asText(null);
         if (userid == null || userid.isBlank()) {
-            return buildLocation(st, "fail", "未获取到企业微信 userid（成员可能不在应用可见范围）");
+            return buildLocation(st, "fail", "未获取到企业微信 userid：" + (info == null ? "无响应" : info.path("errmsg").asText("")));
         }
 
         // snsapi_privateinfo 授权 ⇒ getuserinfo 额外返回 user_ticket（1800s 有效，只在本请求内用一次换详细身份）
-        String userTicket = info.userTicket();
+        String userTicket = info.path("user_ticket").asText(null);
         Map<String, Object> credential = new java.util.LinkedHashMap<>();
         credential.put("userid", userid);
         if (userTicket != null && !userTicket.isBlank()) {
-            try {
-                cn.aios.common.wecom.WeComAuthClient.UserDetail detail =
-                        weComAuth.getUserDetail(accessToken, userTicket);
-                if (detail.bizMail() != null && !detail.bizMail().isBlank()) {
-                    credential.put("biz_mail", detail.bizMail());
+            JsonNode detail = httpPostJson(GETUSERDETAIL_URL + "?access_token=" + urlEncode(accessToken),
+                    jsonOf("user_ticket", userTicket));
+            if (detail != null && detail.path("errcode").asInt(0) == 0) {
+                String bizMail = detail.path("biz_mail").asText(null);
+                if (bizMail != null && !bizMail.isBlank()) {
+                    credential.put("biz_mail", bizMail);
                 }
-                if (detail.name() != null && !detail.name().isBlank()) {
-                    credential.put("name", detail.name());
+                String name = detail.path("name").asText(null);
+                if (name != null && !name.isBlank()) {
+                    credential.put("name", name);
                 }
-            } catch (Exception e) {
-                // getuserdetail 失败不阻断连接：userid 已到手，biz_mail 缺失时 get_my_profile 如实缺省
-                log.info("getuserdetail 未成功（不阻断连接）: {}", e.getMessage());
+            } else {
+                // getuserdetail 失败不阻断连接：.userid 已到手，biz_mail 缺失时 get_my_profile 如实缺省
+                log.info("getuserdetail 未成功（不阻断连接）: {}",
+                        detail == null ? "无响应" : detail.path("errmsg").asText(""));
             }
         }
 
@@ -238,8 +249,37 @@ public class WeComOAuthService {
         return sb.toString();
     }
 
+    private String httpGet(String url) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(HTTP_TIMEOUT)
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            return resp.body();
+        } catch (Exception e) {
+            log.debug("企业微信 HTTP 请求异常: {}", e.getClass().getSimpleName());
+            return null;
+        }
+    }
 
     /** POST JSON（getuserdetail 用），body 为 JSON 字符串。 */
+    private JsonNode httpPostJson(String url, String jsonBody) {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(HTTP_TIMEOUT)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            return parse(resp.body());
+        } catch (Exception e) {
+            log.debug("企业微信 POST 异常: {}", e.getClass().getSimpleName());
+            return null;
+        }
+    }
 
     /** 企微/微信客户端内 UA 判定（网页授权分支，只在服务端判定，前端不参与）。 */
     private static boolean isWecomClient(String userAgent) {
@@ -258,7 +298,26 @@ public class WeComOAuthService {
         }
     }
 
+    private JsonNode parse(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(body);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
+    private String jsonOf(String k, String v) {
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode n = objectMapper.createObjectNode();
+            n.put(k, v);
+            return objectMapper.writeValueAsString(n);
+        } catch (Exception e) {
+            throw new IllegalStateException("构造凭据 JSON 失败", e);
+        }
+    }
 
     private static String urlEncode(String s) {
         return URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8);
@@ -300,14 +359,15 @@ public class WeComOAuthService {
         if (creds == null) {
             throw BizException.badRequest("企业微信未配置：请管理员在连接器里填写 corpId / agentId / corpSecret");
         }
-        WeComToken token;
-        try {
-            cn.aios.common.wecom.WeComAuthClient.Token tk =
-                    weComAuth.getToken(creds.corpId(), creds.corpSecret());
-            token = new WeComToken(tk.accessToken(), creds.agentId(), tk.expiresIn());
-        } catch (Exception e) {
-            throw BizException.badRequest("企业微信获取 access_token 失败：" + e.getMessage());
+        String resp = httpGet(GETTOKEN_URL + "?corpid=" + urlEncode(creds.corpId())
+                + "&corpsecret=" + urlEncode(creds.corpSecret()));
+        JsonNode tk = parse(resp);
+        if (tk == null || tk.path("errcode").asInt(0) != 0) {
+            String msg = tk == null ? "无响应" : tk.path("errmsg").asText("");
+            throw BizException.badRequest("企业微信获取 access_token 失败：" + msg);
         }
+        WeComToken token = new WeComToken(tk.path("access_token").asText(), creds.agentId(),
+                tk.path("expires_in").asInt(7200));
         synchronized (TOKEN_CACHE_LOCK) {
             TOKEN_CACHE.put(tenantId, new CachedToken(token,
                     LocalDateTime.now().plusSeconds(Math.max(60, token.expiresIn() - 300L))));
