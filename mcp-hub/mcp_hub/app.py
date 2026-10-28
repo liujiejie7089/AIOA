@@ -10,8 +10,11 @@ ASGI 入口：把 /mcp/<serverCode> 路由到对应内置服务器的 FastMCP st
 其它路由：
 - GET /health                        健康探测（无状态自报）
 - POST /internal/mcp/probe           Java 信任前存活探测（见 probe.py）
+- /api/v1/wecom/*                    双模式连接器 REST 面（见 wecom/admin_api.py）
 
-设计原则：无状态、不落盘、不读凭据、不持有密钥。日志只记 server/tool/ok/duration_ms。
+设计原则：代理服务器无状态、不落盘、不读凭据、不持有密钥。
+wechat_work 是例外——它原生实现双模式连接器逻辑，凭据进加密存储（见 wecom/ 包与
+docs/60），其余纪律（不明文记日志、Authorization 不落库）照旧。
 """
 
 import asyncio
@@ -19,6 +22,9 @@ import json
 import logging
 
 from . import builtin, probe
+from .wecom import admin_api as wecom_admin_api
+from .wecom import graph as wecom_graph
+from .wecom import store as wecom_store
 
 logger = logging.getLogger("mcp_hub")
 
@@ -64,18 +70,28 @@ async def _lifespan(receive, send):
     while True:
         message = await receive()
         if message["type"] == "lifespan.startup":
+            # 双模式连接器存储先就绪（生产模式缺密钥在此 fail fast，见 wecom/crypto.py）
+            try:
+                wecom_store.init()
+            except Exception as e:  # noqa: BLE001
+                logger.error("wecom 存储初始化失败：%s", e)
+                raise
             for child in _CHILDREN:
                 try:
                     await child.start()
-                except Exception:  # noqa: BLE001
-                    logger.exception("子 app lifespan 启动失败")
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("子 app lifespan 启动失败：%s", e)
             await send({"type": "lifespan.startup.complete"})
         elif message["type"] == "lifespan.shutdown":
             for child in _CHILDREN:
                 try:
                     await child.stop()
-                except Exception:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
                     pass
+            try:
+                await wecom_graph.shutdown()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("wecom 图关闭失败：%s", e)
             await send({"type": "lifespan.shutdown.complete"})
             return
 
@@ -106,6 +122,10 @@ async def _handle_http(scope, receive, send):
 
     if path == "/internal/mcp/probe" and method == "POST":
         await probe.handle(scope, receive, send)
+        return
+
+    if path.startswith("/api/v1/wecom"):
+        await wecom_admin_api.handle(scope, receive, send)
         return
 
     if path.startswith("/mcp/"):

@@ -21,8 +21,13 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from . import specs
+from .wecom import catalog as wecom_catalog
+from .wecom import server as wecom_server
 
 logger = logging.getLogger("mcp_hub")
+
+# 原生实现（非代理）的内置服务器：工具逻辑在 Python 侧，见 wecom/ 包
+NATIVE_SERVERS = {"wechat_work": wecom_catalog}
 
 # 参数名 -> Python 类型（仅用于 FastMCP 推断 JSON Schema 的类型）
 _TYPE_BY_PARAM = {
@@ -140,9 +145,16 @@ def _make_tool_fn(server_code: str, tool_name: str, props: list, defaults: dict,
 
 
 def build_servers() -> "dict[str, FastMCP]":
-    """为每个内置服务器构建一个 FastMCP 实例（streamable_http_path='/'，便于父 ASGI 改写路径）。"""
+    """为每个内置服务器构建一个 FastMCP 实例（streamable_http_path='/'，便于父 ASGI 改写路径）。
+
+    wechat_work 是双模式连接器的原生实现（OAuth + 邮箱 + 模式闸门），不转发 Java；
+    其余服务器保持无状态代理。
+    """
     servers: "dict[str, FastMCP]" = {}
     for code, spec in specs.BUILTIN_SERVERS.items():
+        if code in NATIVE_SERVERS:
+            servers[code] = wecom_server.build_server()
+            continue
         mcp = FastMCP(code, streamable_http_path="/")
         for tool in spec["tools"]:
             name = tool["name"]
@@ -165,5 +177,8 @@ def build_servers() -> "dict[str, FastMCP]":
 # 模块导入时即构建（供 app.py / run.py 使用）
 SERVERS = build_servers()
 
-# 端点信息（run.py 启动横幅、/health 用）
-SERVER_INFO = {code: specs.tool_count(code) for code in specs.BUILTIN_SERVERS}
+# 端点信息（run.py 启动横幅、/health 用）：原生服务器报原生工具数
+SERVER_INFO = {
+    code: (NATIVE_SERVERS[code].tool_count() if code in NATIVE_SERVERS else specs.tool_count(code))
+    for code in specs.BUILTIN_SERVERS
+}

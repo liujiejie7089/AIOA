@@ -22,6 +22,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 
 from . import specs
+from .builtin import NATIVE_SERVERS
 
 logger = logging.getLogger("mcp_hub")
 
@@ -70,6 +71,19 @@ def _truncate(reason: str, limit: int = 300) -> str:
 
 async def _probe_builtin(req: dict, send):
     code = req.get("code")
+    # 原生服务器（wechat_work）报原生目录，与 /mcp/<code> 实际暴露的工具一致
+    if code in NATIVE_SERVERS:
+        tools = [
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "inputSchema": t["input_schema"],
+                "readOnly": t["read_only"],
+            }
+            for t in NATIVE_SERVERS[code].TOOLS
+        ]
+        await _send_json(send, 200, {"ok": True, "tools": tools, "error": None})
+        return
     if code in specs.BUILTIN_SERVERS:
         tools = [
             {

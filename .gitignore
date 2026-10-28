@@ -182,3 +182,6 @@ scripts/verify_*.json
 scripts/_syntax_rc.txt
 # 套件跑前对 quota 等业务行做的备份文件（根目录，含真实数据，绝不能入库）
 /*_backup_*.json
+
+# ---- mcp-hub 运行时数据（SQLite：连接态/租户配置/OAuth state，含密文）----
+mcp-hub/data/

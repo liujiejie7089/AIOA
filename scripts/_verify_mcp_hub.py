@@ -32,10 +32,21 @@ EXPECT = {
         },
     },
     "wechat_work": {
-        "count": 2,
+        "count": 13,
         "required": {
+            "connect": [],
+            "disconnect": [],
+            "connection_status": [],
             "check_connection": [],
+            "get_my_profile": [],
             "send_text_message": ["touser", "content"],
+            "contact_search": ["query"],
+            "mail_list_folders": [],
+            "mail_list_messages": [],
+            "mail_read_message": ["uid"],
+            "mail_search_messages": ["query"],
+            "mail_create_draft": ["to", "subject", "body"],
+            "mail_send_draft": ["draftId", "requestId"],
         },
     },
 }

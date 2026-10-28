@@ -3,3 +3,8 @@ httpx>=0.27
 uvicorn>=0.30
 starlette>=0.37
 langchain-mcp-adapters>=0.0.9
+# 双模式连接器（wecom/ 包）：AES-256-GCM 加密存储 + LangGraph 双模式工作流
+cryptography>=42
+langgraph>=1.0
+langgraph-checkpoint-sqlite>=3.0
+aiosqlite>=0.20

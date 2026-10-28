@@ -5,7 +5,10 @@ MCP（Model Context Protocol）网关，位于 **agent（LangGraph）↔ Java �
 ## 为什么存在
 
 Java 后端是全系统唯一能解密用户凭据的地方；agent 需要「按 MCP 协议」发现并调用工具。
-hub 夹在中间，**无状态、不落盘、不读数据库、不持有任何密钥**，只做协议转换与转发。
+hub 夹在中间，**代理服务器无状态、不落盘、不读数据库、不持有任何密钥**，只做协议转换与转发。
+
+例外：`wechat_work`（企业微信双模式连接器）是**原生实现**，逻辑就在本仓库 Python 侧，
+凭据进加密存储——设计见 `docs/60__wecom-dual-mode-connector.md`。
 
 两条链路：
 
@@ -47,6 +50,29 @@ Resp:   {"data": {"ok": true, "data": <结果>}}
 | `MCP_HUB_PORT` | `8099` | hub 监听端口 |
 | `MCP_HUB_HOST` | `0.0.0.0` | hub 监听地址 |
 | `AIOS_SERVER_BASE_URL` | `http://127.0.0.1:8080` | Java 后端地址（工具转发目标） |
+
+## 企业微信双模式连接器（wecom/ 包）
+
+`wechat_work` 是原生实现的连接器：**A** = 企微 App 内 OAuth 网页授权（snsapi_privateinfo，
+拿 userid/姓名/企业邮箱地址，消息与通讯录工具可用）；**B** = 企业邮箱客户端专用密码绑定
+（IMAP/SMTP 邮件收发）。两种可叠加为 A+B；工具白名单按模式收窄（模式闸门）。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `WECOM_MOCK` | `0` | **1 才开 mock**（虚拟企业 + 虚拟邮箱，哨兵/联调用）；生产必须显式置 0 |
+| `WECOM_CONNECTOR_KEY` | 无 | base64 的 32 字节 AES 密钥；`WECOM_MOCK=0` 时缺失即启动失败 |
+| `WECOM_DB_PATH` | `mcp-hub/data/wecom.db` | SQLite（租户配置/连接态/OAuth state，凭据全密文） |
+| `WECOM_PUBLIC_BASE_URL` | 无 | 租户未配 redirectUri 时，据此推导授权回调地址 |
+| `WECOM_OAUTH_RESULT_URL` | `http://127.0.0.1:5173/#/connectors` | 授权回调后 302 回前端的结果页 |
+| `WECOM_CONNECT_WAIT_SECONDS` | `30` | connect 工具等待授权回调完成的最长秒数 |
+
+REST 面（H5 面板/管理端配置页用）：`GET/PUT /api/v1/wecom/tenant-config`、
+`GET /api/v1/wecom/connections`、`GET /api/v1/wecom/oauth/authorize-url`、
+`GET /api/v1/wecom/oauth/callback`。
+
+```bash
+# 生成一把生产密钥（一次性）：openssl rand -base64 32
+```
 
 ## 启动
 
