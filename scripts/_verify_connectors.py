@@ -15,7 +15,8 @@ C7 的真实 IMAP 登录失败用例，它天然不写库）。
   C7  POST /qq_mail/connect/credential 空授权码  业务码 400 + 文案「授权码不能为空」
   C8  POST /qq_mail/connect/credential 假授权码  **真实连 imap.qq.com** 登录失败 → 业务码 400 + 文案「QQ邮箱登录失败」，
                                                 且**仍为 NEED_AUTH**（证明「先校验成功再落库」，没有假 CONNECTED）
-  C9  POST /wechat_work/connect/start           业务码 400 + 缺配置提示，且响应里**没有 authUrl**（不返回假授权链接）
+  C9  POST /wechat_work/connect/start           无 Origin/未配置 → 业务码 400 且响应里**没有 authUrl**（防开放重定向）
+  C9b POST /wechat_work/connect/start（带 Origin）按就绪度分流：已配→authUrl；未配→拒绝无 authUrl
   C10 GET  /wechat_work/callback?state=forged   302 且 Location 指向本站失败页；连接状态仍 NEED_AUTH（伪造 state 绝不写库）
   C11 POST /qq_mail/verify（未连接时）            业务码 400 + 「未处于已连接状态」
   C12 POST /qq_mail/disconnect                  幂等：业务码 0 + status=NEED_AUTH
@@ -54,7 +55,7 @@ def rec(name, ok, detail):
     print(("  [PASS] " if ok else "  [FAIL] ") + name + " —— " + detail)
 
 
-def call(base, path, method="GET", token=None, body=None, timeout=25):
+def call(base, path, method="GET", token=None, body=None, timeout=25, extra_headers=None):
     """返回 (http_status, headers, raw_text)。4xx/5xx 不抛异常；302 单独处理。"""
     url = base.rstrip("/") + path
     data = None
@@ -64,6 +65,8 @@ def call(base, path, method="GET", token=None, body=None, timeout=25):
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = "Bearer " + token
+    if extra_headers:
+        headers.update(extra_headers)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     opener = urllib.request.build_opener(NoRedirect)
     try:
@@ -131,8 +134,9 @@ def main():
     qq_ready = (by_code.get("qq_mail") or {}).get("configReady")
     ww_ready = (by_code.get("wechat_work") or {}).get("configReady")
     ww_hint = (by_code.get("wechat_work") or {}).get("configHint")
-    rec("C2 就绪度 qq_mail=true / wechat_work=false",
-        qq_ready is True and ww_ready is False,
+    # 就绪度是布尔语义：已配置 true；未配置 false（hint 可有可无）——配置可在管理端动态增删
+    ok2 = qq_ready is True and isinstance(ww_ready, bool)
+    rec("C2 就绪度语义（布尔 + qq_mail 已就绪）", ok2,
         "qq_mail.configReady=%s wechat_work.configReady=%s hint=%r" % (qq_ready, ww_ready, ww_hint))
 
     extra = set()
@@ -196,15 +200,29 @@ def main():
     rec("C8c 响应不含提交的授权码明文", "fakeauthcode0000000" not in raw and "enc:" not in raw,
         "明文出现=%s 密文前缀=%s" % ("fakeauthcode0000000" in raw, "enc:" in raw))
 
-    # ---------- C9 企业微信未配置：拒绝且不给假链接 ----------
+    # ---------- C9 企业微信 start：无 Origin/未配置一律拒绝；已配置时（带 Origin）出授权链接 ----------
     st, _, raw = call(base, "/api/v1/connectors/wechat_work/connect/start", "POST",
                       token=token, body={"returnPath": "/"})
     d = jload(raw) or {}
+    msg = d.get("message") or ""
     ok9 = (st == 200 and d.get("code") not in (None, 0)
-           and "corpId" in (d.get("message") or "") and "authUrl" not in raw)
-    rec("C9 企业微信未配 → 400 且无 authUrl", ok9,
-        "code=%s message=%r authUrl出现=%s" % (d.get("code"), (d.get("message") or "")[:120],
-                                               "authUrl" in raw))
+           and ("Origin" in msg or "corpId" in msg) and "authUrl" not in raw)
+    rec("C9 无 Origin/未配置 → 拒绝且无 authUrl", ok9,
+        "code=%s message=%r authUrl出现=%s" % (d.get("code"), msg[:120], "authUrl" in raw))
+
+    st, _, raw = call(base, "/api/v1/connectors/wechat_work/connect/start", "POST",
+                      token=token, body={"returnPath": "/"},
+                      extra_headers={"Origin": "http://127.0.0.1:8080", "Host": "127.0.0.1:8080"})
+    d = jload(raw) or {}
+    auth_url = (d.get("data") or {}).get("authUrl") or ""
+    if ww_ready is True:
+        ok9b = st == 200 and d.get("code") == 0 and "qrConnect" in auth_url and "enc:" not in raw
+        det = "authUrl前缀=%r 密文泄露=%s" % (auth_url[:60], "enc:" in raw)
+    else:
+        ok9b = st == 200 and d.get("code") not in (None, 0) and "corpId" in (d.get("message") or "") \
+            and "authUrl" not in raw
+        det = "message=%r authUrl出现=%s" % ((d.get("message") or "")[:80], "authUrl" in raw)
+    rec("C9b start 按就绪度分流（已配→授权链接；未配→拒绝无链接）", ok9b, det)
 
     # ---------- C10 伪造 state 回调 ----------
     st, hdrs, raw = call(base, "/api/v1/connectors/wechat_work/callback?code=fakecode&state=forged_by_sentinel")
