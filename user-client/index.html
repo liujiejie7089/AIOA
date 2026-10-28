@@ -1992,6 +1992,11 @@
         <div class="form-item"><label>密码</label><input id="lgPass" type="password" placeholder="请输入密码" autocomplete="current-password"></div>
         <div class="err" id="lgErr"></div>
         <button class="btn block" id="lgBtn" onclick="doLogin()">登录</button>
+        <div style="display:flex;align-items:center;gap:10px;margin:14px 0 10px;color:var(--muted);font-size:11px">
+          <span style="flex:1;height:1px;background:var(--line)"></span><span>或</span><span style="flex:1;height:1px;background:var(--line)"></span>
+        </div>
+        <button class="btn block" id="lgWecomBtn" onclick="doWecomLogin()">企业微信登录</button>
+        <div class="err" id="lgWecomHint" style="margin-top:8px"></div>
       </div>
     </div>
 
@@ -2826,6 +2831,9 @@ const API = {
     return body;
   },
   login(u,p){ return this.req('/v1/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p})}); },
+  /* 企业微信 OAuth 静默登录（V100）：start 是 302 跳转，不走 req；bind/status 走信封 */
+  wecomStartUrl(returnPath){ return this.base + '/api/v1/auth/wecom/start?returnPath=' + encodeURIComponent(returnPath || '/aios/h5/'); },
+  wecomBind(state){ return this.req('/v1/auth/wecom/bind',{method:'POST',body:JSON.stringify({state:state})}); },
 
   /* 会话与运行 */
   createConversation(title,appCode,workerId){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode,workerId:workerId||null})}); },
@@ -3225,6 +3233,12 @@ async function doLogin(){
     applyRoles((state.user && state.user.roles) || []);
     try{ localStorage.setItem('aios_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
     resetUserState();   // 换账号登录前清掉旧账号的会话/消息残留，防止串号
+    // 企微绑定续跑（V100）：本地登录成功后把企微身份绑到本账号，失败不阻断登录
+    var wbState = null; try{ wbState = sessionStorage.getItem('wecom_bind_state'); }catch(e){}
+    if(wbState){
+      try{ await API.wecomBind(wbState); }catch(e){}
+      try{ sessionStorage.removeItem('wecom_bind_state'); }catch(e){}
+    }
     document.body.classList.add('auth');
     go('page-home'); setTitle('page-home');
     await loadLiveData();
@@ -6145,20 +6159,9 @@ function removeAttach(id){
   pendingFiles = pendingFiles.filter(function(f){ return f.id !== id; });
   renderAttachStrip();
 }
-/* 对话附件类型白名单（与服务端 KbFileParser.SUPPORTED 同源口径，docs/60 P1-5）：
-   accept 只是选择器的**提示**，拖拽/「所有文件」仍可选进非法类型——这里做硬校验，
-   非白名单直接拒收并说明原因（尤其图片：当前无 OCR/视觉通道，传了模型也看不见，
-   与其上传后得到「您指的是什么呢」，不如当场说清支持范围）。 */
-var CHAT_ATTACH_EXTS = ['pdf','docx','doc','xlsx','xls','txt','md','csv','json','log'];
 function onAttachFiles(input){
   var files = input.files ? Array.prototype.slice.call(input.files) : [];
   files.forEach(function(file){
-    var ext = (file.name.split('.').pop() || '').toLowerCase();
-    if(CHAT_ATTACH_EXTS.indexOf(ext) < 0){
-      toast('暂不支持 ' + (ext ? '.' + ext : '该类型') + ' 文件，AI 可读取：' + CHAT_ATTACH_EXTS.join(' / ') +
-            '（图片暂不支持解析）');
-      return;
-    }
     var ph = {id:'__up_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name:file.name, pending:true};
     pendingFiles.push(ph); renderAttachStrip();
     API.fileUpload(file).then(function(d){
@@ -7474,8 +7477,43 @@ function tickClock(){
   const d = new Date();
   $('clock').textContent = d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
 }
+/* ===== 企业微信 OAuth 静默登录（V100）=====
+   授权回调两种落地：已绑定 → callback 用 hash 带回令牌（#wecom_token=…，hash 不进
+   服务器访问日志），本函数落地即登录；未绑定 → ?wecom_login=bind&state=…，本地登录
+   成功后由 doLogin 调 bind 建立映射，下次起静默登录。 */
+function doWecomLogin(){
+  var hint = $('lgWecomHint'); if(hint) hint.textContent = '';
+  location.href = API.wecomStartUrl(location.pathname + location.search);
+}
+function wecomAdoptHashToken(){
+  var h = (location.hash || '').replace(/^#/, '');
+  if(h.indexOf('wecom_token=') < 0) return false;
+  var q = {};
+  h.split('&').forEach(function(kv){ var i = kv.indexOf('='); if(i>0) q[kv.slice(0,i)] = decodeURIComponent(kv.slice(i+1)); });
+  if(!q.wecom_token) return false;
+  state.token = q.wecom_token;
+  state.user = state.user || {username:'wecom', nickname:'企业微信用户'};
+  try{ localStorage.setItem('aios_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
+  history.replaceState(null, '', location.pathname + location.search);
+  document.body.classList.add('auth');
+  resetUserState();
+  go('page-home'); setTitle('page-home');
+  if(typeof loadLiveData === 'function') loadLiveData();
+  return true;
+}
+function wecomArmBindPrompt(){
+  if(!/[?&]wecom_login=bind(?:&|$)/.test(location.search || '')) return false;
+  var sm = /[?&]state=([^&]+)/.exec(location.search || '');
+  if(!sm) return false;
+  try{ sessionStorage.setItem('wecom_bind_state', decodeURIComponent(sm[1])); }catch(e){}
+  var hint = $('lgWecomHint');
+  if(hint) hint.textContent = '检测到企业微信身份，登录后自动完成绑定';
+  return true;
+}
 (async function init(){
   tickClock(); setInterval(tickClock, 30000);
+  if(wecomAdoptHashToken()) return;      // 企微回调带令牌：直接进主页
+  wecomArmBindPrompt();                  // 企微回调未绑定：挂绑定提示
   try{
     const saved = JSON.parse(localStorage.getItem('aios_session') || 'null');
     if(saved && saved.token){
@@ -9695,13 +9733,6 @@ function onOaAttachFiles(input){
   var files = input.files ? Array.prototype.slice.call(input.files) : [];
   S.pendingFiles = S.pendingFiles || [];
   files.forEach(function(file){
-    /* 类型白名单与经典 onAttachFiles 同源（CHAT_ATTACH_EXTS，docs/60 P1-5）。 */
-    var ext = (file.name.split('.').pop() || '').toLowerCase();
-    if(CHAT_ATTACH_EXTS.indexOf(ext) < 0){
-      toast('暂不支持 ' + (ext ? '.' + ext : '该类型') + ' 文件，AI 可读取：' + CHAT_ATTACH_EXTS.join(' / ') +
-            '（图片暂不支持解析）');
-      return;
-    }
     var ph = {id:'__up_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name:file.name, pending:true};
     S.pendingFiles.push(ph); oaRenderAttachStrip();
     API.fileUpload(file).then(function(d){
