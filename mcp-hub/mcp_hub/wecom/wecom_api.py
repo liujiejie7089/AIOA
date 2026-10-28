@@ -7,11 +7,17 @@ Mock（WECOM_MOCK=1）：内置一家虚拟企业（corp=mock-corp / agent=10000
 实装（WECOM_MOCK=0）：qyapi.weixin.qq.com 四件套——
 gettoken / user/getuserinfo（换 code）/ auth/getuserdetail（换 biz_mail）/ message/send；
 错误码映射成可读中文（排查清单 docs/60 §七 同源）。
+
+出口双保险（2026-10-28 实测坑）：企微「企业可信IP」只支持 IPv4（官方文档明确暂不
+支持 IPv6），而本机双栈 + anyio Happy Eyeballs 优先 IPv6、沙箱系统代理出口也是
+IPv6 —— 一旦走 IPv6，企微侧看到的源 IP 永远加不进白名单，所有业务接口恒定 60020。
+故：httpx 客户端 trust_env=False（绕开系统代理），并对 qyapi 域名强制 AF_INET 解析。
 """
 
 from __future__ import annotations
 
 import logging
+import socket
 from typing import Any, Protocol
 
 import httpx
@@ -25,11 +31,14 @@ QY_BASE = "https://qyapi.weixin.qq.com/cgi-bin"
 ERRCODE_REASONS = {
     40001: "access_token 无效或过期（secret 可能配错）",
     40003: "redirect_uri 不在企微管理端可信域名内",
+    40013: "corpId 不存在或格式错误（到管理端-我的企业-企业ID 核对）",
     40014: "access_token 格式不合法",
     40029: "授权 code 无效或已使用（code 仅一次性且 5 分钟内有效）",
     41001: "缺少 access_token",
     45009: "接口调用频率超限（access_token 需缓存，勿每次现取）",
     60011: "应用无该接口权限（检查管理端-应用-API 权限，或通讯录可见范围）",
+    60020: "请求 IP 不在应用「可信IP」内（管理端-应用-可信IP 添加入口 IP；仅支持 IPv4，勿走 IPv6 或代理出口）",
+    301002: "corpId 错误（到管理端-我的企业-企业ID 核对）",
     301025: "corpSecret 错误（gettoken 被拒）",
     81013: "user_ticket 无效或已过期（5 分钟内有效）",
     81014: "非本企业成员",
@@ -114,9 +123,41 @@ class MockWeComApi:
 
 # ---------- 实装 ----------
 
+# 企微「企业可信IP」仅支持 IPv4：双栈主机上 anyio 的 Happy Eyeballs 优先 IPv6，
+# 走 IPv6 时企微侧看到的源 IP 永远加不进白名单 → 业务接口恒定 60020。
+# 这里对 qyapi 域名强制 AF_INET 解析（P2 邮件实装时把 exmail 域名一并加进来）。
+_IPV4_ONLY_SUFFIXES = ("qyapi.weixin.qq.com",)
+_IPV4_ONLY_SUFFIXES_B = tuple(s.encode("ascii") for s in _IPV4_ONLY_SUFFIXES)
+_ipv4_dns_installed = False
+
+
+def _install_ipv4_only_dns() -> None:
+    """包装 socket.getaddrinfo：qyapi 域名的解析强制 family=AF_INET。幂等，可重复调用。
+
+    实测依据（2026-10-28）：asyncio 经 run_in_executor 调 socket.getaddrinfo 时
+    六个参数全按位置传（host, port, family, type, proto, flags），故包装函数同时
+    兼容位置/关键字两种传法；anyio 只用解析出的 IP，端口用原始 remote_port，
+    因此替换 family 不会影响连接端口。
+    """
+    global _ipv4_dns_installed
+    if _ipv4_dns_installed:
+        return
+    original = socket.getaddrinfo
+
+    def _ipv4_only(host, port=None, family=0, type=0, proto=0, flags=0, *extra):
+        if isinstance(host, str) and host.endswith(_IPV4_ONLY_SUFFIXES):
+            family = socket.AF_INET
+        elif isinstance(host, bytes) and host.endswith(_IPV4_ONLY_SUFFIXES_B):
+            family = socket.AF_INET
+        return original(host, port, family, type, proto, flags, *extra)
+
+    socket.getaddrinfo = _ipv4_only
+    _ipv4_dns_installed = True
+
 
 class RealWeComApi:
     def __init__(self) -> None:
+        _install_ipv4_only_dns()
         self._client = httpx.AsyncClient(timeout=15.0, trust_env=False)
 
     @staticmethod
