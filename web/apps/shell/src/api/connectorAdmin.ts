@@ -3,28 +3,48 @@ import { http, unwrap } from './index'
 /**
  * 租户级连接器配置管理（管理员）。
  *
- * <p>后端契约：`/api/v1/admin/connector-configs/{code}`
- * （cn.aios.resource.connector.controller.ConnectorTenantConfigController）。
+ * <p>后端契约：`/api/v1/admin/connector-configs`（cn.aios.resource.connector.controller.ConnectorTenantConfigController）。
+ * 字段集合由 `connector_def.config_keys` 决定（schema 驱动），前端不再写死 corpId/agentId/corpSecret；
  * GET/PUT 返回**掩码视图**，绝不回明文密钥；PUT 提交掩码值或空串 = 保留旧值。</p>
  */
 
-/** GET 返回体（掩码视图）。corpSecret 恒为固定占位，是否已配看 corpSecretSet。 */
+/** GET /admin/connector-configs：可选连接器清单。 */
+export interface ConnectorConfigItem {
+  code: string
+  name: string
+  authMode: string
+  configKeys: string[]
+  enabled: boolean
+  configured: boolean
+}
+
+/** GET /admin/connector-configs/{code}：掩码视图（values 里敏感键恒为空串，是否已配看 `${key}Set`）。 */
 export interface ConnectorTenantConfigView {
   code: string
-  corpId: string
-  agentId: string
-  corpSecretSet: boolean
-  corpSecret: string
+  configKeys: string[]
+  values: Record<string, string | boolean>
   enabled: boolean
   configured: boolean
   configReady: boolean
   configHint: string | null
+  /** hub = 权威来源（凭据已进运行时）；legacy = 运行时不可达，仅回显影子记录 */
+  source?: 'hub' | 'legacy'
+  hubAvailable?: boolean
+  // 兼容旧字段（企业微信页历史契约）
+  corpId?: string
+  agentId?: string
+  corpSecret?: string
+  corpSecretSet?: boolean
 }
 
-/** PUT 请求体。values 里留空/保持掩码 = 保留旧值。 */
+/** PUT 请求体：values 里留空/保持掩码 = 保留旧值。 */
 export interface ConnectorTenantConfigPut {
-  values: { corpId?: string; agentId?: string; corpSecret?: string }
+  values: Record<string, string>
   enabled?: boolean
+}
+
+export function listConnectorTenantConfigs() {
+  return http.get('/admin/connector-configs').then((r) => unwrap<ConnectorConfigItem[]>(r))
 }
 
 export function getConnectorTenantConfig(code: string) {

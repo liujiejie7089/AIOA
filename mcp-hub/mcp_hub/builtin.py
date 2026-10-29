@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-为每个内置服务器构建一个独立的 FastMCP 实例，工具按 specs 动态注册，
-调用时把请求原样转发给 Java 的 /api/v1/mcp/builtin/{code}/call。
+为每个已注册连接器构建一台独立的 FastMCP 实例。
+
+工具来源由连接器注册表决定（本文件不认识任何具体连接器）：
+- 声明了 server_factory 的连接器 ⇒ 由它自己构建原生服务器（工具逻辑在 hub 侧）；
+- 其余 ⇒ 按 specs 声明的工具表构建通用代理，调用原样转发给 Java 的
+  /api/v1/mcp/builtin/{code}/call。
 
 关键纪律：
 - Authorization 从入站 MCP 请求里取（ctx.request_context.request.headers），原样透传给 Java；
@@ -20,41 +24,14 @@ import httpx
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
-from . import specs
-from .wecom import catalog as wecom_catalog
-from .wecom import server as wecom_server
+from .connectors import registry as connector_registry
 
 logger = logging.getLogger("mcp_hub")
 
-# 原生实现（非代理）的内置服务器：工具逻辑在 Python 侧，见 wecom/ 包
-NATIVE_SERVERS = {"wechat_work": wecom_catalog}
-
-# 参数名 -> Python 类型（仅用于 FastMCP 推断 JSON Schema 的类型）
-_TYPE_BY_PARAM = {
-    "folder": str, "query": str, "to": str, "subject": str, "body": str,
-    "cc": str, "touser": str, "content": str, "requestId": str,
-    "limit": int, "uid": int, "draftId": int, "unreadOnly": bool,
-}
-
-# 可选参数的默认值（有默认值 ⇒ 不在 required 里）。顺序与 V97 种子描述一致。
-_DEFAULTS = {
-    "list_messages": {"folder": "INBOX", "limit": 10, "unreadOnly": False},
-    "read_message": {"folder": "INBOX"},
-    "search_messages": {"folder": "INBOX", "limit": 10},
-    "create_draft": {"cc": None},
-}
-
-# 各工具参数顺序（必须与 V97 种子 properties 顺序一致）
-_PROPS_ORDER = {
-    "list_folders": [],
-    "list_messages": ["folder", "limit", "unreadOnly"],
-    "read_message": ["uid", "folder"],
-    "search_messages": ["query", "folder", "limit"],
-    "create_draft": ["to", "subject", "body", "cc"],
-    "send_draft": ["draftId", "requestId"],
-    "check_connection": [],
-    "send_text_message": ["touser", "content"],
-    "get_my_profile": [],
+# JSON Schema 类型 -> Python 注解（仅用于让 FastMCP 推断出与 specs 一致的 JSON Schema）
+_JSON_TYPE_TO_PY = {
+    "string": str, "integer": int, "boolean": bool,
+    "number": float, "array": list, "object": dict,
 }
 
 
@@ -123,21 +100,29 @@ async def _dispatch(server_code: str, tool_name: str, arguments: dict, ctx: Cont
         )
 
 
-def _make_tool_fn(server_code: str, tool_name: str, props: list, defaults: dict, read_only: bool):
+def _make_tool_fn(server_code: str, tool_name: str, schema: dict, defaults: dict, read_only: bool):
+    """按 specs 声明生成工具函数：参数顺序 = properties 顺序，类型取自 JSON Schema，默认值取自 defaults。"""
+    properties = schema.get("properties") or {}
+    required = set(schema.get("required") or [])
+
     async def _fn(ctx: Context, **kwargs):
         return await _dispatch(server_code, tool_name, kwargs, ctx)
 
     params = [inspect.Parameter("ctx", inspect.Parameter.KEYWORD_ONLY, annotation=Context)]
-    for pname in props:
-        annotation = _TYPE_BY_PARAM.get(pname, str)
+    for pname, prop in properties.items():
+        annotation = _JSON_TYPE_TO_PY.get((prop or {}).get("type"), str)
         if pname in defaults:
-            params.append(
-                inspect.Parameter(pname, inspect.Parameter.KEYWORD_ONLY, default=defaults[pname], annotation=annotation)
-            )
+            default = defaults[pname]
+        elif pname not in required:
+            # 声明为可选却漏给默认值 ⇒ FastMCP 会判成 required（inspect 的已知坑），补 None 兜住
+            default = None
         else:
-            params.append(
-                inspect.Parameter(pname, inspect.Parameter.KEYWORD_ONLY, annotation=annotation)
-            )
+            default = inspect.Parameter.empty
+        kind = inspect.Parameter.KEYWORD_ONLY
+        if default is inspect.Parameter.empty:
+            params.append(inspect.Parameter(pname, kind, annotation=annotation))
+        else:
+            params.append(inspect.Parameter(pname, kind, default=default, annotation=annotation))
     _fn.__name__ = f"{server_code}__{tool_name}"
     _fn.__signature__ = inspect.Signature(params)
     _fn.__doc__ = f"{server_code}.{tool_name}"
@@ -145,23 +130,34 @@ def _make_tool_fn(server_code: str, tool_name: str, props: list, defaults: dict,
 
 
 def build_servers() -> "dict[str, FastMCP]":
-    """为每个内置服务器构建一个 FastMCP 实例（streamable_http_path='/'，便于父 ASGI 改写路径）。
+    """为每个已注册连接器构建一台 FastMCP 实例（streamable_http_path='/'，便于父 ASGI 改写路径）。
 
-    wechat_work 是双模式连接器的原生实现（OAuth + 邮箱 + 模式闸门），不转发 Java；
-    其余服务器保持无状态代理。
+    本函数**不认识任何具体连接器**：
+    - 连接器声明了 server_factory（原生实装，如 wechat_work 的双模式闸门）⇒ 交给它自己构建；
+    - 否则按 specs 里声明的工具表构建通用代理，调用原样转给 Java 的 builtin/{code}/call。
+    新增连接器只需在 connectors/registry 里 register 一份 manifest，本文件不改。
     """
     servers: "dict[str, FastMCP]" = {}
-    for code, spec in specs.BUILTIN_SERVERS.items():
-        if code in NATIVE_SERVERS:
-            servers[code] = wecom_server.build_server()
+    for manifest in connector_registry.all_manifests():
+        code = manifest.code
+        native = connector_registry.build_server(code)
+        if native is not None:
+            servers[code] = native
             continue
+
+        tool_list = connector_registry.tool_specs(code)
+        if tool_list is None:
+            raise RuntimeError(
+                f"连接器 {code} 既无原生实现，specs.BUILTIN_SERVERS 里也没有工具目录；"
+                f"请在 specs.py 补齐工具声明，或为其提供 server_factory"
+            )
         mcp = FastMCP(code, streamable_http_path="/")
-        for tool in spec["tools"]:
+        for tool in tool_list:
             name = tool["name"]
             fn = _make_tool_fn(
                 code, name,
-                props=_PROPS_ORDER.get(name, list(tool["input_schema"].get("properties", {}).keys())),
-                defaults=_DEFAULTS.get(name, {}),
+                schema=tool["input_schema"],
+                defaults=tool.get("defaults") or {},
                 read_only=tool["read_only"],
             )
             mcp.add_tool(
@@ -177,8 +173,5 @@ def build_servers() -> "dict[str, FastMCP]":
 # 模块导入时即构建（供 app.py / run.py 使用）
 SERVERS = build_servers()
 
-# 端点信息（run.py 启动横幅、/health 用）：原生服务器报原生工具数
-SERVER_INFO = {
-    code: (NATIVE_SERVERS[code].tool_count() if code in NATIVE_SERVERS else specs.tool_count(code))
-    for code in specs.BUILTIN_SERVERS
-}
+# 端点信息（run.py 启动横幅、/health 用）：工具数一律取注册表声明
+SERVER_INFO = {m.code: m.tool_count for m in connector_registry.all_manifests()}

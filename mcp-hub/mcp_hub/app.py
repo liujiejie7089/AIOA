@@ -22,6 +22,8 @@ import json
 import logging
 
 from . import builtin, probe
+from .connectors import admin_api as connectors_admin_api
+from .connectors import vault as connector_vault
 from .wecom import admin_api as wecom_admin_api
 from .wecom import graph as wecom_graph
 from .wecom import store as wecom_store
@@ -76,6 +78,12 @@ async def _lifespan(receive, send):
             except Exception as e:  # noqa: BLE001
                 logger.error("wecom 存储初始化失败：%s", e)
                 raise
+            # 通用连接器凭证库与 wecom 共用同一 SQLite 文件与同一把密钥
+            try:
+                connector_vault.init()
+            except Exception as e:  # noqa: BLE001
+                logger.error("连接器凭证库初始化失败：%s", e)
+                raise
             for child in _CHILDREN:
                 try:
                     await child.start()
@@ -126,6 +134,10 @@ async def _handle_http(scope, receive, send):
 
     if path.startswith("/api/v1/wecom"):
         await wecom_admin_api.handle(scope, receive, send)
+        return
+
+    if path.startswith("/api/v1/connectors"):
+        await connectors_admin_api.handle(scope, receive, send)
         return
 
     if path.startswith("/mcp/"):

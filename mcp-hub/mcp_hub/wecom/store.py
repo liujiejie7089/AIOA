@@ -50,6 +50,12 @@ def _db_path() -> str:
     return os.environ.get("WECOM_DB_PATH", _DEFAULT_DB)
 
 
+def db_path() -> str:
+    """公开别名：通用连接器凭证库（connectors/vault.py）复用同一个 SQLite 文件与同一把密钥，
+    保证「一份备份同时恢复企微配置与其它连接器配置」，避免两套存储各自漂移。"""
+    return _db_path()
+
+
 def is_mock() -> bool:
     """mock 开关：默认关闭；显式 WECOM_MOCK=1 才开（哨兵与本地联调用）。"""
     return os.environ.get("WECOM_MOCK", "0") == "1"
@@ -172,6 +178,16 @@ async def upsert_tenant_config(
                 _utcnow(),
             ),
         )
+        _conn.commit()
+
+    await asyncio.to_thread(_w)
+
+
+async def clear_tenant_config(tenant_id: str) -> None:
+    """清除租户配置（管理端「清除配置」）。物理删除，卡片回到「待管理员配置」。"""
+
+    def _w():
+        _conn.execute("DELETE FROM wecom_tenant_config WHERE tenant_id = ?", (tenant_id,))
         _conn.commit()
 
     await asyncio.to_thread(_w)

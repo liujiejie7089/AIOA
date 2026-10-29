@@ -11,33 +11,43 @@
       </template>
 
       <el-alert
+        v-if="view && view.hubAvailable === false"
+        type="error"
+        :closable="false"
+        show-icon
+        title="连接器运行时（mcp-hub）不可达：当前只读的是数据库影子记录，保存会失败。请先启动 mcp-hub 并确认 AIOS_MCP_HUB=true。"
+        style="margin-bottom: 16px"
+      />
+      <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="配置企业微信自建应用凭据（corpId / agentId / corpSecret），保存后用户端即可发起企业微信授权。凭据加密存库，保存后不再回显明文；留空的字段表示保留旧值。"
+        title="字段由连接器自身声明（connector_def.config_keys），新增第三方应用无需改前端。凭据加密存库、保存后不再回显明文；留空的字段表示保留旧值。"
         style="margin-bottom: 16px"
       />
 
-      <el-form label-width="120px" style="max-width: 560px" v-if="loaded">
+      <el-form label-width="150px" style="max-width: 600px" v-if="loaded">
         <el-form-item label="连接器">
-          <el-select v-model="code" style="width: 260px" @change="load">
-            <el-option label="企业微信（wechat_work）" value="wechat_work" />
+          <el-select v-model="code" style="width: 300px" @change="load">
+            <el-option
+              v-for="item in options"
+              :key="item.code"
+              :label="`${item.name}（${item.code}）`"
+              :value="item.code"
+            />
           </el-select>
+          <span v-if="current?.authMode" class="mode-tag">{{ current.authMode }}</span>
         </el-form-item>
-        <el-form-item label="CorpID">
-          <el-input v-model="form.corpId" :placeholder="view?.corpId || '企业ID（我的企业-企业信息）'" />
-        </el-form-item>
-        <el-form-item label="AgentId">
-          <el-input v-model="form.agentId" :placeholder="view?.agentId || '自建应用 AgentId'" />
-        </el-form-item>
-        <el-form-item label="CorpSecret">
+
+        <el-form-item v-for="key in keys" :key="key" :label="labelOf(key)">
           <el-input
-            v-model="form.corpSecret"
-            type="password"
-            show-password
-            :placeholder="view?.corpSecretSet ? '••••••（已配置，留空保留旧值）' : '自建应用 Secret'"
+            v-model="form[key]"
+            :type="isSensitive(key) ? 'password' : 'text'"
+            :show-password="isSensitive(key)"
+            :placeholder="placeholderOf(key)"
           />
         </el-form-item>
+
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
         </el-form-item>
@@ -53,49 +63,75 @@
         :closable="false"
         show-icon
         :title="'当前就绪状态：' + (view.configHint || '未就绪')"
-        style="margin-top: 12px; max-width: 560px"
+        style="margin-top: 12px; max-width: 600px"
       />
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   deleteConnectorTenantConfig,
   getConnectorTenantConfig,
+  listConnectorTenantConfigs,
   putConnectorTenantConfig,
+  type ConnectorConfigItem,
   type ConnectorTenantConfigView
 } from '@/api/connectorAdmin'
 
-const code = ref('wechat_work')
+/** 键名 → 中文标签（仅影响展示；未登记的新连接器直接显示键名，不影响保存）。 */
+const LABELS: Record<string, string> = {
+  corpId: '企业ID（CorpID）',
+  agentId: '应用 AgentId',
+  corpSecret: '应用 Secret',
+  redirectUri: 'OAuth 回调地址',
+  apiKey: 'API Key',
+  endpoint: '接口地址'
+}
+
+const code = ref('')
+const options = ref<ConnectorConfigItem[]>([])
 const view = ref<ConnectorTenantConfigView | null>(null)
 const loaded = ref(false)
 const saving = ref(false)
 const clearing = ref(false)
-const form = reactive({ corpId: '', agentId: '', corpSecret: '', enabled: true })
+const keys = ref<string[]>([])
+const form = reactive<Record<string, any>>({ enabled: true })
+
+const current = computed(() => options.value.find((o) => o.code === code.value))
+const labelOf = (k: string) => LABELS[k] || k
+const isSensitive = (k: string) => view.value?.values?.[`${k}Set`] !== undefined
+const placeholderOf = (k: string) => {
+  const v = view.value?.values?.[k]
+  if (isSensitive(k) && view.value?.values?.[`${k}Set`] === true) return '••••••（已配置，留空保留旧值）'
+  return typeof v === 'string' && v ? `当前：${v}` : `填写 ${labelOf(k)}`
+}
+
+async function loadList() {
+  options.value = await listConnectorTenantConfigs()
+  if (!code.value && options.value.length) code.value = options.value[0].code
+}
 
 async function load() {
+  if (!code.value) return
   view.value = await getConnectorTenantConfig(code.value)
+  keys.value = view.value.configKeys || []
+  for (const k of keys.value) form[k] = ''
   form.enabled = view.value.enabled
-  form.corpId = ''
-  form.agentId = ''
-  form.corpSecret = ''
   loaded.value = true
 }
 
 async function save() {
   saving.value = true
   try {
-    view.value = await putConnectorTenantConfig(code.value, {
-      values: { corpId: form.corpId, agentId: form.agentId, corpSecret: form.corpSecret },
-      enabled: form.enabled
-    })
+    const values: Record<string, string> = {}
+    for (const k of keys.value) values[k] = String(form[k] ?? '')
+    view.value = await putConnectorTenantConfig(code.value, { values, enabled: form.enabled })
     ElMessage.success('已保存（凭据已加密落库）')
-    form.corpId = ''
-    form.agentId = ''
-    form.corpSecret = ''
+    for (const k of keys.value) form[k] = ''
+    await loadList()
   } finally {
     saving.value = false
   }
@@ -107,12 +143,16 @@ async function clear() {
     await deleteConnectorTenantConfig(code.value)
     ElMessage.success('已清除，用户端回到「待管理员配置」')
     await load()
+    await loadList()
   } finally {
     clearing.value = false
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await loadList()
+  await load()
+})
 </script>
 
 <style scoped>
@@ -123,5 +163,10 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.mode-tag {
+  margin-left: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

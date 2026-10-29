@@ -157,15 +157,70 @@ public class ConnectorCatalogService {
         return def;
     }
 
+    /** 连接器的应用级配置项（来自 connector_def.config_keys，JSON 数组文本）。
+     *  空列表 = 该连接器没有应用级凭据（如 QQ 邮箱走用户自填授权码）。 */
+    public List<String> configKeys(String code) {
+        ConnectorDef def = requireDef(code);
+        String raw = def.getConfigKeys();
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode arr = objectMapper.readTree(raw);
+            List<String> out = new java.util.ArrayList<>();
+            if (arr.isArray()) {
+                for (JsonNode n : arr) {
+                    if (n.isTextual() && !n.asText().isBlank()) {
+                        out.add(n.asText().trim());
+                    }
+                }
+            }
+            return out;
+        } catch (Exception e) {
+            log.warn("config_keys 解析失败 code={} raw={}：{}", code, raw, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** 平台级连接器目录（tenant_id=0 且 ACTIVE），供管理端配置页枚举。 */
+    public List<ConnectorDef> activeDefs() {
+        return defMapper.selectList(new LambdaQueryWrapper<ConnectorDef>()
+                .eq(ConnectorDef::getTenantId, 0L)
+                .eq(ConnectorDef::getStatus, ConnectorDef.STATUS_ACTIVE)
+                .orderByAsc(ConnectorDef::getSort));
+    }
+
     private ConfigReady configReadyInternal(ConnectorDef def, Long tenantId) {
         if (ConnectorDef.AUTH_MODE_CREDENTIAL.equals(def.getAuthMode())) {
             return new ConfigReady(true, null, ConfigSource.NONE);
         }
-        WeComCredentials creds = resolveWeCom(tenantId);
-        if (creds != null) {
-            return new ConfigReady(true, null, creds.source());
+        List<String> keys = configKeys(def.getCode());
+        if (keys.isEmpty()) {
+            return new ConfigReady(true, null, ConfigSource.NONE);
         }
-        return new ConfigReady(false, "缺少企业微信应用配置：corpId / agentId / corpSecret", ConfigSource.NONE);
+        ConnectorTenantConfig tc = tenantConfigMapper.selectOne(new LambdaQueryWrapper<ConnectorTenantConfig>()
+                .eq(ConnectorTenantConfig::getTenantId, tenantId)
+                .eq(ConnectorTenantConfig::getConnectorCode, def.getCode()));
+        if (tc != null && Boolean.TRUE.equals(tc.getEnabled())
+                && tc.getSecretJson() != null && !tc.getSecretJson().isBlank()) {
+            try {
+                JsonNode node = objectMapper.readTree(secretCodec.decrypt(tc.getSecretJson()));
+                boolean complete = keys.stream().allMatch(k -> !text(node, k).isBlank());
+                if (complete) {
+                    return new ConfigReady(true, null, ConfigSource.TENANT);
+                }
+            } catch (Exception e) {
+                log.warn("连接器 {} 租户配置解密/解析失败：{}", def.getCode(), e.getMessage());
+            }
+        }
+        // 平台级兜底只对内置的企业微信成立（ConnectorProperties 里只有企微三件套）
+        if (WECHAT_WORK.equals(def.getCode())) {
+            WeComCredentials creds = resolveWeCom(tenantId);
+            if (creds != null) {
+                return new ConfigReady(true, null, creds.source());
+            }
+        }
+        return new ConfigReady(false, "缺少应用配置：" + String.join(" / ", keys), ConfigSource.NONE);
     }
 
     private static String text(JsonNode node, String key) {

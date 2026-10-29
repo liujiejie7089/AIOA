@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-内置 MCP 服务器工具规格（唯一事实源）。
+**代理型**内置连接器的工具规格（唯一事实源）。
 
 本文件与 Java 侧 V97 种子（server/aios-boot/.../V97__mcp_server_registry.sql）逐字对齐：
 工具名、参数名、JSON Schema、read_only 必须与 Java 种子一致，否则「信任」写入的目录
-会让模型调出 handler 不认识的工具（MailMcpHandler / WeComMcpHandler 的 supports() 返回 false）。
+会让模型调出 handler 不认识的工具（MailMcpHandler 的 supports() 返回 false）。
 
-hub 自身不实现任何工具逻辑，只在 /internal/mcp/probe 的 builtin transport 下直接读这里，
+hub 自身不实现代理型连接器的工具逻辑，只在 /internal/mcp/probe 的 builtin transport 下直接读这里，
 并把 tool 调用原样转发给 Java 的 /api/v1/mcp/builtin/{code}/call。
+
+原生型连接器（工具逻辑在本进程）不在此登记，见 wecom/catalog.py。
 """
 
 BUILTIN_SERVERS = {
@@ -33,6 +35,7 @@ BUILTIN_SERVERS = {
                     "required": [],
                 },
                 "read_only": True,
+                "defaults": {"folder": "INBOX", "limit": 10, "unreadOnly": False},
             },
             {
                 "name": "read_message",
@@ -46,6 +49,7 @@ BUILTIN_SERVERS = {
                     "required": ["uid"],
                 },
                 "read_only": True,
+                "defaults": {"folder": "INBOX"},
             },
             {
                 "name": "search_messages",
@@ -60,6 +64,7 @@ BUILTIN_SERVERS = {
                     "required": ["query"],
                 },
                 "read_only": True,
+                "defaults": {"folder": "INBOX", "limit": 10},
             },
             {
                 "name": "create_draft",
@@ -75,6 +80,7 @@ BUILTIN_SERVERS = {
                     "required": ["to", "subject", "body"],
                 },
                 "read_only": False,
+                "defaults": {"cc": None},
             },
             {
                 "name": "send_draft",
@@ -91,36 +97,9 @@ BUILTIN_SERVERS = {
             },
         ],
     },
-    "wechat_work": {
-        "name": "企业微信",
-        "tools": [
-            {
-                "name": "check_connection",
-                "description": "检查企业微信应用凭据是否有效（不返回 token 本身）",
-                "input_schema": {"type": "object", "properties": {}},
-                "read_only": True,
-            },
-            {
-                "name": "send_text_message",
-                "description": "以企业微信自建应用身份向指定成员发送文本消息",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "touser": {"type": "string", "description": "成员 UserID，多个用 | 分隔"},
-                        "content": {"type": "string", "description": "消息正文"},
-                    },
-                    "required": ["touser", "content"],
-                },
-                "read_only": False,
-            },
-            {
-                "name": "get_my_profile",
-                "description": "获取当前用户的企业微信身份（userid / 企业邮箱 biz_mail），来自 OAuth 网页授权 snsapi_privateinfo 授权后的 getuserdetail",
-                "input_schema": {"type": "object", "properties": {}},
-                "read_only": True,
-            },
-        ],
-    },
+    # 说明：企业微信（wechat_work）已改为「原生实装」，工具目录的唯一事实源是
+    # wecom/catalog.py（13 个工具，含 A/B 双模式与连接生命周期）。此处原有一份
+    # 只含 3 个工具的代理声明，会与实际暴露的工具漂移，已删除；请勿再加回来。
 }
 
 
