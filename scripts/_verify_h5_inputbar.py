@@ -58,7 +58,8 @@ def install_stubs(page):
     """在页面加载后重写 API 方法为计数/抓参桩，并接管 toast 收集器。"""
     page.evaluate(r"""
     () => {
-      window.__probe = {asr:0, asrBlobs:[], createRunArgs:null, toasts:[], streamCalls:0, fileUploadName:null};
+      window.__probe = {asr:0, asrBlobs:[], createRunArgs:null, toasts:[], streamCalls:0,
+                        fileUploadName:null, disconnectCodes:[]};
       const P = window.__probe;
       const origToast = window.toast;
       window.toast = function(m){ P.toasts.push(String(m)); return origToast ? origToast(m) : undefined; };
@@ -90,6 +91,18 @@ def install_stubs(page):
         apiObj.listConversations = function(){ return Promise.resolve([]); };
         apiObj.listMessages = function(){ return Promise.resolve([]); };
         apiObj.quota = function(){ return Promise.resolve({exhausted:false, left:9999}); };
+        /* 「＋」浮层的连接器区：目录与断开都打桩，不碰真后端。
+           开关真值 = status === 'CONNECTED'，所以这里造一开一关两条。 */
+        apiObj.connectors = function(){
+          return Promise.resolve([
+            {code:'wecom_cli', name:'企业微信', status:'CONNECTED', accountLabel:'刘洋', configReady:true},
+            {code:'qq_mail',   name:'QQ 邮箱', status:'DISCONNECTED', configReady:true}
+          ]);
+        };
+        apiObj.connectorDisconnect = function(code){
+          P.disconnectCodes.push(String(code));
+          return Promise.resolve({status:'DISCONNECTED'});
+        };
         // 注意：真实 API.req 在 code===0 时「返回 body.data」（见页面源码），所以桩必须
         // 直接返回 data 形态，不能返回 {code,data} 信封，否则调用方读不到 .id 会抛错。
         apiObj.req = function(path, opts){
@@ -141,7 +154,7 @@ def reset_probe(page):
     page.evaluate("""() => {
       const P = window.__probe || (window.__probe = {});
       P.asr = 0; P.asrBlobs = []; P.createRunArgs = null; P.toasts = [];
-      P.streamCalls = 0; P.fileUploadName = null;
+      P.streamCalls = 0; P.fileUploadName = null; P.disconnectCodes = []; P.cancelIds = [];
     }""")
 
 
@@ -430,37 +443,133 @@ def main():
             if oa_wired["attachExists"]:
                 reset_probe(page)
                 try:
-                    # 空输入时 #oaAttachBtn 才可见
+                    # 「＋」升级成「更多」入口后，有文字时**也必须可见**
+                    # （旧实现有字就隐藏，连接器开关就再也点不到了）
+                    page.evaluate("""() => {
+                      var i = document.getElementById('oaInput'); if(i) i.value = '写了一行字';
+                      if(window.oaSyncInput) window.oaSyncInput();
+                    }""")
+                    page.wait_for_timeout(120)
+                    plus_vis = page.evaluate(r"""() => {
+                      const a = document.getElementById('oaAttachBtn');
+                      const s = document.getElementById('oaSendBtn');
+                      return {
+                        plusShown: a ? getComputedStyle(a).display !== 'none' : null,
+                        sendShown: s ? getComputedStyle(s).display !== 'none' : null
+                      };
+                    }""")
+                    rec("3(OA). 有文字时「＋」与「发送」同时可见(同槽位互斥已取消)",
+                        "PASS" if plus_vis["plusShown"] is True and plus_vis["sendShown"] is True else "FAIL",
+                        "两者都可见", plus_vis)
+
+                    # 点「＋」→ 浮层（不是文件框）
+                    page.click("#oaAttachBtn")
+                    page.wait_for_timeout(300)
+                    men = page.evaluate(r"""() => {
+                      const sws = Array.prototype.map.call(
+                        document.querySelectorAll('#oaPlusMenu .pm-sw'),
+                        s => ({code: s.getAttribute('data-code'), on: s.classList.contains('on'),
+                               checked: s.getAttribute('aria-checked'), role: s.getAttribute('role'),
+                               disabled: s.disabled}));
+                      return {
+                        exists: !!document.getElementById('oaPlusMenu'),
+                        fileRow: !!document.querySelector('#oaPlusMenu [data-act="file"]'),
+                        conns: document.querySelectorAll('#oaPlusMenu .pm-conn').length,
+                        sws: sws,
+                        empty: (document.querySelector('#oaPlusConns .pm-empty') || {}).textContent || ''
+                      };
+                    }""")
+                    rec("3(OA). 点「＋」打开浮层：含「添加文件」行 + 连接器区(不弹文件框)",
+                        "PASS" if men["exists"] and men["fileRow"] and not men["empty"] else "FAIL",
+                        "浮层打开 / 添加文件行在 / 连接器已加载", men)
+                    on_codes = sorted(x["code"] for x in men["sws"] if x["on"])
+                    rec("3(OA). 连接器开关态以后端 status=CONNECTED 为唯一真值",
+                        "PASS" if men["sws"] and on_codes == ["wecom_cli"]
+                        and all(x["role"] == "switch" for x in men["sws"])
+                        and all(x["checked"] == ("true" if x["on"] else "false") for x in men["sws"])
+                        else "FAIL",
+                        "wecom_cli 开 / qq_mail 关，role=switch 且 aria-checked 同步", men["sws"])
+
+                    # 再点一次「＋」= 收起
+                    page.click("#oaAttachBtn")
+                    page.wait_for_timeout(200)
+                    toggled = page.evaluate("!!document.getElementById('oaPlusMenu')")
+                    rec("3(OA). 再点一次「＋」收起浮层(toggle)",
+                        "PASS" if toggled is False else "FAIL", "浮层不在", toggled)
+
+                    # 点浮层外区域也应收起（不用遮罩层，靠全局 pointerdown 监听）
+                    page.click("#oaAttachBtn")
+                    page.wait_for_timeout(300)
+                    opened2 = page.evaluate("!!document.getElementById('oaPlusMenu')")
+                    # 点输入框本身作为「浮层外区域」：命中区确定、且不会误触首页上的卡片
+                    # （先前用坐标 (150,260) 一点就开出了「专家」抽屉，把后续点击全挡住了）
+                    page.click("#oaInput")
+                    page.wait_for_timeout(250)
+                    outside = page.evaluate(r"""() => ({
+                      menu: !!document.getElementById('oaPlusMenu'),
+                      overlayLeft: document.querySelectorAll('.oa-plus-mask, #oaPlusMask').length})""")
+                    rec("3(OA). 点浮层外区域收起，且不残留拦截点击的遮罩层",
+                        "PASS" if opened2 and outside["menu"] is False and outside["overlayLeft"] == 0
+                        else "FAIL", "浮层收起 / 无遮罩元素", f"opened={opened2} {outside}")
+
+                    # 关闭连接器：必须先确认，确认后真的调 disconnect
+                    reset_probe(page)
+                    page.click("#oaAttachBtn")
+                    page.wait_for_timeout(300)
+                    page.click('#oaPlusMenu .pm-sw[data-code="wecom_cli"]')
+                    page.wait_for_timeout(250)
+                    dlg = page.evaluate(r"""() => {
+                      const ok = document.querySelector('.notif-mask.show [data-dlg-ok]');
+                      const t = document.querySelector('.notif-mask.show .notif-head');
+                      return {hasDialog: !!ok, title: t ? t.textContent : '',
+                              menuGone: !document.getElementById('oaPlusMenu'),
+                              text: (document.querySelector('.notif-mask.show .notif-body') || {}).textContent || ''};
+                    }""")
+                    rec("3(OA). 关闭已连接的连接器: 先弹确认(浮层同时收起)",
+                        "PASS" if dlg["hasDialog"] and dlg["menuGone"] and "关闭" in dlg["title"] else "FAIL",
+                        "弹层标题含「关闭」且浮层已收起", dlg)
+                    page.click('.notif-mask.show [data-dlg-ok]')
+                    page.wait_for_timeout(400)
+                    disc = page.evaluate("window.__probe.disconnectCodes.slice()")
+                    rec("3(OA). 确认后真的调了 connectorDisconnect(code) 并提示已关闭",
+                        "PASS" if disc == ["wecom_cli"] else "FAIL", "['wecom_cli']", disc,
+                        f"toasts={page.evaluate('window.__probe.toasts.slice()')}")
+                    page.evaluate("document.querySelectorAll('.notif-mask').forEach(function(m){m.remove();});")
+
+                    # 「添加文件」行仍走原上传链路
+                    reset_probe(page)
                     page.evaluate("""() => {
                       var i = document.getElementById('oaInput'); if(i) i.value = '';
                       if(window.oaSyncInput) window.oaSyncInput();
                     }""")
-                    page.wait_for_timeout(100)
+                    page.click("#oaAttachBtn")
+                    page.wait_for_timeout(250)
                     with page.expect_file_chooser() as fc:
-                        page.click("#oaAttachBtn")
+                        page.click('#oaPlusMenu [data-act="file"]')
                     fc.value.set_files(A_TXT)
                     page.wait_for_timeout(500)
                     oastrip = page.evaluate(r"""() => {
                       const s = document.getElementById('oaAttachStrip');
                       return {chips: s.querySelectorAll('.attach-chip').length,
-                              name: (s.querySelector('.ac-name')||{}).textContent || ''};
+                              name: (s.querySelector('.ac-name')||{}).textContent || '',
+                              menu: !!document.getElementById('oaPlusMenu')};
                     }""")
-                    rec("3(OA). 点 #oaAttachBtn → 文件选入 #oaAttachFile → #oaAttachStrip 出芯片",
-                        "PASS" if oastrip["chips"] >= 1 and "a.txt" in oastrip["name"] else "FAIL",
-                        ">=1 芯片且含 a.txt", oastrip)
-                    # 回归关键点（OA）：空输入 + 1 附件 ⇒ 右侧「发送」可见、「＋」隐藏
+                    rec("3(OA). 浮层「添加文件」→ 文件框 → #oaAttachStrip 出芯片(浮层自动收起)",
+                        "PASS" if oastrip["chips"] >= 1 and "a.txt" in oastrip["name"]
+                        and not oastrip["menu"] else "FAIL",
+                        ">=1 芯片且含 a.txt，浮层已收起", oastrip)
                     oa_vis = page.evaluate(r"""() => {
                       const a = document.getElementById('oaAttachBtn');
                       const s = document.getElementById('oaSendBtn');
                       return {
                         sendShown: s ? getComputedStyle(s).display !== 'none' : null,
-                        attachHidden: a ? getComputedStyle(a).display === 'none' : null
+                        plusShown: a ? getComputedStyle(a).display !== 'none' : null
                       };
                     }""")
-                    rec("3(OA). 空输入 + 1 文档: #oaSendBtn 可见且 #oaAttachBtn 隐藏(只传文档在 UI 上可达)",
-                        "PASS" if oa_vis["sendShown"] is True and oa_vis["attachHidden"] is True else "FAIL",
-                        "#oaSendBtn 可见 / #oaAttachBtn 隐藏", oa_vis)
-                    # 移除文档 ⇒ 同槽位切回「＋」
+                    rec("3(OA). 空输入 + 1 文档: #oaSendBtn 可见且「＋」仍可见(只传文档在 UI 上可达)",
+                        "PASS" if oa_vis["sendShown"] is True and oa_vis["plusShown"] is True else "FAIL",
+                        "两者都可见", oa_vis)
+                    # 移除文档 ⇒ 回到只有「＋」、无「发送」
                     page.evaluate("document.querySelector('#oaAttachStrip .ac-x').click()")
                     page.wait_for_timeout(200)
                     oa_vis2 = page.evaluate(r"""() => {
@@ -471,13 +580,15 @@ def main():
                         sendHidden: s ? getComputedStyle(s).display === 'none' : null
                       };
                     }""")
-                    rec("3(OA). 移除文档(空输入)后: #oaAttachBtn 可见且 #oaSendBtn 隐藏(槽位切回「＋」)",
+                    rec("3(OA). 移除文档(空输入)后: 「＋」可见且 #oaSendBtn 隐藏",
                         "PASS" if oa_vis2["attachShown"] is True and oa_vis2["sendHidden"] is True else "FAIL",
-                        "#oaAttachBtn 可见 / #oaSendBtn 隐藏", oa_vis2)
-                    # 重新上传并点真按钮 #oaSendBtn 发送（不再绕过 UI 直接 evaluate oaSend()）
+                        "「＋」可见 / #oaSendBtn 隐藏", oa_vis2)
+                    # 重新上传并点真按钮 #oaSendBtn 发送（不绕过 UI）
                     reset_probe(page)
+                    page.click("#oaAttachBtn")
+                    page.wait_for_timeout(250)
                     with page.expect_file_chooser() as fc:
-                        page.click("#oaAttachBtn")
+                        page.click('#oaPlusMenu [data-act="file"]')
                     fc.value.set_files(A_TXT)
                     page.wait_for_timeout(500)
                     page.click("#oaSendBtn")
@@ -488,9 +599,180 @@ def main():
                         "PASS" if oa_att else "FAIL", "['123']", oacr[3] if oacr else None,
                         f"full={oacr}")
                 except Exception as e:
-                    rec("3(OA). OA 上传链路可验", "NA", "可验", "无法验", f"异常: {e}")
+                    rec("3(OA). OA 浮层 / 上传 / 连接器开关链路可验", "NA", "可验", "无法验", f"异常: {e}")
             else:
                 rec("3(OA). OA 上传链路", "NA", "可验", "未验", "oaAttachBtn 不存在")
+
+            # ---------- 6. 输入框随内容自动增高（2026-10-30 需求） ------------
+            page.evaluate("document.querySelectorAll('.notif-mask').forEach(function(m){m.remove();});")
+            page.evaluate("""() => {
+              var i = document.getElementById('oaInput');
+              i.value = '';
+              if(window.oaSyncInput) window.oaSyncInput();
+            }""")
+            page.wait_for_timeout(150)
+            h_empty = page.evaluate(
+                "document.getElementById('oaInput').getBoundingClientRect().height")
+            page.evaluate("""() => {
+              var i = document.getElementById('oaInput');
+              i.value = '第一行\\n第二行\\n第三行\\n第四行\\n第五行';
+              if(window.oaSyncInput) window.oaSyncInput();
+            }""")
+            page.wait_for_timeout(200)
+            grow = page.evaluate(r"""() => {
+              const i = document.getElementById('oaInput');
+              const box = i.closest('.box');
+              return {tag: i.tagName, h: i.getBoundingClientRect().height,
+                      boxH: box ? box.getBoundingClientRect().height : null,
+                      scrollH: i.scrollHeight, over: getComputedStyle(i).overflowY};
+            }""")
+            rec("6. #oaInput 是 TEXTAREA 且单行时约 46px 胶囊高度",
+                "PASS" if grow["tag"] == "TEXTAREA" and 40 <= h_empty <= 52 else "FAIL",
+                "TEXTAREA 且 40<=h<=52", f"tag={grow['tag']} h_empty={h_empty}")
+            rec("6. 五行文本时输入框向下长高且无内部滚动(完整可见)",
+                "PASS" if grow["h"] > h_empty + 20 and grow["over"] == "hidden"
+                and grow["h"] >= grow["scrollH"] - 2 else "FAIL",
+                "高度显著增大 / overflowY=hidden / 高度覆盖 scrollHeight", grow)
+            page.evaluate("""() => {
+              var i = document.getElementById('oaInput');
+              i.value = ''; if(window.oaSyncInput) window.oaSyncInput();
+            }""")
+            page.wait_for_timeout(150)
+            h_back = page.evaluate(
+                "document.getElementById('oaInput').getBoundingClientRect().height")
+            rec("6. 清空后高度收回(不是只增不减)",
+                "PASS" if abs(h_back - h_empty) <= 2 else "FAIL",
+                f"≈{h_empty}", h_back)
+
+            # ---------- 7. AI 气泡右下角「停止生成」（2026-10-30 需求） --------
+            page.evaluate(r"""() => {
+              const apiObj = (typeof API !== 'undefined') ? API : null;
+              if(!apiObj) return;
+              /* 让 stream 悬着不结束，才有「生成中」这个状态可测；
+                 cancel 时按真实链路的语义以 AbortError 收掉这次 stream。 */
+              apiObj.stream = function(runId, h){
+                window.__probe.streamCalls++;
+                try{ h && h.onStarted && h.onStarted({model:'stub'}); }catch(e){}
+                try{ h && h.onDelta && h.onDelta('第一段'); }catch(e){}
+                return new Promise(function(res, rej){ window.__streamReject = rej; });
+              };
+              apiObj.cancel = function(rid){
+                const P = window.__probe;
+                P.cancelIds = P.cancelIds || []; P.cancelIds.push(rid);
+                if(window.__streamReject){
+                  const e = new Error('aborted'); e.name = 'AbortError';
+                  window.__streamReject(e); window.__streamReject = null;
+                }
+                return Promise.resolve();
+              };
+            }""")
+            reset_probe(page)
+            page.evaluate("""() => {
+              const i = document.getElementById('oaInput');
+              i.value = '测一下停止生成'; if(window.oaSyncInput) window.oaSyncInput();
+            }""")
+            page.click("#oaSendBtn")
+            page.wait_for_timeout(500)
+            gen = page.evaluate(r"""() => {
+              const bubs = document.querySelectorAll('#oaDockList .bub.ai');
+              const b = bubs.length ? bubs[bubs.length - 1] : null;
+              const s = b ? b.querySelector('.bub-stop') : null;
+              const r = s ? s.getBoundingClientRect() : null;
+              const br = b ? b.getBoundingClientRect() : null;
+              return {stopInBubble: !!s, generating: b ? b.classList.contains('generating') : null,
+                      aria: s ? s.getAttribute('aria-label') : null,
+                      rightGap: (r && br) ? Math.round(br.right - r.right) : null,
+                      bottomGap: (r && br) ? Math.round(br.bottom - r.bottom) : null,
+                      busy: (window.oaState ? !!window.oaState.busy : null)};
+            }""")
+            rec("7. 生成中: AI 气泡内出现 #.bub-stop 且气泡带 generating",
+                "PASS" if gen["stopInBubble"] and gen["generating"] and gen["aria"] == "停止生成" else "FAIL",
+                "气泡内有停止按钮 + generating 类 + aria-label=停止生成", gen)
+            rec("7. 停止按钮贴在气泡右下角(右/下边距各 <=10px)",
+                "PASS" if gen["rightGap"] is not None and gen["rightGap"] <= 10
+                and gen["bottomGap"] is not None and gen["bottomGap"] <= 10 else "FAIL",
+                "rightGap<=10 且 bottomGap<=10", f"right={gen['rightGap']} bottom={gen['bottomGap']}")
+            page.click("#oaDockList .bub.ai:last-child .bub-stop")
+            page.wait_for_timeout(600)
+            after = page.evaluate(r"""() => {
+              const bubs = document.querySelectorAll('#oaDockList .bub.ai');
+              const b = bubs.length ? bubs[bubs.length - 1] : null;
+              const tx = b ? b.querySelector('.tx') : null;
+              return {cancelIds: (window.__probe.cancelIds || []).slice(),
+                      stopLeft: document.querySelectorAll('#oaDockList .bub-stop').length,
+                      generating: b ? b.classList.contains('generating') : null,
+                      busy: (window.oaState ? !!window.oaState.busy : null),
+                      text: tx ? tx.textContent : '',
+                      color: tx ? getComputedStyle(tx).color : ''};
+            }""")
+            rec("7. 点击停止 → 真的调了 API.cancel(runId)",
+                "PASS" if after["cancelIds"] == ["run_x"] else "FAIL", "['run_x']", after["cancelIds"])
+            rec("7. 停止后按钮移除、气泡退出 generating、S.busy 释放",
+                "PASS" if after["stopLeft"] == 0 and after["generating"] is False
+                and after["busy"] is False else "FAIL",
+                "0 个残留按钮 / generating=false / busy=false", after)
+            rec("7. 主动停止不染红(不是「请求失败」)",
+                "PASS" if "请求失败" not in (after["text"] or "") else "FAIL",
+                "文案不含「请求失败」", after["text"][:40])
+
+            # ---------- 8. 上滑看历史时数字人渐隐（2026-10-30 需求） ----------
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.innerHTML = '';
+              for(let i = 0; i < 30; i++){
+                const d = document.createElement('div');
+                d.className = 'bub ' + (i % 2 ? 'me' : 'ai');
+                d.textContent = '第' + i + '条历史消息，用来把对话坞撑出滚动条';
+                l.appendChild(d);
+              }
+              l.scrollTop = l.scrollHeight;
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(350)
+            at_bottom = page.evaluate(r"""() => {
+              const home = document.getElementById('v-home');
+              const a = home.querySelector('.assist'), s = home.querySelector('.stage');
+              return {cls: home.className,
+                      assist: a ? getComputedStyle(a).opacity : null,
+                      stage: s ? getComputedStyle(s).opacity : null};
+            }""")
+            rec("8. 停在底部: 数字人不透明(未被渐隐)",
+                "PASS" if at_bottom["assist"] in ("1", None)
+                and at_bottom["stage"] in ("1", None) else "FAIL",
+                "opacity=1", at_bottom)
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.scrollTop = 0;
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(350)
+            up = page.evaluate(r"""() => {
+              const home = document.getElementById('v-home');
+              const a = home.querySelector('.assist'), s = home.querySelector('.stage');
+              return {scrolled: home.classList.contains('dock-scrolled'),
+                      assist: a ? getComputedStyle(a).opacity : null,
+                      stage: s ? getComputedStyle(s).opacity : null,
+                      pe: s ? getComputedStyle(s).pointerEvents : null};
+            }""")
+            rec("8. 上滑到历史: 数字人渐隐(opacity=0 且不拦点击)",
+                "PASS" if up["scrolled"] and up["assist"] in ("0", None)
+                and up["stage"] in ("0", None) and up["pe"] in ("none", None) else "FAIL",
+                "dock-scrolled + opacity=0 + pointer-events=none", up)
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.scrollTop = l.scrollHeight;
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(350)
+            back = page.evaluate(r"""() => {
+              const home = document.getElementById('v-home');
+              const s = home.querySelector('.stage');
+              return {scrolled: home.classList.contains('dock-scrolled'),
+                      stage: s ? getComputedStyle(s).opacity : null};
+            }""")
+            rec("8. 滚回底部: 数字人重新显示",
+                "PASS" if back["scrolled"] is False and back["stage"] in ("1", None) else "FAIL",
+                "dock-scrolled 摘除 + opacity=1", back)
 
             # ---------- 5. 全程 JS 报错监控（回归硬指标） --------------------
             rec("5. 全程无未捕获 JS 异常(pageerror)",
