@@ -715,7 +715,11 @@ def main():
                 "PASS" if "请求失败" not in (after["text"] or "") else "FAIL",
                 "文案不含「请求失败」", after["text"][:40])
 
-            # ---------- 8. 上滑看历史时数字人渐隐（2026-10-30 需求） ----------
+            # ---------- 8. 「工作助手」标题块随滚动显隐（2026-10-30 第四轮口径） ----------
+            # 判据 = scrollTop（离最早/首次对话的距离）：顶端完整可见，往下浏览在 120px 内
+            # 连续上移+渐隐，中间保持隐藏，滚回顶端才重现。数字人（.stage）是会话锚点，常显。
+            # 上一轮的「离底>24px 就隐、回底就现」被推翻：长会话里随手一滚标题就瞬跳，
+            # 且「回到最新」也弹回标题，与「只有首次对话才出现」冲突。
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
               l.innerHTML = '';
@@ -725,129 +729,138 @@ def main():
                 d.textContent = '第' + i + '条历史消息，用来把对话坞撑出滚动条';
                 l.appendChild(d);
               }
-              l.scrollTop = l.scrollHeight;
+              l.scrollTop = l.scrollHeight;      // 最新一条（浏览态，标题应已隐去）
               l.dispatchEvent(new Event('scroll'));
             }""")
             page.wait_for_timeout(350)
             at_bottom = page.evaluate(r"""() => {
               const home = document.getElementById('v-home');
               const a = home.querySelector('.assist'), s = home.querySelector('.stage');
-              return {cls: home.className,
+              return {cls: home.className, hd: home.style.getPropertyValue('--hd'),
                       assist: a ? getComputedStyle(a).opacity : null,
                       stage: s ? getComputedStyle(s).opacity : null};
             }""")
-            rec("8. 停在底部: 数字人不透明(未被渐隐)",
-                "PASS" if at_bottom["assist"] in ("1", None)
+            rec("8. 浏览到最新一条: 标题已隐、数字人（锚点）常显",
+                "PASS" if at_bottom["assist"] not in (None, "1")
+                and float(at_bottom["assist"] or 1) < 0.1
                 and at_bottom["stage"] in ("1", None) else "FAIL",
-                "opacity=1", at_bottom)
+                "assist opacity≈0 且 stage opacity=1", at_bottom)
+            # 连续插值：滚到一半（60px ≈ OA_SMOOTH/2）标题应是半透明，而不是 0/1 跳变
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
-              l.scrollTop = 0;
+              l.scrollTop = 60;
               l.dispatchEvent(new Event('scroll'));
             }""")
             page.wait_for_timeout(350)
-            up = page.evaluate(r"""() => {
+            mid = page.evaluate(r"""() => {
+              const home = document.getElementById('v-home');
+              const a = home.querySelector('.assist');
+              return {assist: a ? getComputedStyle(a).opacity : null,
+                      hd: home.style.getPropertyValue('--hd')};
+            }""")
+            rec("8. 渐隐是连续插值（半程 opacity≈0.5，不是瞬跳）",
+                "PASS" if mid["assist"] is not None
+                and 0.3 <= float(mid["assist"] or 1) <= 0.7 else "FAIL",
+                "0.3 ≤ opacity ≤ 0.7", mid)
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.scrollTop = 0;                   // 滚回最早（首次）对话
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(350)
+            at_top = page.evaluate(r"""() => {
               const home = document.getElementById('v-home');
               const a = home.querySelector('.assist'), s = home.querySelector('.stage');
               return {scrolled: home.classList.contains('dock-scrolled'),
-                      assist: a ? getComputedStyle(a).opacity : null,
-                      stage: s ? getComputedStyle(s).opacity : null,
-                      pe: s ? getComputedStyle(s).pointerEvents : null};
+                      hd: home.style.getPropertyValue('--hd'),
+                      assist: a ? getComputedStyle(a).opacity : null};
             }""")
-            rec("8. 上滑到历史: 数字人渐隐(opacity=0 且不拦点击)",
-                "PASS" if up["scrolled"] and up["assist"] in ("0", None)
-                and up["stage"] in ("0", None) and up["pe"] in ("none", None) else "FAIL",
-                "dock-scrolled + opacity=0 + pointer-events=none", up)
+            rec("8. 滚回最早（首次）对话: 标题重新出现",
+                "PASS" if at_top["assist"] in ("1", None)
+                and at_top["scrolled"] is False else "FAIL",
+                "opacity=1 + dock-scrolled 摘除", at_top)
+            # 中间区域不得「停下就弹回」：停在 300px 处静置，标题必须保持隐去
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
-              l.scrollTop = l.scrollHeight;
+              l.scrollTop = 300;
               l.dispatchEvent(new Event('scroll'));
             }""")
-            page.wait_for_timeout(350)
-            back = page.evaluate(r"""() => {
+            page.wait_for_timeout(1500)
+            stay = page.evaluate(r"""() => {
               const home = document.getElementById('v-home');
-              const s = home.querySelector('.stage');
-              return {scrolled: home.classList.contains('dock-scrolled'),
-                      stage: s ? getComputedStyle(s).opacity : null};
+              const a = home.querySelector('.assist');
+              return {assist: a ? getComputedStyle(a).opacity : null,
+                      scrolled: home.classList.contains('dock-scrolled')};
             }""")
-            rec("8. 滚回底部: 数字人重新显示",
-                "PASS" if back["scrolled"] is False and back["stage"] in ("1", None) else "FAIL",
-                "dock-scrolled 摘除 + opacity=1", back)
+            rec("8. 中间区域静置 1.5s 不弹回",
+                "PASS" if stay["assist"] is not None and float(stay["assist"] or 1) < 0.1
+                else "FAIL", "opacity≈0", stay)
 
-            # ---------- 9. 上滑看历史时顶栏「工作助手」隐藏 + 背景透明（2026-10-30 第二轮） ----------
-            # 与第 8 组共用同一条判据（离底 >24px），但手法不同：数字人只降 opacity、不动布局；
-            # 顶栏是横在内容上方的实心带，必须连高度一起收（height:0 + 透明背景 + 无描边），
-            # 否则「透明」等于留一条 52px 空白带。这里三项一起验，缺一项都不算隐藏。
+            # ---------- 9. 顶栏「工作助手」固定常显（2026-10-30 第四轮口径） ----------
+            # 撤销第二轮的 bar-hidden：顶栏在本就不随对话坞滚动的 flex 布局里，恒定可见。
+            # 这里验「滚到任何位置顶栏都在」—— 上一轮的隐藏行为已整体删除。
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
-              l.scrollTop = 0;
+              l.scrollTop = 300;
               l.dispatchEvent(new Event('scroll'));
             }""")
             page.wait_for_timeout(350)
-            bar_up = page.evaluate(r"""() => {
+            bar_mid = page.evaluate(r"""() => {
               const root = document.getElementById('oaRoot');
               const bar  = document.querySelector('.appbar');
               const cs = getComputedStyle(bar), inner = bar.firstElementChild;
-              return {
-                hidden: root.classList.contains('bar-hidden'),
-                h: Math.round(bar.getBoundingClientRect().height),
-                bg: cs.backgroundColor,
-                border: cs.borderBottomColor,
-                op: inner ? getComputedStyle(inner).opacity : null
-              };
+              const r = bar.getBoundingClientRect();
+              const vr = document.getElementById('oaRoot').getBoundingClientRect();
+              return {hidden: root.classList.contains('bar-hidden'),
+                      h: Math.round(r.height), top: Math.round(r.top),
+                      rootTop: Math.round(vr.top),
+                      bg: cs.backgroundColor,
+                      op: inner ? getComputedStyle(inner).opacity : null};
             }""")
-            rec("9. 上滑看历史: 顶栏挂 bar-hidden",
-                "PASS" if bar_up["hidden"] else "FAIL", "bar-hidden 存在", bar_up["hidden"])
-            rec("9. 上滑看历史: 顶栏高度收为 0（不留空白带）",
-                "PASS" if bar_up["h"] == 0 else "FAIL", "appbar 高度=0", f"{bar_up['h']}px")
-            rec("9. 上滑看历史: 顶栏背景与描边都透明",
-                "PASS" if bar_up["bg"] in ("rgba(0, 0, 0, 0)", "transparent")
-                and bar_up["border"] in ("rgba(0, 0, 0, 0)", "transparent") else "FAIL",
-                "background/border 透明", f"bg={bar_up['bg']} border={bar_up['border']}")
-            rec("9. 上滑看历史: 顶栏标题不可见",
-                "PASS" if bar_up["op"] in ("0", None) else "FAIL", "opacity=0", bar_up["op"])
+            rec("9. 浏览中顶栏仍然可见（固定常显，不随内容滚走）",
+                "PASS" if (not bar_mid["hidden"]) and bar_mid["h"] > 20
+                and bar_mid["bg"] not in ("rgba(0, 0, 0, 0)", "transparent")
+                and bar_mid["op"] in ("1", None) else "FAIL",
+                "无 bar-hidden + 高度>20 + 背景不透明 + 内容可见", bar_mid)
+            rec("9. 顶栏钉在页面最顶部（top 与 oaRoot 顶对齐）",
+                "PASS" if abs(bar_mid["top"] - bar_mid["rootTop"]) <= 2 else "FAIL",
+                "|appbar.top - oaRoot.top| ≤ 2px",
+                f"bar={bar_mid['top']} root={bar_mid['rootTop']}")
 
+            # ---------- 10. 回答不溢出容器（2026-10-30 用户口径） ----------
+            # 长 URL / 无空格长串曾把气泡横向撑破：文字顶到边界被裁，看起来就是
+            # 「回答超出答案区域」。anywhere 断行 + dock overflow-x:hidden 后，
+            # 气泡与文本都必须被约束在容器内。
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
+              const d = document.createElement('div');
+              d.className = 'bub ai ans';
+              d.innerHTML = '<div class="tx">根据最新资料（https://www.gov.cn/zhengce/content/202511/'
+                + 'content_7047090_index_very_long_suffix_aaaaaaaaaaaaaaaaaaaaaaaaaaaa.html）'
+                + '以及AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA串，结论如下。</div>';
+              l.appendChild(d);
               l.scrollTop = l.scrollHeight;
               l.dispatchEvent(new Event('scroll'));
             }""")
             page.wait_for_timeout(350)
-            bar_back = page.evaluate(r"""() => {
-              const root = document.getElementById('oaRoot');
-              const bar  = document.querySelector('.appbar');
-              const cs = getComputedStyle(bar);
-              return {hidden: root.classList.contains('bar-hidden'),
-                      h: Math.round(bar.getBoundingClientRect().height),
-                      bg: cs.backgroundColor};
+            ovf = page.evaluate(r"""() => {
+              const dock = document.getElementById('oaDockList');
+              const bub = dock.querySelector('.bub.ans:last-child');
+              const tx = bub.querySelector('.tx');
+              const dr = dock.getBoundingClientRect();
+              const br = bub.getBoundingClientRect();
+              return {dockSW: dock.scrollWidth, dockCW: dock.clientWidth,
+                      bubRight: Math.round(br.right), dockRight: Math.round(dr.right),
+                      bubSW: bub.scrollWidth, bubCW: bub.clientWidth,
+                      txSW: tx.scrollWidth, txCW: tx.clientWidth};
             }""")
-            rec("9. 滚回底部: 顶栏重新显示且背景恢复",
-                "PASS" if (not bar_back["hidden"]) and bar_back["h"] > 20
-                and bar_back["bg"] not in ("rgba(0, 0, 0, 0)", "transparent") else "FAIL",
-                "bar-hidden 摘除 + 高度>20 + 背景不透明", bar_back)
-
-            # 非首页不该受牵连：顶栏隐藏只属于「在首页翻聊天记录」这一件事
-            page.evaluate(r"""() => {
-              const l = document.getElementById('oaDockList');
-              l.scrollTop = 0;
-              l.dispatchEvent(new Event('scroll'));
-            }""")
-            page.wait_for_timeout(250)
-            page.evaluate(r"""() => {
-              const tab = document.querySelector('.tab[data-view="kb"]');
-              if(tab) tab.click();
-            }""")
-            page.wait_for_timeout(350)
-            bar_other = page.evaluate(r"""() => {
-              const root = document.getElementById('oaRoot');
-              const bar  = document.querySelector('.appbar');
-              return {hidden: root.classList.contains('bar-hidden'),
-                      view: (document.querySelector('.view.on') || {}).id || '',
-                      h: Math.round(bar.getBoundingClientRect().height)};
-            }""")
-            rec("9. 切到其它页: 顶栏立即还原（不被聊天的滚动牵连）",
-                "PASS" if (not bar_other["hidden"]) and bar_other["h"] > 20 else "FAIL",
-                "bar-hidden 摘除 + 高度>20", bar_other)
+            rec("10. 长 URL 气泡不横向溢出（bubble/tx 无横向滚动）",
+                "PASS" if ovf["bubSW"] <= ovf["bubCW"] + 1 and ovf["txSW"] <= ovf["txCW"] + 1
+                else "FAIL", "scrollWidth ≤ clientWidth+1", ovf)
+            rec("10. 气泡右缘不出对话坞（不被裁切/不越界）",
+                "PASS" if ovf["bubRight"] <= ovf["dockRight"] + 1
+                and ovf["dockSW"] <= ovf["dockCW"] + 1 else "FAIL",
+                "bub.right ≤ dock.right 且 dock 无横向溢出", ovf)
 
             # ---------- 5. 全程 JS 报错监控（回归硬指标） --------------------
             rec("5. 全程无未捕获 JS 异常(pageerror)",

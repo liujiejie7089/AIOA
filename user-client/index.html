@@ -1375,38 +1375,30 @@
 }
 .oa #v-home.chatting .robot-wrap:hover{transform:translateY(-3px)}
 .oa #v-home.chatting .robot-wrap:active{transform:scale(.98)}
-/* 上滑看历史时数字人渐隐（2026-10-30 用户要求：「上滑时渐隐避免遮挡记录，滚到底部再显示」）。
-   刻意**只降透明度、不改高度**：一淡出就把布局抽掉的话，滚动位置会跳，
-   用户正在翻的那几条会被顶走 —— 那比数字人挡一点更难受。 */
-.oa #v-home .assist,
-.oa #v-home .stage{transition:opacity 200ms var(--ease), transform 200ms var(--ease)}
-.oa #v-home.dock-scrolled .assist,
-.oa #v-home.dock-scrolled .stage{opacity:0; transform:translateY(-8px); pointer-events:none}
+/* 「工作助手」标题块随滚动显隐（2026-10-30 第四轮口径，推翻第二轮的「回到底部即现」）：
+   向上滑动浏览内容 ⇒ 平滑上移 + 渐隐；只有滚回**最早（首次）对话**（scrollTop≈0）才重新出现。
+   连续插值：oaSyncDockFade 把 0..1 写进 `--hd`（scrollTop / OA_SMOOTH），CSS 用 calc 直接插值
+   —— 不再是「过 24px 阈值瞬跳」，中间区域保持隐藏，避免跳变与闪烁。
 
-/* 顶栏「工作助手」同一条判据（2026-10-30 第二轮口径）：上滑看历史时**隐藏标题并把背景设为透明**，
-   向下滚回来再显示。与数字人不同，这里连高度一起收掉 —— 顶栏是横在内容上方的一条实心带，
-   只把字变透明等于留一条空白带，照样占着 56px；收高度不会让聊天记录跳：
-   对话坞自己的 scrollTop 不变，只是可视窗口从下方多出 56px。
-   仅首页生效（#oaRoot.bar-hidden 由 oaSyncDockFade 在 v-home 激活时才挂）。
+   ⚠️ 两个刻意为之：
+   ① 只动 `.assist`（标题块）。数字人是会话锚点，保持常显；把 robot 也藏掉会让对话失去指向。
+   ② 不收 `.assist` 的高度：收高度会让 dock 变高 → 滚动位置跳，正在翻历史的人被顶走
+     （与数字人同理）。渐隐后 pointer-events 一并关掉，免得隐形标题拦点击。 */
+.oa #v-home .assist{
+  opacity:calc(1 - var(--hd, 0));
+  transform:translateY(calc(var(--hd, 0) * -30px));
+  transition:opacity 120ms linear, transform 120ms linear;
+}
+.oa #v-home.dock-scrolled .assist{pointer-events:none}
 
-   ⚠️ 选择器不能写成 `.oa #oaRoot.bar-hidden .appbar`：`#oaRoot` 自己就带 `.oa`
-   （`<div class="oa" id="oaRoot">`），要找的是**祖先**里的 `.oa`，而它在文档里不存在
-   ⇒ 规则整条不匹配，class 挂上了但高度/背景纹丝不动（2026-10-30 实测：bar-hidden=true
-   而 appbar 仍是 52px 白底）。故这里以 id 起头。 */
-.oa .appbar{
-  transition:height 200ms var(--ease), background 200ms var(--ease),
-             border-color 200ms var(--ease), border-bottom-width 200ms var(--ease),
-             padding 200ms var(--ease);
-}
-.oa .appbar > *{transition:opacity 160ms var(--ease), transform 160ms var(--ease)}
-#oaRoot.bar-hidden .appbar{
-  height:0; padding-top:0; padding-bottom:0; overflow:hidden;
-  background:transparent; border-bottom-width:0; border-bottom-color:transparent;
-}
-#oaRoot.bar-hidden .appbar > *{opacity:0; transform:translateY(-8px); pointer-events:none}
+/* 顶栏「工作助手」**固定常显**（2026-10-30 第四轮口径，撤销第二轮的 bar-hidden）：
+   顶栏在 flex 布局里本来就不随对话坞滚动，恒定可见 —— 不再随滚动收起/透明。
+   第二轮那套 `#oaRoot.bar-hidden`（高度收 0 + 背景透明）已整体删除：用户实测后
+   要求顶栏固定不动。坑位记录保留在 pitfalls：若将来再写 `#oaRoot.xxx` 相关选择器，
+   不能带 `.oa ` 前缀（`#oaRoot` 自己就是 `.oa`，找不到祖先）。 */
 
 .oa .dock-list{
-  flex:1;min-height:0;overflow-y:auto;padding:8px 2px 10px;
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px 2px 10px;
   display:flex;flex-direction:column;gap:9px;scrollbar-width:thin;
 }
 /* 气泡：不再按 IM 惯例左右分侧 —— 三角一律指向数字人（用户口径） */
@@ -1415,7 +1407,12 @@
   font-size:13px;line-height:1.72;
   border:1px solid var(--border);background:var(--surface);color:var(--text);
   animation:bub-in var(--dur-fast) var(--ease) both;
+  /* 回答溢出（2026-10-30 用户口径）：答案里的长 URL / 无空格长串会把气泡横向撑破，
+     文字顶到容器边界被裁掉，看起来就是「回答超出答案区域」。
+     anywhere 允许在任意字符处断行（URL 也能断），min-width:0 防 flex 子项撑开父容器。 */
+  overflow-wrap:anywhere; word-break:break-word; min-width:0;
 }
+.oa .bub .tx{min-width:0; max-width:100%; overflow-wrap:anywhere}
 .oa .bub.ai{align-self:flex-start}
 .oa .bub.me{align-self:flex-end;background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand-ink)}
 /* 三角：SVG 三角形（顶点朝上为基准），落位与旋转由 oaLayoutTails() 写入 --tail-*。
@@ -7801,8 +7798,7 @@ function oaGo(view){
   oaRender();
   var p = $o('v-' + view); if(p){ p.scrollTop = 0; var m = p.querySelector('.rail-main'); if(m) m.scrollTop = 0; }
   oaRefreshView(view);
-  /* 离开首页就把顶栏还原：bar-hidden 只在首页按「翻聊天记录」挂，
-     换到任务/知识库等页仍留着它，用户会以为顶栏被弄丢了。 */
+  /* 换页后重算一次标题显隐：顶栏固定常显（第四轮口径），这里只同步 --hd 与 dock-scrolled */
   oaSyncDockFade();
 }
 
@@ -9719,9 +9715,12 @@ function dockEl(){ return $o('oaDockList'); }
 
 function oaSetChatting(on){
   var home = $o('v-home'); if(home) home.classList.toggle('chatting', !!on);
-  // 退出会话态（清空对话坞）时顺手摘掉渐隐与顶栏隐藏：否则下一次进来数字人是隐形的、顶栏也还没回来
-  if(!on && home) home.classList.remove('dock-scrolled');
-  if(!on && $o('oaRoot')) $o('oaRoot').classList.remove('bar-hidden');
+  // 退出会话态（清空对话坞）时顺手复位标题显隐：dock 已清空、scrollTop 归零，
+  // 标题（工作助手）应当完整回来，否则下一次进来标题还是隐的
+  if(!on && home){
+    home.classList.remove('dock-scrolled');
+    home.style.removeProperty('--hd');
+  }
   if(on && $o('oaTag')) $o('oaTag').style.display = 'none';
 }
 
@@ -9755,27 +9754,35 @@ function oaPushBub(role, html, opts){
 }
 function oaScrollDock(){ var l = dockEl(); if(l) l.scrollTop = l.scrollHeight; }
 
-/* 对话坞滚动位置 → 首页标题/数字人渐隐 + 顶栏隐藏。滚回底部（含程序化滚到底）即恢复。
-   判据是「离底还差多少」而不是「scrollTop 多大」：滚到底部时 scrollTop 本身就是最大值
-   （scrollHeight - clientHeight），拿它跟阈值比会把「停在底部」判成「在上滑」，正好反了。
-   24px 容差是为了避开触控板回弹与亚像素抖动 —— 差一两个像素不算真的在翻历史。
+/* 「工作助手」标题块显隐（2026-10-30 第四轮口径）：
+   判据只有 scrollTop —— 「离最早（首次）对话还有多远」。
+   · scrollTop=0（首次对话 / 空会话）→ 标题完整可见
+   · 往下浏览内容（scrollTop 增大）→ 在 OA_SMOOTH 像素内连续上移 + 渐隐
+   · 中间区域保持隐藏；只有滚回 scrollTop≈0 才重新出现
+     （记录很多时，必须一直滑回最早那条才见得到标题 —— 用户口径原话）
 
-   两个受控对象共用这一条判据（不是两套阈值，免得出现「数字人已隐、标题还在」的中间态）：
-     · `#v-home.dock-scrolled` ⇒ 数字人与首页标题渐隐（只降透明度，不动布局）
-     · `#oaRoot.bar-hidden`    ⇒ 顶栏「工作助手」隐藏 + 背景透明（连高度一起收）
-   顶栏只在**首页**挂：任务/知识库等页的滚动跟「翻聊天记录」是两回事，不该被牵连。 */
-var OA_FADE_GAP = 24;
+   为什么是 scrollTop 而不是「离底距离」：上一轮用「离底 >24px 就隐、回底就现」，
+   实测长会话里随便滚一下整个标题就瞬跳/瞬现（用户报「不细滑」），而且「回到最新」
+   也把标题弹回来，跟「只有首次对话才出现」冲突。scrollTop 是状态量，任何时刻可重算，
+   CSS 端用 `--hd` 连续插值，没有阈值跳变。
+
+   顶栏「工作助手」（.appbar）**固定常显**：它在本就不随对话坞滚动的 flex 布局里，
+   第四轮起不再收起（第二轮的 bar-hidden 已删）。 */
+var OA_SMOOTH = 120;
 function oaSyncDockFade(){
   var home = $o('v-home'), l = dockEl(), root = $o('oaRoot');
   if(!home) return;
-  var gap = l ? (l.scrollHeight - l.clientHeight - l.scrollTop) : 0;
-  var scrolled = !!l && gap > OA_FADE_GAP;
+  var st = l ? l.scrollTop : 0;
+  var t = Math.max(0, Math.min(1, st / OA_SMOOTH));
+  home.style.setProperty('--hd', t.toFixed(3));
+  // dock-scrolled 语义收窄为「标题已完全隐去」：供 pointer-events 与哨兵断言用
+  var scrolled = t >= 0.99;
   if(home.classList.contains('dock-scrolled') !== scrolled){
     home.classList.toggle('dock-scrolled', scrolled);
   }
-  var hideBar = scrolled && home.classList.contains('on');
-  if(root && root.classList.contains('bar-hidden') !== hideBar){
-    root.classList.toggle('bar-hidden', hideBar);
+  // 顶栏固定常显：历史遗留的 bar-hidden 一律摘掉（第四轮口径撤销第二轮行为）
+  if(root && root.classList.contains('bar-hidden')){
+    root.classList.remove('bar-hidden');
   }
 }
 
