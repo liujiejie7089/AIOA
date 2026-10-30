@@ -10,9 +10,11 @@
   DELETE /api/v1/connectors/{code}/credentials 清除（仅管理员）
 
 provider 决定凭据落哪儿，调用方无感：
-- wecom ⇒ 企业微信原生加密存储（wecom/store.py，历史数据与哨兵不变）
 - vault ⇒ 通用凭证保险库（connectors/vault.py，任意第三方应用）
-- none  ⇒ 该连接器没有应用级凭据（用户自填），PUT 会被明确拒绝而不是静默成功
+- none  ⇒ 该连接器没有应用级凭据（用户自填 / 扫码自授权），PUT 会被明确拒绝而不是静默成功
+
+> 2026-10-30：`wecom` 这个 provider（企业微信自建应用专用加密表）随连接器一起物理删除，
+> 见 docs/64 §9.7。新增需要「管理员配置应用凭据」的连接器请一律用 vault。
 """
 
 from __future__ import annotations
@@ -20,16 +22,12 @@ from __future__ import annotations
 import json
 import logging
 
-from ..wecom import identity, store as wecom_store
+from ..wecom import identity
 from . import registry, vault
 
 logger = logging.getLogger("mcp_hub.connectors")
 
 _PREFIX = "/api/v1/connectors"
-
-# provider=wecom 的字段名 ↔ wecom store 的列名
-_WECOM_FIELD_MAP = {"corpId": "corp_id", "agentId": "agent_id", "corpSecret": "corp_secret",
-                    "redirectUri": "redirect_uri"}
 
 
 async def _read_body(receive) -> bytes:
@@ -101,17 +99,6 @@ async def _status(manifest, tenant_id: str) -> dict:
     if manifest.provider == "none":
         return {"configured": True, "enabled": True, "values": {},
                 "hint": "该连接器无应用级凭据，由每位用户自行授权"}
-
-    if manifest.provider == "wecom":
-        cfg = await wecom_store.get_tenant_config(tenant_id)
-        plain = {}
-        if cfg is not None:
-            plain = {"corpId": cfg.corp_id, "agentId": cfg.agent_id,
-                     "corpSecret": cfg.corp_secret, "redirectUri": cfg.redirect_uri or ""}
-        masked = vault.mask_view(plain, fields)
-        configured = all(plain.get(k) for k in required)
-        return {"configured": configured, "enabled": cfg is not None, "values": masked,
-                "hint": "" if configured else "待管理员配置企业微信应用凭据"}
 
     plain = await vault.get_values(tenant_id, manifest.code)
     masked = vault.mask_view(plain, fields)
@@ -187,29 +174,9 @@ async def _put_credentials(headers, code, body: bytes, send):
     required = [f.name for f in m.required_fields]
 
     try:
-        if m.provider == "wecom":
-            old = await wecom_store.get_tenant_config(ident.tenant_id)
-            merged = {
-                "corpId": old.corp_id if old else "",
-                "agentId": old.agent_id if old else "",
-                "corpSecret": old.corp_secret if old else "",
-                "redirectUri": (old.redirect_uri or "") if old else "",
-            }
-            for k, v in values.items():
-                if not vault._is_masked_or_blank(v):  # noqa: SLF001 —— 同一包内的掩码口径
-                    merged[k] = v.strip()
-            missing = [k for k in required if not merged.get(k)]
-            if missing:
-                return await _send_json(send, 400, {
-                    "ok": False, "error": "以下字段必填（留空表示保留旧值）：" + "、".join(missing)})
-            await wecom_store.upsert_tenant_config(
-                ident.tenant_id, merged["corpId"], merged["corpSecret"], merged["agentId"],
-                merged["redirectUri"] or None, ident.username or ident.user_id,
-            )
-        else:
-            await vault.put_values(ident.tenant_id, code, values,
-                                   updated_by=ident.username or ident.user_id,
-                                   required=required)
+        await vault.put_values(ident.tenant_id, code, values,
+                               updated_by=ident.username or ident.user_id,
+                               required=required)
     except ValueError as e:
         return await _send_json(send, 400, {"ok": False, "error": str(e)})
 
@@ -231,10 +198,7 @@ async def _delete_credentials(headers, code, send):
         return await _send_json(send, 400, {
             "ok": False, "error": f"连接器 {code} 无应用级凭据可清除"})
 
-    if m.provider == "wecom":
-        await wecom_store.clear_tenant_config(ident.tenant_id)
-    else:
-        await vault.clear(ident.tenant_id, code)
+    await vault.clear(ident.tenant_id, code)
 
     logger.info("[connectors] %s 凭据已清除 tenant=%s user=%s", code, ident.tenant_id, ident.user_id)
     st = await _status(m, ident.tenant_id)

@@ -10,13 +10,15 @@ M1「默认不可信」、M3「probe 不改 trusted」、M2/M9「manifest 为空
 这五项都以「库里 trusted 全 0」为前提，而脚本自己并不保证这个前提 —— 上一轮谁 trust 过、
 或者真实环境里管理员为了用起来而 trust 过，都会让它们**假失败**（本轮实测就是：
 三个内置服务器 trusted 全为 1，五项一起红）。
-直接在开头无脑 un-trust 也不行：wecom_group 是租户凭据型，一取消信任 AI 那边的工具就没了。
+直接在开头无脑 un-trust 也不行：真实在用的连接器一取消信任 AI 那边的工具就没了。
 故改成「先快照每个内置服务器的 trusted，再复位，跑完按快照恢复」——
 既不依赖外部状态，也不破坏真实配置。
 
   M0  GET  /api/v1/mcp/servers                 快照 trusted（前置，不计入断言）
-  M1  GET  /api/v1/mcp/servers                 恰好 qq_mail / wechat_work / wecom_group 三行；
-                                               trusted=false、source=BUILTIN、toolCount=6/13/2
+  M1  GET  /api/v1/mcp/servers                 4 行（qq_mail / wecom_cli / wechat_work / wecom_group，
+                                               后两个是已下线留痕行）；trusted=false、source=BUILTIN、
+                                               toolCount=6/5/0/0（已下线的工具快照由 V104 清空）
+  M1b 已下线服务器的行**必须保留**且 trusted=false（回滚靠行，别删；但绝不能再进 manifest）
   M2  GET  /api/v1/mcp/manifest                **空**（都没信任）
   M3  POST /servers/qq_mail/probe              ok=true、tools=6，但 trusted **仍为 false**
                                                ⇒ 证明「探测 ≠ 信任」（探活只证明能用，不等于授权）
@@ -26,14 +28,14 @@ M1「默认不可信」、M3「probe 不改 trusted」、M2/M9「manifest 为空
   M6  GET  /servers/qq_mail/tools              6 个工具，required 与契约逐字一致
   M7  POST /builtin/qq_mail/call                ok=false 且文案含「未连接」⇒ 执行侧同样拦
   M8  POST /builtin/wechat_work/call            ok=false 且文案含「尚未信任」⇒ 闸门**顺序**正确
+                                               （信任判定在 handler 查找之前，故实现删了也不影响）
   M9  POST /servers/qq_mail/untrust             trusted=false；manifest 仍空（幂等复原）
   M10 GET  /api/v1/mcp/servers（无 token）        HTTP 401
   M11 审计落库                                  M7 之后 mcp_tool_audit 行数 +1（直接查库比对）
   M12 凭据不外泄                                列表响应不含 authCode/corpSecret/credential 等键名与明文
-  M13 工具目录无漂移                            DB 目录（信任时从 hub 覆盖写）与 hub **实装**数逐个相等。
-                                               hub 是工具的唯一真源（catalog.py / group_server.TOOLS），
-                                               DB 只是快照；快照旧了界面就报错数（真发生过：
-                                               wechat_work 扩容到 13 后 DB 仍留 3，因为信任发生在扩容前）。
+  M13 工具目录无漂移                            存活服务器的 DB 目录（信任时从 hub 覆盖写）与 hub **实装**数
+                                               逐个相等；且 hub 里**不得再出现**已下线的两个 code。
+                                               hub 是工具的唯一真源（wecom_cli/catalog.py），DB 只是快照；
                                                判据回到真源再取一次，不与被测对象同源。
 
 用法：
@@ -62,10 +64,13 @@ EXPECT_REQUIRED = {
 FORBIDDEN_KEY_SUBSTR = ("credential", "authcode", "corpsecret", "secret", "password", "enc")
 # 内置服务器 → 期望工具数。**不是**写死的历史值，而是「hub 实装数」的镜像；
 # M13 会拿它跟 hub 现报的数字逐个比对，两边不一致就红（防止只改一处）。
-EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 13, "wecom_group": 2, "wecom_cli": 5}
-# 已下线（V103, 2026-10-30）：企业微信统一改用「企业微信（扫码）」连接器（docs/64）。
-# 它们的 mcp_server 行**故意保留**（工具快照留给回滚用），但必须 trusted=0，
+EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 0, "wecom_group": 0, "wecom_cli": 5}
+# 已下线（V103 停用 + V104 清工具快照 + 代码物理删除，2026-10-30；docs/64 §9.7）。
+# 企业微信统一改用「企业微信（扫码）」连接器。
+# 它们的 mcp_server 行**故意保留**（留痕），但必须 trusted=0 且工具目录为空：
 # 否则 manifest 会把已下线连接器的工具重新塞给模型 —— 那是本节最该防的事。
+# （V104 之前这里留的是 13/2 个旧快照，导致 /servers/{code}/tools 仍能查出工具，
+#   等于"看得见但已经没有人实现它"，比报错更危险。）
 RETIRED_SERVERS = {"wechat_work", "wecom_group"}
 DEFAULT_HUB = "http://127.0.0.1:8099"
 MYSQL = "D:/dev/mysql/mysql-8.4.10-winx64/bin/mysql.exe"  # 注意用盘符式路径：
@@ -184,19 +189,23 @@ def run_assertions(base, hub, token):
              and c not in EXPECT_TOOL_COUNT]
     if extra:
         bad.append("多出内置服务器 %s（请同步本脚本 EXPECT_TOOL_COUNT）" % extra)
-    rec("M1 清单：4 个内置服务器、默认不可信、目录 6/13/2/5", st == 200 and not bad,
-        "HTTP=%s 偏差=%s" % (st, bad or "无"))
+    rec("M1 清单：4 个内置服务器、默认不可信、目录 6/0/0/5（两个已下线为 0）",
+        st == 200 and not bad, "HTTP=%s 偏差=%s" % (st, bad or "无"))
 
-    # ---------- M1b 已下线连接器必须不可信（防止回滚时忘了重新 trust，或反过来忘了收回） ----------
+    # ---------- M1b 已下线连接器必须不可信且无工具 ----------
     retired_bad = []
     for c in RETIRED_SERVERS:
         it = by_code.get(c)
         if it is None:
-            retired_bad.append("%s 行被物理删了（回滚要靠它，不该删）" % c)
-        elif it.get("trusted") is not False:
+            retired_bad.append("%s 行被物理删了（留痕要用它，不该删）" % c)
+            continue
+        if it.get("trusted") is not False:
             retired_bad.append("%s.trusted=%r（已下线却仍可信 ⇒ manifest 会把工具塞给模型）"
                                % (c, it.get("trusted")))
-    rec("M1b 已下线的 wechat_work / wecom_group 保留行但 trusted=false", not retired_bad,
+        if it.get("toolCount") not in (0, None):
+            retired_bad.append("%s.toolCount=%r（工具快照没清 ⇒ 界面会对着一台空服务器报工具数）"
+                               % (c, it.get("toolCount")))
+    rec("M1b 已下线的 wechat_work / wecom_group 保留行、不可信、无工具", not retired_bad,
         "偏差=%s" % (retired_bad or "无"))
 
     # ---------- M12 凭据不外泄（先做，避免后面状态变化影响） ----------
@@ -299,13 +308,18 @@ def run_assertions(base, hub, token):
     db_counts = {i.get("code"): i.get("toolCount")
                  for i in ((jload(raw_s) or {}).get("data") or [])
                  if i.get("source") == "BUILTIN"}
+    # 只比**存活**服务器：已下线的两个 code 在 hub 侧已不存在（代码物理删除），
+    # 拿它们的 DB 快照去和 hub 比必然「漂移」，那会把一次正确的删除误判成回归。
+    live = [c for c in EXPECT_TOOL_COUNT if c not in RETIRED_SERVERS]
     drift = {c: (db_counts.get(c), hub_counts.get(c))
-             for c in EXPECT_TOOL_COUNT
+             for c in live
              if db_counts.get(c) != hub_counts.get(c)}
-    rec("M13 工具目录无漂移（DB 快照 == hub 实装）",
-        st_h == 200 and st_s == 200 and not drift,
-        "hubHTTP=%s dbHTTP=%s hub=%s db=%s 漂移=%s"
-        % (st_h, st_s, hub_counts, db_counts, drift or "无"))
+    # 反向断言：hub 里**不许**再出现已下线的 code（删干净了才算数，否则旧工具会重新流给模型）
+    still_in_hub = {c: hub_counts.get(c) for c in RETIRED_SERVERS if c in hub_counts}
+    rec("M13 工具目录无漂移（存活服务器 DB == hub；已下线的不在 hub）",
+        st_h == 200 and st_s == 200 and not drift and not still_in_hub,
+        "hubHTTP=%s dbHTTP=%s hub=%s db=%s 漂移=%s hub残留=%s"
+        % (st_h, st_s, hub_counts, db_counts, drift or "无", still_in_hub or "无"))
 
     # ---------- M10 未登录 ----------
     st, raw = call(base, "/api/v1/mcp/servers")

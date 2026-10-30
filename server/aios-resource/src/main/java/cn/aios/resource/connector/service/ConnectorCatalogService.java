@@ -2,7 +2,6 @@ package cn.aios.resource.connector.service;
 
 import cn.aios.common.crypto.SecretCodec;
 import cn.aios.common.exception.BizException;
-import cn.aios.resource.connector.config.ConnectorProperties;
 import cn.aios.resource.connector.entity.ConnectorConnection;
 import cn.aios.resource.connector.entity.ConnectorDef;
 import cn.aios.resource.connector.entity.ConnectorTenantConfig;
@@ -26,35 +25,36 @@ import java.util.stream.Collectors;
  * <p><b>配置就绪度（configReady）判定只在这一处</b>：</p>
  * <ul>
  *   <li>CREDENTIAL（QQ 邮箱）：恒 true —— 用户用自己的授权码，不需要应用级凭据；</li>
- *   <li>OAUTH2（企业微信）：先取租户级 {@code connector_tenant_config.secret_json}（enabled=1），
- *       否则回退平台级 {@code aios.connector.wechat-work.*}；corpId/agentId/corpSecret 三者都非空才就绪。</li>
+ *   <li>QR（企业微信扫码）：config_keys 为空 ⇒ 恒 true —— 每个用户自己扫码，管理员无事可做；</li>
+ *   <li>其余：读租户级 {@code connector_tenant_config.secret_json}（enabled=1），
+ *       config_keys 全部非空才算就绪。</li>
  * </ul>
  *
- * <p><b>状态只读 connection 表</b>：configReady=false 时无论是否已连都强制 {@code NEED_AUTH} +
- * 附 {@code configHint}（缺哪个键），绝不返回假的已连接。</p>
+ * <p>2026-10-30 删除了「平台级 {@code aios.connector.wechat-work.*} 兜底」与
+ * {@code resolveWeCom()}：那是 {@code wechat_work} 专属的取凭据逻辑，随连接器一起物理删除
+ * （docs/64 §9.7）。现在没有连接器走平台级配置，{@link ConfigSource#PLATFORM} 仅为兼容
+ * 响应字段而保留。</p>
+ *
+ * <p><b>状态只读 connection 表</b>：configReady=false 时也不改状态，只附 {@code configHint}
+ * （缺哪个键），绝不返回假的已连接。</p>
  */
 @Slf4j
 @Service
 public class ConnectorCatalogService {
 
-    private static final String WECHAT_WORK = "wechat_work";
-
     private final ConnectorDefMapper defMapper;
     private final ConnectorTenantConfigMapper tenantConfigMapper;
     private final ConnectorConnectionMapper connectionMapper;
-    private final ConnectorProperties props;
     private final SecretCodec secretCodec;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ConnectorCatalogService(ConnectorDefMapper defMapper,
                                    ConnectorTenantConfigMapper tenantConfigMapper,
                                    ConnectorConnectionMapper connectionMapper,
-                                   ConnectorProperties props,
                                    SecretCodec secretCodec) {
         this.defMapper = defMapper;
         this.tenantConfigMapper = tenantConfigMapper;
         this.connectionMapper = connectionMapper;
-        this.props = props;
         this.secretCodec = secretCodec;
     }
 
@@ -86,8 +86,7 @@ public class ConnectorCatalogService {
                     conn == null ? null : conn.getAccountLabel(),
                     conn == null ? null : conn.getConnectedAt(),
                     conn == null ? null : conn.getLastCheckedAt(),
-                    conn == null ? null : conn.getLastError(),
-                    ready.source() == ConfigSource.PLATFORM));
+                    conn == null ? null : conn.getLastError()));
         }
         return items;
     }
@@ -104,8 +103,10 @@ public class ConnectorCatalogService {
     }
 
     /**
-     * 授权形态（OAUTH2 / CREDENTIAL / API_KEY），供 MCP 闸门区分「谁负责授权」：
-     * 前两者按用户连接态判，API_KEY 按租户配置就绪度判。未知 code 返回 null。
+     * 授权形态（CREDENTIAL / QR），供 MCP 闸门区分「谁负责授权」：
+     * CREDENTIAL 按用户连接态判，QR 亦按用户连接态判（扫码即用户动作）。未知 code 返回 null。
+     *
+     * <p>历史值 OAUTH2 / API_KEY 仍可能出现在库里已停用的行上，但不再有 ACTIVE 连接器使用。</p>
      */
     public String authMode(String code) {
         if (code == null || code.isBlank()) {
@@ -125,34 +126,6 @@ public class ConnectorCatalogService {
         return new ConfigReadyResult(r.ready(), r.hint());
     }
 
-    /** 取 OAUTH2 应用凭据（租户级优先，平台级兜底）。null = 无可用配置。供 WeComOAuthService 复用。 */
-    public WeComCredentials resolveWeCom(Long tenantId) {
-        ConnectorTenantConfig tc = tenantConfigMapper.selectOne(new LambdaQueryWrapper<ConnectorTenantConfig>()
-                .eq(ConnectorTenantConfig::getTenantId, tenantId)
-                .eq(ConnectorTenantConfig::getConnectorCode, WECHAT_WORK));
-        if (tc != null && Boolean.TRUE.equals(tc.getEnabled())
-                && tc.getSecretJson() != null && !tc.getSecretJson().isBlank()) {
-            try {
-                String json = secretCodec.decrypt(tc.getSecretJson());
-                JsonNode node = objectMapper.readTree(json);
-                String corpId = text(node, "corpId");
-                String agentId = text(node, "agentId");
-                String corpSecret = text(node, "corpSecret");
-                if (allNotBlank(corpId, agentId, corpSecret)) {
-                    return new WeComCredentials(corpId, agentId, corpSecret, ConfigSource.TENANT);
-                }
-            } catch (Exception e) {
-                log.warn("企业微信租户配置解密/解析失败，回退平台配置: {}", e.getMessage());
-            }
-        }
-        ConnectorProperties.WeChatWork ww = props.getWechatWork();
-        if (allNotBlank(ww.getCorpId(), ww.getAgentId(), ww.getCorpSecret())) {
-            return new WeComCredentials(ww.getCorpId(), ww.getAgentId(), ww.getCorpSecret(),
-                    ConfigSource.PLATFORM);
-        }
-        return null;
-    }
-
     /** CREDENTIAL 连接器的字段声明（前端弹层渲染用）。 */
     public List<ConnectorField> credentialFields(String code) {
         if ("qq_mail".equals(code)) {
@@ -165,10 +138,20 @@ public class ConnectorCatalogService {
         return List.of();
     }
 
+    /**
+     * 取连接器定义；**已下线（status != ACTIVE）视为不存在**。
+     *
+     * <p>为什么必须过滤状态（2026-10-30 实测踩到）：V103 把 {@code wechat_work} /
+     * {@code wecom_group} 置为 DISABLED，但代码删掉后如果这里仍按 code 取行，
+     * {@code GET /api/v1/connectors/wechat_work} 会照常回 200 + 一条 2026 年就没人维护的定义，
+     * {@code /connect/start} 还会走到「暂不支持网页授权」这种只有开发才看得懂的分支。
+     * 用户端和管理端都该看到同一句话：这个连接器不存在。</p>
+     */
     public ConnectorDef requireDef(String code) {
         ConnectorDef def = defMapper.selectOne(new LambdaQueryWrapper<ConnectorDef>()
                 .eq(ConnectorDef::getTenantId, 0L)
-                .eq(ConnectorDef::getCode, code));
+                .eq(ConnectorDef::getCode, code)
+                .eq(ConnectorDef::getStatus, ConnectorDef.STATUS_ACTIVE));
         if (def == null) {
             throw BizException.notFound("连接器不存在：" + code);
         }
@@ -210,11 +193,11 @@ public class ConnectorCatalogService {
 
     private ConfigReady configReadyInternal(ConnectorDef def, Long tenantId) {
         if (ConnectorDef.AUTH_MODE_CREDENTIAL.equals(def.getAuthMode())) {
-            return new ConfigReady(true, null, ConfigSource.NONE);
+            return new ConfigReady(true, null);
         }
         List<String> keys = configKeys(def.getCode());
         if (keys.isEmpty()) {
-            return new ConfigReady(true, null, ConfigSource.NONE);
+            return new ConfigReady(true, null);
         }
         ConnectorTenantConfig tc = tenantConfigMapper.selectOne(new LambdaQueryWrapper<ConnectorTenantConfig>()
                 .eq(ConnectorTenantConfig::getTenantId, tenantId)
@@ -225,34 +208,18 @@ public class ConnectorCatalogService {
                 JsonNode node = objectMapper.readTree(secretCodec.decrypt(tc.getSecretJson()));
                 boolean complete = keys.stream().allMatch(k -> !text(node, k).isBlank());
                 if (complete) {
-                    return new ConfigReady(true, null, ConfigSource.TENANT);
+                    return new ConfigReady(true, null);
                 }
             } catch (Exception e) {
                 log.warn("连接器 {} 租户配置解密/解析失败：{}", def.getCode(), e.getMessage());
             }
         }
-        // 平台级兜底只对内置的企业微信成立（ConnectorProperties 里只有企微三件套）
-        if (WECHAT_WORK.equals(def.getCode())) {
-            WeComCredentials creds = resolveWeCom(tenantId);
-            if (creds != null) {
-                return new ConfigReady(true, null, creds.source());
-            }
-        }
-        return new ConfigReady(false, "缺少应用配置：" + String.join(" / ", keys), ConfigSource.NONE);
+        return new ConfigReady(false, "缺少应用配置：" + String.join(" / ", keys));
     }
 
     private static String text(JsonNode node, String key) {
         JsonNode v = node.get(key);
         return v == null || v.isNull() ? null : v.asText();
-    }
-
-    private static boolean allNotBlank(String... vals) {
-        for (String v : vals) {
-            if (v == null || v.isBlank()) {
-                return false;
-            }
-        }
-        return true;
     }
 
     // ---------------- 响应 / 内部 DTO ----------------
@@ -261,8 +228,7 @@ public class ConnectorCatalogService {
     public record ConnectorItem(String code, String name, String group, String icon, String summary,
                                String authMode, boolean configReady, String configHint, String status,
                                String accountLabel, java.time.LocalDateTime connectedAt,
-                               java.time.LocalDateTime lastCheckedAt, String lastError,
-                               boolean isPlatformManaged) {
+                               java.time.LocalDateTime lastCheckedAt, String lastError) {
     }
 
     /** GET /connectors/{code} 详情。 */
@@ -276,7 +242,7 @@ public class ConnectorCatalogService {
                                 String placeholder, String helpText) {
     }
 
-    /** connect/start 返回（CREDENTIAL 给 fields，OAUTH2 给 authUrl）。 */
+    /** connect/start 返回（CREDENTIAL 给 fields，QR 两者都不给）。 */
     public record ConnectorStart(String mode, String authUrl, List<ConnectorField> fields) {
     }
 
@@ -284,14 +250,6 @@ public class ConnectorCatalogService {
     public record ConfigReadyResult(boolean ready, String hint) {
     }
 
-    /** 企业微信应用凭据（含来源）。 */
-    public record WeComCredentials(String corpId, String agentId, String corpSecret, ConfigSource source) {
-    }
-
-    private record ConfigReady(boolean ready, String hint, ConfigSource source) {
-    }
-
-    enum ConfigSource {
-        PLATFORM, TENANT, NONE
+    private record ConfigReady(boolean ready, String hint) {
     }
 }

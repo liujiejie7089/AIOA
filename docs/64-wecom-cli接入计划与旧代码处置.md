@@ -272,6 +272,9 @@ mcp-hub :8099（保留）
 
 ### 9.5 旧连接器下线（V103，2026-10-30）
 
+> ⚠️ **本节记录的「只下线、不删码」已被 §9.7 取代**：2026-10-30 当天下午按用户要求把两个旧通道的
+> 代码**物理删除**了。本节保留作为历史决策记录（为什么当初选择只下线），现状请看 §9.7。
+
 按产品决定：**「协作与办公」里只保留「企业微信（扫码）」一个企微入口**，
 `wechat_work`（自建应用 OAuth2）与 `wecom_group`（群机器人 Webhook）已下线。
 
@@ -319,5 +322,94 @@ CLI 侧写入受限，回滚成本 = 一条 SQL。
   （`start-all.sh` 仅在 `WECOM_MOCK=1` 时给默认值）。**生产必须清空该变量**，否则等于把一个人的
   企微数据串给所有账号。这条是本次唯一「逻辑上通了、物理上没验」的点。
 - 只开放 5 个只读工具。写操作（发消息/建待办/发邮件）的权限边界（F5）未实测，故未开放。
-- `wechat_work` / `wecom_group` 已**下线但未删代码**（见 9.5）；回滚只需一条 SQL + 重新 trust。
-  注意 A 模式目前是唯一「替用户发消息」的现成通道，若后续确认 CLI 侧写入受限，回滚成本很低。
+- 旧通道已**物理删除**（不是下线），见 §9.7。A 模式（自建应用）原本是唯一「替用户发消息」的现成
+  通道；删掉之后若确认 CLI 侧写入确实受限，要重新引入必须走 git revert，成本是「重新评审 + 重新
+  部署」，不再是一条 SQL。
+
+### 9.7 旧通道代码物理删除（2026-10-30，承接 9.5）
+
+用户要求：「只保留最新的，之前的两个删掉」+「同时删掉没用的文件，包括之前写的代码」。
+9.5 当时选择只停用不删码（理由是「回滚成本低」），本条把代码真的删掉。**删完不再有 A 模式**。
+
+#### 9.7.1 删了什么
+
+| 侧 | 文件 | 行数 | 说明 |
+|---|---|---|---|
+| hub | `mcp_hub/wecom/server.py` | 646 | `wechat_work` 原生 MCP 服务器（13 工具） |
+| hub | `mcp_hub/wecom/wecom_api.py` | 307 | 企微开放接口客户端（token 缓存、通讯录、发消息） |
+| hub | `mcp_hub/wecom/catalog.py` | 240 | 13 工具目录 + 单工具模式闸门元数据 |
+| hub | `mcp_hub/wecom/mail.py` | 212 | B 模式 IMAP/SMTP 后端 |
+| hub | `mcp_hub/wecom/admin_api.py` | 199 | `/api/v1/wecom/*` REST 面（含 OAuth 回跳） |
+| hub | `mcp_hub/wecom/group_server.py` | 163 | `wecom_group` 群机器人 MCP 服务器（2 工具） |
+| hub | `mcp_hub/wecom/graph.py` | 143 | LangGraph 双模式工作流（P0 骨架 + checkpoint） |
+| hub | `mcp_hub/wecom/oauth.py` | 113 | snsapi_privateinfo 授权链 |
+| hub | `mcp_hub/wecom/group.py` | 111 | 群机器人 webhook 发送 |
+| hub | `mcp_hub/wecom/gate.py` | 49 | A/B 模式闸门 |
+| Java | `connector/service/WeComOAuthService.java` | 388 | 自建应用 OAuth + access_token 缓存 + get_my_profile |
+| Java | `connector/wecom/WeComMcpHandler.java` | 116 | `wechat_work` 的内置工具实现（MCP 桥） |
+| Java | `connector/wecom/WeComApiClient.java` | 74 | 企微 API 客户端 |
+| Java | `connector/config/ConnectorProperties.java` | 33 | `aios.connector.wechat-work.*` 平台级三件套 |
+| 前端 | `user-client/index.html` 的 `openOauthModal` + `API.connectorStart` | ~45 | OAUTH2 整页跳转弹层 |
+| 脚本 | `_verify_wecom_dual_mode_p0.py` / `_verify_wecom_group.py` | 24+7 项 | 主体已不存在 |
+| 脚本 | `wecom_ip_check.py` / `wecom_webhook_send.py` | — | 一次性真机诊断/发信工具 |
+
+合计约 **2900 行**（hub 2183 + Java 611 + 前端/脚本若干）。
+
+**必须保留的五个模块**（不是「企微代码」，是所有连接器共用的底座）：
+
+| 模块 | 为什么留 | 谁在用 |
+|---|---|---|
+| `wecom/crypto.py` | AES-256-GCM `enc:` 密文与掩码 | `store`、`connectors/vault` |
+| `wecom/models.py`（已裁到只剩 `Identity`） | 调用方身份 | `identity`、`connectors/admin_api` |
+| `wecom/store.py`（已裁到只剩 `db_path/is_mock/init/key`） | 库文件位置 + 主密钥（缺密钥 fail fast） | `app` lifespan、`connectors/vault` |
+| `wecom/identity.py` | 把 Authorization 转发 `/api/v1/auth/me` 换身份 | `connectors/admin_api` |
+| `wecom/sync.py` | 连接态回写 Java（真相源） | `wecom_cli/admin_api` |
+| `connectors/vault.py` | 通用应用凭据保险库 | 未来任何「需要管理员配凭据」的连接器 |
+
+包名仍叫 `wecom/` 只是为了不动 `WECOM_DB_PATH` / `data/wecom.db` / 既有备份口径。
+
+#### 9.7.2 删除过程中暴露的两个真问题（都已修）
+
+这两个都不是「删错了」，而是**原来就有、被删码掩盖住的漏洞**：新加的哨兵一跑就红。
+
+1. **`connector_def` 停了但接口照旧可取**：`ConnectorCatalogService.requireDef()` 只按
+   `tenant_id + code` 查，不看 `status`。于是 `GET /api/v1/connectors/wechat_work` 仍回
+   200 + 一条没人维护的定义，`connect/start` 还会掉进「暂不支持网页授权」这种开发者才看得懂
+   的分支。修法：`requireDef` 加 `status=ACTIVE` 过滤 ⇒ 已下线连接器一律「不存在」（HTTP 404）。
+2. **MCP 工具快照没清**：`V103` 只把 `mcp_server.trusted` 关了，`mcp_server_tool` 里 13+2 行
+   还在，于是 `GET /api/v1/mcp/servers/wechat_work/tools` 仍能查出 13 个工具，界面还会对着
+   一台「代码已经删干净、探测必然失败」的服务器报「13 个工具」——**这比报错更危险**。
+   修法：`V104__purge_retired_mcp_tool_snapshots.sql` 删掉这两台的工具快照（`mcp_server` 行
+   按 V103 约定留痕），toolCount 自然归零。
+
+#### 9.7.3 哨兵调整（一条断言都没放宽，只有换主体 / 加严）
+
+| 套件 | 调整 | 现行结果 |
+|---|---|---|
+| `_verify_connectors.py` | 原 C9/C9b（按就绪度出 authUrl）、C10（伪造 state→302）验的是 OAuth 链路，主体没了 ⇒ 换成更硬的断言：C9a/C9b「已下线连接器详情与 start 必须 404 不存在」、C9c「wecom_cli start 只回 QR、无 authUrl」、C10a「回调匿名不可达 401」、C10b「带 token 仍 404」、C15 改 5 工具全只读、C15b「已下线服务器的 tools 必须为空」 | **25/25** |
+| `_verify_connectors_registry.py` | 主体从 `provider=wecom` 换成运行期登记的 `provider=vault`（验的是同一套「按 provider 落库 + 掩码 + 保留旧值 + 清除」）；新增 S8 两个 vault 连接器互不覆盖；S13 库文件明文扫描移到清除**之前**并先用密钥解出真值（否则扫的是空库）；S11b 加「已下线 code 在注册表里 404」 | **15/15** |
+| `_verify_connector_tenant_config.py` | **整体换主体**（文件同名）：现在存活连接器都不需要管理员配凭据 ⇒ 改验「无需配置的形态必须表现正确」：清单为空、单项视图明确拒绝、PUT 不静默成功且不落库、已下线的在管理端也 404 | **8/8** |
+| `_verify_mcp_registry.py` | M1 期望表 retired 改 0；M1b 加「工具目录必须为空」；M13 只比存活服务器，并反向断言「hub 里不许再出现已下线 code」 | **14/14** |
+| `_verify_mcp_hub.py` | 真实 MCP 客户端连的对象从 `/mcp/wechat_work`（13）换成 `/mcp/wecom_cli`（5），required 与 `wecom_cli/catalog.py` 逐字对齐 | 全通过 |
+| `_verify_oa_connector_ui.py` | 打桩的第二张卡从 `wechat_work` 换成 `wecom_cli`（验的是 chip 文案 / configReady=false 按钮禁用这段渲染逻辑，与主体无关） | **17/17** |
+| `_verify_wecom_dual_mode_p0.py` / `_verify_wecom_group.py` | **删除**（被测对象不存在，无法「换主体」：A/B 双模式与群机器人本身就是被删的能力） | — |
+
+**覆盖损失（显式记账，别当成已验证）**：
+- 原 24 项双模式验收（OAuth 回跳/state 一次性/13 工具/模式闸门/邮件闭环/`/health` 计数）
+  与群机器人 7 项（真实 webhook 发送、空内容被拒）**随能力一起消失**。
+- 「管理端保存应用凭据 → 运行时生效」端到端链路**当前没有活的被测主体**：hub 侧由
+  `_verify_connectors_registry` 的 `provider=vault` 覆盖，Java→hub 透传要等下一个需要
+  管理员配凭据的连接器接进来才能真验（届时把 T2/T3 扩回「保存→回查 hub→configReady 翻转」）。
+
+#### 9.7.4 怎么恢复（如果将来真要 A 模式）
+
+代码已不在工作树里，只能 `git revert` 对应提交（2026-10-30「删旧企微通道」那一个），然后：
+
+```sql
+UPDATE connector_def SET status='ACTIVE' WHERE code IN ('wechat_work','wecom_group');
+-- 重新部署后端（V104 删掉的工具快照会在 trust 时从 hub 重新拉取）
+-- POST /api/v1/mcp/servers/wechat_work/trust
+```
+
+⚠️ 恢复后要同步撤销 9.7.3 里那些「必须 404」的断言，否则哨兵会红 —— **这是设计如此**
+（下线没删干净时有人盯着）。

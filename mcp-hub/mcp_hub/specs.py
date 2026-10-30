@@ -9,7 +9,7 @@
 hub 自身不实现代理型连接器的工具逻辑，只在 /internal/mcp/probe 的 builtin transport 下直接读这里，
 并把 tool 调用原样转发给 Java 的 /api/v1/mcp/builtin/{code}/call。
 
-原生型连接器（工具逻辑在本进程）不在此登记，见 wecom/catalog.py。
+原生型连接器（工具逻辑在本进程）不在此登记，见 wecom_cli/catalog.py。
 """
 
 BUILTIN_SERVERS = {
@@ -97,9 +97,9 @@ BUILTIN_SERVERS = {
             },
         ],
     },
-    # 说明：企业微信（wechat_work）已改为「原生实装」，工具目录的唯一事实源是
-    # wecom/catalog.py（13 个工具，含 A/B 双模式与连接生命周期）。此处原有一份
-    # 只含 3 个工具的代理声明，会与实际暴露的工具漂移，已删除；请勿再加回来。
+    # 说明：企业微信（wechat_work 自建应用 + OAuth、wecom_group 群机器人）两个连接器
+    # 已于 2026-10-30 下线并物理删除（docs/64 §9.7）。企业微信现在只有 wecom_cli（扫码），
+    # 其工具目录的事实源是 wecom_cli/catalog.py。请勿把旧的两份代理声明加回来。
 }
 
 

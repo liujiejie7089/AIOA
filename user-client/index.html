@@ -2875,10 +2875,9 @@ const API = {
   plugins(){ return this.req('/v1/plugins'); },
   connectors(){ return this.req('/v1/connectors'); },
   connectorDetail(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)); },
-  connectorStart(code, opts){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/connect/start',{method:'POST',body:JSON.stringify(opts||{})}); },
+  connectorDisconnect(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/disconnect',{method:'POST'}); },
   connectorConnectCredential(code, values){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/connect/credential',{method:'POST',body:JSON.stringify({values:values||{}})}); },
   connectorVerify(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/verify',{method:'POST'}); },
-  connectorDisconnect(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/disconnect',{method:'POST'}); },
   /* 扫码授权（auth_mode=QR，企业微信 CLI 连接器）：出图 / 轮询 / 确认绑定 */
   connectorQr(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/qr',{method:'POST'}); },
   connectorQrStatus(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/qr-status'); },
@@ -9313,11 +9312,12 @@ function connCardHtml(c){
   '</div>';
 }
 
-/* 点「连接」：先取详情，再按 mode 决定弹层（CREDENTIAL / OAUTH2 / QR） */
+/* 点「连接」：先取详情，再按 mode 决定弹层（CREDENTIAL / QR）
+   注：OAUTH2（企业微信自建应用整页跳转授权）已随 wechat_work 连接器一起删除
+   （2026-10-30，docs/64 §9.7）。剩两种形态，都是本页内完成，不再有整页跳转。 */
 function openConnector(code){
   API.connectorDetail(code).then(function(d){
-    if(d && d.mode === 'OAUTH2') openOauthModal(code, d);
-    else if(d && d.mode === 'QR') openQrModal(code, d);
+    if(d && d.mode === 'QR') openQrModal(code, d);
     else openCredentialModal(code, d || {});
   }).catch(function(err){
     toast(err.message || '读取连接详情失败');
@@ -9372,41 +9372,6 @@ function openCredentialModal(code, d){
     }).catch(function(err){
       errBox.textContent = err.message || '连接失败';
       errBox.style.display = '';   // 弹层不关
-    });
-  };
-}
-
-/* OAUTH2 弹层：说明 → 去企业微信授权（整页跳转） */
-function openOauthModal(code, d){
-  var name = d.name || code;
-  var summary = d.summary || '';
-  var mask = document.createElement('div');
-  mask.className = 'notif-mask show';
-  mask.innerHTML =
-    '<div class="notif-modal perm-modal oa-dlg oa-conn-dlg" role="dialog" aria-modal="true" aria-label="连接 '+txt(name)+'">'+
-      '<div class="oa-up-hd"><span class="oa-up-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
-        '<div class="notif-head">连接 '+txt(name)+'</div></div>'+
-      '<div class="notif-body"><div class="oa-conn-form">'+
-        '<div class="hint">将授权：'+txt(summary)+'</div>'+
-        '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
-      '</div></div>'+
-      '<div class="notif-foot">'+
-        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
-        '<button class="btn small" id="oaConnGoOauth">去企业微信授权</button>'+
-      '</div>'+
-    '</div>';
-  document.body.appendChild(mask);
-  var errBox = mask.querySelector('#oaConnErr');
-  mask.querySelector('[data-dlg-cancel]').onclick = function(){ mask.remove(); };
-  mask.onclick = function(e){ if(e.target === mask) mask.remove(); };
-  mask.querySelector('#oaConnGoOauth').onclick = function(){
-    API.connectorStart(code, {returnPath: location.pathname + location.search}).then(function(r){
-      var authUrl = r && r.authUrl;
-      if(authUrl){ location.href = authUrl; }
-      else { errBox.textContent = '未获取到授权地址'; errBox.style.display = ''; }
-    }).catch(function(err){
-      errBox.textContent = err.message || '发起授权失败';  // 弹层内红字（如「缺少企业微信应用配置…」）
-      errBox.style.display = '';
     });
   };
 }

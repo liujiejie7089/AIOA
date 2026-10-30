@@ -10,11 +10,12 @@ ASGI 入口：把 /mcp/<serverCode> 路由到对应内置服务器的 FastMCP st
 其它路由：
 - GET /health                        健康探测（无状态自报）
 - POST /internal/mcp/probe           Java 信任前存活探测（见 probe.py）
-- /api/v1/wecom/*                    双模式连接器 REST 面（见 wecom/admin_api.py）
+- /api/v1/connectors*                连接器统一管理面（见 connectors/admin_api.py）
+- /api/v1/wecom_cli/*                企业微信（扫码）连接器（见 wecom_cli/admin_api.py）
 
 设计原则：代理服务器无状态、不落盘、不读凭据、不持有密钥。
-wechat_work 是例外——它原生实现双模式连接器逻辑，凭据进加密存储（见 wecom/ 包与
-docs/60），其余纪律（不明文记日志、Authorization 不落库）照旧。
+唯一例外是 `wecom_cli`——它需要在本地维护每个用户的 CLI 配置目录（扫码凭据由官方 CLI
+自己加密存放），hub 只负责「按调用者身份算出该用哪个目录」，见 docs/64。
 """
 
 import asyncio
@@ -24,8 +25,6 @@ import logging
 from . import builtin, probe
 from .connectors import admin_api as connectors_admin_api
 from .connectors import vault as connector_vault
-from .wecom import admin_api as wecom_admin_api
-from .wecom import graph as wecom_graph
 from .wecom import store as wecom_store
 
 logger = logging.getLogger("mcp_hub")
@@ -72,13 +71,13 @@ async def _lifespan(receive, send):
     while True:
         message = await receive()
         if message["type"] == "lifespan.startup":
-            # 双模式连接器存储先就绪（生产模式缺密钥在此 fail fast，见 wecom/crypto.py）
+            # 连接器共享底座先就绪（生产模式缺密钥在此 fail fast，见 wecom/crypto.py）
             try:
                 wecom_store.init()
             except Exception as e:  # noqa: BLE001
-                logger.error("wecom 存储初始化失败：%s", e)
+                logger.error("连接器存储初始化失败：%s", e)
                 raise
-            # 通用连接器凭证库与 wecom 共用同一 SQLite 文件与同一把密钥
+            # 通用连接器凭证库与它共用同一 SQLite 文件与同一把密钥
             try:
                 connector_vault.init()
             except Exception as e:  # noqa: BLE001
@@ -96,10 +95,6 @@ async def _lifespan(receive, send):
                     await child.stop()
                 except Exception as e:  # noqa: BLE001
                     pass
-            try:
-                await wecom_graph.shutdown()
-            except Exception as e:  # noqa: BLE001
-                logger.warning("wecom 图关闭失败：%s", e)
             await send({"type": "lifespan.shutdown.complete"})
             return
 
@@ -132,16 +127,12 @@ async def _handle_http(scope, receive, send):
         await probe.handle(scope, receive, send)
         return
 
-    # ⚠️ /api/v1/wecom_cli 必须以 /api/v1/wecom 开头的判断**之前**分流，
-    # 否则会被 wecom_admin_api 吞掉（两个前缀是包含关系），症状是扫码接口返回旧连接器的配置。
+    # ⚠️ 旧的 /api/v1/wecom/* REST 面（自建应用 OAuth）已随连接器物理删除
+    # （2026-10-30，docs/64 §9.7）。这里不再有前缀包含关系的分流问题。
     if path.startswith("/api/v1/wecom_cli"):
         from .wecom_cli import admin_api as wecom_cli_admin_api
 
         await wecom_cli_admin_api.handle(scope, receive, send)
-        return
-
-    if path.startswith("/api/v1/wecom"):
-        await wecom_admin_api.handle(scope, receive, send)
         return
 
     if path.startswith("/api/v1/connectors"):

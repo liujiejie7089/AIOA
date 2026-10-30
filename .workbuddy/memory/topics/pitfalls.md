@@ -1156,3 +1156,28 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
    `<script src>` 引用。改错文件的症状是「改了但页面没变」。另：`refreshConnectors`/`openConnector`
    在页面里是闭包内块级作用域（`typeof refreshConnectors === 'undefined'`），只有 `API`/`oaBoot`/`oaState`
    挂到 window ⇒ Playwright 不能直调，必须走 UI 点击驱动重渲染。
+
+## 2026-10-30 · 删码时暴露的两个「下线≠消失」坑
+
+删掉旧企微通道代码后，新哨兵立刻红了 6 项 —— 都不是「删错了」，而是**原来就有、
+被"已经不用的代码"掩盖住的漏洞**。凡是要下线一个连接器/能力，这两个点必须一起检查。
+
+1. **`requireDef()` 不看 `status` ⇒ 停用的连接器接口照旧可用**。
+   `ConnectorCatalogService.requireDef` 只按 `tenant_id + code` 查，V103 把
+   `connector_def.status` 置 DISABLED 后，`GET /api/v1/connectors/wechat_work` 仍回 200 +
+   一条没人维护的定义，`connect/start` 还会掉进「暂不支持网页授权」这种只有开发看得懂的分支。
+   修法：`requireDef` 加 `.eq(status, ACTIVE)` ⇒ 一律「连接器不存在」（HTTP 404）。
+   **判据教训**：只测「列表里没有」是不够的，必须**点名打它的详情/动作接口**，要求 404。
+2. **`mcp_server_tool` 快照不随连接器下线清空 ⇒ 「看不见但打得通」**。
+   V103 只关了 `mcp_server.trusted`，13+2 行工具快照还在，
+   `GET /api/v1/mcp/servers/wechat_work/tools` 仍能查出 13 个工具；而列表里的 `toolCount`
+   是对这张表 **count** 出来的 ⇒ 界面对着「代码已删干净、探测必然失败」的服务器报「13 个工具」。
+   这比直接报错更危险：用户会以为能用。修法：`V104__purge_retired_mcp_tool_snapshots.sql`
+   删快照（`mcp_server` 行留痕）。**判据教训**：删能力时，凡是从"快照表/缓存表"读出来的数字
+   都要一起清，并且哨兵要**反向断言**「hub 里不许再出现这个 code」。
+3. 顺带：**哨兵的被测主体消失时，先找"同一机制的另一主体"，再考虑删**。
+   本次三套件都是换主体救回来的（`provider=wecom`→运行期登记 `provider=vault`；
+   `tenant_config` 换成「不需要配凭据的形态」；`state_sync`→`wecom_cli`），
+   只有真正的能力被删（双模式 A/B、群机器人）才删套件，且覆盖损失写进 docs。
+   另一个细节：`_verify_connectors_registry` 的库文件明文扫描原本在 DELETE 之后跑，
+   主体清空后扫的是空库 ⇒ **先断言"canary 真值还在库里"，再扫字节**，否则这个断言是空转。

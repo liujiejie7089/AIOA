@@ -543,21 +543,25 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 
 
 
-## 5.9 企微 / 连接器相关套件现状（2026-10-30 V103 下线两个旧连接器后）
+## 5.9 企微 / 连接器相关套件现状（2026-10-30 旧通道**删码**后的最终态）
+
+旧的两条企微通道（`wechat_work` / `wecom_group`）已于 2026-10-30 物理删除（docs/64 §9.7），
+围绕它们的 3 个套件随之删除。**下表是删码后逐个实跑的结果**。
 
 | 套件 | 项数 | 前置 | 备注 |
 |---|---|---|---|
-| `_verify_wecom_cli.py` | **15** | Java:8080 + hub:8099 + 已 trust + 已绑定（或 `AIOS_WECOM_CLI_SHARED_PROFILE`） | 扫码连接器端到端：目录即身份 / QR 三端点 / manifest 闸门 / 真 MCP 调 5 个工具 / 断开收回 / 收尾重绑 |
+| `_verify_wecom_cli.py` | **15** | Java:8080 + hub:8099 + 已 trust + 已绑定（或 `AIOS_WECOM_CLI_SHARED_PROFILE`） | 扫码连接器端到端：目录即身份 / QR 三端点 / manifest 闸门 / 真 MCP 调 5 工具 / 断开收回 / 收尾重绑 |
 | `_verify_oa_qr_modal.py` | **10** | 无后端（file:// + 打桩，需 playwright） | 二维码弹层：出图 / 白底 / 轮询 / bind 定成败 / 失败不关 / 关弹层停轮询 |
-| `_verify_connectors.py` | **19** | Java:8080 + 本机 mysql（C10b 第二源读库） | C1 期望 `['qq_mail','wecom_cli']`，已下线的两个不许出现 |
-| `_verify_mcp_registry.py` | **14** | Java:8080 + hub:8099 + mysql | M1b：已下线的两行必须保留且 trusted=false |
-| `_verify_connector_state_sync.py` | **7** | Java + 服务令牌 | 主体已从 wechat_work 换成 wecom_cli |
-| `_verify_connector_tenant_config.py` | **9** | Java + hub + mysql | 前置会自动把 wechat_work 临时置 ACTIVE，跑完复原 |
-| `_verify_wecom_dual_mode_p0.py` | **24** | hub（`WECOM_MOCK=1`） | 不读 connector_def.status，下线后仍全绿 |
-| `_verify_wecom_group.py` | **7** | hub + `--key <webhook key>` | 缺 key 会 FATAL 退出（环境前置，不是回归） |
+| `_verify_connectors.py` | **25** | Java:8080 + 本机 mysql（C10b 第二源读库） | C1 期望 `['qq_mail','wecom_cli']`；C9a/C9b 已下线 code 必须 **404 不存在**；C10a 回调匿名 401 / C10b 带 token 404；C15/C15b 工具目录 |
+| `_verify_connectors_registry.py` | **15** | 无后端（自起 uvicorn，mock 身份） | 主体换成运行期登记的 `provider=vault`；S13 明文扫描在清除之前跑并先解出真值 |
+| `_verify_mcp_registry.py` | **14** | Java:8080 + hub:8099 + mysql | M1 期望 retired=0；M1b 保留行+不可信+无工具；M13 反向断言 hub 无残留 |
+| `_verify_mcp_hub.py` | 全通过 | hub:8099 | 真 MCP 客户端连 `/mcp/wecom_cli`（5 工具，required 逐字对齐） |
+| `_verify_connector_state_sync.py` | **7** | Java + 服务令牌 | 主体 wecom_cli（验同源机制，与主体无关） |
+| `_verify_connector_tenant_config.py` | **8** | Java + hub | **整体换主体**：验「不需要管理员配凭据」的形态（清单空 / 视图拒绝 / PUT 不静默成功 / 已下线 404） |
 | `_verify_agent_mcp_wiring.py` | **6** | 本地桩 MCP :8098 | 与连接器无关 |
-| `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | **17 / 19** | 无后端（打桩） | 卡片映射用桩数据，不受下线影响 |
+| `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | **17 / 19** | 无后端（打桩） | 桩数据第二张卡已换成 `wecom_cli` |
+| ~~`_verify_wecom_dual_mode_p0.py`~~ / ~~`_verify_wecom_group.py`~~ | 已删（24 / 7） | — | 被测能力本身被删，无法换主体；覆盖损失已在 docs/64 §9.7.3 记账 |
 
 **纪律**：连接器下线后，围绕它写的套件**不许直接删或跳过**——
-要么换成同一机制的另一主体（state_sync→wecom_cli），要么前置临时激活跑完复原（tenant_config），
-要么把断言改成「它必须不可见/不可信」（connectors C1、mcp_registry M1b）。
+能换主体就换（state_sync→wecom_cli、tenant_config→「无需配置」形态、registry→provider=vault），
+换不了才删，且**必须在 docs 里记账覆盖损失**（本次：24+7 项随能力消失）。

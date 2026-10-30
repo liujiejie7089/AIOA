@@ -123,10 +123,11 @@ fi
 # ---- mcp-hub :8099（MCP 网关，无状态，不落盘）----
 # 用 agent/.venv 的解释器（已装 mcp==1.30.0）。可用 AIOS_SERVER_BASE_URL 指定 Java 地址（默认 :8080）。
 # 注意：不改脚本里既有的其它启动逻辑。
-# 双模式连接器（mcp-hub/mcp_hub/wecom/，见 docs/61）本地开发态：
-#   WECOM_MOCK=1           开 Mock（虚拟企业 + 虚拟邮箱），真机联调前保持
+# 连接器共享底座（mcp-hub/mcp_hub/wecom/：加密/身份/SQLite，见 docs/64）本地开发态：
+#   WECOM_MOCK=1           开 Mock 身份（不调用 Java /auth/me，合成 tenant/user）+ mock 密钥
 #   WECOM_CONNECTOR_KEY    本地开发固定密钥；**生产部署必须更换**（openssl rand -base64 32），
 #                          且 WECOM_MOCK=0（缺密钥会 fail fast，见 wecom/crypto.py）
+# 注：旧的 wechat_work（自建应用 OAuth）与 wecom_group（群机器人）已物理删除，见 docs/64 §9.7。
 # ★ 默认 1（虚拟企业，演示用）；真机联调改成可覆盖：`WECOM_MOCK=0 bash start-all.sh`
 #   写死 1 的后果：每次真机联调都要回来改脚本，且容易误判「配了凭据却没生效」。
 export WECOM_MOCK="${WECOM_MOCK:-1}"

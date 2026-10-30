@@ -99,15 +99,18 @@ def main():
         page.screenshot(path=str(PROOF / "connector_ui_pane_error.png"))
 
         # S4/S5/S6：打桩返回成功数据后，通过已绑定的分段按钮点击重新触发渲染
+        # 2026-10-30（docs/64 §9.7）：第二张卡从已下线的 wechat_work 换成存活的 wecom_cli。
+        # 这里验的是**渲染逻辑**（chip 文案 / configReady=false 时按钮禁用），与具体连接器无关；
+        # 故意把 configReady 打成 false，就是为了让两条分支都能被看到。
         page.evaluate("""() => {
           window.__connectorsData = [
             {code:'qq_mail', name:'QQ邮箱', group:'邮箱', icon:'mail', summary:'接收/发送邮件',
              authMode:'CREDENTIAL', configReady:true, status:'NEED_AUTH',
-             accountLabel:null, connectedAt:null, lastCheckedAt:null, lastError:null, isPlatformManaged:false},
-            {code:'wechat_work', name:'企业微信', group:'协作与办公', icon:'people', summary:'企业协作与办公',
-             authMode:'OAUTH2', configReady:false, status:'NEED_AUTH',
-             accountLabel:null, connectedAt:null, lastCheckedAt:null, lastError:null, isPlatformManaged:false,
-             configHint:'缺少企业微信应用配置（corpId/agentId/corpSecret）'}
+             accountLabel:null, connectedAt:null, lastCheckedAt:null, lastError:null},
+            {code:'wecom_cli', name:'企业微信（扫码）', group:'协作与办公', icon:'people', summary:'扫码绑定你自己的企业微信',
+             authMode:'QR', configReady:false, status:'NEED_AUTH',
+             accountLabel:null, connectedAt:null, lastCheckedAt:null, lastError:null,
+             configHint:'待管理员配置'}
           ];
           API.connectors = function(){ return Promise.resolve(window.__connectorsData); };
           API.connectorDetail = function(code){
@@ -126,19 +129,19 @@ def main():
         page.wait_for_timeout(600)
 
         cards = page.locator("#oaConnectorsList .conn-card").count()
-        chk("S4a 两张连接器卡渲染（QQ邮箱/企业微信）", cards == 2, "cards=%d" % cards)
+        chk("S4a 两张连接器卡渲染（QQ邮箱/企业微信（扫码））", cards == 2, "cards=%d" % cards)
 
         # chip 文案判定（严格按 docs/58 §2.3）
         chips = page.locator("#oaConnectorsList .conn-card .chip").all_inner_texts()
-        chk("S4b 状态 chip 文案正确（QQ邮箱=未连接 / 企业微信=待管理员配置）",
+        chk("S4b 状态 chip 文案正确（QQ邮箱=未连接 / 企业微信（扫码）=待管理员配置）",
             "未连接" in chips and "待管理员配置" in chips, chips)
 
-        # 企业微信按钮 disabled；QQ邮箱按钮可点（configReady=false 的按钮无 data-act，按卡片定位）
+        # configReady=false 的卡按钮 disabled；QQ邮箱按钮可点（按卡片定位，不认 data-act）
         qq_loc = page.locator('#oaConnectorsList [data-act="connect"][data-code="qq_mail"]').first
         qq_disabled = qq_loc.is_disabled()
         wx_loc = page.locator('#oaConnectorsList .conn-card').filter(has_text="企业微信").locator('button.btn[disabled]')
         wx_disabled = wx_loc.count() == 1 and wx_loc.first.is_disabled()
-        chk("S4c 企业微信（configReady=false）按钮禁用；QQ邮箱按钮可用",
+        chk("S4c 企业微信（扫码）（configReady=false）按钮禁用；QQ邮箱按钮可用",
             qq_disabled is False and wx_disabled is True, "qq=%s wx=%s" % (qq_disabled, wx_disabled))
 
         # S5/S6 点 QQ邮箱「连接」→ 弹层 + .oa-ef-row flex-direction column + 输入框可见

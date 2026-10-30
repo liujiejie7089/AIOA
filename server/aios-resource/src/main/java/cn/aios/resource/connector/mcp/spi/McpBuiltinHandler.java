@@ -8,10 +8,12 @@ import java.util.Map;
  * 内置 MCP 服务器（BUILTIN）的工具实现契约。
  *
  * <p><b>为什么需要这个接口</b>：MCP 的传输层（Streamable HTTP 网关）与工具清单都在
- * {@code connector.mcp} 包里，而具体能力分属不同业务包（邮件在 {@code connector.mail}，
- * 企业微信在 {@code connector.wecom}）。用 Spring 的 Bean 集合注入把它们解耦：
- * 加一个内置服务器 = 加一个 {@code @Component implements McpBuiltinHandler} + V97 里加一行种子，
- * 不改 MCP 桥接代码。</p>
+ * {@code connector.mcp} 包里，而具体能力分属不同业务包（邮件在 {@code connector.mail}）。
+ * 用 Spring 的 Bean 集合注入把它们解耦：加一个内置服务器 = 加一个
+ * {@code @Component implements McpBuiltinHandler} + V97 里加一行种子，不改 MCP 桥接代码。</p>
+ *
+ * <p>当前唯一实现是 {@code MailMcpHandler}（qq_mail）。企业微信走 {@code wecom_cli}，
+ * 由 hub 侧直接实现，不经本接口（见 docs/64）。</p>
  *
  * <p><b>安全边界</b>：实现方拿到的 {@link AuthUser} 是<b>调用者本人</b>（网关用调用方 token
  * 解析出来的），因此工具内部一律用 {@code user.getTenantId()/getUserId()} 取凭据，

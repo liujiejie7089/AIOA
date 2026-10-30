@@ -31,23 +31,16 @@ EXPECT = {
             "send_draft": ["draftId", "requestId"],
         },
     },
-    "wechat_work": {
-        "count": 13,
+    # 2026-10-30（docs/64 §9.7）：wechat_work（13 工具）随连接器物理删除，
+    # 换成存活的 wecom_cli（官方 CLI 的 5 个只读工具）。required 与 wecom_cli/catalog.py 逐字对齐。
+    "wecom_cli": {
+        "count": 5,
         "required": {
-            "connect": [],
-            "disconnect": [],
-            "connection_status": [],
-            "check_connection": [],
-            "get_my_profile": [],
-            # send_text_message 的 touser 已改为可选（留空 = 发给本人，docs/63 §9.3）
-            "send_text_message": ["content"],
-            "contact_search": ["query"],
-            "mail_list_folders": [],
-            "mail_list_messages": [],
-            "mail_read_message": ["uid"],
-            "mail_search_messages": ["query"],
-            "mail_create_draft": ["to", "subject", "body"],
-            "mail_send_draft": ["draftId", "requestId"],
+            "whoami": [],
+            "contact_search": ["keywords"],
+            "recent_group_sessions": [],
+            "session_messages": ["chat_id"],
+            "mail_search": [],
         },
     },
 }
@@ -66,15 +59,15 @@ async def main():
                 "url": "http://127.0.0.1:8099/mcp/qq_mail",
                 "headers": {"Authorization": "Bearer test-token"},
             },
-            "wechat_work": {
+            "wecom_cli": {
                 "transport": "streamable_http",
-                "url": "http://127.0.0.1:8099/mcp/wechat_work",
+                "url": "http://127.0.0.1:8099/mcp/wecom_cli",
                 "headers": {"Authorization": "Bearer test-token"},
             },
         }
     )
     tools = await client.get_tools()
-    by_server = {"qq_mail": {}, "wechat_work": {}}
+    by_server = {srv: {} for srv in EXPECT}
     for t in tools:
         core = _core_name(t.name)
         # 哪个服务器？用期望表反查；若重名属于某服务器则归属

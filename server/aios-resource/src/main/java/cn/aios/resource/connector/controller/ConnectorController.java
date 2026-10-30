@@ -6,40 +6,39 @@ import cn.aios.resource.connector.entity.ConnectorDef;
 import cn.aios.resource.connector.service.ConnectorCatalogService;
 import cn.aios.resource.connector.service.ConnectorConnectionService;
 import cn.aios.resource.connector.service.WeComCliGateway;
-import cn.aios.resource.connector.service.WeComOAuthService;
 import cn.aios.security.AuthUser;
 import cn.aios.security.AuthUserContext;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 连接器用户端接口（docs/58 §4）。前缀 /api/v1/connectors；callback 返回 302。
+ * 连接器用户端接口（docs/58 §4）。前缀 /api/v1/connectors。
  *
  * <pre>
  *   GET    /api/v1/connectors                           目录 + 我的状态 + 就绪度
  *   GET    /api/v1/connectors/{code}                    详情（mode / fields / helpText / helpUrl）
- *   POST   /api/v1/connectors/{code}/connect/start      CREDENTIAL→fields；OAUTH2→authUrl；QR→mode=QR
+ *   POST   /api/v1/connectors/{code}/connect/start      CREDENTIAL→fields；QR→mode=QR
  *   POST   /api/v1/connectors/{code}/connect/credential 提交凭据（真实校验后落库）
  *   POST   /api/v1/connectors/{code}/qr                 发起扫码（QR，返回二维码 data URL）
  *   GET    /api/v1/connectors/{code}/qr-status          轮询扫码是否完成（QR）
  *   POST   /api/v1/connectors/{code}/qr-bind            扫码完成后确认绑定（QR）
  *   POST   /api/v1/connectors/{code}/verify             重新检测
  *   POST   /api/v1/connectors/{code}/disconnect         断开
- *   GET    /api/v1/connectors/{code}/callback           OAuth 回跳（302）
  * </pre>
+ *
+ * <p><b>2026-10-30 删除了 OAUTH2 分支与 OAuth 回跳端点</b>：唯一使用 OAUTH2 的
+ * {@code wechat_work}（自建应用网页授权）已下线，{@code WeComOAuthService} 一并物理删除
+ * （docs/64 §9.7）。现在只剩两种授权形态：CREDENTIAL（用户填授权码）与 QR（扫码）。
+ * 将来若要接第三个 OAuth 连接器，请新建一个通用的 OAuth 服务，不要复活企微那套。</p>
  *
  * <p><b>QR 为什么是三个端点而不是一个</b>：扫码是先出图、人再去扫、扫码结果在服务端异步完成，
  * 天然是三段式。{@code connect/start} 只回 {@code mode=QR} 用来选弹层，真正的二维码单独取，
@@ -53,7 +52,6 @@ public class ConnectorController {
 
     private final ConnectorCatalogService catalogService;
     private final ConnectorConnectionService connectionService;
-    private final WeComOAuthService weComService;
     private final WeComCliGateway weComCliGateway;
 
     @GetMapping
@@ -69,10 +67,8 @@ public class ConnectorController {
     }
 
     @PostMapping("/{code}/connect/start")
-    public ApiResponse<ConnectorCatalogService.ConnectorStart> start(@PathVariable String code,
-                                                                    @RequestBody(required = false) StartBody body,
-                                                                    HttpServletRequest request) {
-        AuthUser user = AuthUserContext.require();
+    public ApiResponse<ConnectorCatalogService.ConnectorStart> start(@PathVariable String code) {
+        AuthUserContext.require();
         ConnectorDef def = catalogService.requireDef(code);
         if (ConnectorDef.AUTH_MODE_CREDENTIAL.equals(def.getAuthMode())) {
             return ApiResponse.ok(new ConnectorCatalogService.ConnectorStart(
@@ -82,11 +78,9 @@ public class ConnectorController {
             // QR 没有可跳转的授权地址：前端据 mode 打开二维码弹层，再调 /qr 取图。
             return ApiResponse.ok(new ConnectorCatalogService.ConnectorStart("QR", null, List.of()));
         }
-        String returnPath = body == null ? null : body.returnPath();
-        String origin = resolveOrigin(request);
-        String host = request.getHeader("Host");
-        String userAgent = request.getHeader("User-Agent");
-        return ApiResponse.ok(weComService.start(user, code, returnPath, origin, host, userAgent));
+        // 没有第三种授权形态了（OAUTH2 随 wechat_work 一起下线）。宁可明确报错，
+        // 也不要静默回一个前端无法处理的空 mode。
+        throw BizException.badRequest("该连接器暂不支持网页授权，请联系管理员：" + code);
     }
 
     /**
@@ -168,36 +162,6 @@ public class ConnectorController {
         return ApiResponse.ok(Map.of("status", "NEED_AUTH"));
     }
 
-    @GetMapping("/{code}/callback")
-    public ResponseEntity<Void> callback(@RequestParam("code") String code,
-                                         @RequestParam("state") String state) {
-        String location = weComService.callback(code, state);
-        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(location)).build();
-    }
-
-    /** 取回调页安全用的 Origin：优先 Origin 头，否则从 Referer 推导 scheme+host。 */
-    private static String resolveOrigin(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
-        if (origin != null && !origin.isBlank()) {
-            return origin;
-        }
-        String referer = request.getHeader("Referer");
-        if (referer != null && !referer.isBlank()) {
-            try {
-                URI u = URI.create(referer);
-                if (u.getHost() != null) {
-                    String scheme = u.getScheme() == null ? "https" : u.getScheme();
-                    int port = u.getPort();
-                    String hostPart = (port != -1 && port != 80 && port != 443)
-                            ? u.getHost() + ":" + port : u.getHost();
-                    return scheme + "://" + hostPart;
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return null;
-    }
-
     /**
      * QR 端点只能用在 {@code auth_mode=QR} 的连接器上。
      *
@@ -223,9 +187,6 @@ public class ConnectorController {
         }
         String s = String.valueOf(v).trim();
         return s.isEmpty() ? null : s;
-    }
-
-    public record StartBody(String returnPath) {
     }
 
     public record CredentialBody(Map<String, String> values) {

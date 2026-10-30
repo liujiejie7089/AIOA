@@ -6,8 +6,8 @@
 只做只读调用与「必被拒绝」的负向调用，**不留下任何 CONNECTED 状态**（唯一会碰网络的是
 C7 的真实 IMAP 登录失败用例，它天然不写库）。
 
-  C1  GET  /api/v1/connectors                   200 + 恰好 3 个（qq_mail / wechat_work / wecom_group）
-  C2  连接器就绪度                              qq_mail=true；wechat_work=false（平台未配 corpId）
+  C1  GET  /api/v1/connectors                   200 + 恰好 2 个（qq_mail / wecom_cli），已下线的两个不出现
+  C2  连接器就绪度                              qq_mail=true；wecom_cli=true（二维码方案不需要管理员配凭据）
   C3  字段白名单                                列表项只含约定字段，**不含** credential/authRef/secret/authCode
   C4  GET  /api/v1/connectors/qq_mail            mode=CREDENTIAL + fields=[email,authCode]，authCode 为 password
   C5  POST /qq_mail/connect/start               mode=CREDENTIAL，无 authUrl（凭据式不走跳转）
@@ -15,16 +15,25 @@ C7 的真实 IMAP 登录失败用例，它天然不写库）。
   C7  POST /qq_mail/connect/credential 空授权码  业务码 400 + 文案「授权码不能为空」
   C8  POST /qq_mail/connect/credential 假授权码  **真实连 imap.qq.com** 登录失败 → 业务码 400 + 文案「QQ邮箱登录失败」，
                                                 且**仍为 NEED_AUTH**（证明「先校验成功再落库」，没有假 CONNECTED）
-  C9  POST /wechat_work/connect/start           无 Origin/未配置 → 业务码 400 且响应里**没有 authUrl**（防开放重定向）
-  C9b POST /wechat_work/connect/start（带 Origin）按就绪度分流：已配→authUrl；未配→拒绝无 authUrl
-  C10 GET  /wechat_work/callback?state=forged   302 且 Location 指向本站失败页；连接状态仍 NEED_AUTH（伪造 state 绝不写库）
+  C9a GET  /connectors/{retired}                已下线连接器详情「不存在」（代码已删，注册表里查无此 code）
+  C9b POST /connectors/{retired}/connect/start  同样「不存在」，且响应里**没有 authUrl**
+  C9c POST /wecom_cli/connect/start             mode=QR 且无 authUrl（现存连接器也没有开放重定向面）
+  C10a GET  /connectors/*/callback（无 token）   HTTP 401 —— 回调入口已随 OAUTH2 删除，匿名不可达
+  C10b 同上（带 token）                          HTTP 404 —— 路由已删除
+  C10c 伪造回调后查库                           connector_connection 仍为 NEED_AUTH（绝不写库，第二源是库）
   C11 POST /qq_mail/verify（未连接时）            业务码 400 + 「未处于已连接状态」
   C12 POST /qq_mail/disconnect                  幂等：业务码 0 + status=NEED_AUTH
   C13 GET  /api/v1/connectors（无 token）         HTTP 401（用户维度隔离，未登录不可读）
   C14 GET  /api/v1/plugins                      200 + 每项键**恰好**为 code/name/description/domain/riskLevel/requiresApproval
                                                 （绝不泄露 endpoint / auth_ref / input_schema）
-  C15 GET  /api/v1/mcp/servers/wechat_work/tools 200 + 恰好 13 个（与 mcp-hub/mcp_hub/wecom/catalog.py 逐字对齐），
-                                                get_my_profile 只读（V99，snsapi_privateinfo 链路产物）
+  C15 GET  /api/v1/mcp/servers/wecom_cli/tools  200 + 恰好 5 个且全部只读
+                                                （与 mcp-hub/mcp_hub/wecom_cli/catalog.py 逐字对齐）
+  C15b GET  /api/v1/mcp/servers/{retired}/tools 已下线连接器的 MCP 工具目录拿不到
+
+> 2026-10-30（docs/64 §9.7）：`wechat_work` / `wecom_group` 已下线并**物理删除**。
+> 原 C9/C9b（按就绪度出 authUrl）、C10（伪造 state → 302 失败页）验的是 OAuth2 那条链路，
+> 主体没了就换成**更强**的断言：接口层查无此连接器 + 回调入口匿名不可达。
+> 没有整段删掉，是因为「下线的东西必须真的消失」这件事需要有人一直盯着。
 
 用法：
     python scripts/_verify_connectors.py [--base http://127.0.0.1:8080]
@@ -226,47 +235,58 @@ def main():
     rec("C8c 响应不含提交的授权码明文", "fakeauthcode0000000" not in raw and "enc:" not in raw,
         "明文出现=%s 密文前缀=%s" % ("fakeauthcode0000000" in raw, "enc:" in raw))
 
-    # ---------- C9 企业微信 start：无 Origin/未配置一律拒绝；已配置时（带 Origin）出授权链接 ----------
-    # 就绪度不再从用户目录读（wechat_work 已下线，目录里看不到它），改读管理端配置中心的
-    # `configured` —— 这才是「应用凭据是否配好」的真源，也是 start 真正的分流依据。
-    _, _, cfg_raw = call(base, "/api/v1/admin/connector-configs/wechat_work", token=token)
-    ww_configured = ((jload(cfg_raw) or {}).get("data") or {}).get("configured") is True
+    # ---------- C9 已下线连接器在接口层彻底不可达 ----------
+    # 2026-10-30（docs/64 §9.7）：wechat_work / wecom_group 不只是 DISABLED，代码也已物理删除。
+    # 「用户目录里看不到」只是第一层；这里验第二层：直接点名打它们的接口必须查无此连接器，
+    # 否则说明注册表被人加回来了（代码删了、行还在，就该是「不存在」而不是「不支持」）。
+    for retired in sorted(RETIRED):
+        st, _, raw = call(base, "/api/v1/connectors/%s" % retired, token=token)
+        d = jload(raw) or {}
+        # requireDef 现在按 ACTIVE 过滤，DISABLED 行等同于不存在 ⇒ HTTP 404 + code=404
+        rec("C9a 已下线连接器详情不可达（%s）" % retired,
+            st == 404 and d.get("code") == 404 and "不存在" in (d.get("message") or ""),
+            "HTTP=%s code=%s message=%r" % (st, d.get("code"), (d.get("message") or "")[:80]))
 
-    # ---------- C9 / C9b：start 按就绪度分流 ----------
-    st, _, raw = call(base, "/api/v1/connectors/wechat_work/connect/start", "POST",
-                      token=token, body={"returnPath": "/"})
-    d = jload(raw) or {}
-    msg = d.get("message") or ""
-    ok9 = (st == 200 and d.get("code") not in (None, 0)
-           and ("Origin" in msg or "corpId" in msg) and "authUrl" not in raw)
-    rec("C9 无 Origin/未配置 → 拒绝且无 authUrl", ok9,
-        "code=%s message=%r authUrl出现=%s" % (d.get("code"), msg[:120], "authUrl" in raw))
+        st, _, raw = call(base, "/api/v1/connectors/%s/connect/start" % retired, "POST",
+                          token=token, body={"returnPath": "/"})
+        d = jload(raw) or {}
+        rec("C9b 已下线连接器 connect/start 被拒（%s）" % retired,
+            st == 404 and d.get("code") == 404 and "不存在" in (d.get("message") or "")
+            and "authUrl" not in raw,
+            "HTTP=%s code=%s message=%r" % (st, d.get("code"), (d.get("message") or "")[:80]))
 
-    st, _, raw = call(base, "/api/v1/connectors/wechat_work/connect/start", "POST",
+    # 存活连接器也不能凭空产生跳转地址：QR 只回 mode，CREDENTIAL 只回 fields。
+    st, _, raw = call(base, "/api/v1/connectors/wecom_cli/connect/start", "POST",
                       token=token, body={"returnPath": "/"},
                       extra_headers={"Origin": "http://127.0.0.1:8080", "Host": "127.0.0.1:8080"})
     d = jload(raw) or {}
-    auth_url = (d.get("data") or {}).get("authUrl") or ""
-    if ww_configured:
-        ok9b = st == 200 and d.get("code") == 0 and "qrConnect" in auth_url and "enc:" not in raw
-        det = "authUrl前缀=%r 密文泄露=%s" % (auth_url[:60], "enc:" in raw)
-    else:
-        ok9b = st == 200 and d.get("code") not in (None, 0) and "corpId" in (d.get("message") or "") \
-            and "authUrl" not in raw
-        det = "message=%r authUrl出现=%s" % ((d.get("message") or "")[:80], "authUrl" in raw)
-    rec("C9b start 按就绪度分流（已配→授权链接；未配→拒绝无链接）", ok9b, det)
+    stt = d.get("data") or {}
+    rec("C9c wecom_cli start = QR 且无 authUrl（不存在开放重定向面）",
+        st == 200 and d.get("code") == 0 and stt.get("mode") == "QR"
+        and not stt.get("authUrl") and "authUrl" not in raw and "enc:" not in raw,
+        "mode=%s authUrl=%s 密文=%s" % (stt.get("mode"), stt.get("authUrl"), "enc:" in raw))
 
-    # ---------- C10 伪造 state 回调 ----------
+    # ---------- C10 回调入口已随 OAUTH2 一起删除 ----------
+    # 旧判据是「伪造 state → 302 失败页」。端点删掉后正确的判据是**打不到**：
+    #   - 不带 token：/api/v1/connectors/*/callback 已从匿名白名单移除 ⇒ 401（不再是 302）；
+    #   - 带 token：路由不存在 ⇒ 404。
+    # 两条合起来证明「没有任何匿名可达的连接器回调入口」，比原来的 302 断言更强。
     st, hdrs, raw = call(base, "/api/v1/connectors/wechat_work/callback?code=fakecode&state=forged_by_sentinel")
     loc = (hdrs or {}).get("Location") or ""
-    ok10 = st == 302 and "result=fail" in loc and loc.startswith("/")
-    rec("C10 伪造 state 回调 → 302 失败页（不写库）", ok10,
+    rec("C10a 连接器回调匿名不可达（401，且不再 302 跳转）",
+        st == 401 and not loc,
         "HTTP=%s Location=%r" % (st, loc))
-    # 第二源必须是**库**，不是目录：wechat_work 已于 2026-10-30 下线（V103），目录里本就看不到它，
+
+    st, _, raw = call(base, "/api/v1/connectors/wechat_work/callback?code=fakecode&state=forged_by_sentinel",
+                      token=token)
+    rec("C10b 携带 token 访问回调仍 404（路由已删除）", st == 404,
+        "HTTP=%s body=%r" % (st, raw[:80]))
+
+    # 第二源必须是**库**，不是目录：wechat_work 已下线，目录里本就看不到它，
     # 拿「目录里没有」当判据等于什么都没验。这里直接读 connector_connection 的真值。
     row = sql("select status from connector_connection where connector_code='wechat_work' "
               "order by id desc limit 1")
-    rec("C10b 伪造 state 后库里 wechat_work 仍为 NEED_AUTH（伪造回调绝不写库）",
+    rec("C10c 伪造回调后库里 wechat_work 仍为 NEED_AUTH（伪造回调绝不写库）",
         row == "NEED_AUTH", "DB status=%r" % row)
 
     # ---------- C11 未连接时 verify ----------
@@ -297,29 +317,36 @@ def main():
         "HTTP=%s 条数=%s 多余键=%s 泄露关键字=%s" % (st, len(plist), sorted(bad) or "无",
                                                     leaks or "无"))
 
-    # ---------- C15 企业微信工具目录（原生实装：唯一事实源 mcp-hub/mcp_hub/wecom/catalog.py） ----------
-    # 这里**硬编码** 13 个名字（不按接口返回反推），改动目录必须同步改本处 —— 它就是漂移守卫。
-    WECOM_TOOL_NAMES = [
-        "check_connection", "connect", "connection_status", "contact_search", "disconnect",
-        "get_my_profile",
-        "mail_create_draft", "mail_list_folders", "mail_list_messages", "mail_read_message",
-        "mail_search_messages", "mail_send_draft",
-        "send_text_message",
+    # ---------- C15 企业微信工具目录（原生实装：唯一事实源 mcp-hub/mcp_hub/wecom_cli/catalog.py） ----------
+    # 这里**硬编码** 5 个名字（不按接口返回反推），改动目录必须同步改本处 —— 它就是漂移守卫。
+    # 2026-10-30：原 13 工具（wechat_work 双模式）随连接器删除；wecom_cli 是纯只读的 5 个工具。
+    WECOM_CLI_TOOL_NAMES = [
+        "whoami", "contact_search", "recent_group_sessions", "session_messages", "mail_search",
     ]
-    st, _, raw = call(base, "/api/v1/mcp/servers/wechat_work/tools", token=token)
+    st, _, raw = call(base, "/api/v1/mcp/servers/wecom_cli/tools", token=token)
     d = jload(raw) or {}
     tools = d.get("data") or []
     tnames = sorted(t.get("name") for t in tools) if isinstance(tools, list) else []
-    prof = next((t for t in tools if isinstance(t, dict) and t.get("name") == "get_my_profile"), None)
+    non_ro = sorted(t.get("name") for t in tools
+                    if isinstance(t, dict) and t.get("readOnly") is not True)
     ok15 = (st == 200 and d.get("code") == 0
-            and tnames == sorted(WECOM_TOOL_NAMES)
-            and prof is not None and prof.get("readOnly") is True)
-    rec("C15 wechat_work 工具目录 = 13 个（含 get_my_profile 只读）", ok15,
-        "HTTP=%s code=%s 条数=%s 缺=%s 多=%s readOnly=%s"
+            and tnames == sorted(WECOM_CLI_TOOL_NAMES)
+            and not non_ro)
+    rec("C15 wecom_cli 工具目录 = 5 个且全部只读", ok15,
+        "HTTP=%s code=%s 条数=%s 缺=%s 多=%s 非只读=%s"
         % (st, d.get("code"), len(tnames),
-           sorted(set(WECOM_TOOL_NAMES) - set(tnames)) or "无",
-           sorted(set(tnames) - set(WECOM_TOOL_NAMES)) or "无",
-           (prof or {}).get("readOnly")))
+           sorted(set(WECOM_CLI_TOOL_NAMES) - set(tnames)) or "无",
+           sorted(set(tnames) - set(WECOM_CLI_TOOL_NAMES)) or "无",
+           non_ro or "无"))
+
+    # 已下线连接器的 MCP 工具目录同样必须查无此服务器（V103 已把 mcp_server.trusted 置 0）。
+    for retired in sorted(RETIRED):
+        st, _, raw = call(base, "/api/v1/mcp/servers/%s/tools" % retired, token=token)
+        d = jload(raw) or {}
+        rec("C15b 已下线连接器的 MCP 工具目录不可达（%s）" % retired,
+            st != 200 or d.get("code") not in (0,) or not (d.get("data") or []),
+            "HTTP=%s code=%s 工具数=%s" % (st, d.get("code"),
+                                          len(d.get("data") or []) if isinstance(d.get("data"), list) else "n/a"))
 
     fails = [r for r in RESULTS if not r[1]]
     print("\n== 汇总：%d 项，通过 %d，失败 %d ==" % (len(RESULTS), len(RESULTS) - len(fails), len(fails)))
