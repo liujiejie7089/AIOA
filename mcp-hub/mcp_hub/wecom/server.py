@@ -31,7 +31,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field
 
-from . import graph, identity, mail, oauth, store, wecom_api
+from . import graph, identity, mail, oauth, store, sync, wecom_api
 from .catalog import SERVER_CODE, TOOLS, MAIL_SERVER_DEFAULTS
 from .models import (
     MODE_A,
@@ -95,7 +95,13 @@ def _modes_of(conn: Connection) -> list[str]:
 
 
 async def complete_oauth(tenant_id: str, user_id: str, code: str) -> Connection:
-    """用授权 code 换身份并落库（A 模式）。callback REST 与 mock 直连都走这里。"""
+    """用授权 code 换身份并落库（A 模式）。callback REST 与 mock 直连都走这里。
+
+    <b>拿到 userid 只是「连上了」，不代表「拿到敏感字段」</b>（docs/63 §3.3）：
+    只有 scope=snsapi_privateinfo **且成员在应用可见范围内**时，企微才回 user_ticket；
+    没有 ticket 就拿不到 biz_mail。这条分支过去是静默的（连接成功、字段全 null），
+    现在显式记进凭据：`sensitive_authorized=false` + `sensitive_note`，让上层与界面对用户说实话。
+    """
     cfg = await store.get_tenant_config(tenant_id)
     if cfg is None:
         raise ValueError("租户未配置企业微信应用凭据（corpId / corpSecret / agentId）")
@@ -104,23 +110,63 @@ async def complete_oauth(tenant_id: str, user_id: str, code: str) -> Connection:
     exchanged = await api.exchange_code(token, code)
     userid = exchanged.get("userid")
     if not userid:
+        # 非企业成员：企微只回 openid；把它作为原因说出来，别让用户对着空错误发呆
+        if exchanged.get("openid"):
+            raise ValueError("授权人不是本企业成员（企微只返回 openid），请用企业微信内部账号授权")
         raise ValueError("授权回调未换取到 userid")
-    detail: dict[str, Any] = {"userid": userid, "name": None, "biz_mail": None}
+
+    detail: dict[str, Any] = {"userid": userid, "name": None, "biz_mail": None,
+                              "position": None, "sensitive_authorized": False,
+                              "sensitive_note": None}
     ticket = exchanged.get("user_ticket")
     if ticket:
         d = await api.get_user_detail(token, ticket)
-        detail.update({"name": d.get("name"), "biz_mail": d.get("biz_mail")})
+        detail.update({
+            "biz_mail": d.get("biz_mail"),
+            "mobile": d.get("mobile"),
+            "sensitive_authorized": True,
+        })
+    else:
+        detail["sensitive_note"] = (
+            "未获得 user_ticket：敏感字段（企业邮箱/手机）需要 scope=snsapi_privateinfo "
+            "且该成员在应用可见范围内；本次仅拿到 userid"
+        )
+        logger.warning("A 模式未拿到 user_ticket（tenant=%s user=%s）：仅落 userid", tenant_id, userid)
+
+    # 姓名/职务/部门不在 getuserdetail 里，走通讯录 user/get；失败不阻断（只是显示名缺失）
+    if not detail["name"]:
+        try:
+            member = await api.get_member(token, userid)
+            detail["name"] = member.get("name")
+            detail["position"] = member.get("position")
+            detail["department"] = member.get("department")
+        except Exception as e:  # noqa: BLE001 —— 读不到通讯录不该让授权失败
+            logger.info("读取成员 %s 详情未成功（不阻断连接）：%s", userid, type(e).__name__)
+
     conn = await store.ensure_connection(tenant_id, user_id)
     conn.a_credential = {
         "userid": userid,
         "name": detail.get("name"),
         "biz_mail": detail.get("biz_mail"),
+        "position": detail.get("position"),
+        "department": detail.get("department"),
+        "sensitive_authorized": detail.get("sensitive_authorized"),
+        "sensitive_note": detail.get("sensitive_note"),
         "bound_at": _now_iso(),
     }
     conn.mode = store.merge_mode(conn.mode, MODE_A)
     conn.status = STATUS_CONNECTED
-    conn.account_label = detail.get("name") or userid
+    conn.account_label = detail.get("name") or detail.get("biz_mail") or userid
     await store.save_connection(conn)
+
+    # 连接态回写 Java（唯一真相源）。失败不回滚：企微那边已经授权成功，
+    # 回滚只会让用户白点一次；但必须把结果带出去，绝不静默（docs/63 §9.2）。
+    # 三态：True=已同步 / False=真失败（告警）/ None=按设计跳过（sync 自己已记 info）。
+    conn.synced = await sync.report_connected(
+        tenant_id, user_id, SERVER_CODE, conn.account_label, conn.a_credential or {})
+    if conn.synced is False:
+        logger.warning("连接态未同步到 Java（tenant=%s user=%s）：manifest 闸门会看不到本次连接",
+                       tenant_id, user_id)
     return conn
 
 
@@ -203,7 +249,17 @@ async def _connect_a(ctx: Context, ident: Identity) -> CallToolResult:
             "state": state,
             "note": "授权已发起，等待企微回调。完成后可再调 connection_status 查看",
         })
-    return _ok({**_status_view(conn), "note": "A 模式授权完成"})
+    # _wait_connected 是从库里重新读出来的对象，拿不到 complete_oauth 在内存里打的 synced 标记，
+    # 这里幂等再同步一次（Java 侧是 upsert），好把「manifest 闸门是否已认可」如实带回给调用方。
+    if conn.synced is None:
+        conn.synced = await sync.report_connected(
+            ident.tenant_id, ident.user_id, SERVER_CODE, conn.account_label, conn.a_credential or {})
+    note = "A 模式授权完成"
+    if conn.synced is False:
+        note += "；但连接态未同步到平台（manifest 闸门暂时看不到本次连接），请联系管理员检查服务间令牌配置"
+    elif conn.synced is None:
+        note += "；本地是 mock 身份，已跳过平台状态同步"
+    return _ok({**_status_view(conn), "note": note})
 
 
 class _MailBindForm(BaseModel):
@@ -262,17 +318,25 @@ async def _tool_disconnect(ctx: Context, mode: str | None = None) -> CallToolRes
         remaining = store.drop_mode(conn.mode, mode)
         if remaining is None:
             await store.delete_connection(ident.tenant_id, ident.user_id)
-            return _ok({"connected": False, "note": f"{mode} 已断开，连接已全部解除"})
+            synced = await sync.report_disconnected(ident.tenant_id, ident.user_id, SERVER_CODE)
+            return _ok({"connected": False, "stateSynced": synced,
+                        "note": f"{mode} 已断开，连接已全部解除"})
         conn.mode = remaining
         if mode == MODE_A:
             conn.a_credential = None
         else:
             conn.b_credential = None
         await store.save_connection(conn)
-        return _ok({**_status_view(conn), "note": f"{mode} 已断开，剩余模式 {remaining}"})
+        # 只剩 B（邮箱）时，A 的授权身份已经没了：平台侧也必须回到 NEED_AUTH，
+        # 否则 manifest 会继续把「企微身份类工具」给模型，调用时才发现拿不到 userid。
+        synced = await sync.report_disconnected(ident.tenant_id, ident.user_id, SERVER_CODE) \
+            if MODE_A not in store.split_modes(remaining) else None
+        return _ok({**_status_view(conn), "stateSynced": synced,
+                    "note": f"{mode} 已断开，剩余模式 {remaining}"})
 
     await store.delete_connection(ident.tenant_id, ident.user_id)
-    return _ok({"connected": False, "note": "已断开全部模式，凭据已清除"})
+    synced = await sync.report_disconnected(ident.tenant_id, ident.user_id, SERVER_CODE)
+    return _ok({"connected": False, "stateSynced": synced, "note": "已断开全部模式，凭据已清除"})
 
 
 async def _tool_status(ctx: Context) -> CallToolResult:

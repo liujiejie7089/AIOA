@@ -89,6 +89,9 @@ class Connection:
     b_credential: dict[str, Any] | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    # 仅内存：本次操作是否成功把连接态同步到 Java（真相源）。不落库、不参与比较，
+    # 用于把「本地连上了但 manifest 闸门不知道」这件事显式暴露给调用方（docs/63 §9.2）。
+    synced: bool | None = field(default=None, compare=False, repr=False)
 
     def public_view(self) -> dict:
         """脱敏视图：H5 与管理端只拿这个，绝不包含任何凭据明文/密文。"""
@@ -104,10 +107,16 @@ class Connection:
                 "name": self.a_credential.get("name"),
                 "bizMail": self.a_credential.get("biz_mail"),
                 "boundAt": self.a_credential.get("bound_at"),
+                # 敏感字段是否真的授权到手（false ⇒ 只有 userid，界面上别把空邮箱当正常）
+                "sensitiveAuthorized": self.a_credential.get("sensitive_authorized"),
+                "sensitiveNote": self.a_credential.get("sensitive_note"),
             }
         if self.b_credential:
             view["b"] = {
                 "email": self.b_credential.get("email"),
                 "boundAt": self.b_credential.get("bound_at"),
             }
+        if self.synced is not None:
+            # false ⇒ 本地已连上但 Java 侧未收到 ⇒ manifest 闸门看不到本次连接（必须让调用方知道）
+            view["stateSynced"] = self.synced
         return view

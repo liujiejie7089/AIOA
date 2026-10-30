@@ -75,11 +75,14 @@ public class ConnectorCatalogService {
         for (ConnectorDef def : defs) {
             ConfigReady ready = configReadyInternal(def, tenantId);
             ConnectorConnection conn = connByCode.get(def.getCode());
-            String status = ready.ready() ? (conn == null ? ConnectorConnection.STATUS_NEED_AUTH : conn.getStatus())
-                    : ConnectorConnection.STATUS_NEED_AUTH;
+            // 连接态只信库：connector_connection 是唯一真相源（hub 授权成功后回写，见 docs/63 §9.2）。
+            // 别再用 ready 门把状态强降级成 NEED_AUTH —— 那会让「manifest 已放行、界面却显示未连接」
+            // 自相矛盾（2026-10-30 实测：S5 通过而 S4 失败）。应用配置就绪度是另一根轴，
+            // 由 configReady/configHint 单独表达，前端本就按 configReady 先分支（_oa_app.js connStatusChip）。
+            String status = conn == null ? ConnectorConnection.STATUS_NEED_AUTH : conn.getStatus();
             items.add(new ConnectorItem(
                     def.getCode(), def.getName(), def.getGroupName(), def.getIcon(), def.getSummary(),
-                    def.getAuthMode(), ready.ready(), status,
+                    def.getAuthMode(), ready.ready(), ready.ready() ? null : ready.hint(), status,
                     conn == null ? null : conn.getAccountLabel(),
                     conn == null ? null : conn.getConnectedAt(),
                     conn == null ? null : conn.getLastCheckedAt(),
@@ -254,9 +257,9 @@ public class ConnectorCatalogService {
 
     // ---------------- 响应 / 内部 DTO ----------------
 
-    /** GET /connectors 单条。 */
+    /** GET /connectors 单条。configHint = 应用配置未就绪时缺什么（就绪则为 null）。 */
     public record ConnectorItem(String code, String name, String group, String icon, String summary,
-                               String authMode, boolean configReady, String status,
+                               String authMode, boolean configReady, String configHint, String status,
                                String accountLabel, java.time.LocalDateTime connectedAt,
                                java.time.LocalDateTime lastCheckedAt, String lastError,
                                boolean isPlatformManaged) {

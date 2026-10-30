@@ -342,6 +342,42 @@ connector_connection(
 - 判据：`connect` 成功后立即 `GET /api/v1/mcp/manifest`，**必须含 `wechat_work`**；断开后必须不含。
   这条现在没有任何哨兵覆盖，建议补进 `_verify_wecom_dual_mode_p0.py`。
 
+#### 9.2.1 已按 A 方案实施（2026-10-30）
+
+落地链路（一条也不能少）：
+
+```
+hub wecom/server.complete_oauth / _tool_disconnect
+   → wecom/sync.py（HS256 服务令牌，svc=hub）
+   → POST /internal/v1/connectors/{code}/connection[/disconnect]
+   → ConnectorConnectionService.upsertConnectedByUser / disconnectByUser
+   → connector_connection（唯一真相源）
+   → /api/v1/mcp/manifest 闸门 + /api/v1/connectors 目录，两处同读一张表
+```
+
+实施中踩到的四个点，都是「看起来只是接线、实际会出错」的地方：
+
+1. **服务间令牌要放开 `svc=hub`**：`ServiceTokenProvider.ALLOWED_SVC` 原本只有 `agent`/`server`，
+   `/internal/**` 走 `ServiceTokenFilter`，不加 `hub` 就是一路 401。
+2. **`updateById(null)` 清不掉列**：MyBatis-Plus 默认 `NOT_NULL` 策略下，传 null 的字段**不进 UPDATE**。
+   断开时清 `credential_json` / `last_error` 必须用 `LambdaUpdateWrapper.set(...)` 显式写列。
+3. **`synced` 必须是三态，不能压成 bool**：`True`=已同步 / `False`=真失败 / `None`=**按设计跳过**
+   （mock 身份不是数据库主键、或本进程没配服务令牌）。压成 bool 的后果很隐蔽——dev 默认
+   `WECOM_MOCK=1`，每次授权都算出 `wecom=partial&reason=state-unsynced`，把正常跳过当成故障报给用户，
+   真正的失败反而被噪声淹没（本次 `_verify_wecom_dual_mode_p0` S4b 因此假失败过一次）。
+4. **目录里的连接态只信库**：`ConnectorCatalogService.list()` 原先把 `configReady` 当门，
+   未就绪就把 status 强降级成 `NEED_AUTH`。这条会造出「manifest 已放行、界面却显示未连接」的自相矛盾
+   （S5 通过而 S4 失败）。应用配置就绪度是**另一根轴**，由 `configReady` + `configHint` 表达，
+   前端本来就按 `configReady` 先分支（`user-client/_oa_app.js` 的 `connStatusChip`/`connCardHtml`）。
+
+顺带补上的两个缺口：`ConnectorItem` 增加了 `configHint`（前端早就在读 `c.configHint`，
+但后端从没返回过，只能落到写死的兜底文案）；`_verify_connector_state_sync.py` 7 项哨兵
+（S1/S2 验令牌闸门、S3 写入、S4 目录第二源、S5/S6 manifest 双向、S7 同步客户端打桩验路径与布尔转小写）。
+
+> 运维提醒：hub 进程必须拿到 `AIOS_SERVICE_JWT_SECRET`（与 Java `aios.service-jwt.secret` 逐字一致）。
+> 没拿到时**不报错**，只是每次授权都 `state-unsynced`。用 `start-all.sh` 启动即自带该变量；
+> 用临时脚本单独重启 hub 时最容易漏。
+
 ### 9.3 【建议·安全】`send_text_message` 允许模型指定任意收件人
 
 - 现状：`_exec_send_text` 要求 `touser` 非空，由模型填（`wecom/server.py:313`）。

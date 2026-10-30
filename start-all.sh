@@ -124,6 +124,11 @@ fi
 #   写死 1 的后果：每次真机联调都要回来改脚本，且容易误判「配了凭据却没生效」。
 export WECOM_MOCK="${WECOM_MOCK:-1}"
 export WECOM_CONNECTOR_KEY="gq1+vvFpy3g49RyV4KqB5SQtyzOTbNUzu7eRVe7mjvs="
+# 服务间令牌密钥：hub 用它把「某用户已授权」回写 Java /internal/v1/connectors/**（docs/63 §9.2）。
+# 必须与 Java aios.service-jwt.secret 一致（默认值见 DevSecretPlaceholders.SERVICE_JWT）。
+# **生产必须换**：openssl rand -base64 32，两端同步改；未设置时 hub 会跳过状态同步并告警
+#（后果是 manifest 闸门看不到连接，AI 拿不到企微工具）。
+export AIOS_SERVICE_JWT_SECRET="${AIOS_SERVICE_JWT_SECRET:-aios-dev-service-jwt-secret-please-change}"
 if port_up 8099; then
   echo "[skip] mcp-hub :8099 already running"
 else

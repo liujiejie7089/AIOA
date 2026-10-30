@@ -6,7 +6,7 @@
 只做只读调用与「必被拒绝」的负向调用，**不留下任何 CONNECTED 状态**（唯一会碰网络的是
 C7 的真实 IMAP 登录失败用例，它天然不写库）。
 
-  C1  GET  /api/v1/connectors                   200 + 恰好 2 个（qq_mail / wechat_work）
+  C1  GET  /api/v1/connectors                   200 + 恰好 3 个（qq_mail / wechat_work / wecom_group）
   C2  连接器就绪度                              qq_mail=true；wechat_work=false（平台未配 corpId）
   C3  字段白名单                                列表项只含约定字段，**不含** credential/authRef/secret/authCode
   C4  GET  /api/v1/connectors/qq_mail            mode=CREDENTIAL + fields=[email,authCode]，authCode 为 password
@@ -23,7 +23,7 @@ C7 的真实 IMAP 登录失败用例，它天然不写库）。
   C13 GET  /api/v1/connectors（无 token）         HTTP 401（用户维度隔离，未登录不可读）
   C14 GET  /api/v1/plugins                      200 + 每项键**恰好**为 code/name/description/domain/riskLevel/requiresApproval
                                                 （绝不泄露 endpoint / auth_ref / input_schema）
-  C15 GET  /api/v1/mcp/servers/wechat_work/tools 200 + 恰好 3 个（check_connection/get_my_profile/send_text_message），
+  C15 GET  /api/v1/mcp/servers/wechat_work/tools 200 + 恰好 13 个（与 mcp-hub/mcp_hub/wecom/catalog.py 逐字对齐），
                                                 get_my_profile 只读（V99，snsapi_privateinfo 链路产物）
 
 用法：
@@ -127,7 +127,9 @@ def main():
     d = jload(raw) or {}
     items = d.get("data") or []
     codes = sorted(i.get("code") for i in items)
-    rec("C1 连接器目录 = 2 个", st == 200 and d.get("code") == 0 and codes == ["qq_mail", "wechat_work"],
+    # wecom_group 是 2026-10-30 新增的第三个内置连接器（零门槛通道，见 docs/62 §5.7）
+    rec("C1 连接器目录 = 3 个", st == 200 and d.get("code") == 0
+        and codes == ["qq_mail", "wechat_work", "wecom_group"],
         "HTTP=%s code=%s codes=%s" % (st, d.get("code"), codes))
 
     by_code = {i.get("code"): i for i in items}
@@ -263,18 +265,29 @@ def main():
         "HTTP=%s 条数=%s 多余键=%s 泄露关键字=%s" % (st, len(plist), sorted(bad) or "无",
                                                     leaks or "无"))
 
-    # ---------- C15 企业微信工具目录（V99：+get_my_profile，与 WeComMcpHandler.supports 对齐） ----------
+    # ---------- C15 企业微信工具目录（原生实装：唯一事实源 mcp-hub/mcp_hub/wecom/catalog.py） ----------
+    # 这里**硬编码** 13 个名字（不按接口返回反推），改动目录必须同步改本处 —— 它就是漂移守卫。
+    WECOM_TOOL_NAMES = [
+        "check_connection", "connect", "connection_status", "contact_search", "disconnect",
+        "get_my_profile",
+        "mail_create_draft", "mail_list_folders", "mail_list_messages", "mail_read_message",
+        "mail_search_messages", "mail_send_draft",
+        "send_text_message",
+    ]
     st, _, raw = call(base, "/api/v1/mcp/servers/wechat_work/tools", token=token)
     d = jload(raw) or {}
     tools = d.get("data") or []
     tnames = sorted(t.get("name") for t in tools) if isinstance(tools, list) else []
     prof = next((t for t in tools if isinstance(t, dict) and t.get("name") == "get_my_profile"), None)
     ok15 = (st == 200 and d.get("code") == 0
-            and tnames == ["check_connection", "get_my_profile", "send_text_message"]
+            and tnames == sorted(WECOM_TOOL_NAMES)
             and prof is not None and prof.get("readOnly") is True)
-    rec("C15 wechat_work 工具目录 = 3 个含 get_my_profile（只读）", ok15,
-        "HTTP=%s code=%s tools=%s readOnly=%s" % (st, d.get("code"), tnames,
-                                                  (prof or {}).get("readOnly")))
+    rec("C15 wechat_work 工具目录 = 13 个（含 get_my_profile 只读）", ok15,
+        "HTTP=%s code=%s 条数=%s 缺=%s 多=%s readOnly=%s"
+        % (st, d.get("code"), len(tnames),
+           sorted(set(WECOM_TOOL_NAMES) - set(tnames)) or "无",
+           sorted(set(tnames) - set(WECOM_TOOL_NAMES)) or "无",
+           (prof or {}).get("readOnly")))
 
     fails = [r for r in RESULTS if not r[1]]
     print("\n== 汇总：%d 项，通过 %d，失败 %d ==" % (len(RESULTS), len(RESULTS) - len(fails), len(fails)))

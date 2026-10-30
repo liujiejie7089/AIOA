@@ -184,9 +184,16 @@ async def _callback(query, send):
     if not code:
         return await _redirect(send, _result_url("fail", "no-code"))
     try:
-        await complete_oauth(consumed["tenant_id"], consumed["user_id"], code)
+        conn = await complete_oauth(consumed["tenant_id"], consumed["user_id"], code)
     except Exception as e:  # noqa: BLE001
         logger.info("[wecom] 回调失败：%s", e)
         return await _redirect(send, _result_url("fail", type(e).__name__))
     logger.info("[wecom] 回调成功：tenant=%s user=%s", consumed["tenant_id"], consumed["user_id"])
+    # 授权成功但状态没同步到平台 ⇒ 结果页必须说出来（否则用户看到「已连接」，
+    # 下一轮对话却没有工具，只能来问「为什么 AI 用不了我的企业微信」）。
+    if conn.synced is False:
+        return await _redirect(send, _result_url("partial", "state-unsynced"))
+    if (conn.a_credential or {}).get("sensitive_authorized") is False:
+        # 有 userid 但没 user_ticket：能连、能发消息，但没有企业邮箱/手机
+        return await _redirect(send, _result_url("partial", "no-sensitive-scope"))
     return await _redirect(send, _result_url("ok"))
