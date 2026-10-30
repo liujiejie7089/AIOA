@@ -23,6 +23,7 @@
 """
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -31,6 +32,26 @@ RESULTS = []
 TEST_CORP = "ww_sentinel_corp"
 TEST_AGENT = "1000001"
 TEST_SECRET = "sentinel_secret_000111"
+
+# 与 _verify_mcp_registry 同一口径：用盘符式路径（Git Bash 的 /d/... 在 Python 下不成立）
+MYSQL = "D:/dev/mysql/mysql-8.4.10-winx64/bin/mysql.exe"
+
+
+def connector_status(code: str) -> "str | None":
+    """读 connector_def.status（第二源：库，不看接口回话）。"""
+    try:
+        out = subprocess.run([MYSQL, "-uroot", "-N", "-B", "aios", "-e",
+                              "select status from connector_def where tenant_id=0 and code='%s' limit 1" % code],
+                             capture_output=True, text=True, timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    return (out.stdout or "").strip() or None
+
+
+def set_connector_status(code: str, status: str) -> None:
+    subprocess.run([MYSQL, "-uroot", "-N", "-B", "aios", "-e",
+                    "update connector_def set status='%s' where tenant_id=0 and code='%s'" % (status, code)],
+                   capture_output=True, text=True, timeout=20)
 
 
 def call(base, path, method="GET", token=None, body=None, timeout=25, extra_headers=None):
@@ -83,6 +104,24 @@ def main():
     ap.add_argument("--user", default="admin")
     ap.add_argument("--password", default="Admin@123")
     args = ap.parse_args()
+
+    # 前置：2026-10-30 起 wechat_work 已下线（V103，企业微信统一改用扫码连接器 docs/64）。
+    # 但本套件验的是「租户凭据中心 → hub vault → 用户端 configReady」这条机制，机制还在，
+    # 只是被测对象不再出现在用户目录里。所以临时把 status 置回 ACTIVE 跑完再复原
+    # （与本项目「快照→复位→跑→恢复」的既有纪律一致；不能因为主体下线就把机制测试删掉）。
+    prev = connector_status("wechat_work")
+    if prev not in (None, "ACTIVE"):
+        set_connector_status("wechat_work", "ACTIVE")
+        print("  [ 前置 ] wechat_work 当前为 %s（已下线），临时置 ACTIVE 验机制，跑完恢复" % prev)
+    try:
+        return _run(args)
+    finally:
+        if prev not in (None, "ACTIVE"):
+            set_connector_status("wechat_work", prev)
+            print("  [ 复原 ] wechat_work 恢复为 %s" % prev)
+
+
+def _run(args):
     base, hub = args.base, args.hub
 
     print("== 连接器应用凭据验收（管理端 → 运行时） @ %s / hub %s ==" % (base, hub))

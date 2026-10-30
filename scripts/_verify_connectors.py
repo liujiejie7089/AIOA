@@ -34,9 +34,24 @@ C7 的真实 IMAP 登录失败用例，它天然不写库）。
 import argparse
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+
+# 与 _verify_mcp_registry / _verify_connector_tenant_config 同一口径：
+# 用盘符式路径（Git Bash 的 /d/... 在 Python 的 os.path / subprocess 下不成立）。
+MYSQL = "D:/dev/mysql/mysql-8.4.10-winx64/bin/mysql.exe"
+
+
+def sql(statement: str) -> "str | None":
+    """读一行标量（第二源用）。库不可用时返回 None，由调用方判失败而不是静默通过。"""
+    try:
+        out = subprocess.run([MYSQL, "-uroot", "-N", "-B", "aios", "-e", statement],
+                             capture_output=True, text=True, timeout=20)
+    except Exception:  # noqa: BLE001
+        return None
+    return (out.stdout or "").strip() or None
 
 RESULTS = []
 ALLOWED_CONNECTOR_KEYS = {
@@ -127,21 +142,28 @@ def main():
     d = jload(raw) or {}
     items = d.get("data") or []
     codes = sorted(i.get("code") for i in items)
-    # wecom_group 是 2026-10-30 新增的第三个内置连接器（零门槛通道，见 docs/62 §5.7）；
-    # wecom_cli 是 2026-10-30 新增的第四个（扫码绑定，见 docs/64）。清单写死是刻意的：
-    # 多一个/少一个都要人工确认为「有意的接入」，不允许悄悄漂移。
-    rec("C1 连接器目录 = 4 个", st == 200 and d.get("code") == 0
-        and codes == ["qq_mail", "wechat_work", "wecom_cli", "wecom_group"],
+    # 2026-10-30 收口：企业微信只剩「扫码」一个入口（docs/64）；wechat_work（自建应用 OAuth2）
+    # 与 wecom_group（群机器人 Webhook）已由 V103 下线（connector_def.status=DISABLED）。
+    # 清单写死是刻意的：多一个/少一个都要人工确认为「有意的接入」，不允许悄悄漂移；
+    # RETIRED 里的两个必须**一个都不出现**，否则说明有人把它们重新激活却没走评审。
+    RETIRED = {"wechat_work", "wecom_group"}
+    rec("C1 连接器目录 = 2 个（qq_mail / wecom_cli），且已下线的两个不出现",
+        st == 200 and d.get("code") == 0
+        and codes == ["qq_mail", "wecom_cli"]
+        and not (RETIRED & set(codes)),
         "HTTP=%s code=%s codes=%s" % (st, d.get("code"), codes))
 
     by_code = {i.get("code"): i for i in items}
     qq_ready = (by_code.get("qq_mail") or {}).get("configReady")
-    ww_ready = (by_code.get("wechat_work") or {}).get("configReady")
-    ww_hint = (by_code.get("wechat_work") or {}).get("configHint")
-    # 就绪度是布尔语义：已配置 true；未配置 false（hint 可有可无）——配置可在管理端动态增删
-    ok2 = qq_ready is True and isinstance(ww_ready, bool)
-    rec("C2 就绪度语义（布尔 + qq_mail 已就绪）", ok2,
-        "qq_mail.configReady=%s wechat_work.configReady=%s hint=%r" % (qq_ready, ww_ready, ww_hint))
+    cli_ready = (by_code.get("wecom_cli") or {}).get("configReady")
+    cli_mode = (by_code.get("wecom_cli") or {}).get("authMode")
+    # 就绪度是布尔语义，且两种形态都要成立：
+    #   qq_mail(CREDENTIAL) 恒 true —— 用户自填授权码，不需要应用级凭据；
+    #   wecom_cli(QR) config_keys=[] ⇒ true —— 管理员**无需**配置任何应用凭据（这是扫码方案的核心价值）。
+    ok2 = (qq_ready is True and cli_ready is True and cli_mode == "QR")
+    rec("C2 就绪度语义（qq_mail 恒就绪 / wecom_cli 无应用配置也恒就绪）", ok2,
+        "qq_mail.configReady=%s wecom_cli.configReady=%s authMode=%r"
+        % (qq_ready, cli_ready, cli_mode))
 
     extra = set()
     leaked = []
@@ -205,6 +227,12 @@ def main():
         "明文出现=%s 密文前缀=%s" % ("fakeauthcode0000000" in raw, "enc:" in raw))
 
     # ---------- C9 企业微信 start：无 Origin/未配置一律拒绝；已配置时（带 Origin）出授权链接 ----------
+    # 就绪度不再从用户目录读（wechat_work 已下线，目录里看不到它），改读管理端配置中心的
+    # `configured` —— 这才是「应用凭据是否配好」的真源，也是 start 真正的分流依据。
+    _, _, cfg_raw = call(base, "/api/v1/admin/connector-configs/wechat_work", token=token)
+    ww_configured = ((jload(cfg_raw) or {}).get("data") or {}).get("configured") is True
+
+    # ---------- C9 / C9b：start 按就绪度分流 ----------
     st, _, raw = call(base, "/api/v1/connectors/wechat_work/connect/start", "POST",
                       token=token, body={"returnPath": "/"})
     d = jload(raw) or {}
@@ -219,7 +247,7 @@ def main():
                       extra_headers={"Origin": "http://127.0.0.1:8080", "Host": "127.0.0.1:8080"})
     d = jload(raw) or {}
     auth_url = (d.get("data") or {}).get("authUrl") or ""
-    if ww_ready is True:
+    if ww_configured:
         ok9b = st == 200 and d.get("code") == 0 and "qrConnect" in auth_url and "enc:" not in raw
         det = "authUrl前缀=%r 密文泄露=%s" % (auth_url[:60], "enc:" in raw)
     else:
@@ -234,10 +262,12 @@ def main():
     ok10 = st == 302 and "result=fail" in loc and loc.startswith("/")
     rec("C10 伪造 state 回调 → 302 失败页（不写库）", ok10,
         "HTTP=%s Location=%r" % (st, loc))
-    st, _, raw = call(base, "/api/v1/connectors", token=token)
-    ww = {i.get("code"): i for i in ((jload(raw) or {}).get("data") or [])}.get("wechat_work") or {}
-    rec("C10b 伪造 state 后 wechat_work 仍 NEED_AUTH", ww.get("status") == "NEED_AUTH",
-        "status=%s accountLabel=%s" % (ww.get("status"), ww.get("accountLabel")))
+    # 第二源必须是**库**，不是目录：wechat_work 已于 2026-10-30 下线（V103），目录里本就看不到它，
+    # 拿「目录里没有」当判据等于什么都没验。这里直接读 connector_connection 的真值。
+    row = sql("select status from connector_connection where connector_code='wechat_work' "
+              "order by id desc limit 1")
+    rec("C10b 伪造 state 后库里 wechat_work 仍为 NEED_AUTH（伪造回调绝不写库）",
+        row == "NEED_AUTH", "DB status=%r" % row)
 
     # ---------- C11 未连接时 verify ----------
     st, _, raw = call(base, "/api/v1/connectors/qq_mail/verify", "POST", token=token, body={})

@@ -20,11 +20,10 @@
 | git 推送 | `topics/git-remote.md` |
 | 进度口径 | `docs/28 §6`（唯一权威） |
 | 连接器接入 MCP | `docs/59` §10 · hub :8099 · V97 三表 |
-| 企微双模式 | `docs/61` · `wecom/` · A=privateinfo · B=邮箱 · `WECOM_MOCK` |
-| 群机器人 | `docs/62` §5.7 · V101 · `_verify_wecom_group.py`(7) |
-| 企微按用户授权 | `docs/63` · 无用户级 token · P0 已修 `ee9ad02` |
+| 企微旧通道（**V103 已下线**） | `docs/61` 双模式A/B · `docs/62` §5.7 群机器人 · 代码保留，回滚见 `docs/64` §9.5 |
+| **企微扫码连接器** | `docs/64` §九 · `wecom_cli/` 5 只读工具 · `AUTH_QR` · V102/V103 · `WeComCliGateway`（契约 `{code,message,data}`，**勿**复用凭据网关）· `_verify_wecom_cli.py`(15) / `_verify_oa_qr_modal.py`(10) |
 | **连接态同源** | `wecom/sync.py` → `/internal/v1/connectors/{code}/connection` → `connector_connection` 唯一真相源 · `synced` 三态 · `_verify_connector_state_sync.py`(7) |
-| **企微扫码连接器** | `docs/64` §九（实施记录）· `wecom_cli/` 5 只读工具 · `AUTH_QR` · V102 · `WeComCliGateway`（契约 `{code,message,data}`，**勿**复用凭据网关）· 哨兵 `_verify_wecom_cli.py`(15) / `_verify_oa_qr_modal.py`(10) |
+| 企微按用户授权（历史） | `docs/63` · 无用户级 token · P0 已修 `ee9ad02` |
 
 ## 最常踩的五条（全文见 iron-rules.md）
 

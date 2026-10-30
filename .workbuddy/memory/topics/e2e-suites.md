@@ -542,3 +542,22 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
   （7 业务 + ask_user + request_form；为 7 说明内置工具没注入，本套必红）。
 
 
+
+## 5.9 企微 / 连接器相关套件现状（2026-10-30 V103 下线两个旧连接器后）
+
+| 套件 | 项数 | 前置 | 备注 |
+|---|---|---|---|
+| `_verify_wecom_cli.py` | **15** | Java:8080 + hub:8099 + 已 trust + 已绑定（或 `AIOS_WECOM_CLI_SHARED_PROFILE`） | 扫码连接器端到端：目录即身份 / QR 三端点 / manifest 闸门 / 真 MCP 调 5 个工具 / 断开收回 / 收尾重绑 |
+| `_verify_oa_qr_modal.py` | **10** | 无后端（file:// + 打桩，需 playwright） | 二维码弹层：出图 / 白底 / 轮询 / bind 定成败 / 失败不关 / 关弹层停轮询 |
+| `_verify_connectors.py` | **19** | Java:8080 + 本机 mysql（C10b 第二源读库） | C1 期望 `['qq_mail','wecom_cli']`，已下线的两个不许出现 |
+| `_verify_mcp_registry.py` | **14** | Java:8080 + hub:8099 + mysql | M1b：已下线的两行必须保留且 trusted=false |
+| `_verify_connector_state_sync.py` | **7** | Java + 服务令牌 | 主体已从 wechat_work 换成 wecom_cli |
+| `_verify_connector_tenant_config.py` | **9** | Java + hub + mysql | 前置会自动把 wechat_work 临时置 ACTIVE，跑完复原 |
+| `_verify_wecom_dual_mode_p0.py` | **24** | hub（`WECOM_MOCK=1`） | 不读 connector_def.status，下线后仍全绿 |
+| `_verify_wecom_group.py` | **7** | hub + `--key <webhook key>` | 缺 key 会 FATAL 退出（环境前置，不是回归） |
+| `_verify_agent_mcp_wiring.py` | **6** | 本地桩 MCP :8098 | 与连接器无关 |
+| `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | **17 / 19** | 无后端（打桩） | 卡片映射用桩数据，不受下线影响 |
+
+**纪律**：连接器下线后，围绕它写的套件**不许直接删或跳过**——
+要么换成同一机制的另一主体（state_sync→wecom_cli），要么前置临时激活跑完复原（tenant_config），
+要么把断言改成「它必须不可见/不可信」（connectors C1、mcp_registry M1b）。

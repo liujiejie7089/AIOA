@@ -270,12 +270,54 @@ mcp-hub :8099（保留）
 答：刘洋在成都易构部门。
 ```
 
-### 9.5 仍然未做 / 需注意
+### 9.5 旧连接器下线（V103，2026-10-30）
+
+按产品决定：**「协作与办公」里只保留「企业微信（扫码）」一个企微入口**，
+`wechat_work`（自建应用 OAuth2）与 `wecom_group`（群机器人 Webhook）已下线。
+
+`V103__retire_legacy_wecom_connectors.sql` 做三件事：
+
+| 动作 | 效果 |
+|---|---|
+| `connector_def.status='DISABLED'` | 用户端目录 `list()` 只查 ACTIVE ⇒ 两张卡不再出现 |
+| `mcp_server.trusted=0, status='UNKNOWN'` | `/api/v1/mcp/manifest` 只查 trusted=1 ⇒ 旧工具不再进模型上下文 |
+| `connector_connection` 置 NEED_AUTH + 清凭据 | 避免「看不见却算已连接」的脏状态 |
+
+**为什么是下线不是删行**：`mcp_server_tool`（工具快照）与 `connector_connection`（历史连接态）
+都靠这两行存在；物理删除会让回滚变成「重新造数据」，也让审计断掉。真正的开关只有
+`status` 与 `trusted` 两个，置位后对用户与模型都不可见，效果等同删除但可一键回滚：
+
+```sql
+UPDATE connector_def SET status='ACTIVE' WHERE code IN ('wechat_work','wecom_group');
+-- 需要哪个就重新 trust 哪个刷新工具快照：
+-- POST /api/v1/mcp/servers/{code}/trust
+```
+
+**代码没删**：`mcp-hub/mcp_hub/wecom/`（双模式）、`specs.py` 里的 `wecom_group`、
+`WeComOAuthService`、`docs/61`–`docs/63` 全部保留。理由：A 模式是唯一能「替用户发消息」
+的现成通道（B 模式自带真实邮箱身份），扫码通道目前只有只读工具；真机多用户验证若发现
+CLI 侧写入受限，回滚成本 = 一条 SQL。
+
+**连带调整的哨兵**（都不能靠删断言变绿）：
+
+| 套件 | 调整 | 现结果 |
+|---|---|---|
+| `_verify_connectors.py` | C1 期望改为 `['qq_mail','wecom_cli']` 并加「已下线的不许出现」；C2 改验 wecom_cli 无应用配置也恒就绪；C9b 就绪度改读管理端 `configured`；C10b 第二源改读库 | 19/19 |
+| `_verify_connector_tenant_config.py` | 前置临时把 wechat_work 置 ACTIVE 跑完复原（验的是「租户凭据中心」机制，机制还在） | 9/9 |
+| `_verify_connector_state_sync.py` | 主体从 wechat_work 换成 wecom_cli（验的是同源机制，与主体无关） | 7/7 |
+| `_verify_mcp_registry.py` | 新增 M1b：已下线的两行必须保留且 trusted=false | 14/14 |
+| `_verify_wecom_dual_mode_p0.py` | 未改（验 hub 侧双模式，不读 connector_def.status） | 24/24 |
+| `_verify_wecom_group.py` | 未改（读 hub 自己的清单，仍需 `--key` 前置） | 需 key |
+
+真实界面复核（zhangsan 登录，`logs/proof/connectors_after_retire.png`）：
+目录只有 2 张卡 —— QQ邮箱（未连接）、企业微信（扫码）（已连接 · 刘洋 · MCP 已启用）。
+
+### 9.6 仍然未做 / 需注意
 
 - **一 Bot 能否挂多真人（原 P0 Spike）仍未验**：本地只有一个真机授权，无法在单个 hub 上造第二个
   真实扫码。当前 dev 用 `AIOS_WECOM_CLI_SHARED_PROFILE` 让所有 AIOS 用户共用同一份授权
   （`start-all.sh` 仅在 `WECOM_MOCK=1` 时给默认值）。**生产必须清空该变量**，否则等于把一个人的
   企微数据串给所有账号。这条是本次唯一「逻辑上通了、物理上没验」的点。
 - 只开放 5 个只读工具。写操作（发消息/建待办/发邮件）的权限边界（F5）未实测，故未开放。
-- 旧 A 模式（`wechat_work` 的 `snsapi_privateinfo` 链路）按 §五 的清单**尚未物理删除**：
-  先让 `wecom_cli` 在真机多用户环境跑通再删，避免两边都没了。
+- `wechat_work` / `wecom_group` 已**下线但未删代码**（见 9.5）；回滚只需一条 SQL + 重新 trust。
+  注意 A 模式目前是唯一「替用户发消息」的现成通道，若后续确认 CLI 侧写入受限，回滚成本很低。

@@ -17,8 +17,8 @@ manifest 判未连接 ⇒ **工具从模型手里消失**（连上了反而不�
   S2  同一路径用**错误密钥**签的服务令牌 → 401（证明不是「有票就放行」）
   S3  用 svc=hub 的正确令牌 → 200
   S4  第二源：GET /api/v1/connectors 显示该连接器 CONNECTED，且响应里没有凭据明文
-  S5  **GET /api/v1/mcp/manifest 含 wechat_work**（核心判据：闸门真的认了）
-  S6  POST .../connection/disconnect → manifest 不再含 wechat_work
+  S5  **GET /api/v1/mcp/manifest 含 wecom_cli**（核心判据：闸门真的认了）
+  S6  POST .../connection/disconnect → manifest 不再含 wecom_cli
   S7  hub 侧同步客户端（wecom/sync.py）打桩验证：路径 / Bearer / 字段转换都对
       （布尔要转小写字符串，否则 Java 的 Map<String,String> 会把 False 存成 "False"）
 
@@ -47,7 +47,11 @@ if HUB_SRC not in sys.path:
     sys.path.insert(0, HUB_SRC)
 
 DEV_SECRET = "aios-dev-service-jwt-secret-please-change"   # 与 DevSecretPlaceholders.SERVICE_JWT 一致
-CODE = "wechat_work"
+# 2026-10-30：wechat_work / wecom_group 已下线（V103，企业微信统一改用扫码连接器 docs/64）。
+# 这条链路验的是「连接态同源 → manifest 闸门」这个机制，与被测连接器无关；
+# 改用唯一还活着的用户授权型连接器 wecom_cli（QR），机制覆盖不变，且不会因为
+# 主体下线就整条停验（那等于把最要命的一条防线静默摘掉）。
+CODE = "wecom_cli"
 RESULTS: list[tuple[str, bool, str]] = []
 
 
@@ -171,7 +175,7 @@ def main() -> int:
         # S5 核心：manifest 闸门认了
         st, raw = call(base, "/api/v1/mcp/manifest", token=user_token)
         codes = [i.get("code") for i in (jload(raw).get("data") or [])]
-        rec("S5 manifest 含 wechat_work（闸门认可）", st == 200 and CODE in codes,
+        rec("S5 manifest 含 wecom_cli（闸门认可）", st == 200 and CODE in codes,
             "HTTP=%s codes=%s" % (st, codes))
 
         # S6 断开后必须消失
@@ -179,7 +183,7 @@ def main() -> int:
                        token=svc_token(), body={"tenantId": args.tenant, "userId": args.uid})
         st2, raw2 = call(base, "/api/v1/mcp/manifest", token=user_token)
         codes2 = [i.get("code") for i in (jload(raw2).get("data") or [])]
-        rec("S6 断开后 manifest 不含 wechat_work", st == 200 and CODE not in codes2,
+        rec("S6 断开后 manifest 不含 wecom_cli", st == 200 and CODE not in codes2,
             "HTTP=%s codes=%s" % (st, codes2))
     finally:
         # 兜底复原：无论上面哪步炸了，都不要把 admin 留在「已连接」

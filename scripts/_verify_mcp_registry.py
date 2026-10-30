@@ -63,6 +63,10 @@ FORBIDDEN_KEY_SUBSTR = ("credential", "authcode", "corpsecret", "secret", "passw
 # 内置服务器 → 期望工具数。**不是**写死的历史值，而是「hub 实装数」的镜像；
 # M13 会拿它跟 hub 现报的数字逐个比对，两边不一致就红（防止只改一处）。
 EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 13, "wecom_group": 2, "wecom_cli": 5}
+# 已下线（V103, 2026-10-30）：企业微信统一改用「企业微信（扫码）」连接器（docs/64）。
+# 它们的 mcp_server 行**故意保留**（工具快照留给回滚用），但必须 trusted=0，
+# 否则 manifest 会把已下线连接器的工具重新塞给模型 —— 那是本节最该防的事。
+RETIRED_SERVERS = {"wechat_work", "wecom_group"}
 DEFAULT_HUB = "http://127.0.0.1:8099"
 MYSQL = "D:/dev/mysql/mysql-8.4.10-winx64/bin/mysql.exe"  # 注意用盘符式路径：
 # Git Bash 的 /d/... 在 Python os.path.exists 下不成立（2026-10-20 踩过，导致 M11 假失败）。
@@ -182,6 +186,18 @@ def run_assertions(base, hub, token):
         bad.append("多出内置服务器 %s（请同步本脚本 EXPECT_TOOL_COUNT）" % extra)
     rec("M1 清单：4 个内置服务器、默认不可信、目录 6/13/2/5", st == 200 and not bad,
         "HTTP=%s 偏差=%s" % (st, bad or "无"))
+
+    # ---------- M1b 已下线连接器必须不可信（防止回滚时忘了重新 trust，或反过来忘了收回） ----------
+    retired_bad = []
+    for c in RETIRED_SERVERS:
+        it = by_code.get(c)
+        if it is None:
+            retired_bad.append("%s 行被物理删了（回滚要靠它，不该删）" % c)
+        elif it.get("trusted") is not False:
+            retired_bad.append("%s.trusted=%r（已下线却仍可信 ⇒ manifest 会把工具塞给模型）"
+                               % (c, it.get("trusted")))
+    rec("M1b 已下线的 wechat_work / wecom_group 保留行但 trusted=false", not retired_bad,
+        "偏差=%s" % (retired_bad or "无"))
 
     # ---------- M12 凭据不外泄（先做，避免后面状态变化影响） ----------
     leaked_keys = [k for i in items for k in i.keys()
