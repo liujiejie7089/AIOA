@@ -1270,3 +1270,15 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     也不知道下一步。而且空消息有两种来源：模型真空返回（`finalize` 未兜）、
     delta 断流但完成帧有 content（前端只认 delta）。两处都要兜：后端产出可行动文案+补发 delta，
     前端 `onCompleted` 用完成帧 `content` 覆盖。
+25. **加一条 HITL 控制链有五个「必改点」，漏任何一个都静默**：agent 侧 prepare 注入 /
+    tools 过滤 / clarify 识别 / route 分支，加 facade `_frame_type` 帧判定。漏帧判定的表现是
+    新帧被当澄清帧发出去（UI 变成单选卡）；漏 tools 过滤的表现是新工具被当业务工具打进网关。
+    2026-10-31 加 `request_confirm` 时已把判定收敛为 `_is_control_call / _control_chain /
+    _drop_control_calls` 三个单点 —— 以后加第四条链只改这三处 + facade + prepare。
+26. **SSE 暂停帧必须同时置 `clarificationRef`（Java）**：`forward()` 对未知事件名是**无条件
+    转发**的，卡片照样弹出来；但 ref 不置位 ⇒ 流末按 SUCCEEDED 收口 ⇒ 用户点决策时
+    `/resume` 因状态非 WAITING_INPUT 被 400 拒。现象是「卡片能弹、点了报操作失败」，极难排查。
+27. **流式假模型桩里一次 `yield` 两个 `done` 会自我覆盖**：agent 消费循环以**最后一个** done
+    为准，tool_calls 轮后接正文轮时必须在两次真实模型调用里分别 yield（每轮恰好一个 done）。
+28. **操作性提示别写进 `.tx`**：确认后 `.tx` 会被 `formatAnswer(text)` 整套重写 innerHTML，
+    写在里面的「已取消」会被静默冲掉 ⇒ 独立容器（`appendSysNote`）。

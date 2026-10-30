@@ -117,17 +117,21 @@ async def _stream(compiled, stream_input, config: dict | None, seq_start: int,
 def _frame_type(payload: dict) -> str:
     """根据暂停载荷判定补发哪一帧（**纯函数**，便于单测）。
 
-    判定（两条 HITL 控制链共用 interrupt 底座，靠 payload 形状区分帧类型）：
-      - request_form 归一化产物带 ``kind="form"``（且无 question）⇒ ``need_form``；
-      - ask_user 归一化产物只有 ``question`` / ``suggested_options``（无 kind）⇒ ``need_clarification``。
+    判定（三条 HITL 控制链共用 interrupt 底座，靠 payload 形状区分帧类型）：
+      - request_form    归一化产物带 ``kind="form"``              ⇒ ``need_form``；
+      - request_confirm 归一化产物带 ``kind="confirm"``           ⇒ ``need_confirm``；
+      - ask_user        归一化产物只有 ``question`` / ``suggested_options``（无 kind）⇒ ``need_clarification``。
 
-    两条判定互为兜底：只要命中「显式 kind=form」**或**「含 form_code 且无 question」就走表单帧，
-    其余一律澄清帧，避免把表单误判成澄清、也兼容未来 ask_user 即使误带额外键。
+    三条判定互为兜底：显式 ``kind`` 优先于按形状猜测；表单额外兼容「含 form_code 且无 question」，
+    避免把表单误判成澄清；其余一律澄清帧 —— 既能兼容未来 ask_user 误带额外键，也不会把确认
+    帧降级成澄清卡（确认卡必须带两个按钮，澄清卡是单选 + 一个「确认」提交按钮，两者 UI 语义不同）。
     """
     if not isinstance(payload, dict):
         return "need_clarification"
     if payload.get("kind") == "form":
         return "need_form"
+    if payload.get("kind") == "confirm":
+        return "need_confirm"
     if "form_code" in payload and "question" not in payload:
         return "need_form"
     return "need_clarification"
@@ -142,10 +146,13 @@ async def _pause_events(compiled, config: dict | None, seq: int) -> AsyncIterato
     except Exception as exc:  # 取状态失败不应把正常结束搞成错误
         logger.warning("get_state failed: %s", exc)
         return
+    # 这个地方极容易漏：`_frame_type` 是唯一的帧类型判定点，新增控制链时不改它，
+    # 新帧会被当成澄清帧发出去 —— 前端渲染成单选卡，用户无法完成决策。
     for task in getattr(snapshot, "tasks", ()) or ():
         for itr in getattr(task, "interrupts", ()) or ():
             payload = getattr(itr, "value", itr)
             data = payload if isinstance(payload, dict) else {"question": str(payload)}
-            # 按 payload 区分帧类型：request_form → need_form；ask_user → need_clarification。
+            # 按 payload 区分帧类型：request_form → need_form；
+            # request_confirm → need_confirm；ask_user → need_clarification。
             yield SseEvent(seq=seq, type=_frame_type(data), data=data)
             seq += 1

@@ -30,6 +30,7 @@ from aios_ai.llm import gateway
 from aios_ai.llm.upstream import UpstreamError, _post_non_stream, _post_stream
 from aios_ai.prompt.builder import build_messages
 from aios_ai.tools import ask_user as ask_user_tool
+from aios_ai.tools import request_confirm as request_confirm_tool
 from aios_ai.tools import request_form as request_form_tool
 from aios_ai.tools import web_search as web_search_tool
 from aios_ai.tools.client import MAX_TOOL_ROUNDS, ToolClient, ToolOutcome
@@ -71,6 +72,42 @@ MCP_DEGRADED_NOTE = (
 def _tool_name(t: dict) -> str | None:
     """工具名提取（兼容两种 schema 形态，与 knowledge.retrieval 同口径）。"""
     return t.get("function", {}).get("name") or t.get("name")
+
+
+# --------------------------------------------------------------------------- 内置控制工具（HITL 三条链）
+#
+# ask_user / request_form / request_confirm 三条链共用 interrupt/resume/checkpoint 底座。
+# 它们的共同点是**不由业务工具网关执行**、命中即暂停 —— 于是「判断某个调用是不是控制调用」
+# 这个命题会在 prepare（注入）/ tools（防御性过滤）/ clarify（识别）/ 路由（分支）四处重复出现。
+# 先前每加一条链就要改四个地方各加一个 `or`（2026-10-31 加 request_confirm 时已经是第三次），
+# 漏一处就会出现「新工具被当成业务工具打进网关」这类静默错。故收敛成下面三个单点判定函数。
+
+def _is_control_call(name: str | None) -> bool:
+    """该工具名是否为内置控制工具（三条 HITL 链之一）。"""
+    return (ask_user_tool.is_ask_user(name)
+            or request_form_tool.is_request_form(name)
+            or request_confirm_tool.is_request_confirm(name))
+
+
+def _control_chain(name: str | None) -> str:
+    """控制链代号：``"form"`` / ``"confirm"`` / ``"clarify"``；非控制调用返回 ``""``。"""
+    if request_form_tool.is_request_form(name):
+        return "form"
+    if request_confirm_tool.is_request_confirm(name):
+        return "confirm"
+    if ask_user_tool.is_ask_user(name):
+        return "clarify"
+    return ""
+
+
+def _drop_control_calls(calls: list[dict] | None) -> list[dict]:
+    """剔除内置控制调用后的余量。
+
+    两处语义相同、但**原因不同**，别写成两个函数导致将来只改一处：
+      - tools 节点：防御性过滤（路由本不该送到这里，但状态里混进来也不能误打网关）；
+      - clarify 节点：本轮控制调用已被本节点消费，余下的普通调用交回 tools 执行。
+    """
+    return [c for c in (calls or []) if not _is_control_call(c.get("name"))]
 
 
 def filter_intent_write_tools(tools: list[dict], action: str | None) -> list[dict]:
@@ -329,9 +366,13 @@ async def prepare(state: dict) -> dict:
     # HITL：注入内置澄清工具（不由业务工具网关执行，命中即暂停等待用户选择）。
     # 只在开关打开时注入 —— 关闭时工具表与既有实现逐字节一致（零回归）。
     if _hitl_enabled():
-        # 两个内置控制工具都在此注入：ask_user（标量澄清）/ request_form（表单请求）。
-        # 二者都不由业务网关执行，命中即暂停等待用户选择/填表。关闭时工具表与既有实现逐字节一致。
-        tools = [ask_user_tool.ASK_USER_TOOL, request_form_tool.REQUEST_FORM_TOOL] + list(tools)
+        # 三个内置控制工具都在此注入（都不由业务网关执行，命中即暂停等待用户决策）：
+        #   ask_user        标量澄清 → need_clarification
+        #   request_form    表单回执 → need_form
+        #   request_confirm 二值确认 → need_confirm
+        # 关闭时工具表与既有实现逐字节一致（零回归）。
+        tools = [ask_user_tool.ASK_USER_TOOL, request_form_tool.REQUEST_FORM_TOOL,
+                 request_confirm_tool.REQUEST_CONFIRM_TOOL] + list(tools)
 
     # 对话级知识库开关（KB）：由 Java 后端从 CreateRunRequest 透传，缺省视为 True。
     # False = 本次 run 完全不使用知识库（剔除检索工具，模型无法发起检索）；
@@ -552,11 +593,9 @@ async def agent(state: dict) -> dict:
 
 async def tools(state: dict) -> dict:
     """执行轮：同层并发执行本轮工具调用，产出 tool.call / tool.result，结果回注消息。"""
-    # 防御性过滤：ask_user / request_form 都是内置控制工具、不由业务网关执行（正常路由
-    # 不会送到这里，但从 clarify 交回的「本轮其余调用」若混入也一律剔除，避免误打网关）。
-    calls = [c for c in (state.get("pending_calls") or [])
-             if not ask_user_tool.is_ask_user(c.get("name"))
-             and not request_form_tool.is_request_form(c.get("name"))]
+    # 防御性过滤：ask_user / request_form / request_confirm 都是内置控制工具、不由业务网关执行
+    # （正常路由不会送到这里，但从 clarify 交回的「本轮其余调用」若混入也一律剔除，避免误打网关）。
+    calls = _drop_control_calls(state.get("pending_calls"))
     clock = _clock(state)
     # 运行期对象不进状态（checkpointer 要求纯数据）：按入参重建工具客户端
     tool_client = ToolClient.from_request(_req(state).user_token)
@@ -642,7 +681,7 @@ async def _run_tool_calls(calls: list[dict], tool_client: ToolClient, search_par
 # --------------------------------------------------------------------------- clarify
 
 async def clarify(state: dict) -> dict:
-    """澄清轮：模型调用了内置控制工具（``ask_user`` 或 ``request_form``）⇒ 暂停等待用户，再带着答案继续。
+    """澄清轮：模型调用了内置控制工具 ⇒ 暂停等待用户决策，再带着答案继续。
 
     为什么必须是**独立节点**（不能塞进 tools 节点）
     -----------------------------------------------
@@ -653,38 +692,39 @@ async def clarify(state: dict) -> dict:
     所以这里只把内置控制调用交给本节点，且本节点**在做任何有副作用的动作之前就中断**，
     重跑成本恒为零。暂停态由 checkpointer 按 thread_id(=run_id) 落盘，恢复时取回。
 
-    两条控制链（ask_user / request_form）共用 interrupt/resume/checkpoint 底座，不新建状态机：
-    仅按工具类型选择归一化函数与 spec 形状。request_form 的 spec 带 ``kind="form"`` 标记，
-    供 facade 的 ``_frame_type`` 区分发 ``need_form`` 还是 ``need_clarification``。
-    ask_user 的 spec 维持历史形状（仅 ``question`` / ``suggested_options``），前端零改动。
+    三条控制链（ask_user / request_form / request_confirm）共用 interrupt/resume/checkpoint
+    底座，不新建状态机：仅按工具类型选择归一化函数与 spec 形状。request_form 的 spec 带
+    ``kind="form"``、request_confirm 带 ``kind="confirm"``，供 facade 的 ``_frame_type``
+    区分发哪一帧；ask_user 的 spec 维持历史形状（仅 ``question`` / ``suggested_options``），
+    前端零改动。
     """
     calls = state.get("pending_calls") or []
-    # 找出内置控制调用：ask_user 或 request_form（两种都走 interrupt 暂停）。二者互斥取首个。
-    ctrl_call = next((c for c in calls
-                      if ask_user_tool.is_ask_user(c.get("name"))
-                      or request_form_tool.is_request_form(c.get("name"))), None)
+    # 找出内置控制调用（三条链都是「命中即暂停」）。互斥取首个。
+    ctrl_call = next((c for c in calls if _is_control_call(c.get("name"))), None)
     if ctrl_call is None:                     # 正常不会发生（路由保证），兜底直接放行
         return {"pending_calls": calls}
 
     name = ctrl_call.get("name")
-    is_form = request_form_tool.is_request_form(name)
-    if is_form:
-        spec = request_form_tool.build_form_request(ctrl_call.get("arguments"))
+    chain = _control_chain(name)
+    args = ctrl_call.get("arguments")
+    if chain == "form":
+        spec = request_form_tool.build_form_request(args)
+    elif chain == "confirm":
+        spec = request_confirm_tool.build_confirm_request(args)
     else:
-        spec = ask_user_tool.build_clarification(ctrl_call.get("arguments"))
+        spec = ask_user_tool.build_clarification(args)
     if spec is None:
-        # 归一化失败（request_form 缺 form_code 等）：不当作有效内置调用，剔除后放行、不暂停。
-        # 避免把「无效控制调用」再喂回模型造成空转。
-        remaining = [c for c in calls
-                     if not ask_user_tool.is_ask_user(c.get("name"))
-                     and not request_form_tool.is_request_form(c.get("name"))]
-        return {"pending_calls": remaining}
+        # 归一化失败（request_form 缺 form_code、request_confirm 标题与描述全空等）：
+        # 不当作有效内置调用，剔除后放行、不暂停。避免把「无效控制调用」再喂回模型造成空转。
+        return {"pending_calls": _drop_control_calls(calls)}
 
     # —— 中断点之前：不做任何副作用（不调模型、不调工具、不发事件）。——
     # 暂停事件由 facade 在「观察到暂停」后统一发出，避免恢复重跑时重复发事件。
-    answer = interrupt(spec)                 # 首次执行：暂停于此；resume 后：返回用户的答案/回执
+    answer = interrupt(spec)                 # 首次执行：暂停于此；resume 后：返回用户的答案/回执/决策
 
     # —— 以下代码只在 resume 之后执行一次。——
+    # answer 的回填形状与调用契约逐字对齐（tools.py#build_* 产出什么形状，这里就回填什么形状）：
+    #   clarify → 标量；form → 回执对象；confirm → {"decision": true|false}
     messages = list(state.get("messages") or [])   # assistant 消息已由 agent 节点并入
     messages.append({
         "role": "tool",
@@ -692,18 +732,20 @@ async def clarify(state: dict) -> dict:
         "content": json.dumps({"ok": True, "data": {"answer": answer}}, ensure_ascii=False),
     })
     clarifications = list(state.get("clarifications") or [])
-    if is_form:
+    if chain == "form":
         # 表单回执是对象（{form_code, submission_id, status, data, receipt}），同样可 JSON 序列化。
         clarifications.append({"form_code": spec.get("form_code"), "answer": answer})
+    elif chain == "confirm":
+        # 确认是二值决策：answer 形如 {"decision": true} / {"decision": false}（取消也可为 null，
+        # 一律按「未确认」处理）。记下 title 便于事后追溯用户到底确认了什么。
+        clarifications.append({"confirm": spec.get("title"), "answer": answer})
     else:
         clarifications.append({"question": spec.get("question"), "answer": answer})
 
     # 本轮若还夹带了其它（非内置控制）调用，交回 tools 执行 —— 它们此前从未执行过，
-    # 不会重复；反之直接回到 agent，让模型带着答案继续。两种控制调用都需从余量里剔除。
-    remaining = [c for c in calls
-                if not ask_user_tool.is_ask_user(c.get("name"))
-                and not request_form_tool.is_request_form(c.get("name"))]
-    return {"messages": messages, "pending_calls": remaining, "clarifications": clarifications}
+    # 不会重复；反之直接回到 agent，让模型带着答案继续。
+    return {"messages": messages, "pending_calls": _drop_control_calls(calls),
+            "clarifications": clarifications}
 
 
 # --------------------------------------------------------------------------- finalize
@@ -757,19 +799,15 @@ def route_after_prepare(state: dict) -> str:
 
 
 def route_after_agent(state: dict) -> str:
-    """agent 之后：含 ask_user / request_form 且 HITL 已开 ⇒ 先澄清；否则有工具调用且未达上限 ⇒ 执行工具；否则收尾。
+    """agent 之后：含内置控制调用且 HITL 已开 ⇒ 先暂停取值；否则有工具调用且未达上限 ⇒ 执行工具；否则收尾。
 
-    两条内置控制链（ask_user / request_form）都走 ``clarify`` 节点。分支必须同时看开关：
-    关闭时模型本不该拿到这些工具，但若它（或因缓存/伪造）仍返回了同名调用，绝不能进
-    ``clarify`` —— 那里会 ``interrupt()``，而关闭态没有 checkpointer，会直接抛错。
+    三条内置控制链（ask_user / request_form / request_confirm）都走 ``clarify`` 节点。
+    分支必须同时看开关：关闭时模型本不该拿到这些工具，但若它（或因缓存/伪造）仍返回了同名调用，
+    绝不能进 ``clarify`` —— 那里会 ``interrupt()``，而关闭态没有 checkpointer，会直接抛错。
     开关必须是唯一权威。
     """
     calls = state.get("pending_calls") or []
-    if _hitl_enabled() and any(
-        ask_user_tool.is_ask_user(c.get("name"))
-        or request_form_tool.is_request_form(c.get("name"))
-        for c in calls
-    ):
+    if _hitl_enabled() and any(_is_control_call(c.get("name")) for c in calls):
         return "clarify"
     if calls and state.get("allow_tools"):
         return "tools"

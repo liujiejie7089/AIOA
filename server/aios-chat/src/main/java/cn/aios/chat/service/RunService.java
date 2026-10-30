@@ -93,6 +93,14 @@ public class RunService {
      */
     private static final String EVENT_NEED_FORM = "need_form";
     /**
+     * Agent 在「即将执行不可逆/有外部影响的动作」时补发的确认帧（SSE 末帧，之后本轮流挂起）。
+     * 与 need_clarification / need_form 一样复用 WAITING_INPUT 暂停语义：流末由 completeRun 据
+     * clarificationRef 置 WAITING_INPUT，不终结、不落库、不计费，等 /resume 回填决策。
+     * 差异：answer 是二值决策 {@code {"decision": true|false}}（见 resume 的 answer/decision 双键），
+     * 且本帧**原样转发**、不做补全 —— 确认卡没有数据库侧的字段定义，文案全部由 agent 归一化产出。
+     */
+    private static final String EVENT_NEED_CONFIRM = "need_confirm";
+    /**
      * 会话内跨数字人转交通知帧（SSE 前导帧）：在同一会话改绑数字人后、订阅 agent 之前下发，
      * 告知前端「这个会话现在由另一个数字人接待」，前端据此更新界面并把答案渲染出来。
      * 注意这是**通知帧**、不是暂停帧——流不被打断、不置 WAITING_INPUT、不要求用户重述。
@@ -1341,6 +1349,10 @@ public class RunService {
             if (!needFormHasError(outData)) {
                 clarificationRef.set(outData);
             }
+        } else if (EVENT_NEED_CONFIRM.equals(name)) {
+            // 确认暂停帧（request_confirm）：同样置暂停标记，否则流末会按 SUCCEEDED 收口，
+            // 用户点「确认」时 resume 会因状态不是 WAITING_INPUT 被拒（400）。
+            clarificationRef.set(data);
         } else if (EVENT_ERROR.equals(name)) {
             // Agent 流内错误帧（模型未配置/上游报错/流异常）：记录原因供流结束收口
             String code = readField(data, "code");

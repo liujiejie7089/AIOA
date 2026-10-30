@@ -518,6 +518,43 @@
   .clar-card .clar-picked{ color:var(--text-2); font-size:11.5px; margin-top:6px; }
   @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
 
+  /* ---------- HITL 确认卡（need_confirm）：气泡下方的「确认 / 取消」双按钮 ----------
+     与澄清卡同源：只用 :root 令牌、不写死色值，暗色/亮色两主题都跟着走。
+     契约冻结：类名 .confirm-card / .cf-title / .cf-desc / .confirm-row / .cbtn /
+     .cf-note / .busy 与属性 data-confirm / data-cf-ok / data-cf-cancel 不得改名，
+     验证脚本与 32b 节 JS 均按此断言。 */
+  .confirm-card{
+    width:100%; padding:var(--sp-3); border-radius:var(--r);
+    background:var(--surface-2); border:1px solid var(--border);
+    margin-top:var(--sp-2); box-shadow:var(--sh-1);
+  }
+  .confirm-card .cf-title{ font-size:12.5px; color:var(--text); font-weight:600; line-height:1.5; }
+  /* 描述是可选行：说了影响范围才给，没有就不占位（避免卡片留一块空白） */
+  .confirm-card .cf-desc{ font-size:11.5px; color:var(--text-2); line-height:1.6; margin-top:4px; }
+  .confirm-row{ display:flex; gap:8px; margin-top:var(--sp-2); }
+  .cbtn{
+    flex:1 1 0; min-width:0; min-height:36px; padding:0 10px;
+    border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); color:var(--text);
+    font-family:inherit; font-size:12.5px; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    transition:opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  }
+  .cbtn.confirm{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  /* danger：删除/覆盖类不可逆动作 —— 确认键转红，与「普通确认」在视觉上必须可区分 */
+  .confirm-card.danger .cbtn.confirm{ background:var(--red); border-color:var(--red); }
+  /* 禁用态（已决策 / 处理中）：连 hover 也不给，指针明示不可点，防重复提交的第二道闸 */
+  .cbtn:disabled{ opacity:.5; cursor:not-allowed; }
+  .cbtn:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  .confirm-card.done{ opacity:.92; }
+  .confirm-card.busy .cbtn{ cursor:progress; }
+  .confirm-card.busy .cbtn.confirm{ opacity:.75; }
+  .confirm-card .cf-note{ font-size:11.5px; line-height:1.5; margin-top:6px; }
+  .confirm-card .cf-note.ok{ color:var(--text-2); }
+  .confirm-card .cf-note.err{ color:var(--red); }
+  /* 操作性提示（已取消 / 执行失败等）：与 AI 正文分色分容器，不混进答案文本 */
+  .sys-note{ font-size:11.5px; line-height:1.5; color:var(--text-2); margin-top:6px; }
+
   .param-card{background:var(--surface);border:1px solid var(--blue);border-radius:12px;padding:11px 12px;max-width:88%;font-size:12px}
   .param-card .pc-title{font-size:12.5px;font-weight:700;margin-bottom:9px;display:flex;align-items:center;gap:6px}
   .form-item{margin-bottom:8px}
@@ -3159,6 +3196,10 @@ const API = {
           // 与 need_clarification 同属暂停帧（暂停时不发 run.completed），选完即 return，
           // 立刻把表单交出去，不等连接自然关闭。前端只渲染、不做取数决策（Java 补全 fields）。
           const p = safeJson(ev.data); if(h.onForm) h.onForm(p); return;
+        }else if(ev.event === 'need_confirm'){
+          // 确认暂停帧（request_confirm）：模型要用户对某个不可逆动作做二选一决策。
+          // 同属暂停帧 ⇒ 后端已把 run 置 WAITING_INPUT，本轮 SSE 到此为止，处理完即 return。
+          const p = safeJson(ev.data); if(p && h.onConfirm) h.onConfirm(p); return;
         }else if(ev.event === 'worker.handoff'){
           // 会话内数字人自动转交：后端在同一会话内把 conversation.worker_id 改绑到新数字员工，
           // 并用同一条已落库的用户消息继续跑；本帧**不是**暂停帧（后续回答仍在该流里到达），
@@ -6346,6 +6387,8 @@ async function send(){
   let text = '';
   let clar = null;
   let form = null;            // need_form 暂停帧：模型要结构化数据才能继续
+  let cfm = null;             // need_confirm 暂停帧：模型要用户对某个动作做「确认 / 取消」二选一
+  let cancelled = false;      // 用户在确认卡上点了「取消」：收口文案要说「已取消」，不能说「没生成内容」
   const h = {
     onDelta: t => {
       const tp = bubble.querySelector('.typing'); if(tp) tp.remove();
@@ -6375,7 +6418,8 @@ async function send(){
       bubble.style.color = 'var(--red)';
     },
     onClarification: p => { clar = p; },
-    onForm: p => { form = p; }
+    onForm: p => { form = p; },
+    onConfirm: p => { cfm = p; }
   };
   try{
     const convId = await API.ensureConversation();
@@ -6384,10 +6428,12 @@ async function send(){
     state.runId = run.id || run.runId;
     pendingFiles = []; renderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(state.runId, h);
-    // 多轮回填：resume 仍可能再次 need_clarification / need_form，故用 while 收口到暂停结束。
-    // clar 是标量回填（ask_user），form 是结构化回填（need_form）：两形态同此循环，行为一致。
-    while(clar || form){
-      // 等待用户选择/填表期间：若气泡还停在「打字中」占位，换成明确的等待提示，别让用户对着三个点发呆
+    // 多轮回填：resume 仍可能再次暂停（need_clarification / need_form / need_confirm），
+    // 故用 while 收口到暂停结束。clar 是标量回填，form 是结构化回填，cfm 是二值决策回填；
+    // 两形态同此循环，行为一致。
+    while(clar || form || cfm){
+      // 等待用户选择/填表/决策期间：若气泡还停在「打字中」占位，换成明确的等待提示，
+      // 别让用户对着三个点发呆
       const tp = bubble.querySelector('.typing');
       if(tp) tp.textContent = '等待你的选择…';
       if(clar){
@@ -6398,7 +6444,7 @@ async function send(){
         const wait = bubble.querySelector('.typing');
         if(wait && wait.textContent === '等待你的选择…') wait.remove();
         await API.resumeStream(state.runId, pick.value, h);   // 标量走原路
-      } else {
+      } else if(form){
         const fc = form.form_code;                 // 先记下 code，随后把 form 置空
         const res = await mountFormCard(bubble, form);
         form = null;
@@ -6410,10 +6456,33 @@ async function send(){
         // 对象走新路：把 submission 信息作为 answer 续跑同一 run
         await API.resumeStream(state.runId,
           {form_code: fc, submission_id: sub.submissionId, status: sub.status, data: res.data, receipt: sub.receipt}, h);
+      } else {
+        // 确认卡：网络调用在 runner 里发起 —— 「加载中」必须覆盖整段 resume 往返，
+        // 否则按钮在请求还没回来时就解禁了，用户能连点两次把同一个动作执行两遍。
+        // 取消也走 resume（decision:false）：让模型知道不必执行，并有机会回一句确认文案。
+        const q = cfm; cfm = null;
+        const textBefore = text.length;
+        const wait2 = bubble.querySelector('.typing');
+        if(wait2 && wait2.textContent === '等待你的选择…') wait2.remove();
+        const outcome = await mountConfirmCard(bubble, q, function(decision){
+          return API.resumeStream(state.runId, {decision: decision}, h);
+        });
+        if(!outcome){ break; }                      // 停止生成：卡片已被收掉，就地收口
+        if(!outcome.decision){                      // 取消：动作不执行
+          cancelled = true;
+          // 模型若在续跑里已经回了一句「已取消」，就不再叠一行系统提示（避免同一句话出现两遍）
+          if(text.length === textBefore) appendSysNote(bubble, '已取消，未执行任何操作。');
+          break;
+        }
+        // 确认：续跑已在 runner 内跑完，后续 delta 已追加进同一气泡；
+        // 若这一轮又来暂停帧（还要再问一次/再确认一次），回到 while 顶部接着处理。
       }
     }
     state.lastAnswer = text;
-    if(!text) tx.textContent = '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
+    if(!text){
+      tx.textContent = cancelled ? '已取消，未执行任何操作。'
+                                 : '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
+    }
     // 回答统一做层级化突出（标题 / 列表 / 重点 / 数字），不再只限数字员工会话：
     // 默认助手与租户专家的回答同样是长文，纯文本铺开一样难读。
     else { bubble.classList.add('ans'); tx.innerHTML = formatAnswer(text); }
@@ -6729,6 +6798,157 @@ function mountClarCard(host, p){
 /* 全局：停止生成 / 切走形态时，把悬着的未决澄清卡以 null 收掉（幂等）。 */
 function cancelClarCard(){
   if(typeof clarPendingResolve === 'function'){ const fn = clarPendingResolve; clarPendingResolve = null; fn(); }
+}
+
+/* ============================================================================
+   32b. HITL 确认链（need_confirm 暂停帧）
+   ----------------------------------------------------------------------------
+   模型调用 request_confirm 后，Agent 内核 interrupt 并补发 need_confirm 帧：
+     { kind:"confirm", title, description, confirm_label, cancel_label, danger }
+   前端在该条 AI 气泡下方渲染一张**双按钮**确认卡：点「确认」= 执行对应操作并把结果
+   追加进这条对话，点「取消」= 中止操作。用户全程不用再敲字。
+
+   与澄清卡（.clar-card）的区别，别互相复用：
+     · 澄清是**单选**，先选中一个选项再点一次「确认」提交（两步、一个提交按钮）；
+     · 确认是**二值**，两个按钮同时可见、点哪个立即生效（一步、两个按钮）。
+
+   状态机（对应需求的「防重复提交 / 加载中 / 失败」）：
+     待决策 → (点击) → 处理中：两键立即 disabled + 确认键文案改「处理中…」
+             → 成功：追加已确认/已取消标注、两键保持禁用（永久不可再点）
+             → 失败：恢复两键可点 + 红色错误行，允许原地重试（不丢卡片）
+   网络调用（resume）不在本模块发起 —— 由调用方以 runner 回调注入。理由：
+   resume 需要 runId 与整套流处理器 h，那些是 send/oaSend 的私有变量；把网络塞进卡里
+   会让卡片依赖全局状态，也让「加载中」的边界画错（加载中必须覆盖网络往返）。
+   ============================================================================ */
+/* DOM/CSS 契约冻结：类名与属性必须与验证脚本断言一字不差。 */
+function confirmCardHtml(p){
+  const title = (p && p.title != null && String(p.title).trim()) ? String(p.title).trim() : '请确认是否继续';
+  const desc  = (p && p.description != null) ? String(p.description).trim() : '';
+  const okLab = (p && p.confirm_label != null && String(p.confirm_label).trim())
+                  ? String(p.confirm_label).trim() : '确认';
+  const noLab = (p && p.cancel_label != null && String(p.cancel_label).trim())
+                  ? String(p.cancel_label).trim() : '取消';
+  const danger = !!(p && p.danger);
+    /* 取消在左、确认在右（与系统对话框一致的肌肉记忆顺序）。
+       注意：这里的 `+` 之间不能夹注释 —— `'a' + /*c*\/ + 'b'` 会被解析成一元加，`'a' + +'b'` ⇒ NaN。 */
+    const row = '<div class="confirm-row">' +
+      '<button type="button" class="cbtn cancel" data-cf-cancel="1">' + esc(noLab) + '</button>' +
+      '<button type="button" class="cbtn confirm' + (danger ? ' danger' : '') + '" data-cf-ok="1">' + esc(okLab) + '</button>' +
+    '</div>';
+  let html = '<div class="confirm-card' + (danger ? ' danger' : '') + '" data-confirm="1">' +
+    '<div class="cf-title">' + esc(title) + '</div>' +
+    (desc ? '<div class="cf-desc">' + esc(desc) + '</div>' : '') +
+    row +
+  '</div>';
+  return html;
+}
+
+/* 当前未决的确认卡 abandon：停止生成时把卡片以「未决策」收掉（幂等）。 */
+var confirmPendingResolve = null;
+
+/* 把确认卡挂到 host（气泡元素）尾部，绑定交互，返回 Promise。
+   runner(decision) 必须由调用方提供，返回 Promise：成功 = 已续跑并处理完流；失败 = 抛错。
+   resolve 值为 {decision:true} / {decision:false}；用户放弃（停止生成）则 resolve(null)。 */
+function mountConfirmCard(host, p, runner){
+  return new Promise(function(resolve){
+    const wrap = document.createElement('div');
+    wrap.innerHTML = confirmCardHtml(p);
+    const card = wrap.firstElementChild;    // .confirm-card
+    if(!card){ resolve(null); return; }
+    host.appendChild(card);
+
+    const okBtn = card.querySelector('[data-cf-ok]');
+    const cancelBtn = card.querySelector('[data-cf-cancel]');
+    const okLabel = okBtn ? okBtn.textContent : '确认';
+    const cancelLabel = cancelBtn ? cancelBtn.textContent : '取消';
+    let busy = false;
+
+    function note(cls, text){
+      const old = card.querySelector('.cf-note');
+      if(old) old.parentNode.removeChild(old);
+      const el = document.createElement('div');
+      el.className = 'cf-note ' + cls;
+      el.textContent = text;
+      card.appendChild(el);
+    }
+    function freeze(text){
+      card.classList.add('done');
+      card.classList.remove('busy');
+      if(okBtn) okBtn.disabled = true;
+      if(cancelBtn) cancelBtn.disabled = true;
+      note('ok', text);
+    }
+    /* 决策入口：确认 / 取消共用。busy 是第一道闸（重入直接返回），
+       紧接着 disabled 第二道闸（即使 busy 被某条路径漏掉，按钮也点不动）。 */
+    function run(decision){
+      if(busy) return;
+      busy = true;
+      card.classList.add('busy');
+      if(okBtn){ okBtn.disabled = true; okBtn.textContent = decision ? '处理中…' : '正在取消…'; }
+      if(cancelBtn) cancelBtn.disabled = true;
+      // runner 缺失（调用方漏传）时不能把用户卡死：直接按「未决策」收掉并如实标注。
+      if(typeof runner !== 'function'){
+        note('err', '当前页面无法执行该操作（缺少续跑通道），请重新发起一轮对话。');
+        card.classList.remove('busy');
+        busy = false;
+        if(okBtn){ okBtn.textContent = okLabel; okBtn.disabled = true; }
+        if(cancelBtn) cancelBtn.disabled = true;
+        return;
+      }
+      Promise.resolve()
+        .then(function(){ return runner(decision); })
+        .then(function(){
+          freeze(decision ? ('已确认 · ' + okLabel) : ('已取消 · ' + cancelLabel));
+          confirmPendingResolve = null;
+          resolve({decision: decision});
+        })
+        .catch(function(err){
+          // 失败：必须把按钮还给用户（他不点第二次就永远回不到可操作态），并给出可读原因
+          busy = false;
+          card.classList.remove('busy');
+          if(okBtn){ okBtn.disabled = false; okBtn.textContent = okLabel; }
+          if(cancelBtn) cancelBtn.disabled = false;
+          note('err', '操作失败：' + ((err && err.message) ? err.message : '请稍后再试') + '（可再次点击重试）');
+        });
+    }
+    if(okBtn) okBtn.addEventListener('click', function(){ run(true); });
+    if(cancelBtn) cancelBtn.addEventListener('click', function(){ run(false); });
+
+    confirmPendingResolve = function(){
+      card.classList.add('done');
+      if(okBtn) okBtn.disabled = true;
+      if(cancelBtn) cancelBtn.disabled = true;
+      note('ok', '已放弃决策（生成已停止）');
+      confirmPendingResolve = null;
+      resolve(null);
+    };
+  });
+}
+
+/* 停止生成时连确认卡一起收掉：只收「还没点过」的卡（点了就被 busy/disabled 锁住，
+   其 Promise 归 runner 负责，不会出现两处都 resolve 的双解）。 */
+function cancelConfirmCard(){
+  if(typeof confirmPendingResolve === 'function'){
+    const fn = confirmPendingResolve; confirmPendingResolve = null; fn();
+  }
+}
+
+/* 在气泡尾部追加一行「操作性提示」（已取消 / 失败补充等），格调低于 AI 正文。
+   为什么不能塞进 .tx：确认后续跑回来时 .tx 会被 formatAnswer(text) 整套重写 innerHTML，
+   写进 .tx 的提示会被静默冲掉（用户点了取消却什么都没看到）。独立容器不受正文重渲染影响。 */
+function appendSysNote(host, text){
+  if(!host) return null;
+  let wrap = host.querySelector('.sys-notes');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.className = 'sys-notes';
+    host.appendChild(wrap);
+  }
+  const el = document.createElement('div');
+  el.className = 'sys-note';
+  el.textContent = text;
+  wrap.appendChild(el);
+  return el;
 }
 
 /* ============================================================================
@@ -10043,6 +10263,8 @@ async function oaSend(){
   var stopped = false;
   var clar = null;
   var form = null;            // need_form 暂停帧：与经典形态共用同一套渲染/挂载/续跑口径
+  var cfm = null;             // need_confirm 暂停帧：与经典形态共用同一套渲染/挂载/续跑口径
+  var cancelled = false;      // 用户在确认卡上点了「取消」：收口文案要说「已取消」
   var handoff = null;         // worker.handoff 帧：会话内自动转交（只改当前数字人、不换会话）
   var h = {
     onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
@@ -10066,6 +10288,7 @@ async function oaSend(){
     },
     onClarification: function(p){ clar = p; },
     onForm: function(p){ form = p; },
+    onConfirm: function(p){ cfm = p; },
     // 会话内数字人自动转交：每收到一帧即时应用（后续 message.delta 要显示在新数字人名下）。
     // 不回退到 while 收口处重放——幂等已保证安全。
     onHandoff: function(p){ handoff = p; oaApplyHandoff(p); }
@@ -10083,9 +10306,10 @@ async function oaSend(){
     S.controller = null;
     S.pendingFiles = []; oaRenderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
     await API.stream(runId, h);
-    // 多轮回填：resume 仍可能再次 need_clarification / need_form，故用 while 收口到暂停结束。
-    // clar 是标量回填，form 是结构化回填；与经典形态同此循环，行为一致。
-    while(clar || form){
+    // 多轮回填：resume 仍可能再次暂停（need_clarification / need_form / need_confirm），
+    // 故用 while 收口到暂停结束。clar 是标量回填，form 是结构化回填，cfm 是二值决策回填；
+    // 与经典形态同此循环，行为一致。
+    while(clar || form || cfm){
       var tp = bubble.querySelector('.typing');
       if(tp) tp.textContent = '等待你的选择…';
       if(clar){
@@ -10095,7 +10319,7 @@ async function oaSend(){
         var wait = bubble.querySelector('.typing');
         if(wait && wait.textContent === '等待你的选择…') wait.remove();
         await API.resumeStream(runId, pick.value, h);   // 标量走原路
-      } else {
+      } else if(form){
         var fc = form.form_code;                     // 先记下 code，随后把 form 置空
         var fres = await mountFormCard(bubble, form);
         form = null;
@@ -10107,9 +10331,28 @@ async function oaSend(){
         // 对象走新路：把 submission 信息作为 answer 续跑同一 run
         await API.resumeStream(runId,
           {form_code: fc, submission_id: sub.submissionId, status: sub.status, data: fres.data, receipt: sub.receipt}, h);
+      } else {
+        // 确认卡（与经典形态逐字同口径）：resume 在 runner 里发起，加载中覆盖整段往返。
+        var q = cfm; cfm = null;
+        var textBefore = text.length;
+        var wait3 = bubble.querySelector('.typing');
+        if(wait3 && wait3.textContent === '等待你的选择…') wait3.remove();
+        var resCf = await mountConfirmCard(bubble, q, function(decision){
+          return API.resumeStream(runId, {decision: decision}, h);
+        });
+        if(!resCf) break;                            // 停止生成：就地收口
+        if(!resCf.decision){                         // 取消：动作不执行
+          cancelled = true;
+          if(text.length === textBefore) appendSysNote(bubble, '已取消，未执行任何操作。');
+          break;
+        }
+        // 确认：结果已由续跑追加进同一气泡；若又来暂停帧，回到 while 顶部接着处理。
       }
     }
-    if(!text) tx.textContent = '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
+    if(!text){
+      tx.textContent = cancelled ? '已取消，未执行任何操作。'
+                                 : '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
+    }
     else{
       bubble.classList.add('ans');
       tx.innerHTML = (typeof formatAnswer === 'function' ? formatAnswer(text) : txt(text));
@@ -10140,8 +10383,10 @@ async function oaSend(){
 
 async function oaStop(){
   if(!S.busy) return;
-  // 停止生成：先把可能悬着的未决澄清卡以 null 收掉，否则卡片永远悬着、S.busy 永不释放
+  // 停止生成：先把可能悬着的未决卡片（澄清卡 / 确认卡）以 null 收掉，
+  // 否则它们的 await 永不 settle、S.busy 永不释放（吃掉整个输入栏）。
   cancelClarCard();
+  cancelConfirmCard();
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }

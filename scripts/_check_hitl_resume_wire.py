@@ -28,13 +28,22 @@ RUN_CTRL = os.path.join(REPO, "server", "aios-chat", "src", "main", "java",
                         "cn", "aios", "chat", "controller", "RunController.java")
 
 fails = []
+oks = 0
 
 
 def chk(name, ok, detail=""):
+    global oks
     print("[%s] %s%s" % ("OK  " if ok else "FAIL", name,
                          (" — " + str(detail)) if detail else ""))
-    if not ok:
+    if ok:
+        oks += 1
+    else:
         fails.append(name)
+
+
+def oks_total():
+    """总判据数 —— 加新判据时不用再改这里硬编码的总数（往年改漏过：加了一条却仍报 7/7）。"""
+    return oks + len(fails)
 
 
 def read(path):
@@ -82,6 +91,29 @@ def main():
     # ---- R2：RunService.java 含 EVENT_NEED_CLARIFICATION = "need_clarification" ----
     r2 = 'private static final String EVENT_NEED_CLARIFICATION = "need_clarification";' in run_svc
     chk("R2 RunService.java 定义 EVENT_NEED_CLARIFICATION = \"need_clarification\"", r2)
+
+    # ---- R8/R9/R10：第三条控制链 request_confirm 的 Java 接线（2026-10-31）----
+    # 漏掉 R9 的表现极隐蔽：new_confirm 帧能正常转发到前端（卡片会弹出来），
+    # 但 clarificationRef 没置位 ⇒ 流末按 SUCCEEDED 收口 ⇒ 用户点「确认」时
+    # /resume 因状态不是 WAITING_INPUT 被 400 拒掉，界面显示「操作失败」而查无可查。
+    r8 = 'private static final String EVENT_NEED_CONFIRM = "need_confirm";' in run_svc
+    chk("R8 RunService.java 定义 EVENT_NEED_CONFIRM = \"need_confirm\"", r8)
+
+    fw_body = method_body(run_svc, "private void forward(")
+    if fw_body is not None:
+        ci = fw_body.find("EVENT_NEED_CONFIRM.equals(name)")
+        seti = fw_body.find("clarificationRef.set(data)", ci)
+        r9 = ci != -1 and seti != -1
+        detail = "need_confirm_idx=%s set_idx=%s" % (ci, seti)
+    else:
+        r9 = False
+        detail = "forward 方法未找到"
+    chk("R9 forward 里 need_confirm 置 clarificationRef（否则 resume 被 400 拒）", r9, detail)
+
+    rs_body2 = method_body(run_svc, "public SseEmitter resume(")
+    r10 = (rs_body2 is not None) and ('body.get("decision")' in rs_body2)
+    chk("R10 resume 接受 decision 键（确认链回填 {decision:true|false} 的落点）", r10,
+        "present=%s" % (r10))
 
     # ---- R3：subscribe 对 WAITING_INPUT 早于 replay 守卫 ----
     count = run_svc.count("STATUS_WAITING_INPUT")
@@ -153,7 +185,7 @@ def main():
         % (not after_remove), r7,
         "去掉后R1通过=%s（期望 False）" % after_remove)
 
-    total = 7
+    total = oks_total()
     print("\n通过 %d/%d" % (total - len(fails), total))
     if fails:
         print("失败项：")
