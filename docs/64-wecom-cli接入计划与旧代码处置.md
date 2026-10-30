@@ -186,4 +186,96 @@ mcp-hub :8099（保留）
 
 - `docs/63`（按用户授权方案）：**仍然成立的是「三层凭据模型」「manifest 闸门」「多用户隔离 5 必做」**；
   被取代的是「A 模式只能靠备案域名」与「`snsapi_privateinfo` 具体接口」。
-- 本文不替代 `docs/62` 的连接器体系设计，只是在它下面新增一个 `CLI_QR` 类型的连接器。
+- 本文不替代 `docs/62` 的连接器体系设计，只是在它下面新增一个 `QR` 类型的连接器。
+
+## 九、实施记录（2026-10-30：连接器入口 + 扫码绑定 + 数字人读数 已打通）
+
+本节把上面的「计划」升级为「已实装」，并记下实施时发现、计划阶段没料到的四件事。
+判据一律回第二源（磁盘 / 库 / 真实 MCP 调用），不看接口自述。
+
+### 9.1 落地清单
+
+| 层 | 文件 | 作用 |
+|---|---|---|
+| hub 数据面 | `mcp-hub/mcp_hub/wecom_cli/{__init__,profiles,runner,auth,catalog,identity,server,admin_api}.py` | 按目录隔离身份；5 个只读工具；`/api/v1/wecom_cli/{status,qr,bind,disconnect}` |
+| hub 路由 | `mcp_hub/app.py` | `/api/v1/wecom_cli` 必须**排在** `/api/v1/wecom` 之前（前缀包含关系） |
+| hub 注册 | `connectors/manifest.py`（新增 `AUTH_QR`）、`connectors/registry.py` | 注册 `wecom_cli` manifest，`server_factory` 指向原生 FastMCP |
+| Java 目录 | `V102__wecom_cli_connector.sql` | `connector_def`（`auth_mode='QR'`, `config_keys='[]'`）+ `mcp_server`（**trusted=0**） |
+| Java 网关 | `connector/service/WeComCliGateway.java` | `/api/v1/wecom_cli/**` 专用；契约是 `{code,message,data}`，**不能**复用凭据网关 |
+| Java 控制面 | `connector/controller/ConnectorController.java` | `start` 对 QR 回 `mode=QR`；新增 `POST /{code}/qr`、`GET /{code}/qr-status`、`POST /{code}/qr-bind`；`disconnect` 对 QR 先删 hub 目录再改库 |
+| Java 实体 | `connector/entity/ConnectorDef.java` | `AUTH_MODE_QR` |
+| H5 | `user-client/index.html`（**不是** `_oa_app.js`） | `openConnector` 增 QR 分支 + `openQrModal`（出图 / 轮询 / bind）+ `.oa-qr-*` 样式 |
+| 启动 | `start-all.sh` | `unset SERVER__PORT` + 显式 `--server.port=8080`；WECOM_MOCK=1 时给共享授权目录兜底 |
+| 哨兵 | `scripts/_verify_wecom_cli.py`（15 项，在线）、`scripts/_verify_oa_qr_modal.py`（10 项，离线 UI） | 见 9.4 |
+
+### 9.2 计划阶段没料到、实施时必须先修的四个坑
+
+1. **`credentials.enc` 的层级**（最致命）。实测：CLI 的 `credentials.enc`、`.encryption_key`、`cache/`
+   **直接**落在 `WECOM_CLI_CONFIG_DIR` 下，CLI 不会自己再套一层 `personal/`。
+   证据：变量指向空目录 → `unauthorized` 且目录里什么都不生成；指向 WorkBuddy 自己的
+   `.../wecom-cli/personal` → `authorized`；指向它的上一级 → 又变 `unauthorized`。
+   ⇒ 判据若写成 `<base>/personal/credentials.enc` 而 CLI 目录是 `<base>`，现象就是
+   **「扫码成功了，但系统一直说未绑定」**。落地方案：`profiles.cli_dir(base)` 单点决定，
+   并兼容「调用方直接给了 CLI 目录」（共享 profile 就是这种），见 9.1 的哨兵 S2。
+2. **ASGI helper 忘 `await`**。`def _ok(...): return _send_json(...)` 这种写法返回的是协程，
+   `return _ok(...)` 既不 await 也没人消费 ⇒ uvicorn 报
+   `ASGI callable returned without starting response` + 客户端 500，**但业务逻辑已经跑完了**
+   （实测库里已 CONNECTED、接口却回 500，极易误判成写库失败）。helper 必须是 `async def` 且调用处 `await`。
+3. **`SERVER__PORT` 劫持 Spring 端口**。Spring 宽松绑定把环境变量 `SERVER__PORT`（双下划线→点）
+   认成 `server.port`。从工作台/IDE 终端启动时该变量常被注入成临时端口（实测 61302），
+   而那个端口已被宿主进程占用 ⇒ 后端启动失败，报的却是与 8080 毫无关系的
+   「Port 61302 was already in use」。`start-all.sh` 里已 `unset` 并显式 `--server.port=8080`。
+4. **`_oa_app.js` 不是生效文件**。`user-client/index.html`（Oct 28，673KB）才是自包含产物，
+   `_oa_app.js`（Oct 21，164KB）没有被打包引用。改错文件的症状是「改了但页面没变」。
+   **改 H5 一律改 `index.html`**。
+
+### 9.3 产品流程（对应用户口径：必须先在连接器里选企业微信并授权）
+
+```
+连接器面板「企业微信（扫码）」→ 连接
+  → POST /v1/connectors/wecom_cli/connect/start   → {mode:"QR"}
+  → POST /v1/connectors/wecom_cli/qr              → {qr:"data:image/png;base64,…"}（阻塞 ≤20s 等出图）
+  → 手机企业微信扫码
+  → GET  /v1/connectors/wecom_cli/qr-status       → {authorized:true, accountLabel}（前端每 2s 轮询）
+  → POST /v1/connectors/wecom_cli/qr-bind         → Java 自己写 CONNECTED（不依赖服务令牌回写）
+  → 下一轮 /api/v1/mcp/manifest 放行 → 模型手里出现 mcp__wecom_cli__*
+```
+
+**连接态由 Java 自己落库**，不靠 hub 用服务令牌回写：hub 已确认 `bound=true`（读的是 CLI 真实授权
+状态），Java 据此写 CONNECTED 是可信的；反过来依赖 `AIOS_SERVICE_TOKEN_SECRET` 会在
+「开发环境没配密钥」时出现「扫码成功、界面未连接、数字人没工具」——用户完全无法自查。
+
+### 9.4 验收数字（2026-10-30 全部实跑）
+
+| 套件 | 结果 |
+|---|---|
+| `_verify_wecom_cli.py`（新） | **15/15** |
+| `_verify_oa_qr_modal.py`（新） | **10/10** |
+| `_verify_connectors.py` | 19/19（C1 计数 3→4） |
+| `_verify_mcp_registry.py` | 13/13（M1 期望表加 `wecom_cli:5`） |
+| `_verify_connector_state_sync.py` | 7/7 |
+| `_verify_agent_mcp_wiring.py` | 6/6 |
+| `_verify_mcp_hub.py` / `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | 全通过 / 17/17 / 19/19 |
+
+真实对话（MiniMax-Text-01，zhangsan 账号，绑定后）：
+
+```
+问：我绑定的企业微信是哪个账号？我叫什么名字？
+  [tool.call] mcp__wecom_cli__whoami {}
+  [tool.result] {"bound": true, "userName": "刘洋", "botName": "刘洋的机器人"}
+答：我绑定的企业微信账号是刘洋，机器人名称是"刘洋的机器人"。
+
+问：用企业微信通讯录查一下「刘洋」在哪个部门？
+  [tool.call] mcp__wecom_cli__contact_search {"keywords":"刘洋"}
+答：刘洋在成都易构部门。
+```
+
+### 9.5 仍然未做 / 需注意
+
+- **一 Bot 能否挂多真人（原 P0 Spike）仍未验**：本地只有一个真机授权，无法在单个 hub 上造第二个
+  真实扫码。当前 dev 用 `AIOS_WECOM_CLI_SHARED_PROFILE` 让所有 AIOS 用户共用同一份授权
+  （`start-all.sh` 仅在 `WECOM_MOCK=1` 时给默认值）。**生产必须清空该变量**，否则等于把一个人的
+  企微数据串给所有账号。这条是本次唯一「逻辑上通了、物理上没验」的点。
+- 只开放 5 个只读工具。写操作（发消息/建待办/发邮件）的权限边界（F5）未实测，故未开放。
+- 旧 A 模式（`wechat_work` 的 `snsapi_privateinfo` 链路）按 §五 的清单**尚未物理删除**：
+  先让 `wecom_cli` 在真机多用户环境跑通再删，避免两边都没了。

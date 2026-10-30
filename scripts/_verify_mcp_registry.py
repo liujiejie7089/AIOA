@@ -62,7 +62,7 @@ EXPECT_REQUIRED = {
 FORBIDDEN_KEY_SUBSTR = ("credential", "authcode", "corpsecret", "secret", "password", "enc")
 # 内置服务器 → 期望工具数。**不是**写死的历史值，而是「hub 实装数」的镜像；
 # M13 会拿它跟 hub 现报的数字逐个比对，两边不一致就红（防止只改一处）。
-EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 13, "wecom_group": 2}
+EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 13, "wecom_group": 2, "wecom_cli": 5}
 DEFAULT_HUB = "http://127.0.0.1:8099"
 MYSQL = "D:/dev/mysql/mysql-8.4.10-winx64/bin/mysql.exe"  # 注意用盘符式路径：
 # Git Bash 的 /d/... 在 Python os.path.exists 下不成立（2026-10-20 踩过，导致 M11 假失败）。
@@ -180,7 +180,7 @@ def run_assertions(base, hub, token):
              and c not in EXPECT_TOOL_COUNT]
     if extra:
         bad.append("多出内置服务器 %s（请同步本脚本 EXPECT_TOOL_COUNT）" % extra)
-    rec("M1 清单：3 个内置服务器、默认不可信、目录 6/13/2", st == 200 and not bad,
+    rec("M1 清单：4 个内置服务器、默认不可信、目录 6/13/2/5", st == 200 and not bad,
         "HTTP=%s 偏差=%s" % (st, bad or "无"))
 
     # ---------- M12 凭据不外泄（先做，避免后面状态变化影响） ----------

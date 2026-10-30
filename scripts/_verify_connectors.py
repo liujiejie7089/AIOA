@@ -127,9 +127,11 @@ def main():
     d = jload(raw) or {}
     items = d.get("data") or []
     codes = sorted(i.get("code") for i in items)
-    # wecom_group 是 2026-10-30 新增的第三个内置连接器（零门槛通道，见 docs/62 §5.7）
-    rec("C1 连接器目录 = 3 个", st == 200 and d.get("code") == 0
-        and codes == ["qq_mail", "wechat_work", "wecom_group"],
+    # wecom_group 是 2026-10-30 新增的第三个内置连接器（零门槛通道，见 docs/62 §5.7）；
+    # wecom_cli 是 2026-10-30 新增的第四个（扫码绑定，见 docs/64）。清单写死是刻意的：
+    # 多一个/少一个都要人工确认为「有意的接入」，不允许悄悄漂移。
+    rec("C1 连接器目录 = 4 个", st == 200 and d.get("code") == 0
+        and codes == ["qq_mail", "wechat_work", "wecom_cli", "wecom_group"],
         "HTTP=%s code=%s codes=%s" % (st, d.get("code"), codes))
 
     by_code = {i.get("code"): i for i in items}

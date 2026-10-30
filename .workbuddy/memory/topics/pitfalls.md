@@ -1138,3 +1138,21 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
 - `.workbuddy/memory/`、`.workbuddy/artifacts/*.md|*.html|*.json`（已入库交付文档）
 - `scripts/_fullsystem_h5_home.png`（docs/20 引用）
 - 生成物目录（可删可重建）：`agent/.venv`、`*/target`、`*/node_modules`、`*/dist`
+
+## 2026-10-30 · 企微扫码连接器（wecom_cli）四个坑
+
+1. **CLI 的 credentials.enc 直接落在 `WECOM_CLI_CONFIG_DIR` 下**，CLI 不会自己再套 `personal/`。
+   实测：空目录 → `unauthorized`（且不生成任何文件）；指向 `…/wecom-cli/personal` → `authorized`；
+   指向它的上一级 → 又 `unauthorized`。判据写多一层 ⇒ **扫码成功但永远判未绑定**。
+   落点：`profiles.cli_dir()` 单点决定，并兼容「调用方直接给 CLI 目录」（共享 profile 就是这种）。
+2. **ASGI helper 必须是 `async def` 且调用处 `await`**。`def _ok(...): return _send_json(...)`
+   返回协程，`return _ok(...)` 既不 await 也没人消费 ⇒ uvicorn
+   `ASGI callable returned without starting response` + HTTP 500，**但业务已跑完**
+   （库里已 CONNECTED，接口却 500 —— 极易误判成写库失败）。
+3. **`SERVER__PORT` 劫持 Spring 端口**。宽松绑定把 `SERVER__PORT` 认成 `server.port`；
+   工作台/IDE 终端会注入成临时端口（实测 61302，已被宿主占用）⇒ 启动失败，报
+   「Port 61302 was already in use」，与 8080 毫无关系。`start-all.sh` 已 `unset` + 显式 `--server.port=8080`。
+4. **H5 生效文件是 `user-client/index.html`**（自包含 673KB），`_oa_app.js`（164KB）没被任何
+   `<script src>` 引用。改错文件的症状是「改了但页面没变」。另：`refreshConnectors`/`openConnector`
+   在页面里是闭包内块级作用域（`typeof refreshConnectors === 'undefined'`），只有 `API`/`oaBoot`/`oaState`
+   挂到 window ⇒ Playwright 不能直调，必须走 UI 点击驱动重渲染。

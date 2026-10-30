@@ -1722,6 +1722,16 @@
 .notif-modal.oa-dlg .oa-conn-form .oa-ef-row{display:flex;flex-direction:column;gap:6px}
 .notif-modal.oa-dlg .oa-conn-form .oa-ef-row > span{font-size:11.5px;font-weight:600;color:var(--text-2)}
 
+/* QR 扫码弹层（auth_mode=QR，企业微信）：
+   二维码必须是「白底 + 留白」，否则深色主题下会扫不出来 —— 所以这里显式给 #fff，
+   不用 var(--surface)，也不跟随主题。尺寸 200px 是企微 App 识别率与弹层高度的折中。 */
+.notif-modal.oa-dlg .oa-qr-wrap{display:flex;align-items:center;justify-content:center;
+  min-height:200px;padding:12px;border-radius:12px;background:#fff;
+  border:1px solid var(--line, rgba(0,0,0,.08))}
+.notif-modal.oa-dlg .oa-qr-img{display:block;width:200px;height:200px;image-rendering:pixelated}
+.notif-modal.oa-dlg .oa-qr-tip{font-size:11.5px;color:#6b7280;text-align:center;line-height:1.6}
+.notif-modal.oa-dlg .oa-qr-note{font-size:11.5px;color:#b45309;text-align:center}
+
 /* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */
 /* ============================================================================
    段 3：新版（协同工作台）视觉精修层
@@ -2869,6 +2879,10 @@ const API = {
   connectorConnectCredential(code, values){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/connect/credential',{method:'POST',body:JSON.stringify({values:values||{}})}); },
   connectorVerify(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/verify',{method:'POST'}); },
   connectorDisconnect(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/disconnect',{method:'POST'}); },
+  /* 扫码授权（auth_mode=QR，企业微信 CLI 连接器）：出图 / 轮询 / 确认绑定 */
+  connectorQr(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/qr',{method:'POST'}); },
+  connectorQrStatus(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/qr-status'); },
+  connectorQrBind(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/qr-bind',{method:'POST'}); },
   /* MCP 服务器（注册表 + 信任闸门）：列表/探测/信任/取消信任/工具目录 */
   mcpServers(){ return this.req('/v1/mcp/servers'); },
   mcpProbe(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/probe',{method:'POST'}); },
@@ -9299,10 +9313,11 @@ function connCardHtml(c){
   '</div>';
 }
 
-/* 点「连接」：先取详情，再按 mode 决定弹层（CREDENTIAL / OAUTH2） */
+/* 点「连接」：先取详情，再按 mode 决定弹层（CREDENTIAL / OAUTH2 / QR） */
 function openConnector(code){
   API.connectorDetail(code).then(function(d){
     if(d && d.mode === 'OAUTH2') openOauthModal(code, d);
+    else if(d && d.mode === 'QR') openQrModal(code, d);
     else openCredentialModal(code, d || {});
   }).catch(function(err){
     toast(err.message || '读取连接详情失败');
@@ -9394,6 +9409,110 @@ function openOauthModal(code, d){
       errBox.style.display = '';
     });
   };
+}
+
+/* QR 弹层（auth_mode=QR，企业微信）：出二维码 → 手机企微扫码 → 轮询授权状态 → 确认绑定。
+   三段式对应后端三个端点（/qr /qr-status /qr-bind），原因见 ConnectorController 类注释。
+   坑：① 弹层一关必须停轮询，否则用户关掉后仍在打接口；
+       ② 二维码有效期短，超时要把「重新获取」放出来，不能让用户对着死图等；
+       ③ 绑定的成功判据是服务端 /qr-bind 返回 CONNECTED，不是前端轮询到 authorized —— 
+          轮询只说明「码被扫了」，凭据落盘与连接态落库都要以绑定结果为准。 */
+function openQrModal(code, d){
+  var name = d.name || code;
+  var mask = document.createElement('div');
+  mask.className = 'notif-mask show';
+  mask.innerHTML =
+    '<div class="notif-modal perm-modal oa-dlg oa-conn-dlg" role="dialog" aria-modal="true" aria-label="连接 '+txt(name)+'">'+
+      '<div class="oa-up-hd"><span class="oa-up-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
+        '<div class="notif-head">连接 '+txt(name)+'</div></div>'+
+      '<div class="notif-body"><div class="oa-conn-form">'+
+        '<div class="hint">'+txt(d.summary || '打开手机企业微信，扫描下方二维码完成授权')+'</div>'+
+        '<div class="oa-qr-wrap" id="oaQrWrap"><div class="oa-qr-tip" id="oaQrTip">正在生成二维码…</div></div>'+
+        '<div class="oa-qr-note" id="oaQrNote" style="display:none">二维码已过期，请点「重新获取」</div>'+
+        '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
+      '</div></div>'+
+      '<div class="notif-foot">'+
+        '<button class="btn ghost small" data-dlg-cancel>取消</button>'+
+        '<button class="btn small" id="oaQrReload" style="display:none">重新获取</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(mask);
+  var errBox   = mask.querySelector('#oaConnErr');
+  var wrap     = mask.querySelector('#oaQrWrap');
+  var tip      = mask.querySelector('#oaQrTip');
+  var note     = mask.querySelector('#oaQrNote');
+  var reloadBt = mask.querySelector('#oaQrReload');
+  var pollTimer = null, qrTimer = null, closed = false, busy = false;
+
+  function stopAll(){
+    if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    if(qrTimer){ clearTimeout(qrTimer); qrTimer = null; }
+  }
+  function close(){
+    closed = true; stopAll();
+    mask.remove();
+  }
+  function fail(msg){
+    stopAll();
+    errBox.textContent = msg || '连接失败';
+    errBox.style.display = '';   // 弹层不关，让用户看见原因
+    reloadBt.style.display = '';
+  }
+
+  /* 先把二维码画上去，再开始轮询 —— 顺序反了会出现「还没出图就开始问扫没扫」。 */
+  function loadQr(){
+    errBox.style.display = 'none'; note.style.display = 'none';
+    reloadBt.style.display = 'none';
+    wrap.innerHTML = '<div class="oa-qr-tip">正在生成二维码…</div>';
+    API.connectorQr(code).then(function(r){
+      if(closed) return;
+      var src = r && r.qr;
+      if(!src){ fail('未获取到二维码'); return; }
+      wrap.innerHTML = '<img class="oa-qr-img" alt="企业微信授权二维码" src="'+txt(src)+'">';
+      startPoll();
+      /* 二维码按 5 分钟失效兜底（后端 expiresIn=300）：到点没扫就给「重新获取」。 */
+      var ttl = (r && r.expiresIn ? Number(r.expiresIn) : 300) * 1000;
+      qrTimer = setTimeout(function(){
+        if(closed || busy) return;
+        stopAll();
+        note.style.display = '';
+        reloadBt.style.display = '';
+      }, ttl);
+    }).catch(function(err){
+      if(closed) return;
+      fail(err.message || '生成二维码失败');
+    });
+  }
+
+  /* 轮询：authorized=false 继续等；一旦 true 立刻停轮询并调 /qr-bind 落库。 */
+  function startPoll(){
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(function(){
+      if(closed || busy) return;
+      API.connectorQrStatus(code).then(function(s){
+        if(closed || busy) return;
+        if(s && s.authorized){
+          busy = true; stopAll();
+          wrap.innerHTML = '<div class="oa-qr-tip">已扫码，正在完成绑定…</div>';
+          API.connectorQrBind(code).then(function(b){
+            if(closed) return;
+            var label = (b && b.accountLabel) ? (' · ' + b.accountLabel) : '';
+            toast('已连接' + label);
+            close();
+            refreshConnectors();
+          }).catch(function(err){
+            busy = false;
+            fail(err.message || '确认绑定失败');
+          });
+        }
+      }).catch(function(){ /* 单次轮询失败不断链：网络抖动不该让用户重扫 */ });
+    }, 2000);
+  }
+
+  mask.querySelector('[data-dlg-cancel]').onclick = close;
+  mask.onclick = function(e){ if(e.target === mask) close(); };
+  reloadBt.onclick = loadQr;
+  loadQr();
 }
 
 /* 断开 / 重新检测：成功后刷新面板；失败 toast */

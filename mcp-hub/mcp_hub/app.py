@@ -132,6 +132,14 @@ async def _handle_http(scope, receive, send):
         await probe.handle(scope, receive, send)
         return
 
+    # ⚠️ /api/v1/wecom_cli 必须以 /api/v1/wecom 开头的判断**之前**分流，
+    # 否则会被 wecom_admin_api 吞掉（两个前缀是包含关系），症状是扫码接口返回旧连接器的配置。
+    if path.startswith("/api/v1/wecom_cli"):
+        from .wecom_cli import admin_api as wecom_cli_admin_api
+
+        await wecom_cli_admin_api.handle(scope, receive, send)
+        return
+
     if path.startswith("/api/v1/wecom"):
         await wecom_admin_api.handle(scope, receive, send)
         return

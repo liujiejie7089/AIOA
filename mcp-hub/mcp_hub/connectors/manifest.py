@@ -16,6 +16,7 @@ from typing import Any, Callable
 AUTH_OAUTH2 = "OAUTH2"        # 管理员配应用凭据，用户走 OAuth 授权
 AUTH_CREDENTIAL = "CREDENTIAL"  # 用户自填凭据（如邮箱授权码），无应用级配置
 AUTH_API_KEY = "API_KEY"      # 管理员配 API Key，服务端直连
+AUTH_QR = "QR"                # 用户扫码绑定（官方 CLI 通道，docs/64）
 
 _PROVIDERS = {"wecom", "vault", "none"}
 
@@ -69,7 +70,7 @@ class ConnectorManifest:
             raise ValueError("连接器 code 不能为空")
         if self.provider not in _PROVIDERS:
             raise ValueError(f"未知 provider: {self.provider}（允许 {sorted(_PROVIDERS)}）")
-        if self.auth_mode not in (AUTH_OAUTH2, AUTH_CREDENTIAL, AUTH_API_KEY):
+        if self.auth_mode not in (AUTH_OAUTH2, AUTH_CREDENTIAL, AUTH_API_KEY, AUTH_QR):
             raise ValueError(f"未知 auth_mode: {self.auth_mode}")
         if self.provider == "none" and self.credential_fields:
             raise ValueError("provider=none 的连接器不应声明应用级凭证字段")

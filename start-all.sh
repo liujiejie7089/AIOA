@@ -75,7 +75,14 @@ else
     echo "[start] backend :8080 (logs/boot.log)"
     echo "        h5-dir =$H5_DIR"
     echo "        web-dir=$WEB_DIR"
+    # ⚠️ 必须显式给 --server.port，并清掉 SERVER__PORT：
+    #   Spring 的宽松绑定把环境变量 `SERVER__PORT`（双下划线→点）认成 `server.port`。
+    #   从 WorkBuddy/IDE 的终端里启动时该变量常被注入成某个临时端口（实测 61302），
+    #   而那个端口已被宿主进程占用 ⇒ 后端启动直接失败，报的却是与 8080 毫无关系的
+    #   「Port 61302 was already in use」，极容易误判成「8080 被占」。
+    unset SERVER__PORT
     "$JAVA" -Dspring.flyway.validate-on-migrate=false -jar "$JAR" \
+      --server.port=8080 \
       --aios.web.h5-dir="$H5_DIR" \
       --aios.web.web-dir="$WEB_DIR" > logs/boot.log 2>&1 &
   fi
@@ -129,6 +136,27 @@ export WECOM_CONNECTOR_KEY="gq1+vvFpy3g49RyV4KqB5SQtyzOTbNUzu7eRVe7mjvs="
 # **生产必须换**：openssl rand -base64 32，两端同步改；未设置时 hub 会跳过状态同步并告警
 #（后果是 manifest 闸门看不到连接，AI 拿不到企微工具）。
 export AIOS_SERVICE_JWT_SECRET="${AIOS_SERVICE_JWT_SECRET:-aios-dev-service-jwt-secret-please-change}"
+
+# ---- 企业微信 CLI 连接器（扫码绑定，一人一账号；见 docs/64）----
+# hub 通过官方 `wecom-cli` 子进程访问企微，凭据按用户隔离在
+#   <AIOS_WECOM_CLI_ROOT>/<tenantId>/<userId>/personal/credentials.enc
+# 默认 root = <仓库>/data/wecom-cli，一般不用改。
+#
+# ★ AIOS_WECOM_CLI_SHARED_PROFILE 是**开发/演示专用兜底**：当某用户还没扫过码时，
+#   复用这份已授权的目录。没有它，单机开发机上「一人一账号」根本没法验（一台机器上
+#   只有一个人能扫一次码，第二个账号永远是未绑定）。
+#   代价很明确：多个 AIOS 用户会读到同一个人的企微数据 —— 所以只在 WECOM_MOCK=1 时给默认值，
+#   真机/生产（WECOM_MOCK=0）必须是空，否则等于把所有账号的企微数据串给一个人。
+if [ "${WECOM_MOCK}" = "1" ] && [ -z "${AIOS_WECOM_CLI_SHARED_PROFILE:-}" ]; then
+  _wbshare="C:/Users/刘尖尖/.workbuddy/connectors/850c2d93-bc0f-4c01-aa27-268f566a6535/wecom-cli/personal"
+  if [ -f "$_wbshare/credentials.enc" ]; then
+    export AIOS_WECOM_CLI_SHARED_PROFILE="$_wbshare"
+    echo "[warn] 企微 CLI 连接器启用共享授权目录兜底（仅演示）：$_wbshare"
+    echo "       要验证「一人一账号」真实隔离，清空该变量后在「连接器」里各自扫码"
+  fi
+  unset _wbshare
+fi
+
 if port_up 8099; then
   echo "[skip] mcp-hub :8099 already running"
 else

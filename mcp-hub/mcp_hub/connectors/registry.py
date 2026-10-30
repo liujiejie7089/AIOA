@@ -17,7 +17,8 @@ import logging
 
 from .. import specs
 from ..wecom import catalog as wecom_catalog
-from .manifest import AUTH_API_KEY, AUTH_CREDENTIAL, AUTH_OAUTH2, ConnectorManifest, CredentialField
+from .manifest import (AUTH_API_KEY, AUTH_CREDENTIAL, AUTH_OAUTH2, AUTH_QR,
+                       ConnectorManifest, CredentialField)
 
 logger = logging.getLogger("mcp_hub.connectors")
 
@@ -92,6 +93,19 @@ def _build_wecom_group_server():
     return group_server.build_server()
 
 
+def _build_wecom_cli_server():
+    """企业微信（扫码）：官方 wecom-cli 原生实装，见 docs/64。"""
+    from ..wecom_cli import server as wecom_cli_server
+
+    return wecom_cli_server.build_server()
+
+
+def _wecom_cli_catalog():
+    from ..wecom_cli import catalog as wecom_cli_catalog_mod
+
+    return wecom_cli_catalog_mod.TOOLS
+
+
 def _register_builtin() -> None:
     # 企业微信：管理员配应用凭据（corpId/agentId/corpSecret），用户走 OAuth。
     # 凭据落在 wecom 自己的加密表（provider=wecom），历史数据与 20 项哨兵不受影响。
@@ -160,6 +174,24 @@ def _register_builtin() -> None:
             tool_count=group_server.tool_count(),
             server_factory=_build_wecom_group_server,
             tool_catalog=lambda: group_server.TOOLS,
+        )
+    )
+    # 企业微信（扫码）：不碰自建应用，走官方 CLI 的「机器人 + 真人扫码」。
+    # 一人一账号：每个用户的授权落在各自的 WECOM_CLI_CONFIG_DIR，互相不可见（docs/64）。
+    # auth_mode 沿用 OAUTH2 = 「用户级授权、管理员无需配应用凭据」，与既有 Java/H5 分支兼容；
+    # provider=none ⇒ 没有应用级凭证字段，管理端不会出现配置表单。
+    register(
+        ConnectorManifest(
+            code="wecom_cli",
+            name="企业微信（扫码）",
+            group="协作与办公",
+            auth_mode=AUTH_QR,
+            provider="none",
+            summary="扫码绑定你自己的企业微信：查通讯录、看群消息、搜企业邮箱；不需要备案域名",
+            help_url="https://github.com/WecomTeam/wecom-cli",
+            tool_count=len(_wecom_cli_catalog()),
+            server_factory=_build_wecom_cli_server,
+            tool_catalog=_wecom_cli_catalog,
         )
     )
 
