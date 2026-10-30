@@ -14,6 +14,11 @@
     存在的理由：dev 机器上只有一个真人扫过码，没法凭空造出第二份授权；
     没有它就没法在本地验「提问→返回企微数据」这条链路。
     副作用很明确：多个用户会共用同一个人的企微身份 —— 所以它只允许在 mock/开发环境开。
+
+⚠️ **它只影响「工具执行时到哪儿取凭据」，绝不影响「扫码绑定是否完成」**。
+   扫码完成的判据在 `auth.session_state`：只看本人目录 + 凭据晚于本次会话起点。
+   早先 `bind()` 用了本函数的 `resolve()`，于是共享目录里别人的凭据让「用户根本没扫码」
+   也被判成已授权 —— 现象是二维码刚弹出来就自己跳到「已连接」，且绑成了别人的身份。
 """
 
 from __future__ import annotations
@@ -71,8 +76,13 @@ def cli_dir(base: Path) -> Path:
     return base / "personal"
 
 
+def cred_file(base: Path) -> Path:
+    """该基目录下的凭据文件（自动补 `personal/` 那层）。**判断「真的授权过」只看这个文件。**"""
+    return cli_dir(base) / _CRED
+
+
 def is_authorized(base: Path) -> bool:
-    return (cli_dir(base) / _CRED).is_file()
+    return cred_file(base).is_file()
 
 
 def resolve(tenant_id, user_id) -> tuple[Path, bool]:

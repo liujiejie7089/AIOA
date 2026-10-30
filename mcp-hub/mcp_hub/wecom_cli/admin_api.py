@@ -2,10 +2,15 @@
 """wecom_cli 的 REST 面（给「连接器」面板用）：发起扫码、查状态、绑定、解绑。
 
 路由（父 ASGI 按 /api/v1/wecom_cli 前缀分流）：
-- GET  /api/v1/wecom_cli/status        我的绑定状态（含显示名）
+- GET  /api/v1/wecom_cli/status        我的绑定状态（含共享兜底，供排障）
+- GET  /api/v1/wecom_cli/qr-status     **本次扫码**是否完成（严格：本人目录 + 会话起点）
 - POST /api/v1/wecom_cli/qr            发起扫码，返回二维码 PNG（data URL）
 - POST /api/v1/wecom_cli/bind          扫码完成后确认绑定（校验 + 回写 Java 连接态）
 - POST /api/v1/wecom_cli/disconnect    解绑（删本地配置目录 + 回写 NEED_AUTH）
+
+⚠️ `status` 与 `qr-status` 不是一回事：`status` 回答「这个人有没有可用的企微授权」
+（含开发态的共享兜底），`qr-status` 回答「刚刚这一次扫码扫完了没有」。前端轮询必须用
+后者 —— 用前者会出现「二维码刚显示出来就宣布连接成功」（2026-10-30 实测踩到）。
 
 ⚠️ 前缀陷阱：`/api/v1/wecom_cli` 以 `/api/v1/wecom` 开头，
 在 `app.py` 里必须**排在 wecom_admin_api 之前**判断，否则请求会被旧连接器吞掉、
@@ -85,6 +90,13 @@ async def handle(scope, receive, send):
                 "expiresIn": 300,
                 "hint": "用企业微信扫码完成授权；扫码后本页自动刷新",
             })
+
+        if sub == "qr-status" and method == "GET":
+            # 只反映「本次扫码」的进度，不看共享兜底 —— 否则没扫也会报已完成（见 auth.session_state）
+            st = await cli_auth.session_state(ident.tenant_id, ident.user_id)
+            return await _ok(send, {"authorized": st["authorized"],
+                                    "accountLabel": st.get("accountLabel"),
+                                    "reason": st["reason"]})
 
         if sub == "bind" and method == "POST":
             await _read_body(receive)

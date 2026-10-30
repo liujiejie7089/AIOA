@@ -97,12 +97,18 @@ public class ConnectorController {
         return ApiResponse.ok(weComCliGateway.qr(authorization(request)));
     }
 
-    /** QR：轮询扫码结果（{@code authorized=false} 表示还没扫或已失效）。只读，可安全轮询。 */
+    /**
+     * QR：轮询扫码结果（{@code authorized=false} 表示**这一次**还没扫完）。只读，可安全轮询。
+     *
+     * <p>必须走 {@code qr-status} 而不是 {@code status}：后者含开发态的共享授权兜底，
+     * 会让「用户还没扫码」在第一次轮询时就返回 authorized=true，前端随即自动 /qr-bind，
+     * 落库成 CONNECTED —— 现象是二维码刚出现就自己"扫完了"。见 {@link WeComCliGateway#qrStatus}。</p>
+     */
     @GetMapping("/{code}/qr-status")
     public ApiResponse<Map<String, Object>> qrStatus(@PathVariable String code, HttpServletRequest request) {
         AuthUserContext.require();
         requireQrMode(code);
-        return ApiResponse.ok(weComCliGateway.status(authorization(request)));
+        return ApiResponse.ok(weComCliGateway.qrStatus(authorization(request)));
     }
 
     /**

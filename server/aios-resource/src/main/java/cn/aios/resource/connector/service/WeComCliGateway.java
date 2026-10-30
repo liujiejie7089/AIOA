@@ -58,9 +58,21 @@ public class WeComCliGateway {
         return props.isHubEnabled();
     }
 
-    /** 我的绑定状态：{@code {authorized, accountLabel, sharedProfile}}。 */
+    /** 我的绑定状态：{@code {authorized, accountLabel, sharedProfile}}。含开发态共享兜底，仅供排障。 */
     public Map<String, Object> status(String authorization) {
         return call("GET", "/status", authorization, 10);
+    }
+
+    /**
+     * **本次扫码**是否完成：{@code {authorized, accountLabel, reason}}。
+     *
+     * <p>与 {@link #status} 的区别是本方法的判据只有「本人目录 + 凭据写入时间晚于本次会话
+     * 起点」，不含 {@code AIOS_WECOM_CLI_SHARED_PROFILE} 的共享兜底。轮询必须用它：
+     * 用 {@code /status} 时，共享目录里早已存在别人的凭据 ⇒ 二维码刚显示就被判定扫完了
+     * （2026-10-30 线上现象：用户一个像素都没扫，弹层却自己跳成「已连接」）。</p>
+     */
+    public Map<String, Object> qrStatus(String authorization) {
+        return call("GET", "/qr-status", authorization, 15);
     }
 
     /**

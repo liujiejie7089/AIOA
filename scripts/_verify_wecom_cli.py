@@ -26,8 +26,12 @@
 ----
 Java :8080 在线（V102 已建 connector_def/mcp_server 行）、hub :8099 在线、
 wecom_cli 已 trust（否则 manifest 不出现，S8 会红）。
-开发态通常设 `AIOS_WECOM_CLI_SHARED_PROFILE`（start-all.sh 在 WECOM_MOCK=1 时自动给），
-否则本机没有第二个已扫码账号，S2/S6 会红 —— 那是环境问题，不是代码问题，脚本会明确提示。
+
+本机没法替人扫码，所以**正向用例靠复制一份已授权目录来复现「扫完码」这一状态**
+（`AIOS_WECOM_CLI_SHARED_PROFILE`，start-all.sh 在 WECOM_MOCK=1 时自动给；
+找不到时脚本会去 `~/.workbuddy/connectors/*/wecom-cli/personal` 里找）。
+找不到就直接把 S6c/S7 判红并说明原因 —— 不要偷偷跳过，跳过会让整条链路失去验证。
+**反向用例（S6/S6b）不依赖它**：那两项验的正是「没有任何本人凭据时不许自称已绑定」。
 
 用法
 ----
@@ -46,6 +50,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -102,6 +107,67 @@ def login(base, user, password):
     st, raw = call(base, "/api/v1/auth/login", "POST",
                    body={"username": user, "password": password})
     return jload(raw).get("data", {}).get("accessToken") or ""
+
+
+# ---------------- 扫码会话的「造状态」helper ----------------
+#
+# 为什么允许直接写文件：**「扫完码」在磁盘上的唯一痕迹就是 credentials.enc 落盘**，
+# 而本项目没有办法自动替人扫码。所以正向用例只能复现「文件刚落盘」这一状态；反向用例
+# （未扫码）则只需要会话起点、连文件都不该有。两者都不碰业务代码，只碰被测代码读的输入。
+
+def me_of(base, token) -> dict:
+    st, raw = call(base, "/api/v1/auth/me", token=token)
+    return data_of(raw) or {}
+
+
+def own_profile_dir(me: dict) -> Path:
+    """本人配置目录：<root>/<tenantId>/<userId>（与 profiles.dir_for 同一口径）。"""
+    from mcp_hub.wecom_cli import profiles
+    return profiles.root() / str(me.get("tenantId")) / str(me.get("id"))
+
+
+def start_session(own: Path) -> None:
+    """等价于 POST /qr 里 `_mark_session` 的效果：只写会话起点，不起 CLI 子进程。
+
+    不直接调 /qr 的原因：那会真的 fork 一个等扫码的 `wecom-cli auth init`（最长挂到有人
+    扫码为止），哨兵跑完会留一堆僵尸进程，而且这条链路的成败取决于机器能否访问企微 API ——
+    把「未扫码不许自动完成」这条断言绑在网络可用性上，等于让它时红时绿。
+    """
+    own.mkdir(parents=True, exist_ok=True)
+    (own / ".qr-session").write_text("%.3f" % time.time(), encoding="utf-8")
+
+
+def shared_profile_dir() -> "Path | None":
+    """找一份**已授权**的共享目录（开发机兜底），用于复现「扫码完成后凭据落盘」。"""
+    cands = []
+    env = (os.environ.get("AIOS_WECOM_CLI_SHARED_PROFILE") or "").strip()
+    if env:
+        cands.append(Path(env))
+    home = Path(os.environ.get("USERPROFILE") or Path.home())
+    cands += sorted((home / ".workbuddy" / "connectors").glob("*/wecom-cli/personal"))
+    for c in cands:
+        if (c / "credentials.enc").is_file():
+            return c
+    return None
+
+
+def simulate_scan(own: Path, src: Path) -> bool:
+    """复现「手机扫完码 → CLI 把 credentials.enc 写进本人目录」。
+
+    ⚠️ 只能用 `copyfile`（新文件、mtime=现在）。用 `copy2` 会连**源文件的旧 mtime**一起
+    复制过来，于是 mtime 早于会话起点 ⇒ 被判成「旧凭据残留」而永远不完成 —— 这个坑在
+    真实运维里也会踩到（从备份还原 credentials.enc 就会被判成没扫过）。
+    """
+    dst = own / "personal"
+    dst.mkdir(parents=True, exist_ok=True)
+    ok = True
+    for name in ("credentials.enc", ".encryption_key"):
+        s = src / name
+        if not s.is_file():
+            ok = False
+            continue
+        shutil.copyfile(s, dst / name)
+    return ok
 
 
 # ---------------- 直接驱动 CLI（不经过 hub）：目录隔离的第一手证据 ----------------
@@ -230,12 +296,47 @@ def main() -> int:
         and "qr" not in data_of(raw_n),
         "http=%s body=%s" % (st_n, raw_n[:160]))
 
-    # ---- S6 扫码状态：以 CLI 目录为准 ----
+    # ---- S6 未扫码 ⇒ 绝不能自己完成（2026-10-30 修的 bug 的回归断言）----
+    # 现场：dev 设了 AIOS_WECOM_CLI_SHARED_PROFILE 之后，qr-status 走 profiles.resolve()
+    # 读到了**共享目录里别人的凭据** ⇒ 用户一个像素都没扫，第一次轮询就 authorized=true，
+    # 前端随即调 /qr-bind，库里落 CONNECTED、名字还是那个人 —— 用户看到的就是
+    # 「二维码自己扫码完成了」。修法见 auth.session_state（本人目录 + 会话起点 + CLI 自报）。
+    me = me_of(base, tok)
+    own = own_profile_dir(me)
+    shared = shared_profile_dir()
+    call(base, "/api/v1/connectors/%s/disconnect" % CODE, "POST", token=tok)   # 先清回未绑定
+    start_session(own)
     st, raw = call(base, "/api/v1/connectors/%s/qr-status" % CODE, token=tok)
     qs = data_of(raw)
-    rec("S6 qr-status 报已授权且带显示名",
-        st == 200 and qs.get("authorized") is True and (qs.get("accountLabel") or "").strip() != "",
-        json.dumps(qs, ensure_ascii=False)[:200])
+    rec("S6 [回归] 已发起扫码但用户还没扫 ⇒ qr-status 必须 authorized=false"
+        "（共享授权目录里的凭据不许顶替本人扫码）",
+        st == 200 and qs.get("authorized") is False,
+        "own=%s shared=%s -> %s" % (own, shared, json.dumps(qs, ensure_ascii=False)[:160]))
+
+    st_b, raw_b = call(base, "/api/v1/connectors/%s/qr-bind" % CODE, "POST", token=tok)
+    nb = jload(raw_b)
+    st, raw = call(base, "/api/v1/connectors", token=tok)
+    items = data_of(raw) or []
+    mine2 = next((c for c in items if c.get("code") == CODE), None) if isinstance(items, list) else None
+    rec("S6b [回归] 未扫码就调 qr-bind 必须被拒，且连接态仍是 NEED_AUTH（不许写 CONNECTED）",
+        nb.get("code") != 0 and mine2 is not None and mine2.get("status") == "NEED_AUTH",
+        "bind=%s 目录=%s" % (raw_b[:140],
+                             json.dumps({k: mine2.get(k) for k in ("status", "accountLabel")},
+                                        ensure_ascii=False) if mine2 else "缺"))
+
+    # ---- S6c 复现「真的扫完了」：本人目录出现凭据，且 mtime 晚于会话起点 ----
+    if shared is None:
+        rec("S6c 本人目录刚写入凭据 ⇒ qr-status 转 true 且带显示名", False,
+            "找不到可用的已授权目录：设 AIOS_WECOM_CLI_SHARED_PROFILE，"
+            "或先在本机用 WorkBuddy 授权一次企微（否则无法复现「扫完」这一状态）")
+    else:
+        copied = simulate_scan(own, shared)
+        st, raw = call(base, "/api/v1/connectors/%s/qr-status" % CODE, token=tok)
+        qs2 = data_of(raw)
+        rec("S6c 本人目录刚写入凭据 ⇒ qr-status 转 true 且带显示名",
+            copied and st == 200 and qs2.get("authorized") is True
+            and (qs2.get("accountLabel") or "").strip() != "",
+            json.dumps(qs2, ensure_ascii=False)[:200])
 
     # ---- S7 绑定：返回 CONNECTED，且第二源（库投影）也 CONNECTED ----
     st_b, raw_b = call(base, "/api/v1/connectors/%s/qr-bind" % CODE, "POST", token=tok)
@@ -324,10 +425,34 @@ def main() -> int:
         st_x == 200 and after is not None and after.get("status") == "NEED_AUTH" and gone,
         "status=%s manifest_has=%s" % (after.get("status") if after else "缺", not gone))
 
+    # S14 的 disconnect 已经把本人目录整个删了（含 .qr-session 与凭据）。
+    # 现在 bind 只认「本次会话 + 本人凭据」，所以要先把「刚扫完」的状态重新造出来，
+    # 否则 S15 永远红 —— 这不是放宽断言，是被测语义变了。
+    if shared is not None:
+        start_session(own)
+        simulate_scan(own, shared)
     st_r, raw_r = call(base, "/api/v1/connectors/%s/qr-bind" % CODE, "POST", token=tok)
     rec("S15 收尾：重新绑定回 CONNECTED（保证下次跑哨兵前置成立）",
         st_r == 200 and data_of(raw_r).get("status") == "CONNECTED",
         raw_r[:160])
+
+    # ---- S16 「重新获取」必须真的能重新出图 ----
+    # 修前的实现：先 unlink 图 → 发现还有活进程 → 复用分支只是等图 ⇒ 等到 20s 超时 400。
+    # 用户点弹层里的「重新获取」正好命中（旧进程一直挂着等扫码）。判据看**两次都出图**。
+    # 说明：这步会留一个等扫码的 auth init 进程，二维码过期后它会自己退出。
+    st_q1, raw_q1 = call(base, "/api/v1/connectors/%s/qr" % CODE, "POST", token=tok, timeout=60)
+    q1 = data_of(raw_q1).get("qr") or ""
+    try:
+        (own / "qr.png").unlink()      # 模拟「图被删了但旧进程还活着」
+    except OSError:
+        pass
+    st_q2, raw_q2 = call(base, "/api/v1/connectors/%s/qr" % CODE, "POST", token=tok, timeout=60)
+    q2 = data_of(raw_q2).get("qr") or ""
+    rec("S16 旧扫码进程还在时删图再取 ⇒ 换新进程重新出图（不是 20s 后 400 超时）",
+        st_q1 == 200 and q1.startswith("data:image/png")
+        and st_q2 == 200 and q2.startswith("data:image/png"),
+        "第1次 http=%s len=%s 第2次 http=%s len=%s msg=%s"
+        % (st_q1, len(q1), st_q2, len(q2), raw_q2[:120]))
 
     failed = [r for r in RESULTS if not r[1]]
     print("\n== 汇总：%d 项，通过 %d，失败 %d ==" %

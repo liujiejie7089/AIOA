@@ -413,3 +413,78 @@ UPDATE connector_def SET status='ACTIVE' WHERE code IN ('wechat_work','wecom_gro
 
 ⚠️ 恢复后要同步撤销 9.7.3 里那些「必须 404」的断言，否则哨兵会红 —— **这是设计如此**
 （下线没删干净时有人盯着）。
+
+### 9.8 扫码弹层两处修复（2026-10-30 晚，用户报「二维码自己扫码完成」）
+
+用户口径：**「企业微信授权时二维码自己扫码完成（用户还未扫码）」**。现象复现后确认是
+两个独立缺陷，都不是 UI 问题，都已修并加了回归断言。
+
+#### 9.8.1 缺陷一：没扫码就报「已连接」，而且绑的是别人
+
+**根因**：`qr-status` 走的是 hub 的 `GET /api/v1/wecom_cli/status` →
+`profiles.resolve(tenant,user)`，而 `resolve()` 在本人目录没有 `credentials.enc` 时会
+**回落到 `AIOS_WECOM_CLI_SHARED_PROFILE`**（dev 专用兜底，指向 WorkBuddy 自己那份已授权目录）。
+于是：用户点开二维码 → 第一次轮询（2s 后）`auth show --status` 读的是**别人**的凭据 →
+`authorized=true` → 前端立刻调 `/qr-bind` → `bind()` 同样走 `resolve()` → 成功 →
+Java 落库 `CONNECTED`，`accountLabel` 写的是那个共享账号的名字。
+
+实测证据（修复前）：`connector_connection` 里 `tenant=0/user=2(zhangsan)` 是 `CONNECTED`
+且 `account_label=刘洋`，而 `data/wecom-cli/0/2` 目录**根本不存在** —— zhangsan 一次都没扫。
+
+**修法**（判据从「有没有可用凭据」改成「**这一次**扫码完成没有」）：
+
+| 位置 | 改动 |
+|---|---|
+| `wecom_cli/auth.py` | 新增 `.qr-session` 会话起点（`start_qr` 起子进程前写入）、`session_state()`：**本人目录** + 凭据 `mtime > 会话起点` + CLI 自报 `authorized`，三者同时成立才算完成 |
+| `wecom_cli/auth.py` | `bind()` 改用 `session_state()`，未完成时按 `reason` 给不同文案（没发起/没扫/旧残留/CLI 不认） |
+| `wecom_cli/admin_api.py` | 新增 `GET /qr-status`（严格）；`GET /status` 保留原语义（含共享兜底），仅排障用 |
+| `WeComCliGateway.java` | 新增 `qrStatus()` 打 `/qr-status` |
+| `ConnectorController.java` | `/{code}/qr-status` 改调 `qrStatus()`（原来调 `status()`） |
+| `profiles.py` | docstring 明确写着：共享兜底**只影响工具执行取凭据，不影响绑定判定** |
+
+> 为什么必须用 mtime 而不是「文件在不在」：共享目录里本来就有别人的凭据、上一次授权也可能
+> 留下旧文件。只要判据是「存在」，这两种情况都会在用户点开二维码的第一秒就宣布完成。
+
+#### 9.8.2 缺陷二：「重新获取」永远出不了新图（连带 20s 超时 400）
+
+**根因**：`start_qr()` 原顺序是「先 `unlink` PNG → 再看有没有活进程 → 有就复用等图」。
+而 `wecom-cli auth init` **只在启动时写一次 PNG**，之后一直阻塞等扫码。
+所以用户点「重新获取」（旧进程仍挂着）时，图被删掉、进程不会再写、`_QR_TIMEOUT=20s` 到点
+返回 `400 二维码生成超时` —— 而二维码 20 秒前明明刚生成过。实测 19:29:55 生成成功，
+19:30:02 再取就 400。
+
+**修法**：只在「确定要起新进程」时才删图；若进程还在但图已没有，**先杀掉旧进程再起新的**
+（旧进程这辈子不会再写第二张图）。实测修复后连取三次：`0.80s / 0.01s(reused) / 0.01s(reused)`，
+删图后再取 `0.68s` 拿到新图（len 由 4786 变 4738）。
+
+#### 9.8.3 二维码「下载」按钮
+
+用户要求：二维码下方增加「下载」，把图存到设备（典型用法是发到手机上再扫）。
+实现：`#oaQrDownload` 放在 `.oa-qr-wrap` 下方，图落地后才显示；点击把 data URL 还原成
+`Uint8Array` → `Blob` → `URL.createObjectURL` → `a[download]` 触发下载，文件名
+`企业微信授权二维码.png`；失败不静默（提示右键「图片另存为」）。新增 `i-download` symbol。
+
+#### 9.8.4 验收（全部实跑，一条断言没放宽）
+
+| 套件 | 结果 | 新增/改动项 |
+|---|---|---|
+| `_verify_wecom_cli.py` | **18/18**（原 15） | **S6** 未扫码必须 `authorized=false`（回归）；**S6b** 未扫码 `qr-bind` 必须被拒且库仍 `NEED_AUTH`；**S6c** 本人目录写入凭据后转 true；**S16** 删图后必须能重新出图 |
+| `_verify_oa_qr_modal.py` | **13/13**（原 10） | **Q0c** 产物含下载入口；**Q3b** 真的下载出 PNG（断言文件名）；**Q4b** authorized 恒 false ⇒ `bind` 零调用、弹层不关 |
+| `_verify_connectors.py` | 25/25 | — |
+| `_verify_oa_connector_ui.py` | 17/17 | — |
+| `_verify_connector_state_sync.py` | 7/7 | — |
+| `_verify_mcp_hub.py` | 全通过 | — |
+| `_verify_mcp_registry.py` | 14/14 | — |
+| `_verify_oa_mcp_panel.py` | 19/19 | — |
+| `_verify_agent_mcp_wiring.py` | 6/6 | — |
+
+真实链路另做了一次人工验证（不靠打桩）：真登录 → 点连接 → **0.83s 出真二维码** →
+下载得到 `企业微信授权二维码.png` → 等 8s 弹层**不关** → 服务端 `qr-status`
+`{"authorized": false, "reason": "no-credential"}`。截图 `logs/proof/qr_real.png`。
+
+#### 9.8.5 副作用（必须知道）
+
+`AIOS_WECOM_CLI_SHARED_PROFILE` **不再能让未扫码用户「看起来已绑定」** —— 这正是修复的目的。
+代价：dev 上想验「数字人读企微数据」，现在必须真的用某个账号扫一次码（或由哨兵用
+`simulate_scan()` 复制一份凭据做 fixture）。`_verify_wecom_cli` 的 S6c/S7/S15 就是这么做的，
+并且 `simulate_scan` 只能用 `copyfile`（`copy2` 会把源文件的旧 mtime 带过来 ⇒ 被判「旧残留」）。

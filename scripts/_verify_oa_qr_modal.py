@@ -97,6 +97,9 @@ def main():
     chk("Q0b 产物含 .oa-qr-wrap 白底 + 200px 固定尺寸规则（深色主题也能扫）",
         ".oa-qr-wrap{display:flex" in flat and "background:#fff" in flat
         and ".oa-qr-img{display:block;width:200px;height:200px" in flat)
+    chk("Q0c 产物含二维码下载入口（#oaQrDownload + a.download）",
+        'id="oaQrDownload"' in html and "a.download" in html
+        and "#i-download" in html)
 
     with sync_playwright() as pw:
         exe = chromium_exe()
@@ -134,12 +137,31 @@ def main():
             "%s 张图" % img.count())
         bg = page.eval_on_selector(".oa-qr-wrap", "el => getComputedStyle(el).backgroundColor")
         chk("Q3 二维码容器是白底 rgb(255,255,255)（不跟主题变量走）", bg == "rgb(255, 255, 255)", bg)
+
+        # ---- 下载：必须真的落一个 PNG 文件（不是只画了个按钮） ----
+        dl_vis = page.eval_on_selector("#oaQrActions", "el => getComputedStyle(el).display")
+        with page.expect_download() as dl_info:
+            page.click("#oaQrDownload")
+        fname = dl_info.value.suggested_filename
+        chk("Q3b 二维码下方「下载二维码」可见且真的下载出 PNG（文件名含「二维码」）",
+            dl_vis != "none" and fname.endswith(".png") and "二维码" in fname,
+            "actions=%s file=%r" % (dl_vis, fname))
         page.screenshot(path=str(PROOF / "qr_modal.png"))
 
         # ---- 轮询：真的在问，且间隔约 2s ----
         page.wait_for_timeout(2300)
         n1 = page.evaluate("() => window.__qr.statusCalls")
         chk("Q4 弹出后开始轮询扫码状态（>=1 次）", n1 >= 1, "statusCalls=%s" % n1)
+
+        # ---- [回归] 用户没扫码时，弹层绝不许自己变成「已连接」----
+        # 线上现象：后端把「共享授权目录里别人的凭据」当成「本人已扫码」⇒ 第一次轮询就
+        # authorized=true ⇒ 前端自动 bind ⇒ 面板显示已连接。前端这一层也必须钉住：
+        # authorized 恒为 false 时，bind 一次都不许被调用、弹层不许关。
+        st0 = page.evaluate("() => window.__qr")
+        still = page.locator(".oa-qr-wrap").count() == 1
+        chk("Q4b [回归] 未扫码（authorized 恒 false）⇒ 一次 /qr-bind 都不调，弹层保持打开",
+            st0["bindCalls"] == 0 and still,
+            "bindCalls=%s 弹层=%s" % (st0["bindCalls"], still))
 
         # ---- 扫码完成：必须由 /qr-bind 定成败，前端不得自行宣布成功 ----
         page.evaluate("() => { window.__qr.mode='auth'; }")

@@ -550,8 +550,8 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 
 | 套件 | 项数 | 前置 | 备注 |
 |---|---|---|---|
-| `_verify_wecom_cli.py` | **15** | Java:8080 + hub:8099 + 已 trust + 已绑定（或 `AIOS_WECOM_CLI_SHARED_PROFILE`） | 扫码连接器端到端：目录即身份 / QR 三端点 / manifest 闸门 / 真 MCP 调 5 工具 / 断开收回 / 收尾重绑 |
-| `_verify_oa_qr_modal.py` | **10** | 无后端（file:// + 打桩，需 playwright） | 二维码弹层：出图 / 白底 / 轮询 / bind 定成败 / 失败不关 / 关弹层停轮询 |
+| `_verify_wecom_cli.py` | **18** | Java:8080 + hub:8099 + 已 trust + 一份**已授权目录**（`AIOS_WECOM_CLI_SHARED_PROFILE`，用于复制成 fixture） | 扫码端到端：目录即身份 / QR 四端点 / manifest 闸门 / 真 MCP 调 5 工具 / 断开收回 / 收尾重绑。**S6 未扫码必须 false · S6b 未扫码 bind 必被拒 · S6c 落凭据后转 true · S16 删图后必须能重出图** |
+| `_verify_oa_qr_modal.py` | **13** | 无后端（file:// + 打桩，需 playwright） | 二维码弹层：出图 / 白底 / 轮询 / bind 定成败 / 失败不关 / 关弹层停轮询。**Q3b 真下载出 PNG · Q4b authorized 恒 false ⇒ bind 零调用** |
 | `_verify_connectors.py` | **25** | Java:8080 + 本机 mysql（C10b 第二源读库） | C1 期望 `['qq_mail','wecom_cli']`；C9a/C9b 已下线 code 必须 **404 不存在**；C10a 回调匿名 401 / C10b 带 token 404；C15/C15b 工具目录 |
 | `_verify_connectors_registry.py` | **15** | 无后端（自起 uvicorn，mock 身份） | 主体换成运行期登记的 `provider=vault`；S13 明文扫描在清除之前跑并先解出真值 |
 | `_verify_mcp_registry.py` | **14** | Java:8080 + hub:8099 + mysql | M1 期望 retired=0；M1b 保留行+不可信+无工具；M13 反向断言 hub 无残留 |

@@ -1731,6 +1731,10 @@
 .notif-modal.oa-dlg .oa-qr-img{display:block;width:200px;height:200px;image-rendering:pixelated}
 .notif-modal.oa-dlg .oa-qr-tip{font-size:11.5px;color:#6b7280;text-align:center;line-height:1.6}
 .notif-modal.oa-dlg .oa-qr-note{font-size:11.5px;color:#b45309;text-align:center}
+/* 下载行：二维码图是 data URL，桌面端没法"长按保存"，给一个显式下载入口
+   （典型用法是把图发到手机上再扫，所以按钮要紧贴二维码下方） */
+.notif-modal.oa-dlg .oa-qr-actions{display:flex;justify-content:center;margin-top:8px}
+.notif-modal.oa-dlg .oa-qr-actions .btn{display:inline-flex;align-items:center;gap:5px}
 
 /* ===== 段 3：视觉精修（阴影梯级 / 对比度 / 命中区 / 动效） ===== */
 /* ============================================================================
@@ -1942,6 +1946,7 @@
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
     <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
     <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></symbol>
     <symbol id="i-log" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol>
@@ -9393,6 +9398,10 @@ function openQrModal(code, d){
       '<div class="notif-body"><div class="oa-conn-form">'+
         '<div class="hint">'+txt(d.summary || '打开手机企业微信，扫描下方二维码完成授权')+'</div>'+
         '<div class="oa-qr-wrap" id="oaQrWrap"><div class="oa-qr-tip" id="oaQrTip">正在生成二维码…</div></div>'+
+        '<div class="oa-qr-actions" id="oaQrActions" style="display:none">'+
+          '<button class="btn ghost small" id="oaQrDownload" type="button" title="保存为 PNG，可发到手机上再扫">'+
+            '<svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>下载二维码</button>'+
+        '</div>'+
         '<div class="oa-qr-note" id="oaQrNote" style="display:none">二维码已过期，请点「重新获取」</div>'+
         '<div class="note-err" id="oaConnErr" style="display:none"></div>'+
       '</div></div>'+
@@ -9407,7 +9416,10 @@ function openQrModal(code, d){
   var tip      = mask.querySelector('#oaQrTip');
   var note     = mask.querySelector('#oaQrNote');
   var reloadBt = mask.querySelector('#oaQrReload');
+  var actions  = mask.querySelector('#oaQrActions');
+  var dlBt     = mask.querySelector('#oaQrDownload');
   var pollTimer = null, qrTimer = null, closed = false, busy = false;
+  var qrDataUrl = '';   // 当前二维码的 data URL：下载按钮的唯一数据源
 
   function stopAll(){
     if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
@@ -9422,18 +9434,23 @@ function openQrModal(code, d){
     errBox.textContent = msg || '连接失败';
     errBox.style.display = '';   // 弹层不关，让用户看见原因
     reloadBt.style.display = '';
+    actions.style.display = 'none';
+    qrDataUrl = '';
   }
 
   /* 先把二维码画上去，再开始轮询 —— 顺序反了会出现「还没出图就开始问扫没扫」。 */
   function loadQr(){
     errBox.style.display = 'none'; note.style.display = 'none';
-    reloadBt.style.display = 'none';
+    reloadBt.style.display = 'none'; actions.style.display = 'none';
+    qrDataUrl = '';
     wrap.innerHTML = '<div class="oa-qr-tip">正在生成二维码…</div>';
     API.connectorQr(code).then(function(r){
       if(closed) return;
       var src = r && r.qr;
       if(!src){ fail('未获取到二维码'); return; }
       wrap.innerHTML = '<img class="oa-qr-img" alt="企业微信授权二维码" src="'+txt(src)+'">';
+      qrDataUrl = src;
+      actions.style.display = '';   // 图落地才给下载入口，避免下载到空图
       startPoll();
       /* 二维码按 5 分钟失效兜底（后端 expiresIn=300）：到点没扫就给「重新获取」。 */
       var ttl = (r && r.expiresIn ? Number(r.expiresIn) : 300) * 1000;
@@ -9474,9 +9491,38 @@ function openQrModal(code, d){
     }, 2000);
   }
 
+  /* 下载二维码：图是 data URL，桌面浏览器没法「长按保存」，所以自己转 Blob 再触发
+     a[download]。典型场景是把图片发到手机上、或投到另一台设备上再扫。
+     失败不做静默吞掉 —— 用户会以为是自己点错了，给一句可执行的兜底。 */
+  function downloadQr(){
+    if(!qrDataUrl){ toast('二维码还没生成好，请稍候'); return; }
+    try{
+      var comma = qrDataUrl.indexOf(',');
+      var meta  = comma > 0 ? qrDataUrl.slice(0, comma) : '';
+      var b64   = comma > 0 ? qrDataUrl.slice(comma + 1) : '';
+      if(!b64) throw new Error('not a data url');
+      var mime  = (meta.match(/data:([^;]+)/) || [])[1] || 'image/png';
+      var bin   = atob(b64);
+      var buf   = new Uint8Array(bin.length);
+      for(var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([buf], {type: mime}));
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = '企业微信授权二维码.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+      toast('二维码已下载');
+    }catch(e){
+      toast('下载失败，请右键二维码选「图片另存为」');
+    }
+  }
+
   mask.querySelector('[data-dlg-cancel]').onclick = close;
   mask.onclick = function(e){ if(e.target === mask) close(); };
   reloadBt.onclick = loadQr;
+  dlBt.onclick = downloadQr;
   loadQr();
 }
 

@@ -1181,3 +1181,20 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
    只有真正的能力被删（双模式 A/B、群机器人）才删套件，且覆盖损失写进 docs。
    另一个细节：`_verify_connectors_registry` 的库文件明文扫描原本在 DELETE 之后跑，
    主体清空后扫的是空库 ⇒ **先断言"canary 真值还在库里"，再扫字节**，否则这个断言是空转。
+4. **前端「废弃文件」判据**：`index.html` 是自包含单文件（脚本内联），所以
+   `_oa_app.js` / `_backup_index_pre_oa.html` 在页面里搜不到 `<script src>` ——
+   但它们分别是 `_build_oa.py` 的 `APPJS` 注入源与重建基线，**删了断构建链**。
+   判死活要搜 `_build_oa.py` 的常量表，不能只看 HTML 引用。
+5. **「扫码完成」的判据不能用 `profiles.resolve()`**：它会回落到
+   `AIOS_WECOM_CLI_SHARED_PROFILE`（dev 共享授权），于是「用户还没扫码」在第一次轮询就
+   `authorized=true` ⇒ 前端自动 bind ⇒ 落库 CONNECTED + 绑成**别人**的身份。
+   正确判据 = 本人目录 + `credentials.enc` 的 **mtime 晚于本次会话起点**（`.qr-session`）+
+   CLI 自报 authorized（`auth.session_state`）。**「文件存在」永远不够**：共享目录里本来就有、
+   上次授权的旧文件也一直在。
+6. **`wecom-cli auth init` 只在启动时写一次二维码 PNG**，之后一直阻塞等扫码 ⇒
+   `start_qr` 里「先 unlink 图再看有没有活进程复用」会把自己坑死：图删了、进程不会再写、
+   20s 后返回 400 超时。顺序必须是「有活进程且图在 → 复用；否则杀掉旧进程、删图、起新的」。
+   哨兵 S16 钉住这条。
+7. 测试 fixture 复制凭据只能用 `copyfile`，**不能 `copy2`**（copy2 连旧 mtime 一起复制，
+   会被「mtime > 会话起点」判成旧残留而永远不完成）。真实运维也一样：从备份还原
+   `credentials.enc` 会被判「本次没扫」，需重新扫码。
