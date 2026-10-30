@@ -6356,6 +6356,13 @@ async function send(){
     },
     onUsage: u => { if(!u) return; state.lastUsage = u; },
     onCompleted: p => {
+      /* 服务端已完成帧里的 content 是**真值**：此前只认 delta 累积的 text，
+         一旦 delta 因网络/断流没收到，界面就显示「（本次未返回内容）」而库里其实有答案
+         （2026-10-30 用户现场）。这里用完成帧兜底，界面与落库口径对齐。 */
+      if(!text){
+        const c = p && (p.content || (p.data && p.data.content));
+        if(c){ text = c; }
+      }
       const cites = (p && (p.citations || (p.data && p.data.citations))) || [];
       if(cites && cites.length){
         cites.slice(0,3).forEach(c=>{
@@ -6409,7 +6416,7 @@ async function send(){
       }
     }
     state.lastAnswer = text;
-    if(!text) tx.textContent = '（本次未返回内容）';
+    if(!text) tx.textContent = '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
     // 回答统一做层级化突出（标题 / 列表 / 重点 / 数字），不再只限数字员工会话：
     // 默认助手与租户专家的回答同样是长文，纯文本铺开一样难读。
     else { bubble.classList.add('ans'); tx.innerHTML = formatAnswer(text); }
@@ -10033,6 +10040,11 @@ async function oaSend(){
   var h = {
     onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
     onCompleted: function(p){
+      // 与经典形态同口径：delta 没收到但服务端有正文时，以完成帧为准（防「本次未返回内容」）
+      if(!text){
+        var c = p && (p.content || (p.data && p.data.content));
+        if(c){ text = c; }
+      }
       var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
       cites.slice(0, 3).forEach(function(c){
         var s = document.createElement('span');
@@ -10090,7 +10102,7 @@ async function oaSend(){
           {form_code: fc, submission_id: sub.submissionId, status: sub.status, data: fres.data, receipt: sub.receipt}, h);
       }
     }
-    if(!text) tx.textContent = '（本次未返回内容）';
+    if(!text) tx.textContent = '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
     else{
       bubble.classList.add('ans');
       tx.innerHTML = (typeof formatAnswer === 'function' ? formatAnswer(text) : txt(text));

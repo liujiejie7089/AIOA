@@ -154,6 +154,59 @@ _CALL_EXPR_RE = re.compile(r"^\s*(?:functions\.)?([A-Za-z_][\w.]*)\s*\((.*)\)\s*
 # 「正在查询」类承诺句：只用于 finalize 的可观测性告警（零工具调用却这么说话 = 界面会停住）
 _PROMISE_RE = re.compile(r"请稍等|稍候|正在(为你|为您)?(查询|检索|查看|整理|读取)|马上为你")
 
+# 「把工具调用写成正文」的**特征串**：一旦在正文里出现，这一轮的正文就不再外发给用户。
+# 2026-10-30 实测两种形态：
+#   <function_call>```typescript\nmcp__wecom_cli__whoami({})\n```</function_call>
+#   ```typescript\nfunctions.mcp__wecom_cli__recent_group_sessions({"days": 7})\n```
+# 救援逻辑（_rescue_textual_calls）只负责「让调用真的执行」，**不会**把这段原文收回去 ——
+# 于是用户既收到了原始调用文本、又真的查了一遍。判据放这里，两者才闭环。
+# 只认「调用形态」而不认裸 ``` ：正常回答里的代码块必须照常显示。
+_CALL_TEXT_SIG_RE = re.compile(
+    r"<function_call|<tool_call|\bfunctions\.[A-Za-z_]\w*\s*\(|\bmcp__\w+\s*\(|\b[A-Za-z_]\w*__\w[\w.]*\s*\(",
+    re.I)
+_TAG_CALL_RE = re.compile(r"<function_call>.*?</function_call>", re.S | re.I)
+# 流式期间先攒够这么多字符再决定发不发（够看出是不是调用文本，又不至于让用户等太久）
+_STREAM_HOLD = 40
+# 正文开头**可能是**调用表达式的前缀：只有这种开头才暂扣，普通中文/英文照常逐片下发。
+# 不这么做的话所有回答都会被攒成一大段再吐（实测会把「你好」「世界」两片合成一片，
+# 破坏 message.delta 与上游分片的一对一契约，前端打字机效果也跟着变）。
+_CALL_START_RE = re.compile(r"^(?:`|<|functions\.|mcp__|[A-Za-z_][\w]*__?)")
+
+
+def _looks_like_call_start(text: str) -> bool:
+    t = (text or "").lstrip()
+    if not t:
+        return True                      # 只有空白，再等等
+    return bool(_CALL_START_RE.match(t))
+
+
+def _strip_call_text(text: str) -> str:
+    """把正文里的工具调用文本删干净（保留调用之外的叙述）。"""
+    if not text:
+        return text
+    out = _TAG_CALL_RE.sub("", text)
+    # 模型有时只写开标签、忘了闭合（实测 <function_call> 后面直接跟正文），
+    # 成对正则匹配不到，得单独把游离标签扫掉，否则用户会看到「<function_call>我这边没有…」。
+    out = re.sub(r"</?(?:function_call|tool_calls?|invoke)\s*>", "", out, flags=re.I)
+
+    def _drop(m: re.Match) -> str:
+        inner = (m.group(1) or "").strip()
+        expr = _CALL_EXPR_RE.match(inner)
+        if not expr:
+            return m.group(0)
+        # 只删「工具形状」的调用：带 `functions.` 前缀，或 MCP 的双下划线命名。
+        # 否则 `print(1)` 这种普通代码也会命中 _CALL_EXPR_RE 被整块删掉 ——
+        # 用户要的示例代码就这么没了（本文件的回归测试专门守着这条）。
+        name = (expr.group(1) or "").strip()
+        is_tool_call = inner.startswith("functions.") or "__" in name
+        return "" if is_tool_call else m.group(0)
+
+    out = _FENCE_BLOCK_RE.sub(_drop, out)
+    # 裸写一行的调用表达式（没有代码块包裹）：整行删掉，别留在答案里
+    out = re.sub(r"(?m)^[ \t]*(?:functions\.)?[A-Za-z_][\w]*(?:__|\.)[\w.]*\s*\(.*\)[ \t]*;?[ \t]*$",
+                 "", out)
+    return out.strip()
+
 
 def _rescue_textual_calls(content: str, allowed_names: set[str], limit: int = 4) -> list[dict]:
     """把模型**写成正文**的工具调用还原成真正的 tool_calls。
@@ -375,14 +428,34 @@ async def agent(state: dict) -> dict:
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as http:
         message: dict = {}
         u: dict = {}
+        round_text = ""
         if stream:
+            round_parts: list[str] = []
+            buf = ""            # 已收但尚未决定可见性的正文
+            emitted = 0         # buf 里已经发出去的长度
+            suppress = False    # 命中「调用文本」特征后，本轮正文不再外发
             async for item in _post_stream(http, provider, api_key, messages, use_tools, temperature):
                 if item[0] == "delta":
                     clock.check()
-                    content_parts.append(item[1])
-                    _emit("message.delta", {"text": item[1]})
+                    t = item[1]
+                    round_parts.append(t)
+                    if suppress:
+                        continue
+                    buf += t
+                    if _CALL_TEXT_SIG_RE.search(buf):
+                        # 模型把工具调用写成了正文：这段文字不该出现在回答里。
+                        # 已经发出去的前缀（promise 句之类）收不回来，但后续一律压住。
+                        suppress = True
+                        logger.warning("正文里出现工具调用文本，本轮正文停止外发（等救援）")
+                        continue
+                    # 开头可能是调用表达式时先扣住，攒够 _STREAM_HOLD 再判；否则照常下发
+                    if emitted == 0 and len(buf) < _STREAM_HOLD and _looks_like_call_start(buf):
+                        continue
+                    _emit("message.delta", {"text": buf[emitted:]})
+                    emitted = len(buf)
                 else:  # ("done", message, usage)
                     message, u = item[1], item[2]
+            round_text = "".join(round_parts)
         else:
             message, u = await _post_non_stream(http, provider, api_key, messages, use_tools, temperature)
 
@@ -408,7 +481,16 @@ async def agent(state: dict) -> dict:
                              "arguments": json.dumps(c["arguments"], ensure_ascii=False)},
             } for c in rescued]
 
-    if not calls and not stream:
+    if stream:
+        # 流式分支的正文统一在这里收口：清理掉调用文本，再把「还没发出去的部分」补发。
+        # 这样界面看到的、落库的、以及后续上下文里的正文三者同源。
+        cleaned = _strip_call_text(round_text) if calls else round_text
+        if calls and cleaned != round_text:
+            round_text = cleaned
+        if len(round_text) > emitted:
+            _emit("message.delta", {"text": round_text[emitted:]})
+        content_parts.append(round_text)
+    elif not calls:
         # 非流式：该 message 即最终回答，本地切片为 delta（保持事件契约）
         content = str(message.get("content") or "")
         for ch in content:
@@ -643,6 +725,16 @@ async def finalize(state: dict) -> dict:
         # 工具轮数用尽仍未产出正文：汇总已获取的数据直接作答（与原行为一致）
         content = "已完成的工具查询结果：\n" + "\n".join(
             f"· {c['name']}：{'成功' if c['ok'] else '失败'}" for c in tool_calls_log)
+        for ch in content:
+            _emit("message.delta", {"text": ch})
+    elif not content:
+        # 既没正文也没工具调用 —— 模型这一轮返回了空内容（MiniMax 偶发）。
+        # 此前会直接落一条空消息，前端只能显示「（本次未返回内容）」：用户既不知道发生了什么，
+        # 也不知道下一步能做什么（2026-10-30 用户现场截图）。这里补一句**可行动**的说明，
+        # 同时留下 warn 便于统计频率 —— 但不能把它包装成「已回答」，那才是伪装成功。
+        logger.warning("模型本轮返回空内容（无 delta、无 tool_calls）：run 收口用兜底文案")
+        content = ("我这轮没有生成内容（模型返回为空）。可以再问一次，"
+                   "或把问题说得更具体一些（例如对象、时间范围、想要的结果形式）。")
         for ch in content:
             _emit("message.delta", {"text": ch})
 
