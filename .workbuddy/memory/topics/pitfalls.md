@@ -1054,6 +1054,23 @@ DB 就一直留旧数（实测 `wechat_work` 已 13、DB 仍 3，界面照着旧
 「配置可信 IP 前必须先设可信域名或接收消息 URL」⇒ **无备案域名时自建应用这条路整体走不通**，
 此时唯一能用的真机通道是群机器人 Webhook（不要求 IP/域名/企业认证）。对照实验见 `2026-10-30.md`。
 
+**⑦ 连接态同源时，「跳过」不能被当「失败」上报（bool 压扁的经典伤）。**
+hub 回写 Java 的状态同步有三态：`True` 已同步 / `False` 真失败 / `None` **按设计跳过**
+（mock 身份不是数据库主键、或本进程没配服务令牌）。压成 bool 后 dev 默认 `WECOM_MOCK=1`
+每次授权都算 `state-unsynced`，正常跳过被报成故障（S4b 假失败），真失败反而被噪声淹掉。
+
+**⑧ 目录状态不能被「配置就绪度」强降级。**
+`ConnectorCatalogService.list()` 曾拿 `configReady` 当门，未就绪就把 status 改成 NEED_AUTH
+⇒ 造出「manifest 已放行、界面显示未连接」（S5 过而 S4 挂）。连接态只信 `connector_connection`，
+就绪度是另一根轴（`configReady` / `configHint`），前端本就先按 configReady 分支
+（`user-client/_oa_app.js` 的 `connStatusChip`）。
+
+**⑨ 日志型断言先确认「文件在收新日志」。**
+单独重启 hub 时用 `python run.py` 没重定向 ⇒ 输出进了终端、`logs/mcp-hub.log` 停在旧内容，
+G7「日志无明文 key」于是**空文件假通过**（明文 0 次但也没有 `key=***` 标记）。
+判据要成对：明文 0 次 **且** 存在脱敏标记。同理，hub 若从临时脚本启动，最容易漏 `AIOS_SERVICE_JWT_SECRET`
+（漏了不报错，只是每次授权 `state-unsynced`）。
+
 ---
 
 ## 阶段补充（2026-10-18）：表单/HITL 链路的四个坑

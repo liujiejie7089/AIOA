@@ -7,7 +7,7 @@
 
 | 主题 | 文件 |
 |---|---|
-| 铁律 1–36（引用只报编号） | `topics/iron-rules.md` |
+| 铁律 1–36 | `topics/iron-rules.md` |
 | 功能域要点（H5/OA/表单三道闸/HITL/多租户） | `topics/features.md` |
 | 结构·打包·起服务·端口·账号·env·Flyway | `topics/runtime-env.md` |
 | 编码·排查（已修坑勿回退；禁删清单） | `topics/pitfalls.md` |
@@ -19,11 +19,12 @@
 | 生产部署（10.0.0.3） | `topics/production-deploy.md` |
 | 已知缺口 | `topics/known-gaps.md` |
 | git 推送 | `topics/git-remote.md` |
-| 进度口径 | `docs/28 §6`（未开工项唯一权威） |
-| 连接器接入 MCP（4453544） | `docs/59` §10 · hub :8099 · V97 三表 · 哨兵 `_verify_mcp_*`/`_verify_agent_mcp_wiring`/`_verify_oa_mcp_panel` · 坑见 `topics/pitfalls.md` · `AIOS_MCP_HUB` 默认 false |
-| 企微双模式 P0（085a77f） | `docs/61` · `wecom/` 原生 server（不代理 Java）· A=snsapi_privateinfo · B=邮箱专用密码 · 模式闸门 A/B/AB · `WECOM_MOCK` 默认 0 · `_verify_wecom_dual_mode_p0.py`(20) |
-| **群机器人 wecom_group** | `docs/62` §5.7 · `wecom/group.py`+`group_server.py`（2 工具）· V101 · `usableForAgent()`（API_KEY 看 configReady）· `_verify_wecom_group.py`(7) |
-| **企微按用户授权方案** | `docs/63` · 企微**无用户级 token**（应用 token + userid/user_ticket）· 待修 P0：`exchange_code` 路径/字段、连接态双源 |
+| 进度口径 | `docs/28 §6`（唯一权威） |
+| 连接器接入 MCP | `docs/59` §10 · hub :8099 · V97 三表 · `AIOS_MCP_HUB` 默认 false |
+| 企微双模式 | `docs/61` · `wecom/` 原生 server · A=privateinfo · B=邮箱密码 · 模式闸门 · `WECOM_MOCK` 默认 0 |
+| 群机器人 wecom_group | `docs/62` §5.7 · 2 工具 · V101 · `usableForAgent()` · `_verify_wecom_group.py`(7) |
+| 企微按用户授权 | `docs/63`（§9.2.1 已实施）· **无用户级 token**（应用 token + userid/user_ticket）· P0 已修 `ee9ad02` |
+| **连接态同源** | `wecom/sync.py` → `/internal/v1/connectors/{code}/connection` → `connector_connection` = 唯一真相源 · `synced` 三态 True/False/None(跳过) · 目录 status 只信库 · `_verify_connector_state_sync.py`(7) |
 
 ## 最常踩的五条（全文见 iron-rules.md）
 
@@ -36,5 +37,6 @@
 ## 新增坑（明细见 `topics/pitfalls.md` 末节）
 
 - 工具描述决定模型调不调；凭据会从**依赖的日志**漏（httpx 打整条 `?key=…`，已装 `_RedactKeyFilter`）。
-- `mcp_server_tool` 只是 trust 时的快照 ⇒ hub 扩工具后重跑 trust。直调 `/runs` 必须带 `user_token`。
-- 哨兵要「快照→复位→跑→恢复」，别假设库里是初始态。**mock 返回值会掩盖真机字段差异**（docs/63 P0-1）。
+- `mcp_server_tool` 是 trust 时的快照 ⇒ hub 扩工具后重跑 trust。直调 `/runs` 必须带 `user_token`。
+- 哨兵要「快照→复位→跑→恢复」。**mock 会掩盖真机字段差异**（P0-1 就这么漏的）。
+- 「跳过」≠「失败」：状态同步三态，压成 bool 会把 dev 正常跳过报成故障；日志断言要成对（无明文 **且** 有脱敏标记）。
