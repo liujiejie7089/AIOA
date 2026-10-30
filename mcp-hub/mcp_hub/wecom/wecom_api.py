@@ -116,13 +116,18 @@ class MockWeComApi:
         return {"errcode": 0, "errmsg": "ok", "mock_sent_to": touser}
 
     async def search_contact(self, access_token: str, query: str, limit: int) -> list[dict[str, Any]]:
+        """通讯录搜索（**不返回 biz_mail**：2022-06-20 起 user/list 不再返回该字段）。
+
+        mock 必须与实装同口径 —— 若这里继续吐 biz_mail，真机上恒 None 的缺陷又会被掩盖
+        （P0-1 就是被 mock 这么盖住的）。
+        """
         q = (query or "").lower()
         hits = [
             m for m in _MOCK_MEMBERS
-            if q in m["name"].lower() or q in m["userid"].lower() or q in m["biz_mail"].split("@")[0].lower()
+            if q in m["name"].lower() or q in m["userid"].lower()
         ]
         return [
-            {"userid": m["userid"], "name": m["name"], "bizMail": m["biz_mail"],
+            {"userid": m["userid"], "name": m["name"],
              "position": m["position"], "department": m["department"]}
             for m in hits[: max(1, min(limit, 30))]
         ]
@@ -267,6 +272,10 @@ class RealWeComApi:
         return self._check(resp.json(), "发送消息")
 
     async def search_contact(self, access_token: str, query: str, limit: int) -> list[dict[str, Any]]:
+        """通讯录搜索。**不映射 biz_mail** —— 官方自 2022-06-20 起 `user/list` 不再返回
+        手机/邮箱/企业邮箱等敏感字段，映射进来只会是一个恒 None 的假字段
+        （docs/63 §9.4）。企业邮箱只能「本人 OAuth 后 getuserdetail」取得。
+        """
         resp = await self._client.get(
             f"{QY_BASE}/user/list",
             params={"access_token": access_token, "department_id": 1, "fetch_child": 1},
@@ -281,8 +290,7 @@ class RealWeComApi:
             if q in name or q in uid or q in alias:
                 out.append({
                     "userid": u.get("userid"), "name": u.get("name"),
-                    "bizMail": u.get("biz_mail"), "position": u.get("position"),
-                    "department": u.get("department"),
+                    "position": u.get("position"), "department": u.get("department"),
                 })
                 if len(out) >= max(1, min(limit, 30)):
                     break

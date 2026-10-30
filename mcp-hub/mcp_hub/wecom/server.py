@@ -366,28 +366,66 @@ async def _exec_check_connection(args: dict) -> dict:
 
 
 async def _exec_get_profile(args: dict) -> dict:
+    """「我」的资料：凭据里的身份 + `user/get` 的通讯录字段。
+
+    docs/63 §9.4：姓名/职务/部门属通讯录字段，`getuserdetail` **不返回**（path/95833），
+    只能另调 `user/get`。这一步是增强而非必需 —— 租户凭据缺失、或应用不在可见范围（60011）时
+    降级并标注 `memberUnavailable`，不让「查我的资料」变成硬失败。
+    """
     p = _payload()
     a = (p["connection"].a_credential or {})
-    if not a.get("userid"):
+    userid = a.get("userid")
+    if not userid:
         raise ValueError("A 模式凭据缺失，请重新授权")
-    return {"userid": a.get("userid"), "name": a.get("name"),
-            "bizMail": a.get("biz_mail"), "boundAt": a.get("bound_at")}
+    out = {"userid": userid, "name": a.get("name"),
+           "bizMail": a.get("biz_mail"), "boundAt": a.get("bound_at")}
+    try:
+        cfg = await store.get_tenant_config(p["identity"].tenant_id)
+        if cfg is not None:
+            api = wecom_api.get_backend()
+            token = await oauth.get_access_token(cfg.corp_id, cfg.corp_secret, api.get_access_token)
+            member = await api.get_member(token, userid)
+            out.update({k: member[k] for k in ("name", "position", "department", "status")
+                        if member.get(k)})
+    except Exception as e:  # noqa: BLE001
+        logger.info("get_my_profile 通讯录字段降级（userid=%s）：%s", userid, e)
+        out["memberUnavailable"] = str(e)[:160]
+    return out
 
 
 async def _exec_send_text(args: dict) -> dict:
+    """按「用户授权」语义发消息：**默认只发给本人**，发给他人必须有 confirmed=true。
+
+    docs/63 §9.3：消息接口用的是**应用级 token**，能发给可见范围内任何人。若不设闸门，
+    用户 A 会话里的模型就能给任意同事发消息，而用户会以为「只动我的账号」—— 这是越权。
+    这里不搞白名单（没有可靠数据源），改用「显式确认」：模型必须先问过用户，才能置 confirmed。
+    """
     p = _payload()
-    touser = (args.get("touser") or "").strip()
+    me = ((p["connection"].a_credential or {}).get("userid") or "").strip()
     content = args.get("content")
-    if not touser:
-        raise ValueError("touser 不能为空")
     if not content:
         raise ValueError("content 不能为空")
+    touser = (args.get("touser") or "").strip()
+    if not touser:
+        if not me:
+            raise ValueError("A 模式凭据缺失（取不到本人 userid），请重新授权或显式指定 touser")
+        touser = me
+    others = [t for t in touser.split("|") if t and t != me]
+    if others and not bool(args.get("confirmed")):
+        raise ValueError(
+            "拒绝越权发送：收件人 %s 不是当前授权用户（%s）。请先问用户是否要发给对方，"
+            "得到明确同意后再传 touser 并置 confirmed=true" % ("|".join(others), me or "未知"))
     cfg = await store.get_tenant_config(p["identity"].tenant_id)
     if cfg is None:
         raise ValueError("租户未配置企业微信应用凭据")
     api = wecom_api.get_backend()
     token = await oauth.get_access_token(cfg.corp_id, cfg.corp_secret, api.get_access_token)
-    return await api.send_text(token, cfg.agent_id, touser, content)
+    result = await api.send_text(token, cfg.agent_id, touser, content)
+    if others:
+        # 留痕：这是唯一一条「以应用身份动了别人」的路径，出事要能查。
+        logger.warning("向他人发送（已确认）：from=%s touser=%s chars=%s",
+                       me, "|".join(others), len(content))
+    return {**result, "touser": touser, "toSelf": not others}
 
 
 async def _exec_contact_search(args: dict) -> dict:
@@ -402,7 +440,21 @@ async def _exec_contact_search(args: dict) -> dict:
     api = wecom_api.get_backend()
     token = await oauth.get_access_token(cfg.corp_id, cfg.corp_secret, api.get_access_token)
     members = await api.search_contact(token, query, limit)
-    return {"query": query, "count": len(members), "members": members}
+    # docs/63 §9.4：企业邮箱只有「本人」有可信来源（snsapi_privateinfo 授权后的 getuserdetail）。
+    # 其他人自 2022-06-20 起 user/list、user/get 都不再返回 biz_mail，真机恒 null ⇒
+    # 不下发空字段，只在 isSelf 那一行补上，避免模型把 null 读成「对方没有邮箱」。
+    a = (p["connection"].a_credential or {})
+    mine, my_mail = a.get("userid"), a.get("biz_mail")
+    for m in members:
+        m.pop("bizMail", None)
+        is_self = bool(mine) and m.get("userid") == mine
+        m["isSelf"] = is_self
+        if is_self and my_mail:
+            m["bizMail"] = my_mail
+    return {
+        "query": query, "count": len(members), "members": members,
+        "scope": "应用可见范围内的成员（不是『我的联系人』）；企业邮箱仅本人那一行有值",
+    }
 
 
 def _mail_credential(p: dict) -> tuple[str, str]:
@@ -505,13 +557,18 @@ async def _dispatch(ctx: Context, tool_name: str, arguments: dict) -> CallToolRe
 
 # ---------- 注册 ----------
 
+# ★ 这里是**第二处参数事实源**（第一处是 catalog.py 的 input_schema.required）：
+#   catalog 决定「模型在 manifest 里看到什么」，本表决定「真正传进来时 pydantic 怎么校验」
+#   （default=None ⇒ 必填）。只改一处 = 描述说可省略、调用却被判缺参（本轮 S7b/S7d 就是这么挂的），
+#   故 build_server() 里有一致性自检 `_assert_params_in_sync()`，别再让两边漂移。
 _PARAMS: dict[str, list[tuple[str, type, Any]]] = {
     "connect": [("mode", str, "A")],
     "disconnect": [("mode", str, "")],
     "connection_status": [],
     "check_connection": [],
     "get_my_profile": [],
-    "send_text_message": [("touser", str, None), ("content", str, None)],
+    # touser 留空 = 发给本人；confirmed 仅发他人时用（docs/63 §9.3）
+    "send_text_message": [("touser", str, ""), ("content", str, None), ("confirmed", bool, False)],
     "contact_search": [("query", str, None), ("limit", int, 10)],
     "mail_list_folders": [],
     "mail_list_messages": [("folder", str, "INBOX"), ("limit", int, 10), ("unreadOnly", bool, False)],
@@ -550,8 +607,27 @@ def _make_tool_fn(tool_name: str, props: list[tuple[str, type, Any]]):
     return _fn
 
 
+def _assert_params_in_sync() -> None:
+    """catalog.py 的 required 与 `_PARAMS` 的必填（default=None）必须一致。
+
+    两边漂移的症状很隐蔽：模型看到「可选」，真传进来却被 pydantic 判缺参；
+    或模型看到「必填」，实际能省 —— 两种都只在端到端调用时暴露，单测和列表接口都看不出来。
+    """
+    problems = []
+    for tool in TOOLS:
+        name = tool["name"]
+        declared = set((tool.get("input_schema") or {}).get("required") or [])
+        actual = {p[0] for p in _PARAMS.get(name, []) if p[2] is None}
+        if declared != actual:
+            problems.append("%s：catalog required=%s / _PARAMS 必填=%s"
+                            % (name, sorted(declared), sorted(actual)))
+    if problems:
+        raise RuntimeError("企微工具参数声明与注册不一致：\n  " + "\n  ".join(problems))
+
+
 def build_server() -> FastMCP:
     """构建原生 wechat_work 服务器（streamable_http_path='/'，与代理服务器一致）。"""
+    _assert_params_in_sync()
     register_executors()
     mcp = FastMCP(SERVER_CODE, streamable_http_path="/")
     for tool in TOOLS:

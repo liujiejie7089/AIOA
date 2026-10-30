@@ -39,7 +39,8 @@ EXPECT = {
             "connection_status": [],
             "check_connection": [],
             "get_my_profile": [],
-            "send_text_message": ["touser", "content"],
+            # send_text_message 的 touser 已改为可选（留空 = 发给本人，docs/63 §9.3）
+            "send_text_message": ["content"],
             "contact_search": ["query"],
             "mail_list_folders": [],
             "mail_list_messages": [],

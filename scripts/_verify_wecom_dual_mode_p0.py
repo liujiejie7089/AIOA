@@ -13,7 +13,11 @@
   S5  get_my_profile                 → mock 企业成员身份（userid + biz_mail）
   S6  mail_list_messages（A 模式）    → 闸门拒绝，文案指引导绑邮箱
   S7  send_text_message              → mock 应用级发送成功
+  S7b 不传 touser                    → 默认发给本人（toSelf=true）
+  S7c 发给他人未 confirmed           → 被拒（越权闸门，docs/63 §9.3）
+  S7d 已 confirmed 发给他人          → 放行且 toSelf=false
   S8  contact_search                 → mock 通讯录搜索
+  S8b contact_search 邮箱来源        → 他人行无 bizMail，本人行 isSelf+授权邮箱（§9.4）
   S9  connect(mode=B)                → 表单 elicitation + 探活 → 合并为 A+B
   S10 邮件闭环                       → list(3 封) → draft → send → Sent；requestId 幂等
   S11 authorize-url（普通 UA）       → qrConnect 兜底分支 URL 形态
@@ -227,16 +231,50 @@ async def main() -> int:
                 rec("S6 模式闸门拒绝跨模式工具", is_err and "企业邮箱" in json.dumps(data, ensure_ascii=False),
                     json.dumps(data, ensure_ascii=False)[:100])
 
-                # ---------- S7 发消息 ----------
+                # ---------- S7 发消息（docs/63 §9.3 越权闸门） ----------
                 _, data = _call_result_text(await session.call_tool(
                     "send_text_message", {"touser": MOCK_USERID, "content": "P0 冒烟"}))
                 rec("S7 send_text_message mock 成功", data.get("errcode") == 0, json.dumps(data, ensure_ascii=False)[:80])
 
-                # ---------- S8 通讯录搜索 ----------
+                # S7b 不传 touser ⇒ 默认发给本人（最常见用法，不该要求模型填收件人）
+                _, data = _call_result_text(await session.call_tool(
+                    "send_text_message", {"content": "P0 默认收件人"}))
+                rec("S7b 不传 touser 默认发本人",
+                    data.get("errcode") == 0 and data.get("touser") == MOCK_USERID
+                    and data.get("toSelf") is True,
+                    json.dumps(data, ensure_ascii=False)[:100])
+
+                # S7c 发给他人但未确认 ⇒ 必须被拒（应用 token 本来能发给任何人，没这道闸就是越权）
+                is_err, data = _call_result_text(await session.call_tool(
+                    "send_text_message", {"touser": "lisi", "content": "P0 越权探测"}))
+                rec("S7c 未确认发给他人被拒",
+                    is_err and "越权" in json.dumps(data, ensure_ascii=False),
+                    json.dumps(data, ensure_ascii=False)[:110])
+
+                # S7d 用户已确认（confirmed=true）⇒ 放行，且标明不是发给本人
+                _, data = _call_result_text(await session.call_tool(
+                    "send_text_message", {"touser": "lisi", "content": "P0 已确认", "confirmed": True}))
+                rec("S7d 确认后发给他人放行",
+                    data.get("errcode") == 0 and data.get("toSelf") is False,
+                    json.dumps(data, ensure_ascii=False)[:100])
+
+                # ---------- S8 通讯录搜索（docs/63 §9.4：不吐他人邮箱） ----------
                 _, data = _call_result_text(await session.call_tool("contact_search", {"query": "张"}))
                 rec("S8 contact_search 命中", data.get("count", 0) >= 1
                     and any(m.get("userid") == MOCK_USERID for m in data.get("members", [])),
                     json.dumps(data, ensure_ascii=False)[:100])
+
+                _, data = _call_result_text(await session.call_tool("contact_search", {"query": "li"}))
+                others = [m for m in data.get("members", []) if m.get("userid") != MOCK_USERID]
+                _, self_data = _call_result_text(await session.call_tool("contact_search", {"query": "张"}))
+                self_row = next((m for m in self_data.get("members", [])
+                                 if m.get("userid") == MOCK_USERID), {})
+                rec("S8b 他人行不下发 bizMail、本人行才有（且来自授权）",
+                    bool(others) and all("bizMail" not in m for m in others)
+                    and all(m.get("isSelf") is False for m in others)
+                    and self_row.get("isSelf") is True and self_row.get("bizMail") == MOCK_EMAIL,
+                    "others=%s selfRow=%s" % (json.dumps(others, ensure_ascii=False)[:90],
+                                              json.dumps(self_row, ensure_ascii=False)[:90]))
 
                 # ---------- S9 connect B（表单 elicitation）→ A+B ----------
                 _, data = _call_result_text(await session.call_tool("connect", {"mode": "B"}))

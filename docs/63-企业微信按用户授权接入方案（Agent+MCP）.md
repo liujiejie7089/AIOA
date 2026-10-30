@@ -380,24 +380,42 @@ hub wecom/server.complete_oauth / _tool_disconnect
 
 ### 9.3 【建议·安全】`send_text_message` 允许模型指定任意收件人
 
-- 现状：`_exec_send_text` 要求 `touser` 非空，由模型填（`wecom/server.py:313`）。
+- 原状：`_exec_send_text` 要求 `touser` 非空，由模型填（`wecom/server.py`）。
 - 问题：这是「应用视角」而不是「用户视角」—— 用户 A 的会话里，模型可以给同企业任何人发消息，
   用户会以为「只动我的账号」。在「按用户授权」的语义下这是越权。
-- 建议：默认 `touser = 当前授权用户`（从连接态取），要发给别人必须显式走「确认卡 + 白名单」；
-  或在工具描述与权限里收窄到「仅本人」。
-- 判据：不传 `touser` 也能给本人发成功；传他人 userid 被拒或需二次确认。
+- **已修（2026-10-30）**：`touser` 改为可选，语义翻转成「**留空 = 发给当前授权用户本人**」；
+  传了别人的 userid 而没带 `confirmed=true` ⇒ 直接拒绝（错误文案要求先问用户）；
+  `confirmed=true` 才放行，并落 `logger.warning` 留痕；返回体带 `toSelf` 便于模型自检。
+  工具描述首句就写明这条（描述决定模型调不调、怎么调）。
+- 判据（`_verify_wecom_dual_mode_p0`）：S7 指定本人可发；S7b 不传 `touser` 发本人且 `toSelf=true`；
+  S7c 未确认发他人被拒；S7d 确认后放行且 `toSelf=false`。
+
+> 为什么不用白名单：没有可靠数据源能界定「这个人能不能发给那个人」，硬编一份只会变成假安全。
+> 「显式确认」把判断权交回用户，且可审计。
 
 ### 9.4 【建议·语义】`contact_search` 读的是全员可见范围，且 `bizMail` 恒为空
 
-- 现状：`wecom_api.search_contact` 调 `user/list?department_id=1&fetch_child=1`（应用 token 读可见范围全员），
-  并把 `biz_mail` 映射进结果（`wecom_api.py:213-233`）。
+- 原状：`wecom_api.search_contact` 调 `user/list?department_id=1&fetch_child=1`（应用 token 读可见范围全员），
+  并把 `biz_mail` 映射进结果。
 - 两个问题：
   1. 这不是「该用户自己的数据」，而是「应用能看到的通讯录」——与「按用户授权」的叙事不一致；
   2. 官方 2022-06-20 后 `user/list` **不再返回 `biz_mail`**，该字段真机恒为 `null`（mock 里有值，又是 mock 掩盖）。
-- 建议：拆成两个工具语义并写清描述 ——
-  - `get_my_detail`：`user/get?userid=<连接态里的 userid>`，读「我」的详情；
-  - `contact_search`：保留搜索，但只返回 `userid/name/department/position`，
-    `bizMail` 一律从 `a_credential` 取（即「本人授权过才有」），不要把 `null` 当正常值下发。
+- **已修（2026-10-30）**：
+  - `search_contact` 两个后端（实装 + mock）都不再映射 `biz_mail`，只返回 `userid/name/position/department`；
+    mock 同步去掉该字段 —— 不同口径的 mock 等于第二层掩盖。
+  - `_exec_contact_search` 给每行补 `isSelf`；**只有本人那一行**才从 `a_credential` 补 `bizMail`，
+    并在返回体加 `scope` 说明「这是应用可见范围，不是我的联系人」。
+  - 「读我自己的详情」不新增工具，直接增强已有 `get_my_profile`：凭据字段 + `user/get` 的
+    姓名/职务/部门/状态（取不到时降级标注 `memberUnavailable`，不让查资料变硬失败）。
+  - 判据：S8b —— 他人行无 `bizMail` 且 `isSelf=false`；本人行 `isSelf=true` 且邮箱来自授权。
+
+#### 9.4.1 实施时发现的第二个参数源（会静默错调）
+
+企微工具的参数有两处事实源：`wecom/catalog.py` 的 `input_schema.required`（决定**模型看到什么**）
+与 `wecom/server.py::_PARAMS`（决定**真正校验什么**，`default=None` 即必填）。
+本轮只改了前者，结果描述说「touser 可省略」、真调用却被 pydantic 判缺参（S7b/S7d 因此挂了）。
+现已加 `_assert_params_in_sync()` 在 `build_server()` 里做启动自检：两边 `required` 不一致就**拒绝启动**，
+不再靠人记得同时改两处。
 
 ### 9.5 【外部前置】A 模式真机的唯一硬阻塞：备案域名
 
@@ -410,13 +428,13 @@ hub wecom/server.complete_oauth / _tool_disconnect
 
 ### 9.6 一张表总结
 
-| # | 事项 | 性质 | 不改的后果 | 优先级 |
+| # | 事项 | 性质 | 不改的后果 | 状态 |
 |---|---|---|---|---|
-| 1 | `exchange_code` 路径/字段对齐官方 | 代码 bug | 真机 A 模式无姓名/企业邮箱，且不报错 | **P0** |
-| 2 | 连接态双源收敛（或闸门改读 hub） | 架构缺陷 | 连上了但工具消失 / 工具在但执行报缺凭据 | **P0** |
-| 3 | `send_text_message` 收件人收窄 | 越权风险 | 可被用来给任意同事发消息 | P1 |
-| 4 | `contact_search` 语义 + `bizMail` 来源 | 语义/正确性 | 返回空邮箱，用户以为没配 | P2 |
-| 5 | 备案域名 + 固定 IP | 外部前置 | 自建应用整条路不可用 | 阻碍项 |
+| 1 | `exchange_code` 路径/字段对齐官方 | 代码 bug | 真机 A 模式无姓名/企业邮箱，且不报错 | **已修** `ee9ad02` |
+| 2 | 连接态双源收敛（或闸门改读 hub） | 架构缺陷 | 连上了但工具消失 / 工具在但执行报缺凭据 | **已修** `ee9ad02` |
+| 3 | `send_text_message` 收件人收窄 | 越权风险 | 可被用来给任意同事发消息 | **已修**（留空=本人 + `confirmed` 闸门） |
+| 4 | `contact_search` 语义 + `bizMail` 来源 | 语义/正确性 | 返回空邮箱，用户以为没配 | **已修**（`isSelf` + 邮箱只取授权） |
+| 5 | 备案域名 + 固定 IP | 外部前置 | 自建应用整条路不可用 | 阻碍项（代码解决不了） |
 
 > 若只想「让 Agent 能替用户办事」而不追求「读该用户的敏感档案」，**P0-2 也可以先绕**：
 > 把 A 模式暂时下线，只保留群机器人（发群消息）+ 邮箱模式 B（收发本人邮件），

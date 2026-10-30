@@ -79,7 +79,9 @@ TOOLS: list[dict] = [
         "name": "get_my_profile",
         "group": "A",
         "modes": [MODE_A],
-        "description": "获取当前用户的企业微信身份（userid / 姓名 / 企业邮箱地址），来自 snsapi_privateinfo 授权后的 getuserdetail",
+        "description": ("获取**当前授权用户本人**的企业微信资料：userid、姓名、职务、部门（user/get）、"
+                        "企业邮箱（仅 snsapi_privateinfo 授权过才有）。"
+                        "查别人请用 contact_search，本工具只返回「我」。"),
         "input_schema": {"type": "object", "properties": {}},
         "read_only": True,
     },
@@ -87,14 +89,19 @@ TOOLS: list[dict] = [
         "name": "send_text_message",
         "group": "A",
         "modes": [MODE_A],
-        "description": "以企业微信自建应用身份向指定成员发送文本消息",
+        "description": ("给企业微信成员发文本消息。**不传 touser 就是发给当前授权用户本人**（最常见用法，直接发即可）。"
+                        "要发给别人，必须先在对话里问用户「要不要发给 X」，用户明确同意后再传 touser 并置 confirmed=true；"
+                        "不要猜别人的 UserID，未经确认不要发给他人。"),
         "input_schema": {
             "type": "object",
             "properties": {
-                "touser": {"type": "string", "description": "成员 UserID，多个用 | 分隔"},
+                "touser": {"type": "string",
+                           "description": "收件人 UserID，多个用 | 分隔。**留空 = 发给当前授权用户本人**"},
                 "content": {"type": "string", "description": "消息正文"},
+                "confirmed": {"type": "boolean",
+                              "description": "仅当 touser 指向他人时使用：表示用户已在对话中明确同意发给该成员"},
             },
-            "required": ["touser", "content"],
+            "required": ["content"],
         },
         "read_only": False,
     },
@@ -102,11 +109,14 @@ TOOLS: list[dict] = [
         "name": "contact_search",
         "group": "A",
         "modes": [MODE_A],
-        "description": "按姓名/用户名关键词搜索企业通讯录成员（应用级只读，不需要对应用户授权）",
+        "description": ("按姓名 / UserID 搜索**应用可见范围内**的成员，用来查 UserID（这是「应用的通讯录」，"
+                        "不是「我的联系人」，不代表对方授权过任何东西）。"
+                        "只返回 userid / 姓名 / 职务 / 部门；企业邮箱只有**本人那一行**有值（来自本人授权），"
+                        "其他人恒为空 —— 不要把空邮箱理解成「对方没有邮箱」。"),
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "搜索关键词（匹配姓名/用户名/邮箱前缀）"},
+                "query": {"type": "string", "description": "搜索关键词（匹配姓名/UserID/别名）"},
                 "limit": {"type": "integer", "description": "返回条数，默认 10，最大 30"},
             },
             "required": ["query"],
