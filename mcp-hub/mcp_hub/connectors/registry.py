@@ -17,7 +17,7 @@ import logging
 
 from .. import specs
 from ..wecom import catalog as wecom_catalog
-from .manifest import AUTH_CREDENTIAL, AUTH_OAUTH2, ConnectorManifest, CredentialField
+from .manifest import AUTH_API_KEY, AUTH_CREDENTIAL, AUTH_OAUTH2, ConnectorManifest, CredentialField
 
 logger = logging.getLogger("mcp_hub.connectors")
 
@@ -86,6 +86,12 @@ def _build_wecom_server():
     return wecom_server.build_server()
 
 
+def _build_wecom_group_server():
+    from ..wecom import group_server
+
+    return group_server.build_server()
+
+
 def _register_builtin() -> None:
     # 企业微信：管理员配应用凭据（corpId/agentId/corpSecret），用户走 OAuth。
     # 凭据落在 wecom 自己的加密表（provider=wecom），历史数据与 20 项哨兵不受影响。
@@ -110,7 +116,8 @@ def _register_builtin() -> None:
                                 help="同一页面点「查看」；只存密文，永不回显"),
                 CredentialField(name="redirectUri", label="OAuth 回调地址", type="url",
                                 required=False, placeholder="https://你的域名/api/v1/wecom/oauth/callback",
-                                help="可不填：默认取 WECOM_OAUTH_REDIRECT 环境变量"),
+                                help="可留空：留空则按 env WECOM_PUBLIC_BASE_URL + /api/v1/wecom/oauth/callback 推导；"
+                                     "域名必须与企微应用「OAuth2.0 网页授权可信域名」一致"),
             ),
             tool_count=wecom_catalog.tool_count(),
             server_factory=_build_wecom_server,
@@ -128,6 +135,31 @@ def _register_builtin() -> None:
             summary="收发邮件（IMAP/SMTP）；凭据由每位用户自行填写，管理员无需配置",
             help_url="https://open.work.weixin.qq.com/help2/pc/19984",
             tool_count=specs.tool_count("qq_mail"),
+        )
+    )
+    # 企业微信群机器人：唯一不要求可信 IP / 域名的企微通道，只认 webhook key。
+    # 凭据落通用保险库（provider=vault，租户级），管理员填、AI 用。
+    from ..wecom import group_server
+
+    register(
+        ConnectorManifest(
+            code=group_server.SERVER_CODE,
+            name=group_server.SERVER_NAME,
+            group="协作与办公",
+            auth_mode=AUTH_API_KEY,
+            provider="vault",
+            summary="往企业微信群发消息（群机器人 Webhook）；不要求可信 IP、域名、企业认证",
+            help_url="https://developer.work.weixin.qq.com/document/path/91770",
+            credential_fields=(
+                CredentialField(name="webhookKey", label="群机器人 Webhook Key", type="password",
+                                required=True, sensitive=True,
+                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                                help="企微群 → 右上角 … → 消息推送/群机器人 → 复制 Webhook 地址，"
+                                     "取 key= 之后那段（36 位 UUID）。只存密文，永不回显"),
+            ),
+            tool_count=group_server.tool_count(),
+            server_factory=_build_wecom_group_server,
+            tool_catalog=lambda: group_server.TOOLS,
         )
     )
 

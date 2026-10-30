@@ -17,6 +17,8 @@ public class ConnectorDef {
 
     public static final String AUTH_MODE_CREDENTIAL = "CREDENTIAL";
     public static final String AUTH_MODE_OAUTH2 = "OAUTH2";
+    /** 租户级凭据（管理员填 key，无用户授权环节），如企业微信群机器人。 */
+    public static final String AUTH_MODE_API_KEY = "API_KEY";
     public static final String STATUS_ACTIVE = "ACTIVE";
 
     @TableId(type = IdType.AUTO)

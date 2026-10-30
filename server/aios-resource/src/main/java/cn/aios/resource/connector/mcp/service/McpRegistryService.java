@@ -3,11 +3,13 @@ package cn.aios.resource.connector.mcp.service;
 import cn.aios.common.crypto.SecretCodec;
 import cn.aios.common.exception.BizException;
 import cn.aios.resource.connector.entity.ConnectorConnection;
+import cn.aios.resource.connector.entity.ConnectorDef;
 import cn.aios.resource.connector.mcp.config.McpProperties;
 import cn.aios.resource.connector.mcp.entity.McpServer;
 import cn.aios.resource.connector.mcp.entity.McpServerTool;
 import cn.aios.resource.connector.mcp.mapper.McpServerMapper;
 import cn.aios.resource.connector.mcp.mapper.McpServerToolMapper;
+import cn.aios.resource.connector.service.ConnectorCatalogService;
 import cn.aios.resource.connector.service.ConnectorConnectionService;
 import cn.aios.security.AuthUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -43,6 +45,7 @@ public class McpRegistryService {
     private final McpServerMapper serverMapper;
     private final McpServerToolMapper toolMapper;
     private final ConnectorConnectionService connectionService;
+    private final ConnectorCatalogService catalogService;
     private final McpProbeClient probeClient;
     private final McpProperties props;
     private final SecretCodec secretCodec;
@@ -70,7 +73,7 @@ public class McpRegistryService {
         return items;
     }
 
-    /** agent 用：仅 trusted=1 且（BUILTIN ⇒ 连接器 CONNECTED）。返回 hub 统一入口 url。 */
+    /** agent 用：仅 trusted=1 且（BUILTIN ⇒ 连接器可用）。返回 hub 统一入口 url。 */
     public List<ManifestItem> manifest(AuthUser user) {
         List<McpServer> servers = serverMapper.selectList(new LambdaQueryWrapper<McpServer>()
                 .in(McpServer::getTenantId, List.of(0L, tenantId(user)))
@@ -78,15 +81,8 @@ public class McpRegistryService {
                 .orderByAsc(McpServer::getSort));
         List<ManifestItem> out = new ArrayList<>();
         for (McpServer s : servers) {
-            if (McpServer.SOURCE_BUILTIN.equals(s.getSource())) {
-                if (s.getConnectorCode() == null || s.getConnectorCode().isBlank()) {
-                    continue;
-                }
-                boolean connected = ConnectorConnection.STATUS_CONNECTED.equals(
-                        connectionService.statusOf(tenantId(user), user.getUserId(), s.getConnectorCode()));
-                if (!connected) {
-                    continue; // 判据 2
-                }
+            if (McpServer.SOURCE_BUILTIN.equals(s.getSource()) && !usableForAgent(user, s)) {
+                continue; // 判据 2
             }
             int toolCount = toolMapper.selectCount(new LambdaQueryWrapper<McpServerTool>()
                     .eq(McpServerTool::getServerId, s.getId())).intValue();
@@ -109,6 +105,36 @@ public class McpRegistryService {
             out.add(new ManifestItem(s.getCode(), s.getName(), "streamable_http", url, toolCount));
         }
         return out;
+    }
+
+    /**
+     * 连接闸门：该内置连接器现在「对 AI 可用」吗？
+     *
+     * <p>两种形态，判据不同：</p>
+     * <ul>
+     *   <li><b>用户授权型</b>（OAUTH2 / CREDENTIAL，如企微 OAuth、QQ 邮箱）：要求
+     *       {@code connector_connection} 里该用户已 CONNECTED —— 防止「信任了就能读别人邮箱」。</li>
+     *   <li><b>租户凭据型</b>（API_KEY，如企业微信群机器人）：没有用户授权环节，
+     *       申请凭据的是管理员。此时看「租户配置是否就绪」——没填 key 就等于没接入，
+     *       给了 AI 也只会报错，不如不给。</li>
+     * </ul>
+     *
+     * <p>历史 bug：早先只判 CONNECTED，导致 API_KEY 型连接器永远进不了 manifest
+     * （现象是「工具在 hub 里能调，AI 却看不到」）。</p>
+     */
+    private boolean usableForAgent(AuthUser user, McpServer s) {
+        String code = s.getConnectorCode();
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        Long tenantId = tenantId(user);
+        if (ConnectorConnection.STATUS_CONNECTED.equals(
+                connectionService.statusOf(tenantId, user.getUserId(), code))) {
+            return true;
+        }
+        String authMode = catalogService.authMode(code);
+        return ConnectorDef.AUTH_MODE_API_KEY.equalsIgnoreCase(authMode)
+                && catalogService.configReady(code, tenantId).ready();
     }
 
     /** 内置工具目录全量（规格对齐哨兵用，格式与 probe 的 tools 一致，附带 serverCode 以便分组）。 */

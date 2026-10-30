@@ -100,6 +100,21 @@ public class ConnectorCatalogService {
                 def.getSummary(), def.getAuthMode(), fields, def.getHelpText(), def.getHelpUrl());
     }
 
+    /**
+     * 授权形态（OAUTH2 / CREDENTIAL / API_KEY），供 MCP 闸门区分「谁负责授权」：
+     * 前两者按用户连接态判，API_KEY 按租户配置就绪度判。未知 code 返回 null。
+     */
+    public String authMode(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        return activeDefs().stream()
+                .filter(d -> code.equals(d.getCode()))
+                .map(ConnectorDef::getAuthMode)
+                .findFirst()
+                .orElse(null);
+    }
+
     /** 配置就绪度（对外）。未就绪时 hint 指出缺哪个键。 */
     public ConfigReadyResult configReady(String code, Long tenantId) {
         ConnectorDef def = requireDef(code);

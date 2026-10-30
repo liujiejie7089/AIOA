@@ -4,10 +4,19 @@
 收口哨兵：MCP 服务器注册表 + 信任闸门 + 内置工具桥接（docs/59 §10.3 / §10.4）
 
 只做「可逆」的调用：探测(probe) 不落 trusted；trust 之后一定 un-trust 复原。
-所以本脚本跑完，库里 mcp_server 的 trusted 回到全 0（与 V97 种子一致），可反复跑。
 
-  M1  GET  /api/v1/mcp/servers                 恰好 qq_mail / wechat_work 两行；trusted=false、
-                                               source=BUILTIN、toolCount=6/2、connected=false
+**为什么开头要先做快照 + 复位**（2026-10-30 修）：
+M1「默认不可信」、M3「probe 不改 trusted」、M2/M9「manifest 为空」、M8「先报尚未信任」
+这五项都以「库里 trusted 全 0」为前提，而脚本自己并不保证这个前提 —— 上一轮谁 trust 过、
+或者真实环境里管理员为了用起来而 trust 过，都会让它们**假失败**（本轮实测就是：
+三个内置服务器 trusted 全为 1，五项一起红）。
+直接在开头无脑 un-trust 也不行：wecom_group 是租户凭据型，一取消信任 AI 那边的工具就没了。
+故改成「先快照每个内置服务器的 trusted，再复位，跑完按快照恢复」——
+既不依赖外部状态，也不破坏真实配置。
+
+  M0  GET  /api/v1/mcp/servers                 快照 trusted（前置，不计入断言）
+  M1  GET  /api/v1/mcp/servers                 恰好 qq_mail / wechat_work / wecom_group 三行；
+                                               trusted=false、source=BUILTIN、toolCount=6/13/2
   M2  GET  /api/v1/mcp/manifest                **空**（都没信任）
   M3  POST /servers/qq_mail/probe              ok=true、tools=6，但 trusted **仍为 false**
                                                ⇒ 证明「探测 ≠ 信任」（探活只证明能用，不等于授权）
@@ -21,10 +30,15 @@
   M10 GET  /api/v1/mcp/servers（无 token）        HTTP 401
   M11 审计落库                                  M7 之后 mcp_tool_audit 行数 +1（直接查库比对）
   M12 凭据不外泄                                列表响应不含 authCode/corpSecret/credential 等键名与明文
+  M13 工具目录无漂移                            DB 目录（信任时从 hub 覆盖写）与 hub **实装**数逐个相等。
+                                               hub 是工具的唯一真源（catalog.py / group_server.TOOLS），
+                                               DB 只是快照；快照旧了界面就报错数（真发生过：
+                                               wechat_work 扩容到 13 后 DB 仍留 3，因为信任发生在扩容前）。
+                                               判据回到真源再取一次，不与被测对象同源。
 
 用法：
     python scripts/_verify_mcp_registry.py [--base http://127.0.0.1:8080]
-前置：后端在线 + V97 已执行（首次启动自动建表与种子）+ mcp-hub 在 :8099 在线（M3/M4 需要）。
+前置：后端在线 + V97 已执行（首次启动自动建表与种子）+ mcp-hub 在 :8099 在线（M3/M4/M13 需要）。
      前置缺失时脚本会明确报 FATAL/FAIL 原因，不静默 SKIP。
 退出码 = 失败项数。
 """
@@ -46,6 +60,10 @@ EXPECT_REQUIRED = {
     "send_draft": ["draftId", "requestId"],
 }
 FORBIDDEN_KEY_SUBSTR = ("credential", "authcode", "corpsecret", "secret", "password", "enc")
+# 内置服务器 → 期望工具数。**不是**写死的历史值，而是「hub 实装数」的镜像；
+# M13 会拿它跟 hub 现报的数字逐个比对，两边不一致就红（防止只改一处）。
+EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 13, "wecom_group": 2}
+DEFAULT_HUB = "http://127.0.0.1:8099"
 MYSQL = "D:/dev/mysql/mysql-8.4.10-winx64/bin/mysql.exe"  # 注意用盘符式路径：
 # Git Bash 的 /d/... 在 Python os.path.exists 下不成立（2026-10-20 踩过，导致 M11 假失败）。
 
@@ -108,8 +126,10 @@ def main():
     ap.add_argument("--base", default=os.environ.get("AIOS_BASE", "http://127.0.0.1:8080"))
     ap.add_argument("--user", default="admin")
     ap.add_argument("--password", default="Admin@123")
+    ap.add_argument("--hub", default=os.environ.get("AIOS_HUB", DEFAULT_HUB))
     args = ap.parse_args()
     base = args.base.rstrip("/")
+    hub = args.hub.rstrip("/")
 
     print("== MCP 注册表 / 信任闸门接口验收 @ %s ==" % base)
     token, st, d = login(base, args.user, args.password)
@@ -117,20 +137,51 @@ def main():
         print("  [FATAL] 登录失败（HTTP %s，%s）—— 后端未就绪或 V97 未执行" % (st, (d or {}).get("message")))
         return 1
 
+    # ---------- M0 前置：快照 trusted，再复位到「全未信任」 ----------
+    st, raw = call(base, "/api/v1/mcp/servers", token=token)
+    servers = (jload(raw) or {}).get("data") or []
+    snapshot = {i.get("code"): bool(i.get("trusted")) for i in servers
+                if i.get("source") == "BUILTIN"}
+    for code, was_trusted in snapshot.items():
+        if was_trusted:
+            call(base, "/api/v1/mcp/servers/%s/untrust" % code, "POST", token=token)
+    print("  [ 前置 ] 已复位 trusted：%s（跑完按快照恢复）" % (snapshot,))
+
+    try:
+        return run_assertions(base, hub, token)
+    finally:
+        # 按快照恢复：wecom_group 这类「租户已配置、AI 正在用」的服务器不能被留在未信任态
+        for code, was_trusted in snapshot.items():
+            if was_trusted:
+                call(base, "/api/v1/mcp/servers/%s/trust" % code, "POST", token=token)
+        if any(snapshot.values()):
+            print("  [ 复原 ] 已按快照恢复 trusted：%s"
+                  % ([c for c, v in snapshot.items() if v],))
+
+
+def run_assertions(base, hub, token):
     # ---------- M1 清单 ----------
     st, raw = call(base, "/api/v1/mcp/servers", token=token)
     d = jload(raw) or {}
     items = d.get("data") or []
     by_code = {i.get("code"): i for i in items}
-    qq, ww = by_code.get("qq_mail") or {}, by_code.get("wechat_work") or {}
-    ok = (st == 200 and d.get("code") == 0
-          and qq.get("source") == "BUILTIN" and ww.get("source") == "BUILTIN"
-          and qq.get("trusted") is False and ww.get("trusted") is False
-          and qq.get("toolCount") == 6 and ww.get("toolCount") == 2
-          and qq.get("connected") is False)
-    rec("M1 清单：2 个内置服务器、默认不可信、目录 6/2", ok,
-        "HTTP=%s qq=%s ww=%s" % (st, {k: qq.get(k) for k in ("source", "trusted", "toolCount", "connected")},
-                                 {k: ww.get(k) for k in ("source", "trusted", "toolCount", "connected")}))
+    bad = []
+    for code, want in EXPECT_TOOL_COUNT.items():
+        it = by_code.get(code) or {}
+        if it.get("source") != "BUILTIN":
+            bad.append("%s.source=%r" % (code, it.get("source")))
+        if it.get("trusted") is not False:
+            bad.append("%s.trusted=%r" % (code, it.get("trusted")))
+        if it.get("toolCount") != want:
+            bad.append("%s.toolCount=%r≠%d" % (code, it.get("toolCount"), want))
+    if (by_code.get("qq_mail") or {}).get("connected") is not False:
+        bad.append("qq_mail.connected 应为 false")
+    extra = [c for c in by_code if by_code[c].get("source") == "BUILTIN"
+             and c not in EXPECT_TOOL_COUNT]
+    if extra:
+        bad.append("多出内置服务器 %s（请同步本脚本 EXPECT_TOOL_COUNT）" % extra)
+    rec("M1 清单：3 个内置服务器、默认不可信、目录 6/13/2", st == 200 and not bad,
+        "HTTP=%s 偏差=%s" % (st, bad or "无"))
 
     # ---------- M12 凭据不外泄（先做，避免后面状态变化影响） ----------
     leaked_keys = [k for i in items for k in i.keys()
@@ -218,6 +269,27 @@ def main():
     rec("M9 untrust 复原（trusted=false，manifest 空）",
         st == 200 and (d.get("data") or {}).get("ok") is True and codes2 == [],
         "HTTP=%s data=%s manifest=%s" % (st, d.get("data"), codes2))
+
+    # ---------- M13 工具目录无漂移：DB 快照 == hub 实装 ----------
+    # 背景：DB 的 mcp_server_tool 只在 trust 时从 hub 的 list_tools **覆盖写**一次，
+    #   之后 hub 侧扩了工具而没人重新信任，DB 就一直是旧数（真发生过：wechat_work 13 却留 3）。
+    #   界面/清单里的 toolCount 读的是 DB ⇒ 会对着用户报错数。故此处把判据**回到真源**（hub）再取一次。
+    st_h, raw_h = call(hub, "/api/v1/connectors")
+    hub_counts = {}
+    if st_h == 200:
+        for c in (jload(raw_h) or {}).get("connectors") or []:
+            hub_counts[c.get("code")] = c.get("toolCount")
+    st_s, raw_s = call(base, "/api/v1/mcp/servers", token=token)
+    db_counts = {i.get("code"): i.get("toolCount")
+                 for i in ((jload(raw_s) or {}).get("data") or [])
+                 if i.get("source") == "BUILTIN"}
+    drift = {c: (db_counts.get(c), hub_counts.get(c))
+             for c in EXPECT_TOOL_COUNT
+             if db_counts.get(c) != hub_counts.get(c)}
+    rec("M13 工具目录无漂移（DB 快照 == hub 实装）",
+        st_h == 200 and st_s == 200 and not drift,
+        "hubHTTP=%s dbHTTP=%s hub=%s db=%s 漂移=%s"
+        % (st_h, st_s, hub_counts, db_counts, drift or "无"))
 
     # ---------- M10 未登录 ----------
     st, raw = call(base, "/api/v1/mcp/servers")

@@ -20,8 +20,9 @@
 | 已知缺口 | `topics/known-gaps.md` |
 | git 推送 | `topics/git-remote.md` |
 | 进度口径 | `docs/28 §6`（未开工项唯一权威） |
-| 连接器接入 MCP（4453544） | `docs/59` §10 · `mcp-hub/` :8099 · Java V97 三表+9 端点 · agent `ToolClient.list_mcp_tools()` · 哨兵 `_verify_mcp_hub/_verify_mcp_registry(12)/_verify_mcp_e2e(11)/_verify_agent_mcp_wiring/_verify_oa_mcp_panel(12)`。三个坑（h2c 吞 body / updateById(null) / 软删占 uk）见 `topics/pitfalls.md`。`AIOS_MCP_HUB` 默认 false |
-| **企微双模式连接器 P0（085a77f）** | `docs/61` · `mcp-hub/mcp_hub/wecom/` 原生 server（`/mcp/wechat_work` 不代理 Java）· A=snsapi_privateinfo（URL elicitation）· B=邮箱客户端专用密码（表单 elicitation）· 模式闸门 A/B/AB · SQLite 密文 · `WECOM_MOCK` 默认 0 · 哨兵 `_verify_wecom_dual_mode_p0.py`(20) · 开发密钥在 start-all.sh |
+| 连接器接入 MCP（4453544） | `docs/59` §10 · hub :8099 · V97 三表 · 哨兵 `_verify_mcp_*`/`_verify_agent_mcp_wiring`/`_verify_oa_mcp_panel` · 坑见 `topics/pitfalls.md` · `AIOS_MCP_HUB` 默认 false |
+| 企微双模式 P0（085a77f） | `docs/61` · `wecom/` 原生 server（不代理 Java）· A=snsapi_privateinfo · B=邮箱专用密码 · 模式闸门 A/B/AB · `WECOM_MOCK` 默认 0 · `_verify_wecom_dual_mode_p0.py`(20) |
+| **群机器人 wecom_group** | `docs/62` §5.7 · `wecom/group.py`+`group_server.py`（2 工具，**无群参数**）· V101 · `usableForAgent()`（API_KEY 型看 configReady）· `_verify_wecom_group.py`(7) |
 
 ## 最常踩的五条（全文见 iron-rules.md）
 
@@ -31,9 +32,10 @@
 - **34**：本机 curl 走系统代理，探活加 `--noproxy '*'`。
 - **30**：agent 侧 pytest/哨兵必须用 `agent/.venv/Scripts/python.exe`。
 
-## 新增坑（2026-10-28，企微双模式）
+## 新增坑（明细见 `topics/pitfalls.md` 末节）
 
-- `"AB".split("+")` = `["AB"]` ⇒ 模式解析**只能走 `store.split_modes`**。
-- `Connection` 默认 mode 必须空串：曾默认 AB ⇒ 只绑 A 却显示 AB，`connect(B)` 被幂等短路。
-- FastMCP 可选参数 `default=None` 会被判 required ⇒ 可选参数给 `""` 等真默认值。
-- elicitation：URL 模式用 `session.elicit_url`（`ctx.elicit` 只有表单变体）；Python 客户端传 `elicitation_callback` 即声明 form+url 双能力。
+- 工具描述决定模型调不调（群机器人不写「无群参数/别反问」就不调，反问群名）。
+- 凭据泄漏的第二条路径是**依赖的日志**：httpx 会打整条 `?key=…`；已装 `_RedactKeyFilter`。
+- `mcp_server_tool` 只是 trust 时的快照 ⇒ hub 扩工具后要重跑 trust；M13 盯漂移。
+- 直调 `/internal/v1/runs` 必须带 `user_token`，否则日志 `tools=2` 是 HITL 工具（误判过一次）。
+- 哨兵要「快照→复位→跑→恢复」，别假设库里是初始态。

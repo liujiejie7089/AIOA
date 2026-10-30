@@ -1020,6 +1020,42 @@
 
 ---
 
+## 连接器 / MCP 通道的坑（2026-10-30，群机器人接入时踩到）
+
+**① 工具描述决定模型调不调，不是模型笨。**
+群机器人两个工具只有 `content` 一个参数（目标群由 webhook 绑定）。描述只写「往企业微信群发送消息」时，
+MiniMax 拿到 2 个工具却**不调用**，反问「请提供群名称或群ID」；把「目标群由 Webhook Key 决定，本工具
+**没有也不需要**群名称/群ID，用户说『发到群里』就直接发、不要反问」写进描述**首句**后才调通。
+另：HITL 开着 `ask_user` 会放大反问倾向（实测直接弹 `need_clarification` 问「发到哪个群」）。
+
+**② 凭据泄漏的第二条路径是「依赖的日志」。**
+自己 logger 只打 key 尾 4 位是守纪律的，但 **httpx 在 INFO 级别把整条 `POST …/webhook/send?key=8fc8…` 打出来**。
+（验收时靠日志取第二源才发现这一行，否则永远不知道。）修法在 `mcp-hub/mcp_hub/wecom/group.py`：
+给 `httpx` logger 挂 `_RedactKeyFilter`，把 `key=/access_token=/corpsecret=/secret=` 抹成 `***`。
+为什么用 filter 而不是降级：降级会丢 HTTP 状态码诊断；临时改级别会被并发请求串级。filter 只改 record
+文本、不改级别 ⇒ 并发安全。哨兵 `_verify_wecom_group.py` G7 直接扫日志文件本体复核（明文 0 次 + 存在 `key=***`）。
+
+**③ `mcp_server_tool` 只是「信任那一刻的快照」，不是权威。**
+`trust()` 会 probe hub 并用 `list_tools` **覆盖写**该服务器的工具目录；hub 之后扩了工具而没人重新信任，
+DB 就一直留旧数（实测 `wechat_work` 已 13、DB 仍 3，界面照着旧数报）。**重跑 `POST /servers/{code}/trust` 即自愈**；
+`_verify_mcp_registry.py` M13 用「DB 快照 vs hub 实装数」双向比对盯这个漂移。
+
+**④ 直调 `/internal/v1/runs` 必须带 `user_token`，缺了会伪装成「工具就 2 个」。**
+`user_token` 是 body 字段（发起方用户 accessToken）。缺 ⇒ `ToolClient.enabled=False` ⇒ MCP 通道整段跳过；
+此时日志 `tools=2` 是 HITL 注入的 `ask_user`/`request_form`，**不是**连接器工具（本轮据此误判过一次）。
+同源陷阱：`AIOS_MCP_HUB=true` 必须在 **agent 进程环境**里（`start-all.sh` 已 export），只看 `.env` 不够。
+
+**⑤ 哨兵断言不能依赖「库里刚好是初始状态」。**
+`_verify_mcp_registry.py` 的 M1/M2/M3/M8/M9 都以「trusted 全 0」为前提，脚本却从不保证它 ⇒ 真实环境里
+别人 trust 过，5 项一起假失败（本轮实测）。修成「快照 trusted → 复位 → 跑 → **按快照恢复**」。
+不能无脑复位：`wecom_group` 一取消信任，AI 那边的工具就没了（真实配置被哨兵破坏）。
+
+**⑥ 企微硬门槛（结论，别再重复怀疑）**：`gettoken` **不校验**可信 IP（业务接口才校验）；
+「配置可信 IP 前必须先设可信域名或接收消息 URL」⇒ **无备案域名时自建应用这条路整体走不通**，
+此时唯一能用的真机通道是群机器人 Webhook（不要求 IP/域名/企业认证）。对照实验见 `2026-10-30.md`。
+
+---
+
 ## 阶段补充（2026-10-18）：表单/HITL 链路的四个坑
 
 - **「补一帧」≠「有断点」**：`need_form` 只能由 agent 图里的 `clarify.interrupt()` 产出。

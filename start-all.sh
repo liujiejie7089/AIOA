@@ -120,7 +120,9 @@ fi
 #   WECOM_MOCK=1           开 Mock（虚拟企业 + 虚拟邮箱），真机联调前保持
 #   WECOM_CONNECTOR_KEY    本地开发固定密钥；**生产部署必须更换**（openssl rand -base64 32），
 #                          且 WECOM_MOCK=0（缺密钥会 fail fast，见 wecom/crypto.py）
-export WECOM_MOCK=1
+# ★ 默认 1（虚拟企业，演示用）；真机联调改成可覆盖：`WECOM_MOCK=0 bash start-all.sh`
+#   写死 1 的后果：每次真机联调都要回来改脚本，且容易误判「配了凭据却没生效」。
+export WECOM_MOCK="${WECOM_MOCK:-1}"
 export WECOM_CONNECTOR_KEY="gq1+vvFpy3g49RyV4KqB5SQtyzOTbNUzu7eRVe7mjvs="
 if port_up 8099; then
   echo "[skip] mcp-hub :8099 already running"
