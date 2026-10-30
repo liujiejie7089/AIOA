@@ -561,6 +561,7 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 | `_verify_agent_mcp_wiring.py` | **6** | 本地桩 MCP :8098 | 与连接器无关 |
 | `_verify_agent_textual_toolcall.py` | **12** | agent/.venv + Java:8080（E 段真跑一轮） | 伪调用兜底：U 段用**库里真实坏样本**单测解析器 + 4 种不该救；E 段不变量「正文写出的调用必须都真执行过」 |
 | `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | **17 / 19** | 无后端（打桩） | 桩数据第二张卡已换成 `wecom_cli` |
+| `_verify_h5_inputbar.py` | **53** | 无后端（自起静态站 + 打桩，需 playwright） | 语音手势/输入栏 + 2026-10-30 四项交互：**6 组**输入框自增高 · **7 组**气泡内停止（真点、真 cancel）· **8 组**滚动渐隐（离底判据）· **3(OA) 组**「＋」浮层与连接器开关（开关真值=status/断开先确认） |
 | ~~`_verify_wecom_dual_mode_p0.py`~~ / ~~`_verify_wecom_group.py`~~ | 已删（24 / 7） | — | 被测能力本身被删，无法换主体；覆盖损失已在 docs/64 §9.7.3 记账 |
 
 **纪律**：连接器下线后，围绕它写的套件**不许直接删或跳过**——

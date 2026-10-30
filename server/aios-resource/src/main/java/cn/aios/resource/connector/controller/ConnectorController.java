@@ -133,10 +133,11 @@ public class ConnectorController {
         String label = blankToNull(res.get("accountLabel"));
         connectionService.upsertConnectedByUser(user.getTenantId(), user.getUserId(), code,
                 label, Map.of("binding", "cli-qr"));
+        // 不再回 sharedProfile：hub 的 /qr-status 与 /bind 都只认「本人目录 + 本次会话」，
+        // 共享兜底已经不可能让这里绑成别人，那个字段恒为 false，留着只会误导前端。
         return ApiResponse.ok(Map.of(
                 "status", "CONNECTED",
-                "accountLabel", label == null ? "" : label,
-                "sharedProfile", Boolean.TRUE.equals(res.get("sharedProfile"))));
+                "accountLabel", label == null ? "" : label));
     }
 
     @PostMapping("/{code}/connect/credential")

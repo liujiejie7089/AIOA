@@ -266,7 +266,3 @@ def build_server() -> FastMCP:
             annotations=ToolAnnotations(read_only_hint=tool["read_only"]),
         )
     return mcp
-
-
-def tool_count() -> int:
-    return len(TOOLS)

@@ -488,3 +488,56 @@ Java 落库 `CONNECTED`，`accountLabel` 写的是那个共享账号的名字。
 代价：dev 上想验「数字人读企微数据」，现在必须真的用某个账号扫一次码（或由哨兵用
 `simulate_scan()` 复制一份凭据做 fixture）。`_verify_wecom_cli` 的 S6c/S7/S15 就是这么做的，
 并且 `simulate_scan` 只能用 `copyfile`（`copy2` 会把源文件的旧 mtime 带过来 ⇒ 被判「旧残留」）。
+
+### 9.9 企微 / QQ 邮箱冗余清理（2026-10-30 晚，用户口径「查看有没有冗余代码，无用的删除」）
+
+清理原则：**只删「没有调用方」的东西**；有意的重复（语义不同）保留并写明为什么。
+每一处删除都回跑了对应哨兵，见本节末的验收表。
+
+#### 9.9.1 Java 侧（`server/aios-resource/.../connector`）
+
+| 删除项 | 判定依据 |
+|---|---|
+| `entity/ConnectorOauthState.java`、`mapper/ConnectorOauthStateMapper.java` | 全仓库唯一引用就是这两个文件自己（OAuth 授权已在 9.7 物理删除，state 早已停止写入）。表 `connector_oauth_state` **保留不删**（V96 历史数据，Flyway 不回滚） |
+| `WeComCliGateway.status(authorization)` | 9.8 之后前端轮询改走 `/qr-status`，`status` 再无调用方（`/api/v1/wecom_cli/status` 端点本身保留，作为排障时可一眼看清「本人目录 vs 共享兜底」的手段，见 admin_api 文档字符串） |
+| `WeComCliGateway.available()` | 无调用方（Java 侧用 `props.isHubEnabled()` 的地方都在 `call()` 内部） |
+| `ConnectorController.qrBind` 响应里的 `sharedProfile` | hub 的 `/qr-status` `/bind` 已只认本人目录，该字段**恒为 false**；前端从未读取。留着会让后来人以为「共享绑定」这条路还在 |
+
+#### 9.9.2 Python 侧（`mcp-hub/mcp_hub`）
+
+| 删除项 | 判定依据 |
+|---|---|
+| `wecom_cli/identity.py` 里那份 httpx 调用 + token 缓存 + JSON 解析（约 35 行） | 与 `wecom/identity.py` 几乎逐行相同。改为复用新增的 `wecom.identity.from_authorization(auth)`；**策略仍留在各自包里**（`wecom_cli` 的规矩是「有 Authorization 就一定走真实身份，不看 WECOM_MOCK」，这条没动，只是把「换身份」这一件事收敛成一份） |
+| `wecom_cli.Identity.mock` 字段 | 只被赋值、从未被读取 |
+| `wecom_cli/catalog.tool_count()` / `wecom_cli/server.tool_count()` | 两个同义函数，且都无调用方（工具数由 `registry` 的 `len(_wecom_cli_catalog())` 提供） |
+| `auth.bind()` 返回的 `"shared": False` 与 `admin_api` 里的 `sharedProfile` 透传 | 同 9.9.1 最后一行，常量字段 |
+
+#### 9.9.3 明确「保留」的三处（不是漏删）
+
+1. `/api/v1/wecom_cli/status`（`admin_api._status`）—— 无内部调用方，但排障时是唯一能区分
+   「本人凭据」与「共享兜底」的入口，且 `_verify_wecom_cli` 的 S6 系列正是围绕这个区分设计的。
+2. `wecom/` 包里的 `crypto / models / store / identity / sync` —— 名字是企业微信的，实际已是
+   **连接器共享底座**（AES / SQLite / 身份 / 连接态回写），`connectors/vault` 与 `wecom_cli` 都依赖它。
+   包名不动是为了不打断 `WECOM_DB_PATH`、`data/wecom.db` 与既有备份口径。
+3. QQ 邮箱的 `mail/MailService` + `mail/MailMcpHandler` + `support/QqMailProbe` —— 分层清晰、
+   各只有一个调用方，没有重复实现；本轮**未改动**。
+
+#### 9.9.4 验收（全部实跑，2026-10-30）
+
+| 套件 | 结果 |
+|---|---|
+| `_verify_wecom_cli.py` | **18 / 18** |
+| `_verify_connectors.py` | **25 / 25** |
+| `_verify_connector_state_sync.py` | **7 / 7** |
+| `_verify_connectors_registry.py` | **15 / 0** |
+| `_verify_mcp_hub.py` | 全部断言通过 |
+| `_verify_mcp_registry.py` | **14 / 14** |
+| `_verify_oa_mcp_panel.py` | **19 / 0** |
+| `_verify_oa_connector_ui.py` | **17 / 0** |
+| `_verify_oa_qr_modal.py` | **13 / 0** |
+| `_verify_agent_mcp_wiring.py` | ALL PASS |
+| `agent/tests`（pytest） | **181 passed** |
+
+**环境动作**：Java 改动按纪律先 `Stop-Process` 8080 再 `mvnw -DskipTests package`（BUILD SUCCESS），
+hub 的 Python 改动必须重启才生效（`bash start-all.sh`，:8099 重新拉起后 `/health` 仍为
+`{"wecom_cli":5,"qq_mail":6}`）。

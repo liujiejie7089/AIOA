@@ -68,14 +68,14 @@ async def resolve(ctx) -> Identity:
     return await resolve_headers(_headers_of(ctx))
 
 
-async def resolve_headers(headers: dict) -> Identity:
-    """从请求头解析身份。headers 键应为小写。"""
-    if is_mock():
-        return _mock_identity(headers)
+async def from_authorization(auth: str) -> Identity:
+    """拿一个 token 去 Java 换身份（60s 进程内缓存）。
 
-    auth = headers.get("authorization")
-    if not auth:
-        raise IdentityError("缺少 Authorization 头，无法识别调用方身份")
+    **这里不看 WECOM_MOCK**：mock 与否属于「用哪个身份」的策略，各调用方不一样
+    （`wecom_cli` 的规矩是「有 Authorization 就一定走真实身份」），策略留在各自包里，
+    这个函数只负责「换身份」这一件事 —— 否则两边各写一份 httpx + 解析 + 缓存，
+    改一处漏一处（2026-10-30 清理时合并）。
+    """
     if not auth.lower().startswith("bearer "):
         auth = "Bearer " + auth
 
@@ -110,3 +110,14 @@ async def resolve_headers(headers: dict) -> Identity:
     )
     _cache[token_hash] = (now + _CACHE_TTL, identity)
     return identity
+
+
+async def resolve_headers(headers: dict) -> Identity:
+    """从请求头解析身份。headers 键应为小写。"""
+    if is_mock():
+        return _mock_identity(headers)
+
+    auth = headers.get("authorization")
+    if not auth:
+        raise IdentityError("缺少 Authorization 头，无法识别调用方身份")
+    return await from_authorization(auth)

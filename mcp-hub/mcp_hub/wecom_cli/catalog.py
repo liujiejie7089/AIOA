@@ -85,7 +85,3 @@ TOOLS: list[dict] = [
         "read_only": True,
     },
 ]
-
-
-def tool_count() -> int:
-    return len(TOOLS)

@@ -215,7 +215,7 @@ async def session_state(tenant_id, user_id) -> dict:
 
 
 async def bind(tenant_id, user_id) -> dict:
-    """确认**本次扫码**已完成并取到显示名；成功返回 {accountLabel, botName, shared}。
+    """确认**本次扫码**已完成并取到显示名；成功返回 `{accountLabel, botName}`。
 
     ⚠️ 判据是 {@link session_state}，不是 `profiles.resolve()`。用后者会出现「没扫码也
     能绑上、且绑成了别人」—— 共享兜底目录让授权态从一开始就是 true。
@@ -228,4 +228,4 @@ async def bind(tenant_id, user_id) -> dict:
     label = names.get("userName") or ""
     profiles.set_account_label(own, label)
     await finish(tenant_id, user_id)
-    return {"accountLabel": label, "botName": names.get("botName"), "shared": False}
+    return {"accountLabel": label, "botName": names.get("botName")}

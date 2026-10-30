@@ -11,10 +11,8 @@
 ⚠️ `status` 与 `qr-status` 不是一回事：`status` 回答「这个人有没有可用的企微授权」
 （含开发态的共享兜底），`qr-status` 回答「刚刚这一次扫码扫完了没有」。前端轮询必须用
 后者 —— 用前者会出现「二维码刚显示出来就宣布连接成功」（2026-10-30 实测踩到）。
-
-⚠️ 前缀陷阱：`/api/v1/wecom_cli` 以 `/api/v1/wecom` 开头，
-在 `app.py` 里必须**排在 wecom_admin_api 之前**判断，否则请求会被旧连接器吞掉、
-表现为「扫码接口 404 或返回企业微信应用配置」。这一点已在 app.py 里显式注明。
+`status` 现在**没有任何内部调用方**（Java 网关只用 qr-status），保留它是为了排障时能
+一眼看清「本人目录 vs 共享兜底」到底取的哪一份。
 """
 
 from __future__ import annotations
@@ -105,8 +103,7 @@ async def handle(scope, receive, send):
                 ident.tenant_id, ident.user_id, CODE, res.get("accountLabel"),
                 {"binding": "cli-qr"})
             return await _ok(send, {"bound": True, "accountLabel": res.get("accountLabel"),
-                              "botName": res.get("botName"), "sharedProfile": res.get("shared"),
-                              "stateSynced": synced})
+                              "botName": res.get("botName"), "stateSynced": synced})
 
         if sub == "disconnect" and method == "POST":
             await _read_body(receive)

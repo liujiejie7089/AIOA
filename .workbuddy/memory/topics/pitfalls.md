@@ -1205,3 +1205,28 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
    `functions.<name>(` 文本，再怀疑前端/SSE**（这次前端与 SSE 都是好的）。
    兜底在 `graph/nodes._rescue_textual_calls`（只认代码块 + 名字精确命中本轮工具表 + 参数是
    JSON 对象）；提示词只是软约束。看图级测试 `test_graph_rescues_textual_tool_call`。
+9. **「滚到底部」不能用 `scrollTop > 阈值` 判**（2026-10-30 数字人渐隐）：
+   滚到底时 `scrollTop` 恰好等于最大值（`scrollHeight - clientHeight`），拿它跟阈值比会把
+   「停在底部」判成「在上滑」，行为正好反过来（实测：停在底部数字人反而消失）。
+   判据要写**离底还剩多少**：`scrollHeight - clientHeight - scrollTop > 24`。
+   渐隐只降 `opacity` + `pointer-events`，**不改高度** —— 一淡出就抽掉布局的话滚动位置会跳，
+   用户正在翻的那几条会被顶走。
+10. **空值的 `<textarea>` 在 Chromium 里 `scrollHeight` 会多算一行**（实测 rows=1 空值 64、
+    单行文本 45）。照它写 `height` 会让空输入框凭空高出一截（胶囊 46px 变成 64px）。
+    自增高函数必须 `if(!el.value){ el.style.height=''; return; }` 交回 CSS 的 `rows=1`；
+    另外 `height:'auto'` 要先设回去再读 `scrollHeight`，否则删字时只增不减。
+11. **`.composer` 自成层叠上下文 ⇒ 挂给它的浮层压不过同级的全屏遮罩**：菜单 `z-index:71`
+    只在 `.composer` 内部生效，外面那块 `position:fixed; inset:0` 的遮罩照样盖在它上面，
+    现象是「浮层看得见但点不动」。别硬调 z-index，**改成「点浮层外收起」的全局
+    `pointerdown` 监听**（同时放过触发按钮自己，否则一次点击开又关）。
+12. **`var arr = arr(list)` 会互相遮蔽**：`var` 提升把同名函数变成 `undefined`，
+    运行时 `undefined(list)` 直接 TypeError。变量名别跟工具函数重名。
+13. **UI 自动化不要用裸坐标点页面**（`mouse.click(150,260)`）：首页那个位置是「专家」卡，
+    一点就开出 `#oaSheet` 抽屉，之后所有 `page.click` 都被它拦住，报错却是
+    "…intercepts pointer events"，很容易误判成被测元素的 bug。要点「外部区域」就点确定存在的
+    中性元素（如 `#oaInput`）。
+14. **`user-client/index.html` 现状是真源，`_build_oa.py` 的重建链已脱节**：OA 层源文件
+    （`_oa_app.js` / `_oa_markup.html` / `_oa_extra.css`）与 `_backup_index_pre_oa.html`
+    停留在 `4453544` 前后，之后所有改动（二维码下载、本轮四项交互）都直接改的 `index.html`。
+    **跑 `cp _backup_index_pre_oa.html index.html && python _build_oa.py` 会静默丢掉这些改动**
+    —— 别为了「让源文件同步」去重建；要重建必须先把改动回灌进源文件。
