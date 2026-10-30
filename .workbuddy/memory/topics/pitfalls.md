@@ -1071,6 +1071,16 @@ G7「日志无明文 key」于是**空文件假通过**（明文 0 次但也没�
 判据要成对：明文 0 次 **且** 存在脱敏标记。同理，hub 若从临时脚本启动，最容易漏 `AIOS_SERVICE_JWT_SECRET`
 （漏了不报错，只是每次授权 `state-unsynced`）。
 
+**⑩ 工具参数有**两处**事实源，只改一处 = 描述与校验打架。**
+`wecom/catalog.py` 的 `input_schema.required` 决定**模型看到什么**（进 manifest / DB 快照）；
+`wecom/server.py::_PARAMS` 决定**真正校验什么**（`("touser", str, None)` 里 `None` = 必填）。
+2026-10-30 把 `touser` 改成可选时只改了前者 ⇒ 描述说「可省略」、真调用被 pydantic 判缺参，
+新加的 `confirmed` 更是被当非法入参直接拒（S7b/S7d 首跑挂在这里，错误文案是
+`1 validation error for wechat_work__send_text_message`，**看不出是参数表没同步**）。
+已加 `_assert_params_in_sync()` 进 `build_server()`：required 不一致就拒绝启动。
+另外：**改了工具描述必须重跑 `POST /mcp/servers/{code}/trust`**，否则 `mcp_server_tool` 还是旧描述，
+模型照旧描述调用 —— 症状是「代码明明改了，模型行为没变」。
+
 ---
 
 ## 阶段补充（2026-10-18）：表单/HITL 链路的四个坑
