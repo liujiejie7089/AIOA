@@ -59,7 +59,7 @@ class ConnectorManifest:
     credential_fields: tuple[CredentialField, ...] = field(default_factory=tuple)
     tool_count: int = 0
     # 工具来源。两者都为 None ⇒ 本连接器由 Java 侧实装，hub 只做代理转发（如 qq_mail）。
-    # 传了 factory ⇒ 原生实装（工具逻辑在 hub 的 Python 侧，如 wechat_work）。
+    # 传了 factory ⇒ 原生实装（工具逻辑在 hub 的 Python 侧，如 wecom_cli）。
     # 用「工厂函数」而不是模块常量，既避免 builtin/probe 认识具体连接器，
     # 也避免 registry 在导入期就把 wecom.server 拉起来（省掉一层潜在循环依赖）。
     server_factory: Callable[[], Any] | None = field(default=None, compare=False, repr=False)

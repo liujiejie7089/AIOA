@@ -133,7 +133,7 @@ def build_servers() -> "dict[str, FastMCP]":
     """为每个已注册连接器构建一台 FastMCP 实例（streamable_http_path='/'，便于父 ASGI 改写路径）。
 
     本函数**不认识任何具体连接器**：
-    - 连接器声明了 server_factory（原生实装，如 wechat_work 的双模式闸门）⇒ 交给它自己构建；
+    - 连接器声明了 server_factory（原生实装，如 wecom_cli 的扫码工具集）⇒ 交给它自己构建；
     - 否则按 specs 里声明的工具表构建通用代理，调用原样转给 Java 的 builtin/{code}/call。
     新增连接器只需在 connectors/registry 里 register 一份 manifest，本文件不改。
     """
