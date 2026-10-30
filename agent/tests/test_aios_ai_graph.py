@@ -291,3 +291,105 @@ def test_no_kb_degraded_note_when_kb_off(monkeypatch):
 
     sys_text, _ = _kb_case(monkeypatch, failing, kb_on=False)
     assert "本轮知识库不可用" not in sys_text
+
+
+# ---- 模型把工具调用「写成正文」时必须还原成真实调用（2026-10-30 用户现场）----
+#
+# 现场：MiniMax-Text-01 没把调用放进 tool_calls，而是当正文写了 ```typescript functions.xxx({...}) ```，
+# 于是这一轮被判成「最终回答」，用「请稍等，我正在为您查询这些信息。」收尾，工具一次都没跑，
+# 界面永远停在查询中（chat_message.id=2578）。下面把那条真实正文原样喂给图，验证接线的效果。
+TEXTUAL_CALL = (
+    "1. **群聊会话**：\n"
+    "   ```typescript\n"
+    '   functions.mcp__wecom_cli__recent_group_sessions({"days": 7})\n'
+    "   ```\n\n"
+    "请稍等，我正在为您查询这些信息。"
+)
+
+
+def test_graph_rescues_textual_tool_call(monkeypatch):
+    """伪调用（正文代码块）⇒ 必须真的执行工具，并把 assistant 的 tool_calls 补成可续接的形状。"""
+    monkeypatch.setenv("AIOS_TEST_FAKE_KEY", "k")
+
+    calls = {"n": 0}
+    seen: list[list[dict]] = []
+
+    async def fake_stream(http, provider, api_key, messages, tools, temperature=0.3):
+        seen.append(list(messages))
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # 第一轮：**没有** tool_calls，只有把调用写进正文的内容
+            for piece in (TEXTUAL_CALL[:10], TEXTUAL_CALL[10:]):
+                yield ("delta", piece)
+            yield ("done", {"role": "assistant", "content": TEXTUAL_CALL},
+                   {"prompt_tokens": 5, "completion_tokens": 20})
+        else:
+            for piece in ("群里", "有 1 条"):
+                yield ("delta", piece)
+            yield ("done", {"role": "assistant", "content": "群里有 1 条"},
+                   {"prompt_tokens": 9, "completion_tokens": 3})
+
+    ctx = _stub(
+        None, fake_stream,
+        patch.object(ToolClient, "list_tools", AsyncMock(return_value=[
+            {"type": "function", "function": {
+                "name": "mcp__wecom_cli__recent_group_sessions",
+                "description": "g", "parameters": {}}}])),
+        patch.object(ToolClient, "invoke", AsyncMock(return_value=ToolOutcome(
+            name="mcp__wecom_cli__recent_group_sessions", arguments={"days": 7},
+            ok=True, data={"count": 1}))),
+    )
+    for c in ctx:
+        c.start()
+    try:
+        events = asyncio.run(_collect(_req(text="帮我整理一下我的企业微信")))
+    finally:
+        for c in ctx:
+            c.stop()
+
+    types = [t for _, t, _ in events]
+    assert types.count("tool.call") == 1, "正文里的调用必须被真的执行（否则用户界面会停在查询中）"
+    assert types.count("tool.result") == 1
+    assert calls["n"] == 2, "救回调用后必须再跑一轮，让模型依据工具结果作答"
+
+    completed = next(d for _, t, d in events if t == "message.completed")
+    assert completed["tool_calls"] == [
+        {"name": "mcp__wecom_cli__recent_group_sessions", "arguments": {"days": 7}, "ok": True}]
+
+    # 第二轮必须能看到 role=tool 的结果，且 tool_call_id 与救回来的 id 一致（否则上游 400）
+    second = seen[1]
+    assert any(m.get("role") == "assistant" and m.get("tool_calls")
+               and m["tool_calls"][0]["id"] == "call_rescue_1" for m in second)
+    assert any(m.get("role") == "tool" and m.get("tool_call_id") == "call_rescue_1" for m in second)
+
+
+def test_graph_does_not_rescue_unknown_tool(monkeypatch):
+    """负向：正文里写的工具名不在本轮工具表里 ⇒ **不救**，仍按普通回答收尾（错救比不救更糟）。"""
+    monkeypatch.setenv("AIOS_TEST_FAKE_KEY", "k")
+
+    async def fake_stream(http, provider, api_key, messages, tools, temperature=0.3):
+        yield ("done", {"role": "assistant", "content":
+                        '```typescript\nfunctions.mcp__nope__rm_rf({"path": "/"})\n```'},
+               {"prompt_tokens": 5, "completion_tokens": 5})
+
+    ctx = _stub(
+        None, fake_stream,
+        patch.object(ToolClient, "list_tools", AsyncMock(return_value=[
+            {"type": "function", "function": {
+                "name": "mcp__wecom_cli__recent_group_sessions",
+                "description": "g", "parameters": {}}}])),
+        patch.object(ToolClient, "invoke", AsyncMock(return_value=ToolOutcome(
+            name="x", arguments={}, ok=True, data={}))),
+    )
+    for c in ctx:
+        c.start()
+    try:
+        events = asyncio.run(_collect(_req(text="随便问问")))
+    finally:
+        for c in ctx:
+            c.stop()
+
+    types = [t for _, t, _ in events]
+    assert "tool.call" not in types, "不存在的工具绝不能被救回来执行"
+    completed = next(d for _, t, d in events if t == "message.completed")
+    assert completed["tool_calls"] == []

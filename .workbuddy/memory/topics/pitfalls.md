@@ -1198,3 +1198,10 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
 7. 测试 fixture 复制凭据只能用 `copyfile`，**不能 `copy2`**（copy2 连旧 mtime 一起复制，
    会被「mtime > 会话起点」判成旧残留而永远不完成）。真实运维也一样：从备份还原
    `credentials.enc` 会被判「本次没扫」，需重新扫码。
+8. **模型可能把工具调用写成正文**（MiniMax-Text-01 实测，2026-10-30）：
+   ```` ```typescript\nfunctions.mcp__x__y({"days":7})\n``` ```` 这种写法不会被执行 ——
+   `_parse_tool_calls` 拿到空列表 ⇒ 该轮被当「最终回答」⇒ 模型那句「请稍等，我正在为您查询」
+   直接收尾，界面停在半句话上。**排查顺序：先查 `chat_message` 里有没有
+   `functions.<name>(` 文本，再怀疑前端/SSE**（这次前端与 SSE 都是好的）。
+   兜底在 `graph/nodes._rescue_textual_calls`（只认代码块 + 名字精确命中本轮工具表 + 参数是
+   JSON 对象）；提示词只是软约束。看图级测试 `test_graph_rescues_textual_tool_call`。

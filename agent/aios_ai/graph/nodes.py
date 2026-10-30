@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 
 import httpx
@@ -142,6 +143,59 @@ def _parse_tool_calls(message: dict) -> list[dict]:
         except json.JSONDecodeError:
             args = {}
         out.append({"id": call.get("id") or "", "name": fn.get("name") or "", "arguments": args})
+    return out
+
+
+# 代码块里的「调用表达式」：```typescript\nfunctions.mcp__x__y({"k": 1})\n```
+# 语言标记可有可无，`functions.` 前缀可能有也可能没（MiniMax 两种都写过）。
+_FENCE_BLOCK_RE = re.compile(r"```[^\n`]*\n(.*?)```", re.S)
+_CALL_EXPR_RE = re.compile(r"^\s*(?:functions\.)?([A-Za-z_][\w.]*)\s*\((.*)\)\s*;?\s*$", re.S)
+# 「正在查询」类承诺句：只用于 finalize 的可观测性告警（零工具调用却这么说话 = 界面会停住）
+_PROMISE_RE = re.compile(r"请稍等|稍候|正在(为你|为您)?(查询|检索|查看|整理|读取)|马上为你")
+
+
+def _rescue_textual_calls(content: str, allowed_names: set[str], limit: int = 4) -> list[dict]:
+    """把模型**写成正文**的工具调用还原成真正的 tool_calls。
+
+    现场（2026-10-30，用户截图「一起停留在查询界面」）：MiniMax-Text-01 偶尔不把调用放进
+    `tool_calls` 字段，而是当正文写出来：
+
+        ```typescript
+        functions.mcp__wecom_cli__recent_group_sessions({"days": 7})
+        ```
+
+    于是 `_parse_tool_calls` 返回空 ⇒ 这一轮被当成「最终回答」⇒ 模型那句
+    「请稍等，我正在为您查询这些信息。」变成答案直接收尾，工具**一次都没执行**，
+    界面就永远停在「正在查询」。同一形态在 2026-10-21 的 QQ 邮箱链路上也出现过
+    （`chat_message.id=2513` 的 `functions.mcp__qq_mail__send_draft(...)` 同样没被执行）。
+
+    安全边界（**错救比不救更糟**，所以收得很紧）：
+      ① 只认**代码块**里、整块**只有一个调用表达式**的情形；正文里顺口提到的 `foo()` 不动；
+      ② 名字必须**精确命中**本轮真的下发给模型的工具名，否则丢弃（防模型"发明"工具）；
+      ③ 参数必须是合法 JSON **对象**，解析不了就丢弃 —— 不猜、不补默认值。
+    """
+    out: list[dict] = []
+    for block in _FENCE_BLOCK_RE.findall(content or ""):
+        m = _CALL_EXPR_RE.match(block.strip())
+        if not m:
+            continue
+        name = (m.group(1) or "").strip()
+        if name not in allowed_names:
+            continue
+        raw_args = (m.group(2) or "").strip()
+        if raw_args:
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(args, dict):
+                continue
+        else:
+            args = {}
+        out.append({"id": "call_rescue_%d" % (len(out) + 1),
+                    "name": name, "arguments": args})
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -330,6 +384,24 @@ async def agent(state: dict) -> dict:
     usage["completion_tokens"] += int(u.get("completion_tokens") or 0)
 
     calls = _parse_tool_calls(message)
+    assistant_calls = message.get("tool_calls")
+
+    # 兜底：模型把工具调用写成正文时必须**在判定「这是不是最终回答」之前**救回来，
+    # 否则这一轮会带着「请稍等，我正在为您查询」直接收尾（工具一次都没执行）。
+    if not calls and use_tools:
+        allowed = {n for n in (_tool_name(t) for t in use_tools) if n}
+        rescued = _rescue_textual_calls(str(message.get("content") or ""), allowed)
+        if rescued:
+            logger.warning("模型把工具调用写成了正文，已还原为真实调用：%s",
+                           [c["name"] for c in rescued])
+            calls = rescued
+            assistant_calls = [{
+                "id": c["id"],
+                "type": "function",
+                "function": {"name": c["name"],
+                             "arguments": json.dumps(c["arguments"], ensure_ascii=False)},
+            } for c in rescued]
+
     if not calls and not stream:
         # 非流式：该 message 即最终回答，本地切片为 delta（保持事件契约）
         content = str(message.get("content") or "")
@@ -342,8 +414,10 @@ async def agent(state: dict) -> dict:
         # 本轮是「要调工具 / 要追问」的轮次：assistant 消息在这里并入上下文。
         # tools 与 clarify 两个节点因此都**只追加工具结果**、不自行追加 assistant 消息，
         # 保证 assistant 消息只出现一次（否则会出现「同一 tool_calls 重复」的非法消息序列）。
+        # 用 assistant_calls 而不是 message["tool_calls"]：救回来的调用只在 assistant_calls 里，
+        # 且它们的 id 必须与下游 tool 消息的 tool_call_id 一致，否则上游直接 400。
         messages.append({"role": "assistant", "content": message.get("content"),
-                         "tool_calls": message.get("tool_calls")})
+                         "tool_calls": assistant_calls})
 
     # —— 确定性开表（Java 判定，agent 只执行）——
     # 触发条件：模型这一轮**没有**任何工具调用、本轮也还没有过澄清/表单回执
@@ -551,6 +625,13 @@ async def finalize(state: dict) -> dict:
     content = "".join(state.get("content_parts") or [])
     tool_calls_log = list(state.get("tool_calls_log") or [])
     usage = dict(state.get("usage") or {})
+
+    # 可观测性：一次工具都没调、却给出「正在查询」的承诺 —— 用户那边表现就是界面停住。
+    # 兜底已在 agent 节点（_rescue_textual_calls），这里只负责在漏网时留下可查的日志，
+    # 不去改写答案（改写会把模型真说的话换掉，比留个可疑句子更难排查）。
+    if not tool_calls_log and _PROMISE_RE.search(content or ""):
+        logger.warning("本轮零工具调用但回答像是「正在查询」的承诺（%r…）："
+                       "用户会看到停在查询中，检查模型是否把工具调用写成了正文", content[:40])
 
     if not content and tool_calls_log:
         # 工具轮数用尽仍未产出正文：汇总已获取的数据直接作答（与原行为一致）

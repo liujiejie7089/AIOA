@@ -559,6 +559,7 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 | `_verify_connector_state_sync.py` | **7** | Java + 服务令牌 | 主体 wecom_cli（验同源机制，与主体无关） |
 | `_verify_connector_tenant_config.py` | **8** | Java + hub | **整体换主体**：验「不需要管理员配凭据」的形态（清单空 / 视图拒绝 / PUT 不静默成功 / 已下线 404） |
 | `_verify_agent_mcp_wiring.py` | **6** | 本地桩 MCP :8098 | 与连接器无关 |
+| `_verify_agent_textual_toolcall.py` | **12** | agent/.venv + Java:8080（E 段真跑一轮） | 伪调用兜底：U 段用**库里真实坏样本**单测解析器 + 4 种不该救；E 段不变量「正文写出的调用必须都真执行过」 |
 | `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | **17 / 19** | 无后端（打桩） | 桩数据第二张卡已换成 `wecom_cli` |
 | ~~`_verify_wecom_dual_mode_p0.py`~~ / ~~`_verify_wecom_group.py`~~ | 已删（24 / 7） | — | 被测能力本身被删，无法换主体；覆盖损失已在 docs/64 §9.7.3 记账 |
 
