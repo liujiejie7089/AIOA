@@ -79,6 +79,16 @@ class Settings(BaseModel):
     # manifest 请求与每个 server 的 get_tools 都受此约束，避免 hub 抖动拖垮整轮。
     mcp_hub_timeout: float = Field(default=8.0, alias="AIOS_MCP_TIMEOUT")
 
+    # 联网检索（web_search / web_fetch）：内置工具，不需要密钥、不依赖连接器授权。
+    # **默认开**：用户说「在网上找」「查最新的」时模型必须有真实可用的检索工具，
+    # 否则只能拿邮件/知识库工具冒充（2026-10-30 实测：用户让联网找工作政策，
+    # 模型回「未能找到关于就业政策的邮件」）。关掉时工具表与改造前逐字节一致。
+    web_search_enabled: bool = Field(default=True, alias="AIOS_WEB_SEARCH")
+
+    # 联网检索单次超时（秒）。搜索页 8s、正文抓取 10s，都在工具内部收敛成 ok=False，
+    # 不抛异常、不拖垮整轮。
+    web_search_timeout: float = Field(default=12.0, alias="AIOS_WEB_TIMEOUT")
+
     # 挂起态存储连接串（仅 agent_hitl=true 时使用）；**留空 = 内存（本地默认）**：
     #    （空）/ memory        —— InMemorySaver，本地零依赖；进程重启即丢
     #    redis://host:port/db  —— 生产用（本项目生产环境的 Redis）；**必须是 Redis Stack**

@@ -250,8 +250,11 @@ class Orchestrator:
         duration = int((time.perf_counter() - started) * 1000)
         r = TaskResult(id=task.id, title=task.label(), ok=bool(ok), data=data,
                        error=error if not ok else None, duration_ms=duration)
-        self._emit("task.completed", {"id": task.id, "ok": r.ok, "summary": r.summary(),
-                                      "durationMs": duration})
+        # `tool` 必须带：task.started / task.skipped 都有，唯独 completed 漏了，
+        # 于是改名出来的 tool.result 帧 `name` 恒为 null —— 前端与审计都无法把结果对回
+        # 是哪个工具跑出来的（2026-10-30 实测：4 条 tool.result 全是 name:null）。
+        self._emit("task.completed", {"id": task.id, "tool": task.tool, "ok": r.ok,
+                                      "summary": r.summary(), "durationMs": duration})
         return r
 
     def _emit(self, event_type: str, data: dict) -> None:

@@ -31,6 +31,7 @@ from aios_ai.llm.upstream import UpstreamError, _post_non_stream, _post_stream
 from aios_ai.prompt.builder import build_messages
 from aios_ai.tools import ask_user as ask_user_tool
 from aios_ai.tools import request_form as request_form_tool
+from aios_ai.tools import web_search as web_search_tool
 from aios_ai.tools.client import MAX_TOOL_ROUNDS, ToolClient, ToolOutcome
 from aios_ai.tools.orchestrator import SubTask, stream_run
 
@@ -266,6 +267,11 @@ async def prepare(state: dict) -> dict:
             messages[0]["content"] = (messages[0].get("content") or "") + MCP_DEGRADED_NOTE
         logger.error("run %s: MCP 连接器清单不可用（%s）⇒ 本轮连接器工具不可用，已在提示中显式降级",
                      req.run_id, tool_client.mcp_error)
+
+    # 联网检索（内置，免密钥）：用户说「在网上找 / 查最新的」时模型必须有真实可用的工具。
+    # 放在最前面（和 HITL 控制工具同级），保证它不会因为连接器/manifest 抖动而消失。
+    if settings.web_search_enabled:
+        tools = [web_search_tool.WEB_SEARCH_TOOL, web_search_tool.WEB_FETCH_TOOL] + list(tools)
 
     # HITL：注入内置澄清工具（不由业务工具网关执行，命中即暂停等待用户选择）。
     # 只在开关打开时注入 —— 关闭时工具表与既有实现逐字节一致（零回归）。

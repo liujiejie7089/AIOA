@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import httpx
 
 from aios_ai.config import settings
+from aios_ai.tools import web_search as web_search_tool
 
 # MCP 连接器接入（契约 docs/59 §10）：把上游 MCP server 的工具变成 LangChain Tool，
 # 再归一成 OpenAI function 形状注入模型。这两个包已在 agent pyproject 声明（mcp / langchain-mcp-adapters）。
@@ -194,6 +195,12 @@ class ToolClient:
         其余名称 ⇒ 既有 Java 网关路径，行为完全不变。
         """
         args = arguments or {}
+        # ★ 内置联网检索分支：不走 Java 网关（它没有也不会注册这些工具），
+        #   也不走 MCP。放在最前面是因为它既不依赖用户 token 也不依赖 hub 是否开启 ——
+        #   未登录/网关挂了也该能联网查（否则「联网」这个能力会随环境消失）。
+        if web_search_tool.is_web_tool(name):
+            ok, data, error = await web_search_tool.invoke(name, args)
+            return ToolOutcome(name=name, arguments=args, ok=ok, data=data, error=error)
         # ★ MCP 连接器分支：前缀分流。先查本实例（同一实例拉过清单，如哨兵 W3/W5），
         #   再查类级跨节点缓存（生产主路径：tools 节点拉清单、执行节点新实例）。
         #   找不到映射是负向判据（必须显式报错，不能回落 Java 网关）。

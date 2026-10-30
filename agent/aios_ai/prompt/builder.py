@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 from aios_ai.config import settings
 from aios_ai.contracts import RunRequest
@@ -23,6 +24,10 @@ from aios_ai.intent import intake as worker_intake
 from aios_ai.prompt.answer import rules as answer_rules
 
 logger = logging.getLogger("aios.ai.prompt")
+
+# 业务时区固定东八区（与后端落库口径一致）；不用 ZoneInfo 是为了免 tzdata 依赖，
+# Windows 上没装 tzdata 时 ZoneInfo("Asia/Shanghai") 会抛 KeyError。
+_TZ_CN = timezone(timedelta(hours=8))
 
 # 指令覆盖（prompt injection）黑名单：命中即视为尝试越权注入系统提示。
 # 仅中和（剥离）并记 warn，不拒绝请求（保持产品行为）。
@@ -223,9 +228,20 @@ def build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
         if expert_name:
             sys_parts.append(
                 f"本次会话用户选择了「{expert_name}」专家，请围绕该领域回答。")
+    # 当前时间：模型不知道「今天几号」，「今年/最新」这类词会退化成它训练数据里的年份。
+    # 2026-10-30 实测：用户问「今年最新的就业政策」，web_search 的 query 被写成
+    # 「2024年 就业政策 变化」，于是整篇答案都是两年前的旧闻 —— 不是检索坏了，是时间锚错了。
+    # 每轮注入本机时间（东八区），并明确「以这里为准，不要用记忆里的年份」。
+    _now = datetime.now(_TZ_CN)
+    sys_parts.append(
+        f"【当前时间】{_now.strftime('%Y年%m月%d日 %H:%M')}"
+        f"（周{'一二三四五六日'[_now.weekday()]}，北京时间 UTC+8）。"
+        "凡涉及「今天 / 今年 / 最近 / 最新」一律以此为准；"
+        "不要用你记忆里的年份或日期，也不要在回答里写出与此不符的日期。")
     # 回答风格：只划「不能答什么」不够，还要管「答多长、答什么」。
     # 规则唯一出处见 prompt/answer.rules。
     sys_parts.extend(answer_rules(scope))
+
     uc = req.user_context
     if uc.username or uc.roles:
         role_desc = "、".join(uc.roles) if uc.roles else "普通用户"
@@ -332,6 +348,33 @@ def build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
             "回复写明的编号，然后**必须真实调用对应的发送/提交工具**完成操作，"
             "并以工具返回的结果为准回答；**严禁**不调用任何工具就声称已发送/已提交——"
             "没有工具调用记录的「已发送」就是谎报；如果编号真的找不到，就如实说明并请用户提供编号。")
+    # 联网检索纪律（2026-10-30 用户现场）：用户说「在网上找」、澄清卡里选了「就业政策」之后，
+    # 数字人回「我未能找到关于就业政策的邮件」并提议起草邮件 —— 因为它把「内部没有」当成了
+    # 「网上没有」，而当时系统压根没有联网工具。工具已补（web_search / web_fetch），
+    # 但**工具存在 ≠ 模型会用**：必须把「什么话必须联网」「联网失败怎么说」写死在提示词里。
+    sys_parts.append(
+        "【联网检索】当用户说「在网上查/搜/找」「上网找」「查一下最新的」「外部资料/政策/新闻/行情/报道」"
+        "或明确表示不要在内部资料里找时，**必须**先调用 web_search 真实联网检索，再基于返回的标题/链接/摘要"
+        "作答，并注明来源；需要细节就对结果里的链接调用 web_fetch 读正文。"
+        "严禁用邮件/知识库工具冒充联网搜索，也严禁在没有调用 web_search 的情况下说「我没找到」「网上没有」——"
+        "没调用过就没有资格说搜过了。"
+        "如果 web_search 返回失败（工具结果是 ok=false），必须如实说明「联网检索没成功」并给出原因，"
+        "再给替代方案（换关键词重试 / 让用户提供具体网址 / 改用内部资料），**不得编造检索结果**，"
+        "也不得把失败说成「网上查不到」。"
+        # 2026-10-30 实测两处失真：① 用户问「今年」，模型自己检索「2023年就业政策变化」，
+        # 拿回一堆旧闻当答案；② web_fetch 对某链接返回 404，模型仍在正文里把该链接写成「来源」。
+        # 前者是查询词没带时间锚，后者是「引用没拿到内容也照写」—— 都不属于措辞问题，必须写死。
+        "查询词要带**当前年份**（如「2026年 就业政策」）与地区限定，不要用模型记忆里的年份；"
+        "若返回结果明显是往年旧闻，改关键词重查，并在回答里说明「最新可检索到的是 X 年」。"
+        # 2026-10-30 实测：query「2026年 就业政策 变化」被 Bing 答成「2026年节假日安排」，
+        # 模型把节假日条目当答案铺了一屏 —— 检索成功了，但内容与问题无关。
+        # 「有检索结果」不等于「答对了」，所以这条判的是相关性而不是可用性。
+        "拿到结果先判断**是否切题**：与问题主题无关（例：问就业政策却返回节假日安排）时，"
+        "改用核心主题词重查（如「就业政策 最新」「就业 补贴 政策」），最多重查两次；"
+        "仍然跑题就如实说「没检索到相关的公开结果」，并说明你用了什么检索词，"
+        "**不得**把无关结果拼进答案充数。"
+        "引用链接必须来自 web_search 实际返回的 url；web_fetch 失败（如 404）的链接**不得**写进回答当作来源，"
+        "也不要自己拼接/推测网址给用户。")
     # 工具调用通道纪律（全局，与是否开 MCP 无关）：MiniMax 系列偶尔不把调用放进
     # `tool_calls` 字段，而是当正文写出来（```typescript functions.xxx({...}) ```），
     # 后端只能当普通文本处理 ⇒ 工具没执行、模型却已经说了「请稍等，我正在为您查询」，

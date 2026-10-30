@@ -774,6 +774,81 @@ def main():
                 "PASS" if back["scrolled"] is False and back["stage"] in ("1", None) else "FAIL",
                 "dock-scrolled 摘除 + opacity=1", back)
 
+            # ---------- 9. 上滑看历史时顶栏「工作助手」隐藏 + 背景透明（2026-10-30 第二轮） ----------
+            # 与第 8 组共用同一条判据（离底 >24px），但手法不同：数字人只降 opacity、不动布局；
+            # 顶栏是横在内容上方的实心带，必须连高度一起收（height:0 + 透明背景 + 无描边），
+            # 否则「透明」等于留一条 52px 空白带。这里三项一起验，缺一项都不算隐藏。
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.scrollTop = 0;
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(350)
+            bar_up = page.evaluate(r"""() => {
+              const root = document.getElementById('oaRoot');
+              const bar  = document.querySelector('.appbar');
+              const cs = getComputedStyle(bar), inner = bar.firstElementChild;
+              return {
+                hidden: root.classList.contains('bar-hidden'),
+                h: Math.round(bar.getBoundingClientRect().height),
+                bg: cs.backgroundColor,
+                border: cs.borderBottomColor,
+                op: inner ? getComputedStyle(inner).opacity : null
+              };
+            }""")
+            rec("9. 上滑看历史: 顶栏挂 bar-hidden",
+                "PASS" if bar_up["hidden"] else "FAIL", "bar-hidden 存在", bar_up["hidden"])
+            rec("9. 上滑看历史: 顶栏高度收为 0（不留空白带）",
+                "PASS" if bar_up["h"] == 0 else "FAIL", "appbar 高度=0", f"{bar_up['h']}px")
+            rec("9. 上滑看历史: 顶栏背景与描边都透明",
+                "PASS" if bar_up["bg"] in ("rgba(0, 0, 0, 0)", "transparent")
+                and bar_up["border"] in ("rgba(0, 0, 0, 0)", "transparent") else "FAIL",
+                "background/border 透明", f"bg={bar_up['bg']} border={bar_up['border']}")
+            rec("9. 上滑看历史: 顶栏标题不可见",
+                "PASS" if bar_up["op"] in ("0", None) else "FAIL", "opacity=0", bar_up["op"])
+
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.scrollTop = l.scrollHeight;
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(350)
+            bar_back = page.evaluate(r"""() => {
+              const root = document.getElementById('oaRoot');
+              const bar  = document.querySelector('.appbar');
+              const cs = getComputedStyle(bar);
+              return {hidden: root.classList.contains('bar-hidden'),
+                      h: Math.round(bar.getBoundingClientRect().height),
+                      bg: cs.backgroundColor};
+            }""")
+            rec("9. 滚回底部: 顶栏重新显示且背景恢复",
+                "PASS" if (not bar_back["hidden"]) and bar_back["h"] > 20
+                and bar_back["bg"] not in ("rgba(0, 0, 0, 0)", "transparent") else "FAIL",
+                "bar-hidden 摘除 + 高度>20 + 背景不透明", bar_back)
+
+            # 非首页不该受牵连：顶栏隐藏只属于「在首页翻聊天记录」这一件事
+            page.evaluate(r"""() => {
+              const l = document.getElementById('oaDockList');
+              l.scrollTop = 0;
+              l.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(250)
+            page.evaluate(r"""() => {
+              const tab = document.querySelector('.tab[data-view="kb"]');
+              if(tab) tab.click();
+            }""")
+            page.wait_for_timeout(350)
+            bar_other = page.evaluate(r"""() => {
+              const root = document.getElementById('oaRoot');
+              const bar  = document.querySelector('.appbar');
+              return {hidden: root.classList.contains('bar-hidden'),
+                      view: (document.querySelector('.view.on') || {}).id || '',
+                      h: Math.round(bar.getBoundingClientRect().height)};
+            }""")
+            rec("9. 切到其它页: 顶栏立即还原（不被聊天的滚动牵连）",
+                "PASS" if (not bar_other["hidden"]) and bar_other["h"] > 20 else "FAIL",
+                "bar-hidden 摘除 + 高度>20", bar_other)
+
             # ---------- 5. 全程 JS 报错监控（回归硬指标） --------------------
             rec("5. 全程无未捕获 JS 异常(pageerror)",
                 "PASS" if not page_errors else "FAIL", "0 条", len(page_errors),

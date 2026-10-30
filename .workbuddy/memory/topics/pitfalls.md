@@ -1230,3 +1230,26 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     停留在 `4453544` 前后，之后所有改动（二维码下载、本轮四项交互）都直接改的 `index.html`。
     **跑 `cp _backup_index_pre_oa.html index.html && python _build_oa.py` 会静默丢掉这些改动**
     —— 别为了「让源文件同步」去重建；要重建必须先把改动回灌进源文件。
+15. **`#oaRoot` 自己就是 `.oa`**（`<div class="oa" id="oaRoot">`）：任何写
+    `.oa #oaRoot.xxx .appbar` 的规则**永远不匹配**（要找的祖先 `.oa` 在文档里不存在），
+    现象最阴：class 明明挂上了（`classList.contains('bar-hidden') === true`），
+    但计算样式一点没变。写与 `#oaRoot` 相关的选择器要么以 id 起头（`#oaRoot.bar-hidden .appbar`），
+    要么写成 `.oa.bar-hidden`（同一元素双类）。判据别只看 class，要读
+    `getBoundingClientRect().height` / `getComputedStyle().backgroundColor`。
+16. **透明描边仍然占 1px**：`border-bottom:1px solid var(--border)` 只把 color 改成
+    `transparent` 时，元素高度收到 0 后实测仍是 **1px**（透明但不是 0）。
+    要让「收成 0」名副其实，必须同时 `border-bottom-width:0`。
+17. **`task.completed` 事件必须带 `tool`**：`task.started` 与 `task.skipped` 都有,
+    唯独 completed 漏了，改名的 `tool.result` 帧于是 `{"name":null}` —— 前端与审计
+    拿不到工具名，只能按顺序猜。任何「按事件审计工具调用」的代码都会因此静默失效。
+    回归哨兵：`scripts/_verify_agent_web_search.py` R7。
+18. **「没有这个工具」不等于「网上没有」**：本轮根因就是系统压根没有联网工具，
+    模型把「内部查不到」说成「找不到」，还用「帮你起草邮件」收尾 —— 提示词再怎么写
+    也变不出一个不存在的工具。遇到「模型说搜不到」先 grep 工具表确认**能力是否真的存在**，
+    别急着改措辞。
+19. **模型不知道「今天」**：问「今年/最新」时它会用训练数据里的年份。实测它把 2026-10-30
+    的「今年」写成「2024年」。**每轮注入当前时间**（`prompt/builder.py` 的【当前时间】），
+    并在检索类规则里要求 query 带当前年份 —— 否则联网检索会「成功返回一堆旧闻」。
+20. **检索成功 ≠ 答对**：Bing 会把「2026年 就业政策」答成「2026年节假日安排」，
+    模型照单铺满一屏。只看 `tool.result.ok=true` 发现不了，必须再加一条**相关性**判据
+    （回答里主题词是否压过跑题词），探针里 B8 就是干这个的。
