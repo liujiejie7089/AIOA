@@ -114,6 +114,63 @@ public class ConnectorConnectionService {
     }
 
     /**
+     * 关闭（停用）连接器：**只改状态，不清任何凭据**（2026-10-31 用户口径）。
+     *
+     * <p>为什么不能复用 {@link #disconnect}：disconnect 是**解绑**语义 —— 置 NEED_AUTH
+     * 并把 credential_json / accountLabel 清空，于是再点「连接」必须重新填授权码或重新扫码。
+     * 用户要的是「关闭」，关闭不该有破坏性：再开启必须原地恢复。</p>
+     *
+     * <p>关闭后是否还注入工具：不注入。所有闸门（{@code McpBuiltinBridge} /
+     * {@code McpRegistryService} manifest / {@code MailService}）都只认 {@code CONNECTED}，
+     * 新增的 {@code DISABLED} 自动被排除 —— 不需要在每处闸门再加判断。</p>
+     *
+     * <p>只允许从 CONNECTED / UNVERIFIED 转过来；NEED_AUTH（本来就没连）保持原状，
+     * 避免把「未连接」伪装成「已关闭」。</p>
+     */
+    public String disable(AuthUser user, String code) {
+        catalogService.requireDef(code); // 未知 code 直接拒绝
+        ConnectorConnection c = find(user.getTenantId(), user.getUserId(), code);
+        if (c == null) {
+            return ConnectorConnection.STATUS_NEED_AUTH;
+        }
+        if (!ConnectorConnection.STATUS_CONNECTED.equals(c.getStatus())
+                && !ConnectorConnection.STATUS_UNVERIFIED.equals(c.getStatus())) {
+            return c.getStatus();
+        }
+        connectionMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConnectorConnection>()
+                        .eq(ConnectorConnection::getId, c.getId())
+                        .set(ConnectorConnection::getStatus, ConnectorConnection.STATUS_DISABLED));
+        return ConnectorConnection.STATUS_DISABLED;
+    }
+
+    /**
+     * 开启（恢复）连接器：{@code DISABLED → CONNECTED}，**不触发任何认证**。
+     *
+     * <p>凭据自始至终没被关闭动作碰过（CREDENTIAL 在 credential_json，QR 在 mcp-hub 的
+     * 本机凭据目录里都没动），所以这里只翻状态位即可 —— 这正是用户要的
+     * 「连接器开启是不需要重新连接」。</p>
+     *
+     * <p>不是 DISABLED 的行原样返回：NEED_AUTH 仍然要用户去连接，
+     * CONNECTED 重复点开启也无害（幂等）。</p>
+     */
+    public String enable(AuthUser user, String code) {
+        catalogService.requireDef(code);
+        ConnectorConnection c = find(user.getTenantId(), user.getUserId(), code);
+        if (c == null) {
+            return ConnectorConnection.STATUS_NEED_AUTH;
+        }
+        if (!ConnectorConnection.STATUS_DISABLED.equals(c.getStatus())) {
+            return c.getStatus();
+        }
+        connectionMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConnectorConnection>()
+                        .eq(ConnectorConnection::getId, c.getId())
+                        .set(ConnectorConnection::getStatus, ConnectorConnection.STATUS_CONNECTED));
+        return ConnectorConnection.STATUS_CONNECTED;
+    }
+
+    /**
      * 内部通道：按显式 tenant/user 写入「已连接」（由 mcp-hub 在连接器授权成功后回调）。
      *
      * <p><b>为什么要这个方法</b>：连接态的真相源是这张表（manifest 闸门读它），

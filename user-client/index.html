@@ -3127,6 +3127,10 @@ const API = {
   connectors(){ return this.req('/v1/connectors'); },
   connectorDetail(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)); },
   connectorDisconnect(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/disconnect',{method:'POST'}); },
+  /* 关闭/开启（非破坏性，2026-10-31）：关闭只停用、**保留授权**，开启直接恢复、不再认证。
+     与上面 disconnect（解绑=清凭据）是两件事，别合并。 */
+  connectorDisable(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/disable',{method:'POST'}); },
+  connectorEnable(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/enable',{method:'POST'}); },
   connectorConnectCredential(code, values){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/connect/credential',{method:'POST',body:JSON.stringify({values:values||{}})}); },
   connectorVerify(code){ return this.req('/v1/connectors/'+encodeURIComponent(code)+'/verify',{method:'POST'}); },
   /* 扫码授权（auth_mode=QR，企业微信 CLI 连接器）：出图 / 轮询 / 确认绑定 */
@@ -9708,6 +9712,8 @@ function renderConnectors(){
       var code = b.getAttribute('data-code'), act = b.getAttribute('data-act');
       if(act === 'connect') openConnector(code);
       else if(act === 'disconnect') disconnectConnector(code);
+      else if(act === 'disable') disableConnector(code);
+      else if(act === 'enable') enableConnector(code);
       else if(act === 'verify') verifyConnector(code);
       else if(act === 'mute') muteConnectorForConversation(code, b.getAttribute('data-name'));
     };
@@ -9785,7 +9791,12 @@ function mcpInlineHtml(c){
           '<button class="btn ghost small" data-mcp-act="tools" data-code="'+txt(s.code)+'">'+(S.mcpOpen[s.code]?'收起工具':'查看工具')+'</button>';
   }
   var tip = '';
-  if(s.trusted === true && s.connected !== true) tip += '<div class="conn-sub">连接器连接后才会对 AI 生效</div>';
+  if(s.trusted === true && s.connected !== true){
+    /* 区分「没连过」与「被用户关了」：后者不该让用户以为还要去认证（2026-10-31） */
+    tip += (c.status === 'DISABLED')
+      ? '<div class="conn-sub">连接器已关闭，点上方「开启」即可恢复（无需重新认证）</div>'
+      : '<div class="conn-sub">连接器连接后才会对 AI 生效</div>';
+  }
   if(s.lastError) tip += '<div class="conn-sub conn-err">'+txt(s.lastError)+'</div>';
   return '<div class="oa-mcp-inline" style="flex-basis:100%;min-width:0;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">'+
     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
@@ -9916,6 +9927,8 @@ function mcpToggleTools(code){
 function connStatusChip(c){
   if(c.configReady === false) return chip('wait','待管理员配置');
   if(c.status === 'CONNECTED') return chip('due','已连接');
+  /* 已关闭 ≠ 未连接：授权还在，只是暂时不给 AI 用（2026-10-31） */
+  if(c.status === 'DISABLED') return chip('done','已关闭');
   if(c.status === 'UNVERIFIED') return chip('wait','未通过校验');
   return chip('done','未连接');
 }
@@ -9930,6 +9943,11 @@ function connCardHtml(c){
     if(c.accountLabel) line += ' · ' + txt(c.accountLabel);
     if(c.connectedAt) line += ' · ' + txt(dt(c.connectedAt));
     sub = '<div class="conn-sub">'+line+'</div>';
+  } else if(c.status === 'DISABLED'){
+    /* 关闭态：必须写清「授权还在」—— 否则用户不敢点，或者误以为要重连（2026-10-31 用户口径） */
+    var line2 = '已关闭 · 授权保留，开启即恢复，无需重新认证';
+    if(c.accountLabel) line2 += ' · ' + txt(c.accountLabel);
+    sub = '<div class="conn-sub">'+line2+'</div>';
   } else if(c.status === 'UNVERIFIED'){
     sub = '<div class="conn-sub conn-err">未通过校验：'+txt(c.lastError || '未知错误')+'</div>';
   }
@@ -9937,14 +9955,20 @@ function connCardHtml(c){
   if(c.configReady === false){
     act = '<button class="btn small" disabled>连接</button>';
   } else if(c.status === 'CONNECTED'){
-    /* 两个动作语义不同，必须分开：
-       · 「断开」= 解绑（破坏性：扫码类连接器会删本机凭据，重开要重扫）—— 保留原义并说清后果；
-       · 「本次对话不调用」= 只屏蔽本轮工具，**授权保留**（2026-10-31 用户口径）。 */
+    /* 三个动作语义各不相同，必须分开（2026-10-31 用户口径修正）：
+       · 「关闭」= 停用，**授权保留** ⇒ 再「开启」直接恢复，不再要求重新认证（主操作）；
+       · 「本次对话不调用」= 只屏蔽本轮工具，连停用都不是（会话级，刷新即恢复）；
+       · 「解除绑定」= 破坏性解绑（清凭据 / 删本机授权），换账号才用 —— 收进二次确认。 */
     var muted = isConnectorMuted(c.code);
     act = '<button class="btn ghost small" data-act="mute" data-code="'+txt(c.code)+'"'
         + ' data-name="'+txt(c.name || c.code)+'">'
         + (muted ? '本次对话恢复调用' : '本次对话不调用') + '</button>'
-        + '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">断开</button>';
+        + '<button class="btn small" data-act="disable" data-code="'+txt(c.code)+'">关闭</button>'
+        + '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">解除绑定</button>';
+  } else if(c.status === 'DISABLED'){
+    /* 开启是一步到位的：不弹层、不问凭据，点完即 CONNECTED（凭据一直还在） */
+    act = '<button class="btn small" data-act="enable" data-code="'+txt(c.code)+'">开启</button>'
+        + '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">解除绑定</button>';
   } else if(c.status === 'UNVERIFIED'){
     act = '<button class="btn small" data-act="verify" data-code="'+txt(c.code)+'">重新检测</button>';
   } else {
@@ -10172,19 +10196,45 @@ function openQrModal(code, d){
 }
 
 /* 断开 / 重新检测：成功后刷新面板；失败 toast */
+/* 关闭连接器：非破坏性停用。**不问凭据、不调 disconnect**，只翻一个状态位。
+   用户口径（2026-10-31）：「关闭后再开启不需要重新认证」——
+   所以这里绝不能顺手调 disconnect（那会清掉 credential_json / 删本机授权）。 */
+function disableConnector(code){
+  API.connectorDisable(code).then(function(d){
+    var st = d && d.status ? d.status : 'DISABLED';
+    toast(st === 'DISABLED' ? '已关闭（授权已保留，随时可开启）' : '当前状态：' + st);
+    refreshConnectors();
+  }).catch(function(err){ toast(err.message || '关闭失败'); });
+}
+
+/* 开启连接器：一步恢复，无弹层、无认证。凭据在关闭时就没被动过。 */
+function enableConnector(code){
+  API.connectorEnable(code).then(function(d){
+    var st = d && d.status ? d.status : 'CONNECTED';
+    if(st === 'CONNECTED'){
+      toast('已开启');
+    } else {
+      /* 只可能是 NEED_AUTH（库里没凭据，例如从来没连过）⇒ 老实引导去认证，不假装成功 */
+      toast('该连接器尚未授权，请先点「连接」完成认证');
+    }
+    refreshConnectors();
+  }).catch(function(err){ toast(err.message || '开启失败'); });
+}
+
 function disconnectConnector(code){
   /* 断开 = **解绑**（破坏性）：扫码类连接器会删掉本机凭据，下次要重新扫码。
-     明确说清后果 —— 用户若只是想「本次不调用」，应该用面板里的「本次对话不调用」。 */
+     2026-10-31 口径修正：破坏性动作收进「解除绑定」，日常「先别用」用「关闭」（保留授权）。 */
   askDialog({
-    title: '断开连接器',
-    message: '断开后会**解绑**该连接器：扫码类连接器（如企业微信）会删掉本机授权，'
-           + '下次使用需要重新扫码。\n若只是想「本次对话不调用它」，请用「本次对话不调用」。',
-    okText: '确认断开', danger: true,
+    title: '解除绑定',
+    message: '解除绑定会**删掉授权凭据**：扫码类连接器（如企业微信）会删掉本机授权，'
+           + '以后再使用必须重新扫码 / 重新填授权码。\n'
+           + '若只是想暂时不给 AI 用，请点「关闭」—— 授权会保留，开启即恢复。',
+    okText: '确认解除绑定', danger: true,
     onOk: function(){
       API.connectorDisconnect(code).then(function(){
-        toast('已断开');
+        toast('已解除绑定');
         refreshConnectors();
-      }).catch(function(err){ toast(err.message || '断开失败'); });
+      }).catch(function(err){ toast(err.message || '解除绑定失败'); });
     }
   });
 }
@@ -10872,16 +10922,25 @@ function oaOpenPlusMenu(){
    ⚠️ 开关语义（2026-10-31 用户口径变更）：开关表示「**本次对话是否调用**这个连接器」，
    **不再表示「断开授权」**。开关的「开」= 授权有效 **且** 本次对话未禁用它。
    ⇒ 关掉只是本次对话不调用它，**授权不动**（关掉再打开不需要重新扫码）。
-   真正的解绑（删凭据）是另一件事，保留在连接器面板的「断开」按钮上。 */
+   真正的解绑（删凭据）是另一件事，保留在连接器面板的「解除绑定」上。
+
+   2026-10-31 补：`DISABLED`（连接器面板里持久「关闭」过的）在开关上看作「有授权但已关闭」，
+   副标题必须写清「授权保留，打开即恢复」—— 否则用户以为又要去重新认证。 */
 function oaLoadPlusConns(){
   var box = $o('oaPlusConns'); if(!box) return;
   API.connectors().then(function(list){
     if(!$o('oaPlusConns')) return null;               // 期间用户把浮层关了
     var items = (arr(list) || []).filter(function(c){ return c && c.code; });
+    /* 写回共享缓存：`oaToggleConnector` 要按连接器**真实状态**分流（已授权就不再弹认证层），
+       读的就是 S.connectors。不写回的话它永远拿到 null ⇒ 一律当成"未授权"去弹授权层，
+       正是用户报的那个 bug（2026-10-31 实测：DISABLED 点开关仍弹授权）。 */
+    S.connectors = items;
     if(!items.length){ box.innerHTML = '<div class="pm-empty">暂无可用的连接器</div>'; return; }
     box.innerHTML = items.map(function(c){
-      var connected = c.status === 'CONNECTED';
-      /* 开关态 = 授权有效 且 本次对话未禁用它 */
+      var st = c.status;
+      var connected = st === 'CONNECTED';
+      var disabled = st === 'DISABLED';               // 持久关闭（授权仍在）
+      /* 开关态 = 授权有效 且 本次对话未禁用它；持久关闭的即使未 mute 也必须是 off */
       var muted = oaConnectorMuted(c.code);
       var on = connected && !muted;
       /* configReady=false 是「管理员还没填凭据」，不是「用户没连」：
@@ -10893,7 +10952,9 @@ function oaLoadPlusConns(){
             ? '本次对话不调用（授权仍保留）'
             : (on
             ? ('已连接' + (c.accountLabel ? ' · ' + c.accountLabel : ''))
-            : (c.status === 'UNVERIFIED' ? '检测未通过，需重新授权' : '未连接，开启后去授权')));
+            : (disabled
+                ? '已关闭（授权保留），打开即恢复'
+                : (st === 'UNVERIFIED' ? '检测未通过，需重新授权' : '未连接，开启后去授权'))));
       return '<div class="pm-conn" data-code="'+txt(c.code)+'">'+
         '<span class="pm-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
         '<div class="pm-main"><b>'+txt(c.name || c.code)+'</b>'+
@@ -10925,7 +10986,12 @@ function oaSetConnectorMuted(code, muted){ return setConnectorMuted(code, muted)
    ⚠️ 语义变更（2026-10-31 用户口径）：「关闭」**不解绑连接器** ——
    只是本次对话不调用对应的应用，授权凭据原样保留，重新开启不需要重新扫码。
    （旧实现调 /disconnect，扫码类连接器会连本机凭据一起删掉，下次开要重扫。）
-   真正的解绑保留在连接器面板的「断开」按钮上（那是明确的破坏性动作）。 */
+   真正的解绑保留在连接器面板的「解除绑定」上（那是明确的破坏性动作）。
+
+   ★ 2026-10-31 第二次修正（用户当场反馈的那一步）：重新开启时**不能无条件弹授权层**。
+     旧代码是 `oaSetConnectorMuted(false)` 之后直接 `openConnector(code)` ⇒ 不管有没有授权
+     都会弹出「填授权码 / 扫码」的弹层，用户看到的就是「关掉再打开还要重新认证」。
+     现在按连接器真实状态分流：已授权 ⇒ 只解除会话级禁用，一个弹层都不弹。 */
 function oaToggleConnector(code, name, isOn){
   if(!code) return;
   if(isOn){
@@ -10944,10 +11010,37 @@ function oaToggleConnector(code, name, isOn){
     return;
   }
   oaClosePlusMenu();                                   // 先把浮层收起，弹层才不会叠在上面
-  /* 重新开启：先从「本次对话禁用」里去掉；若连接器本来就没授权，则走授权流程 */
+  /* 重新开启：先从「本次对话禁用」里去掉 */
   oaSetConnectorMuted(code, false);
+  var c = oaConnectorByCode(code);
+  var st = c ? c.status : null;
+  /* ① 本来就已授权 ⇒ 真正要做的事只有「解除本次对话禁用」，不需要任何认证 */
+  if(st === 'CONNECTED'){
+    toast('已恢复调用');
+    refreshConnectors();
+    return;
+  }
+  /* ② 之前在连接器面板里被持久「关闭」⇒ 顺手开启（只翻状态位，同样不认证） */
+  if(st === 'DISABLED'){
+    API.connectorEnable(code).then(function(d){
+      var s2 = d && d.status ? d.status : 'CONNECTED';
+      toast(s2 === 'CONNECTED' ? '已开启（授权已保留，未重新认证）' : '当前状态：' + s2);
+      refreshConnectors();
+    }).catch(function(err){ toast(err.message || '开启失败'); });
+    return;
+  }
+  /* ③ 只有「确实没授权」（NEED_AUTH / UNVERIFIED / 取不到状态）才引导去认证 */
   if(typeof openConnector === 'function') openConnector(code);
   else toast('无法打开授权窗口');
+}
+
+/* 按 code 取连接器当前项（数据源是 S.connectors，与面板渲染同一份，不另发请求） */
+function oaConnectorByCode(code){
+  var list = arr(S.connectors);
+  for(var i = 0; i < list.length; i++){
+    if(list[i] && list[i].code === code) return list[i];
+  }
+  return null;
 }
 
 /* 新对话：清空对话坞与会话绑定（不动经典形态的 state.conversationId） */

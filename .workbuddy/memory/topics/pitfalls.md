@@ -1359,3 +1359,28 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
       **实测未命中**（两种 reduced-motion 取值下 `animationName` 均为 `none`），但改这块必须复验。
     - ⚠️ 验收哨兵**不能**用 `git show HEAD` 取「改造前」版本对照 —— 一提交 HEAD 即改造后，对照失效。
       ⇒ 把改造前实测值**固化为 `BASELINE` 常量**（含版面与视觉样式），提交后仍守得住「非透明态不变」。
+42. **「＋」浮层的连接器开关「再开启」不能无条件弹授权层**（2026-10-31 用户当场反馈）：
+    - 现象：+ 号 → 连接器 → 关掉开关 → 再打开 ⇒ 弹出「填授权码 / 扫码」，
+      用户原话「关闭连接器后再开启还需要重新认证」。
+    - 根因：`oaToggleConnector()` 的再开启分支是
+      `oaSetConnectorMuted(code,false); openConnector(code);` —— **无条件**。
+      而 `openConnector()` 必先 `GET /v1/connectors/{code}` 取 detail 再按 mode 弹层
+      ⇒ 只要走这条路，就一定被要求重新认证一次。
+    - 修法：按连接器**真实状态**分流 —— CONNECTED ⇒ 只解除会话级 mute（一个弹层都不弹）；
+      DISABLED ⇒ 顺手调 `enable`（只翻状态位）；**只有 NEED_AUTH / UNVERIFIED 才引导授权**。
+    - ★ 连带坑：分流要读 `S.connectors`，但 `oaLoadPlusConns()` 原先只把列表渲染到 DOM、
+      **没写回 S.connectors** ⇒ `oaConnectorByCode()` 永远返回 null ⇒ 全被当成「未授权」
+      ⇒ 修完主逻辑仍然弹层（实测 detail=1）。拉完数据必须 `S.connectors = items`。
+    - 语义分层（别合并）：
+      `mute`（本次对话不调用，会话级、刷新即恢复）
+      < `DISABLED`（持久关闭，只翻状态位，**凭据保留**）
+      < `disconnect`（解除绑定，清 credential_json / 删本机授权 ⇒ **这个才该要求重新认证**）。
+      关闭绝不能用 disconnect 实现（那样必然重新认证）。闸门只认 `CONNECTED`
+      ⇒ DISABLED 自动不注入工具，不需要逐处加判断。
+    - 哨兵判据（不看文案，看调用）：
+      「有没有走认证」= `API.connectorDetail` 调用次数 == 0（离线打桩），
+      或真实链路用 `page.on("request")` 数 `GET /v1/connectors/{code}` 请求 == 0。
+      纯界面断言（弹层不存在）会被 toast / askDialog 的 `.notif-mask` 干扰，不可靠。
+    - ⚠️ Playwright 坑：`page.evaluate(fn, [a,b])` 是**一个**参数（数组），
+      不是两个参数 ⇒ 打桩函数里 `status` 拿到 `["CONNECTED","刘洋"]`，
+      界面显示「未连接」而排查半天。传对象（`{status, label}`）最稳。

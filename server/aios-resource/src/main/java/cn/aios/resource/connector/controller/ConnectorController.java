@@ -32,7 +32,9 @@ import java.util.Map;
  *   GET    /api/v1/connectors/{code}/qr-status          轮询扫码是否完成（QR）
  *   POST   /api/v1/connectors/{code}/qr-bind            扫码完成后确认绑定（QR）
  *   POST   /api/v1/connectors/{code}/verify             重新检测
- *   POST   /api/v1/connectors/{code}/disconnect         断开
+ *   POST   /api/v1/connectors/{code}/disable            关闭（停用）：保留授权，再开启无需重新认证
+ *   POST   /api/v1/connectors/{code}/enable             开启（恢复）：DISABLED → CONNECTED，不触发认证
+ *   POST   /api/v1/connectors/{code}/disconnect         断开=解绑（破坏性：清凭据，需重新认证）
  * </pre>
  *
  * <p><b>2026-10-30 删除了 OAUTH2 分支与 OAuth 回跳端点</b>：唯一使用 OAUTH2 的
@@ -152,6 +154,27 @@ public class ConnectorController {
     public ApiResponse<ConnectorConnectionService.VerifyResult> verify(@PathVariable String code) {
         AuthUser user = AuthUserContext.require();
         return ApiResponse.ok(connectionService.verify(user, code));
+    }
+
+    /**
+     * 关闭连接器：只停用，**不动授权**（2026-10-31 用户口径）。
+     *
+     * <p>与 {@code /disconnect} 的区别必须守住：关闭后再开启**不需要重新认证**。
+     * 所以这里既不能调 hub 的 disconnect（那是解绑，会删本机凭据），
+     * 也不能走 {@code connectionService.disconnect}（清 credential_json）。
+     * 只翻一个状态位。</p>
+     */
+    @PostMapping("/{code}/disable")
+    public ApiResponse<Map<String, String>> disable(@PathVariable String code) {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(Map.of("status", connectionService.disable(user, code)));
+    }
+
+    /** 开启连接器：DISABLED → CONNECTED，凭据仍在 ⇒ 直接恢复，无任何认证步骤。 */
+    @PostMapping("/{code}/enable")
+    public ApiResponse<Map<String, String>> enable(@PathVariable String code) {
+        AuthUser user = AuthUserContext.require();
+        return ApiResponse.ok(Map.of("status", connectionService.enable(user, code)));
     }
 
     @PostMapping("/{code}/disconnect")

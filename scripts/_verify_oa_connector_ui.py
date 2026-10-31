@@ -80,8 +80,11 @@ def main():
 
         # S2 三个分段按钮 + 切换
         segs = page.locator("#oaSkillsSeg button").all_inner_texts()
-        chk("S2a 三个分段按钮存在（插件/技能/连接器）",
-            len(segs) == 3 and "插件" in segs[0] and "技能" in segs[1] and "连接器" in segs[2], segs)
+        # 2026-10-31 订正：第一段已从「插件」改名为「系统工具」（坑 38 —— 那 64 条是
+        # 管理员预置的系统内置工具，用户从未添加；旧名字让用户以为是他自己的插件）。
+        # 断言语义不变（三段且顺序为 工具/技能/连接器），只是跟上文案改名。
+        chk("S2a 三个分段按钮存在（系统工具/技能/连接器）",
+            len(segs) == 3 and "系统工具" in segs[0] and "技能" in segs[1] and "连接器" in segs[2], segs)
         page.locator('#oaSkillsSeg button[data-seg="connectors"]').click()
         page.wait_for_timeout(400)
         conn_on = page.eval_on_selector("#oaPaneConnectors", "el => el.classList.contains('on')")
