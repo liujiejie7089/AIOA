@@ -1335,3 +1335,27 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     **改已推送的提交信息**：`git commit --amend -F 文件` → 推送前必须先
     `git rev-parse <old>^{tree} <new>^{tree}` 比对 tree 相同（证明只改了信息没改内容），
     再用 `git push --force-with-lease=refs/heads/main:<oldSHA> origin main`（带 lease 防覆盖他人提交）。
+41. **顶部遮罩要让位，只能移 `.dock` 视口，不能收 `.assist`/`.stage` 自身高度**：
+    - 事实链：OA 聊天页 `.assist`（标题块）与 `.stage`（数字人区）是 `.dock`（对话坞，`flex:1`）
+      的**文档流上方兄弟**。只做 `opacity` 渐隐 ⇒ 元素淡出后**仍占约 140px 文档流高度**
+      ⇒ ① 聊天记录永远滚不进顶部（顶部留一条空白带）；② 渐隐后仍参与命中测试 ⇒ 隐形内容拦点击。
+    - 反面方案（**已实测推翻**）：给 `.assist`/`.stage` 加负 `margin-bottom` 收高度 ⇒
+      ① `.stage` 整体上移 ⇒ **破坏「数字人是气泡尾巴锚点」**（`oaLayoutTails` 量它算尾巴朝向）；
+      ② `.dock` 变高 ⇒ `.dock-list` 的 `clientHeight` 变化 ⇒ `maxScroll` 从 1693 掉到 1555
+      ⇒ **正在翻历史的人被顶走**（滚动跳位）。
+    - 定稿方案：只给 `.dock` 加 `margin-top:calc(-1 * var(--hd,0) * var(--mask-h,140px))`
+      ⇒ 移的是**对话坞的视口**（聊天记录真正顶到顶部占住原遮罩位置），
+      而 `.assist`/`.stage` 自身的位置与高度**纹丝不动**（锚点安全）。
+      代价：`scrollHeight` 不变 ⇒ `maxScroll` 随视口变高而变小，但**实测设定 scrollTop 从不被浏览器钳制**，
+      底部锚点不漂（`lastBottom`/`composerTop` 与改造前一致）。
+    - `--mask-h` **必须实测**（`.assist` 内含项目 chip `#oaProjSlot`，标题字号是 `clamp(...)`，
+      机器人位图高度随加载变）⇒ JS 读 `offsetTop` 算差值 + `ResizeObserver` 跟随；
+      首页态 `.dock` 是 `display:none` ⇒ 高度算 0，规则整体不生效。
+    - 到位隐藏用 `visibility:hidden`（退出绘制与命中测试）+ `pointer-events:none` 双保险。
+      `.assist` 是 `#v-home` 的 **flex item** ⇒ `z-index` 直接生效，**不需要** `position:relative`
+      （加了是多余改动，会破坏「非透明态逐字节不变」）；`.stage` 基础规则里已有 `position:relative`。
+    - ⚠️ 入场动画冲突排查：`.oa .view.on > *{animation:oa-rise …}` 若命中 `.assist`，
+      其 to 帧 `opacity:1` 会盖掉 `--hd` 的 opacity calc ⇒ 渐隐失效。
+      **实测未命中**（两种 reduced-motion 取值下 `animationName` 均为 `none`），但改这块必须复验。
+    - ⚠️ 验收哨兵**不能**用 `git show HEAD` 取「改造前」版本对照 —— 一提交 HEAD 即改造后，对照失效。
+      ⇒ 把改造前实测值**固化为 `BASELINE` 常量**（含版面与视觉样式），提交后仍守得住「非透明态不变」。

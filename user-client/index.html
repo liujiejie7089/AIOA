@@ -1457,6 +1457,67 @@
 .oa #v-home.dock-scrolled .stage{pointer-events:none}
 .oa #v-home.dock-scrolled .assist{pointer-events:none}
 
+/* ============================================================
+   顶部遮罩层「渐变透明 + 让位」机制（2026-10-31 第八轮）
+   ------------------------------------------------------------
+   用户口径：「页面中图片周围有一个带边框的遮罩层，遮挡了图片内容。
+   请修改该遮罩：在用户向上滑动时，遮罩层逐渐变为透明（滑动进度越靠上越透明），
+   并在完全滑动到位后隐藏遮罩、不再阻挡内容交互，使聊天记录能正确显示在遮罩的位置；
+   保持原有的边框与视觉样式在非透明状态下不变。」
+
+   【遮罩是谁】
+   聊天态顶部那块 = .assist（标题块）+ .stage（数字人区）。它们是 #v-home 的
+   **文档流兄弟**，位于 .dock（对话坞滚动容器）**上方**。
+   前几轮只做了 opacity 渐隐（第四轮口径），于是留下两个问题：
+     ① 遮罩淡到全透明后**仍占着约 140px 文档流高度** ⇒ 聊天记录永远滚不进那块位置，
+        顶部出现一条空白带（用户截图里「顶部空带 + 下面才是气泡」的成因）；
+     ② 渐隐只关到 pointer-events，隐藏后**仍参与命中测试** ⇒ 隐形内容拦点击。
+
+   【本轮三件事】
+   ① 连续变透明：复用既有 `--hd`（0..1，= scrollTop / OA_SMOOTH），
+      透明度与「让位进度」用同一把尺子 ⇒ 上滑越深越透明（方向与既有语义一致，无需反转）。
+   ② 让位（聊天记录顶进遮罩的位置）：把 .dock 的**视口**按 --hd 比例整体上移，
+      上移量 = 遮罩带的**实测**高度（--mask-h，JS 用 ResizeObserver 跟随，不能写死：
+      标题块里会插项目 chip、标题字号是 clamp、机器人位图高度随加载结果变）。
+   ③ 完全到位后隐藏：--hd ≥ 0.99（即 .dock-scrolled）⇒ visibility:hidden + pointer-events:none，
+      退出绘制也退出命中测试（visibility:hidden 本身已不接收事件，双保险）。
+
+   【为什么是「移 .dock 的视口」而不是「收遮罩的高度」】
+   收高度（改 .assist/.stage 的 height / max-height）会让 .dock 变高 ⇒
+   .dock-list 的 clientHeight 变化 ⇒ 滚动位置跳，正在翻历史的人被顶走（历史铁律：不能收高度）。
+   本轮只把 .dock 的**视口位置**上移，.assist/.stage 自身的**位置与高度纹丝不动**：
+     · 数字人是气泡尾巴的锚点（oaLayoutTails 量它的位置算尾巴朝向）⇒ 锚点不能动；
+     · 非透明态（--hd = 0）margin 计算项为 0 ⇒ 版面与改造前逐像素一致。
+   代价是 .dock 作为 flex:1 会随之变高（视口更大 ⇒ 能看到更多历史），
+   这正是「让位」的收益：遮罩那块地方真的被聊天记录占住了。
+
+   ⚠️ 只在聊天态生效：首页态 .stage 是整屏主体，上移会让首页看起来加载失败。
+   ⚠️ 非透明态（--hd = 0）所有 margin 计算项均为 0 ⇒
+      边框、阴影、圆角、背景等视觉样式**逐字节不变**。 */
+.oa #v-home.chatting .assist{
+  /* 遮罩必须压在对话坞之上：淡出过程中仍是「遮罩盖住气泡」，
+     否则气泡会浮到数字人前面，看起来像串位。
+     ⚠️ .assist 是 #v-home 的 **flex item** ⇒ z-index 直接生效，
+        不需要 position:relative（加了反而是多余改动，破坏「非透明态逐字节不变」）。 */
+  z-index:2;
+}
+.oa #v-home.chatting .stage{z-index:2}
+/* 让位：对话坞的**视口**按 --hd 比例整体上移，顶到遮罩原来占的位置。
+   上移量 = 遮罩带实测高度 --mask-h（JS 实测 + ResizeObserver 跟随）。
+   ⚠️ 过渡时长与遮罩 opacity 的 120ms 一致 ⇒ 遮罩淡出与对话坞上移同步，
+      不会出现「内容已经顶上来了、遮罩却还半透明」的割裂。 */
+.oa #v-home.chatting .dock{
+  margin-top:calc(-1 * var(--hd, 0) * var(--mask-h, 140px));
+  transition:margin-top 120ms linear;
+}
+/* 到位后彻底隐藏：visibility:hidden 让它退出绘制与命中测试，
+   pointer-events:none 再兜一层（visibility:hidden 已不接收事件，双保险）。 */
+.oa #v-home.chatting.dock-scrolled .assist,
+.oa #v-home.chatting.dock-scrolled .stage{
+  visibility:hidden;
+  pointer-events:none;
+}
+
 /* 顶栏「工作助手」**固定常显**（2026-10-30 第四轮口径，撤销第二轮的 bar-hidden）：
    顶栏在 flex 布局里本来就不随对话坞滚动，恒定可见 —— 不再随滚动收起/透明。
    第二轮那套 `#oaRoot.bar-hidden`（高度收 0 + 背景透明）已整体删除：用户实测后
@@ -10214,6 +10275,9 @@ function dockEl(){ return $o('oaDockList'); }
 
 function oaSetChatting(on){
   var home = $o('v-home'); if(home) home.classList.toggle('chatting', !!on);
+  /* 让位用的遮罩带高度：进聊天态那一帧就实测一次（读 offsetTop 会强制回流，
+     拿到的是切换 class 之后的真实高度），避免首帧沿用首页态的旧值而闪跳。 */
+  if(on) oaMeasureMaskH();
   // 退出会话态（清空对话坞）时顺手复位标题显隐：dock 已清空、scrollTop 归零，
   // 标题（工作助手）应当完整回来，否则下一次进来标题还是隐的
   if(!on && home){
@@ -10283,6 +10347,36 @@ function oaSyncDockFade(){
   if(root && root.classList.contains('bar-hidden')){
     root.classList.remove('bar-hidden');
   }
+}
+
+/* 顶部遮罩带（.assist 标题块 + .stage 数字人区）在聊天态实际占多高（第八轮）。
+   对话坞让位时要整体上移这么多 px，才能顶到遮罩原来占的位置。
+   ⚠️ 必须实测、不能写死：高度会随内容变 ——
+      标题块里会插项目 chip（JS 切换 display）、标题字号是 clamp(...)、机器人位图高度随加载结果变。
+   量法：dock 的 border-box 顶（offsetTop，已含让位用的负 margin 位移）− 它的 margin-top
+        ⇒ 抵消位移后得到「不让位时」的原始位置，再减去 assist 的顶 ⇒ 遮罩带净高度。 */
+function oaMeasureMaskH(){
+  var home = $o('v-home'); if(!home) return;
+  var assist = home.querySelector('.assist'), dock = home.querySelector('.dock');
+  if(!assist || !dock) return;
+  var mt = parseFloat(getComputedStyle(dock).marginTop);
+  if(!isFinite(mt)) mt = 0;
+  var h = (dock.offsetTop - mt) - assist.offsetTop;
+  if(!(h > 0)) h = 0;                       /* 首页态 / 非聊天态 dock 为 display:none ⇒ 高度 0 */
+  home.style.setProperty('--mask-h', h.toFixed(1) + 'px');
+}
+/* 遮罩带高度会随内容变化 ⇒ 用 ResizeObserver 跟随，而不是每次滚动都量（那是布局抖动源）。
+   只观察 .assist / .stage 自身尺寸：我们写 --mask-h 不会改变它们的高度 ⇒ 不会自激循环。 */
+var oaMaskRO = null;
+function oaWatchMask(){
+  var home = $o('v-home'); if(!home) return;
+  if(!window.ResizeObserver) return;
+  var assist = home.querySelector('.assist'), stage = home.querySelector('.stage');
+  if(!assist || !stage) return;
+  if(oaMaskRO){ try{ oaMaskRO.disconnect(); }catch(e){} oaMaskRO = null; }
+  oaMaskRO = new ResizeObserver(function(){ oaMeasureMaskH(); });
+  oaMaskRO.observe(assist);
+  oaMaskRO.observe(stage);
 }
 
 /* 三角指向数字人：**唯一一处**算法（首页浮动指标卡与对话坞气泡共用同一份）。
@@ -11563,6 +11657,9 @@ function bind(){
   }
   var dockList = dockEl();
   if(dockList) dockList.addEventListener('scroll', function(){ oaLayoutTails(); oaSyncDockFade(); });
+  /* 顶部遮罩带高度跟随内容变化（第八轮）：项目 chip 出现/消失、机器人位图解码完成，
+     都会让 .assist/.stage 的高度变 ⇒ ResizeObserver 重新实测并写回 --mask-h。 */
+  oaWatchMask();
   /* 气泡的入场动画 bub-in 会在「首页从 display:none 恢复显示」时整体重放（浏览器行为）。
      重放期间 getBoundingClientRect 量到的是 translateY(8px) 的中间帧，据此定格的三角
      会偏约 1.2°（实测）。动画一结束就补量一次 —— 延时不来自这里，就不该在这里猜一个数。 */
@@ -11679,6 +11776,9 @@ window.oaLayoutTails = oaLayoutTails;
 window.oaState = S;
 /* 暴露导航入口，供离线自检脚本驱动「进入某视图」（与上面自检暴露同一定位）。 */
 window.oaGo = oaGo;
+/* 暴露「顶部遮罩带高度实测」：让位量完全依赖实测值（--mask-h），
+   离线验证脚本需要在注入完气泡后重新量一次，避免读到注入前的旧值。 */
+window.oaMeasureMaskH = oaMeasureMaskH;
 /* 自检暴露（与上面 4 个同一定位：只给离线验证脚本用，产品路径不经过它）。
    「识别到上传/上报意图 ⇒ 自动弹窗」是本轮唯一不由点击直接触发的交互，
    不给它一个可从外部驱动的入口，就只能靠「起了整套后端 + 真登录」才能验一次；

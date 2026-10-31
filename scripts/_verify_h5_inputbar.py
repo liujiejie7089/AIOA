@@ -717,9 +717,12 @@ def main():
 
             # ---------- 8. 「工作助手」标题块随滚动显隐（2026-10-30 第四轮口径） ----------
             # 判据 = scrollTop（离最早/首次对话的距离）：顶端完整可见，往下浏览在 120px 内
-            # 连续上移+渐隐，中间保持隐藏，滚回顶端才重现。数字人（.stage）是会话锚点，常显。
+            # 连续上移+渐隐，中间保持隐藏，滚回顶端才重现。
             # 上一轮的「离底>24px 就隐、回底就现」被推翻：长会话里随手一滚标题就瞬跳，
             # 且「回到最新」也弹回标题，与「只有首次对话才出现」冲突。
+            # 2026-10-31 第八轮：数字人（.stage）**也**随遮罩一起渐隐并让位
+            #   （第五轮起 .stage 已加 opacity 渐隐；本轮再加 visibility 隐藏 + 对话坞上移让位）。
+            #   ⇒ 本组断言随之更新：「数字人常显」改为「数字人随遮罩一起隐去 + 遮罩隐藏后不挡交互」。
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
               l.innerHTML = '';
@@ -736,15 +739,24 @@ def main():
             at_bottom = page.evaluate(r"""() => {
               const home = document.getElementById('v-home');
               const a = home.querySelector('.assist'), s = home.querySelector('.stage');
+              const cs = el => el ? getComputedStyle(el) : null;
               return {cls: home.className, hd: home.style.getPropertyValue('--hd'),
-                      assist: a ? getComputedStyle(a).opacity : null,
-                      stage: s ? getComputedStyle(s).opacity : null};
+                      assist: a ? cs(a).opacity : null,
+                      stage: s ? cs(s).opacity : null,
+                      stageVis: s ? cs(s).visibility : null,
+                      stagePE: s ? cs(s).pointerEvents : null};
             }""")
-            rec("8. 浏览到最新一条: 标题已隐、数字人（锚点）常显",
+            rec("8. 浏览到最新一条: 标题已隐、数字人随遮罩一起隐去",
                 "PASS" if at_bottom["assist"] not in (None, "1")
                 and float(at_bottom["assist"] or 1) < 0.1
-                and at_bottom["stage"] in ("1", None) else "FAIL",
-                "assist opacity≈0 且 stage opacity=1", at_bottom)
+                and at_bottom["stage"] not in (None, "1")
+                and float(at_bottom["stage"] or 1) < 0.1 else "FAIL",
+                "assist opacity≈0 且 stage opacity≈0（两者同属顶部遮罩带）", at_bottom)
+            # 第八轮：完全到位后遮罩必须**彻底隐藏**且**不再阻挡内容交互**
+            rec("8. 完全到位后遮罩隐藏且不阻挡内容交互(visibility:hidden + pointer-events:none)",
+                "PASS" if at_bottom["stageVis"] == "hidden"
+                and at_bottom["stagePE"] == "none" else "FAIL",
+                "stage visibility=hidden 且 pointer-events=none", at_bottom)
             # 连续插值：滚到一半（60px ≈ OA_SMOOTH/2）标题应是半透明，而不是 0/1 跳变
             page.evaluate(r"""() => {
               const l = document.getElementById('oaDockList');
