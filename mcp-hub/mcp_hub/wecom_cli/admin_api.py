@@ -123,13 +123,21 @@ async def handle(scope, receive, send):
 
 
 async def _status(send, ident):
-    """绑定状态。以本地配置目录为准（文件在=真授权过），不用数据库自述。"""
+    """绑定状态。以本地配置目录为准（文件在=真授权过），不用数据库自述。
+
+    返回里额外带 `cli`：CLI 可执行文件到底在不在。
+    没有它的话，「CLI 没装」会被 `cli_auth.status()` 吞成 `unauthorized`，
+    界面只剩一句「没有可用的企业微信连接」，与「还没扫码」完全无法区分
+    （2026-10-31 生产现场）。
+    """
+    cli = runner.probe()
     label = None
     shared = False
     try:
         d, shared = profiles.resolve(ident.tenant_id, ident.user_id)
     except profiles.NotBound:
-        return await _ok(send, {"authorized": False, "accountLabel": None, "sharedProfile": False})
+        return await _ok(send, {"authorized": False, "accountLabel": None,
+                                "sharedProfile": False, "cli": cli})
     st = await cli_auth.status(d)
     if st == "authorized":
         label = profiles.account_label(ident.tenant_id, ident.user_id)
@@ -140,4 +148,4 @@ async def _status(send, ident):
             except runner.CliError:
                 label = None
     return await _ok(send, {"authorized": st == "authorized", "accountLabel": label,
-                      "sharedProfile": shared})
+                            "sharedProfile": shared, "cli": cli})

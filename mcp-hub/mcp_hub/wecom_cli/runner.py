@@ -66,8 +66,21 @@ def bin_path() -> str:
         return _bin_cache
     env = (os.environ.get("AIOS_WECOM_CLI_BIN") or "").strip()
     if env:
-        _bin_cache = env
-        return _bin_cache
+        # ⚠️ 不能直接信 env。compose 里给了默认值 `/opt/wecom-cli/wecom-cli`，
+        # 而宿主目录不存在时 Docker 会**静默建一个空目录**再挂进来 ⇒
+        # 路径恒有、文件恒无。原先这里直接 return，于是
+        # `create_subprocess_exec` 抛裸 `FileNotFoundError`：
+        #   · `cli_auth.status()` 只 catch CliError ⇒ 异常穿透到 REST 面变 500；
+        #   · 或者（catch 到别的）被当成「未授权」⇒ 界面显示「没有可用的企业微信连接」，
+        #     而真实原因是 CLI 根本没装。—— 2026-10-31 生产现场即此。
+        if os.path.isfile(env) and os.access(env, os.X_OK):
+            _bin_cache = env
+            return _bin_cache
+        raise CliError(
+            f"未找到企微 CLI：{env} 不存在或不可执行。"
+            f"请把官方 wecom-cli（原生可执行文件）放到宿主目录 "
+            f"（compose 里是 ${{AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}}，"
+            f"挂到容器 /opt/wecom-cli），或把 AIOS_WECOM_CLI_BIN 指到容器内正确路径。")
     for c in _candidates():
         if c.is_file():
             _bin_cache = str(c)
@@ -79,6 +92,21 @@ def bin_path() -> str:
         return _bin_cache
     raise CliError("未找到 wecom-cli。请执行 `npm i -g @wecom/cli`，"
                    "或设置 AIOS_WECOM_CLI_BIN 指向可执行文件")
+
+
+def probe() -> dict:
+    """排障用：**不抛异常**地报告「CLI 到底在不在」。
+
+    为什么要单独有它：`bin_path()` 一抛就被 `cli_auth.status()` 吞成
+    「unauthorized」，界面上只剩一句「没有可用的企业微信连接」，
+    分不清是「没扫码」还是「CLI 没装」。让 `GET /api/v1/wecom_cli/status`
+    直接把这段带出去，一条 curl 就能定位。
+    """
+    try:
+        return {"path": bin_path(), "ok": True, "error": None}
+    except CliError as e:
+        return {"path": (os.environ.get("AIOS_WECOM_CLI_BIN") or "").strip() or None,
+                "ok": False, "error": str(e)}
 
 
 def _env(profile_dir: Path) -> dict:
