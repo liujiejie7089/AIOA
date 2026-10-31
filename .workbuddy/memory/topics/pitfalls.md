@@ -1297,3 +1297,32 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
 32. **e2e 里写死 uid 会把「组织者本人」算成受邀人**：`createMeeting` 会跳过 organizer，
     而 `zhangsan` 真实 uid=2 ⇒ 写 `attendeeIds=[2,3]` 恰含自己，invited 期望值对不上。
     **这不是产品缺陷**。⇒ 期望值必须按登录返回的真实 uid 动态算；用第二个真实账号做受邀人。
+33. **对话级开关的通用做法**（2026-10-31）：凡「只影响本次对话、**不改持久状态**」的开关
+    （KB 开关 `kb_on`、连接器 `disabled_connectors`），统一走
+    `前端集合 → 顶层字段 → Java context 快照（落库 + 回读）→ agent 顶层字段`。
+    判别点：后端**连接状态/授权/trusted 全部不动** ⇒ 用户关掉再打开无需重新扫码/重新授权。
+34. **`.cbtn` 这类通用类必须显式写全 `flex`**：通用 `.cbtn`（确认卡文字按钮）带
+    `flex:1 1 0px; min-height:36px`；`.oa .cbtn` 只写 `flex-shrink:0` **等于没写**
+    （flex-grow 默认 1 仍在生效）⇒ 输入栏里的麦克风被撑成 89px 宽的椭圆。
+    修：`.oa .cbtn{flex:0 0 auto; min-height:0}`。⚠️ 最终渲染是 **44×44** 不是 34×34
+    （后面还有全局命中区规则 `.oa .cbtn{width:44px;height:44px}`，移动端 ≥44px 标准）。
+35. **事件帧里没有 tool_call_id**：tool_call_id 只存在于图状态的 `messages`（tool 消息）里
+    ⇒ 断言「被拦下的调用有回注 ok=False」必须**直接调节点看返回值**，
+    在 `message.completed` SSE 帧里找 tool_call_id 必假红。
+    同理：tool 消息**不能丢**（丢了上游判协议错误）⇒ 执行队列排除 + 回注入消息，两件事。
+36. **`patch.object(类, 方法, 假函数)` 会变成绑定方法**（多传一个 `self`）：
+    假函数签名要写 `async def f(self, name, arguments=None)`，否则报「takes from 1 to 2
+    positional arguments but 3 were given」。
+37. **`--hd` 是写在 scroll 事件监听器里的**（`oaSyncDockFade` 是 IIFE 内函数、不挂 window
+    ⇒ 不能直接调）：设 `scrollTop` 后**必须等一拍**再读；且 scrollTop=0 且从未滚过时
+    `--hd` 是**空串**（靠 `var(--hd, 0)` 兜底，语义上就是 0，别判成 None）。
+    对话坞滚动容器是 `#oaDockList`（`.dock-list`，overflow-y:auto），`#oaDock` 只是外壳；
+    不先给 `#v-home` 加 `.chatting` ⇒ `.dock` 是 display:none、高度 0、根本不可滚。
+38. **用户报的计数要去接口与来源核**：「我看到 46 个插件」实测 `GET /v1/plugins` = 64 条，
+    全部是**管理员预置的系统内置工具**（`tool_definition`：platform 6 + scfy 58），
+    用户从未添加 ⇒ 问题不在数字，在**命名与来源未交代**（改叫「系统工具」+ 顶部说明）。
+    字段名错配同理：`recent_group_sessions` 返回 `ref` 而 `session_messages` 入参叫 `chat_id`
+    ⇒ 模型报「chat_id 无效」。**上下游字段名必须同名**。
+39. **跑 e2e 要用带 pymysql 的解释器**（`agent/.venv` 或 workbuddy envs/default）：
+    系统 python 没有 ⇒ 脚本里「回库核对」的断言被**静默跳过**（只降级不算失败，
+    但也不代表通过 —— 看输出里的「数据库不可达」提示，别误读成全绿）。
