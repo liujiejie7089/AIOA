@@ -1472,3 +1472,33 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     - 复现手法（值得记住）：`httpx` 显式 `Host` 头 + `--http h11`（生产的 uvicorn 是裸装，
       只有 h11；本地 venv 有 httptools，默认行为不同）。⚠️ httpx 默认读系统代理，
       本机必须 `trust_env=False`，否则会拿到代理的 502「upstream connect failed」。
+
+47. **lifespan 里 re-raise = 「健康但全废」：uvicorn 会当作「app 不支持 lifespan」继续服务**
+    - 2026-10-31 生产「连接器全线不可用」的真链（三环）：
+      ① 容器内 `/app/data` 属主是 root，hub 以 **uid 10001** 运行 ⇒
+         `wecom/store.py::init()` 抛 `PermissionError: [Errno 13] '/app/data'`；
+      ② `app.py::_lifespan` 当时**直接 `raise`** ⇒ uvicorn 打印
+         **`ASGI 'lifespan' protocol appears unsupported.`** 并**照常完成启动**；
+      ③ 于是所有 `/mcp/<code>` 子 app 从未启动 ⇒ 请求全落到死 app 上。
+    - **最坑的地方**：`/health` 仍是 200、`/api/v1/wecom_cli/qr` 还能出二维码
+      （这两个都不碰子服务）⇒ 一度误判成「hub 是好的，是 Host/版本问题」，白排查两轮。
+    - 修法三条，缺一不可：
+      a. **init 失败不中断 lifespan**：只影响依赖存储的连接器（wecom_cli），
+         `qq_mail` 这种纯代理连接器不该被连坐 —— 这是修复的核心价值；
+      b. 底座失败时 `/health` 回 **503 + `init_failed` + message**（HEALTHCHECK 用
+         `urlopen`，非 2xx 即失败 ⇒ `docker compose ps` 直接 unhealthy）；
+      c. 权限本身：Dockerfile `mkdir -p /app/data && chown hub` +
+         compose 挂**命名卷** `mcphubdata:/app/data`。
+         **不要用 bind mount** —— Docker 以 root 建宿主目录，uid 10001 照样写不进去；
+         命名卷首次创建时按**镜像内**属主初始化，所以 Dockerfile 的 chown 才是决定性的一步。
+    - 顺带记牢的**假象**：`WECOM_MOCK=1` 且未设 `WECOM_CONNECTOR_KEY` ⇒
+      `crypto.load_key()` 生成**进程内临时密钥** ⇒ hub 每重启一次，所有人已存的连接器
+      授权就全部解不开。用户看到的是「又要重新认证」，实际不是过期是换密钥。
+      生产必须 `WECOM_MOCK=0` + 固定密钥（且一旦填了不能换）。
+    - 别把**状态码**混起来：401=Java 令牌；**421=Host 不在 FastMCP 白名单**（坑 46）；
+      500=子服务内部抛错（旧版无信息）；503 `mcp_server_unavailable`=子服务没启动。
+    - 哨兵 `scripts/_check_mcp_hub_degraded.py`（9/9，进程内驱动 ASGI 不开端口）。
+      ⚠️ 写这类哨兵的纪律：**lifespan 与 HTTP 调用必须在同一个事件循环**（一次
+      `asyncio.run` 里跑完），否则 FastMCP 的 session manager task group 跨循环 ⇒
+      **恒 500**（第一版就这样假失败过，且与缺陷无关）；另外 SSE 响应体可能抓不全，
+      「真建了会话」要看响应头 `mcp-session-id`，别只看 body。
