@@ -34,10 +34,17 @@ APPS = {code: mcp.streamable_http_app() for code, mcp in builtin.SERVERS.items()
 
 
 class _ChildLife:
-    """独立驱动一个子 app 的 lifespan（启动 session manager，退出时停止）。"""
+    """独立驱动一个子 app 的 lifespan（启动 session manager，退出时停止）。
 
-    def __init__(self, app):
+    `ok` / `error` 是给**路由层**看的：子 app 没起来时不能再把请求丢进去——那只会
+    换回一个没有任何线索的裸 500（见 `_handle_http` 里 `/mcp/` 分支的注释）。
+    """
+
+    def __init__(self, code: str, app):
+        self.code = code
         self.app = app
+        self.ok = False
+        self.error = "尚未启动"
         self._q: "asyncio.Queue" = asyncio.Queue()
         self._task = None
         self._started = asyncio.Event()
@@ -47,13 +54,25 @@ class _ChildLife:
         return await self._q.get()
 
     async def _send(self, msg):
+        # 三种结束信号都要放行：只认 startup.complete 的话，失败时事件永远不会被 set，
+        # 只能干等 10s 超时，日志里剩一句 TimeoutError——看不出是哪个子服务、为什么。
         if msg.get("type") == "lifespan.startup.complete":
+            self.ok = True
+            self._started.set()
+        elif msg.get("type") == "lifespan.startup.failed":
+            self.error = msg.get("message") or "lifespan.startup.failed"
             self._started.set()
 
     async def start(self):
         await self._q.put({"type": "lifespan.startup"})
         self._task = asyncio.create_task(self.app(self._scope, self._receive, self._send))
-        await asyncio.wait_for(self._started.wait(), timeout=10)
+        try:
+            await asyncio.wait_for(self._started.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            self.error = "lifespan 启动超时（10s 内未回 startup.complete）"
+            raise RuntimeError(f"子服务 {self.code} {self.error}")
+        if not self.ok:
+            raise RuntimeError(f"子服务 {self.code} 启动失败：{self.error}")
 
     async def stop(self):
         await self._q.put({"type": "lifespan.shutdown"})
@@ -64,7 +83,7 @@ class _ChildLife:
                 self._task.cancel()
 
 
-_CHILDREN = [_ChildLife(app) for app in APPS.values()]
+_CHILDREN = {code: _ChildLife(code, app) for code, app in APPS.items()}
 
 
 async def _lifespan(receive, send):
@@ -83,14 +102,21 @@ async def _lifespan(receive, send):
             except Exception as e:  # noqa: BLE001
                 logger.error("连接器凭证库初始化失败：%s", e)
                 raise
-            for child in _CHILDREN:
+            for child in _CHILDREN.values():
                 try:
                     await child.start()
+                    logger.info("MCP 子服务已就绪：%s", child.code)
                 except Exception as e:  # noqa: BLE001
-                    logger.exception("子 app lifespan 启动失败：%s", e)
+                    child.ok = False
+                    if not child.error or child.error == "尚未启动":
+                        child.error = f"{type(e).__name__}: {e}"
+                    logger.exception(
+                        "子 app lifespan 启动失败：%s —— 该连接器的 /mcp 请求此后会明确报 503",
+                        child.code,
+                    )
             await send({"type": "lifespan.startup.complete"})
         elif message["type"] == "lifespan.shutdown":
-            for child in _CHILDREN:
+            for child in _CHILDREN.values():
                 try:
                     await child.stop()
                 except Exception as e:  # noqa: BLE001
@@ -141,11 +167,41 @@ async def _handle_http(scope, receive, send):
 
     if path.startswith("/mcp/"):
         code = path[len("/mcp/"):].strip("/").split("/")[0]
-        app = APPS.get(code)
-        if app is not None:
+        child = _CHILDREN.get(code)
+        if child is not None:
+            if not child.ok:
+                # 子服务没起来就直说「未就绪」并给出原因；往死 app 里丢请求只会得到裸 500。
+                await _send_json(send, 503, {
+                    "ok": False,
+                    "error": "mcp_server_unavailable",
+                    "message": f"{code} 未就绪：{child.error}",
+                })
+                return
             new_scope = dict(scope)
             new_scope["path"] = "/"  # 子 app 的 streamable_http_path 是 "/"
-            await app(new_scope, receive, send)
+            sent = {"started": False}
+
+            async def _send(msg, _inner=send, _flag=sent):
+                if msg.get("type") == "http.response.start":
+                    _flag["started"] = True
+                await _inner(msg)
+
+            try:
+                await child.app(new_scope, receive, _send)
+            except Exception as e:  # noqa: BLE001
+                # 裸 500 是最没用的失败形态：ASGI 层不把栈透给调用方，容器日志里也未必有
+                # （2026-10-31 生产 /mcp/qq_mail 恒 500 时正是卡在这里查不下去）。所以这里
+                # 必须 ① 打出完整栈；② 回一个**带 message** 的 JSON —— Java 侧
+                # renderReason() 只在响应缺 message 时才拼成「连接器返回异常（HTTP 500）」，
+                # 带上 message 就能把真实原因透到前端，不用再猜。
+                logger.exception("MCP 子服务 %s 处理请求失败：%s", code, e)
+                if not sent["started"]:
+                    await _send_json(send, 500, {
+                        "ok": False,
+                        "error": "mcp_server_failed",
+                        "message": f"{code} 处理失败：{type(e).__name__}: {e}",
+                    })
+                return
             return
 
     await _send_json(send, 404, {"ok": False, "error": "not found"})

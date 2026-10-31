@@ -111,7 +111,12 @@ public class PortalService {
                     mids.add(a.getMeetingId());
                 }
             }
-            List<PortalMeeting> meetings = mids.isEmpty() ? List.of() : meetingMapper.selectBatchIds(mids);
+            // ⚠️ 空分支必须给**可变**列表：下面无条件 `sort()`，而 `List.of()` 是不可变的，
+            // 会让 `List.sort` 抛 UnsupportedOperationException（生产上用户没有会议邀请时必现，
+            // 本地因有邀请数据走 selectBatchIds 分支而一直复现不出来）。
+            // 非空分支也复制一层：不依赖 MyBatis 返回的是不是 ArrayList。
+            List<PortalMeeting> meetings = new ArrayList<>(
+                    mids.isEmpty() ? List.of() : meetingMapper.selectBatchIds(mids));
             Map<Long, String> finalInv = invMap;
             meetings.sort(Comparator.comparing(PortalMeeting::getStartAt,
                     Comparator.nullsLast(Comparator.reverseOrder())));
