@@ -28,6 +28,25 @@ _QR_NAME = "qr.png"
 _SESSION = ".qr-session"   # 本次扫码会话的起点（epoch 秒），写在用户基目录里
 _QR_TIMEOUT = 20.0     # 等 PNG 落盘的上限
 _procs: dict[str, asyncio.subprocess.Process] = {}
+
+
+async def _reap(proc: asyncio.subprocess.Process | None) -> None:
+    """杀掉并**真正回收**一个长驻子进程。
+
+    只 `kill()` 不 `await wait()` 会留下没关闭的管道传输层：容器里 uvicorn 是 PID 1，
+    子进程退出信号没人接，fd 就一直挂着。扫码这条路径一天被点几十次，
+    泄漏量不大但会稳定累积，而且 `docker stats` 里看不出来（不是内存问题）。
+    """
+    if proc is None or proc.returncode is not None:
+        return
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.shield(proc.wait())
+    except (asyncio.CancelledError, ProcessLookupError, RuntimeError):
+        pass
 _locks: dict[str, asyncio.Lock] = {}
 
 # 「未完成」的四种原因必须分开报，否则用户不知道该重扫还是该解绑。
@@ -137,11 +156,8 @@ async def start_qr(tenant_id, user_id) -> tuple[Path, bool]:
         if proc is not None and proc.returncode is None:
             # 进程还在但图没了（上一轮的图被删或前端已过期待重取）：必须换一个新进程。
             # 留着它等是没用的 —— 它这辈子不会再写第二张图。
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
             _procs.pop(str(d), None)
+            await _reap(proc)
             logger.info("旧扫码进程无图可用，已回收（tenant=%s user=%s）", tenant_id, user_id)
         try:
             png.unlink()          # 只在确定要起新进程时才删，避免毁掉还能用的图
@@ -167,14 +183,9 @@ async def start_qr(tenant_id, user_id) -> tuple[Path, bool]:
 
 
 async def finish(tenant_id, user_id) -> None:
-    """扫码成功后收尾：杀掉可能还挂着的 auth init。"""
+    """扫码成功后收尾：杀掉并回收可能还挂着的 auth init。"""
     d = profiles.dir_for(tenant_id, user_id)
-    proc = _procs.pop(str(d), None)
-    if proc is not None and proc.returncode is None:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+    await _reap(_procs.pop(str(d), None))
 
 
 async def session_state(tenant_id, user_id) -> dict:

@@ -427,7 +427,9 @@ services:
       #  ③ 密钥与身份：WECOM_MOCK=0 时缺 WECOM_CONNECTOR_KEY 会让 hub **启动失败**
       #     （wecom/crypto.py fail-fast，刻意的：绝不静默用临时密钥）。
       #     故默认给 1 保底「起得来」，生产要真实身份再显式设 0 并配密钥。
-      AIOS_WECOM_CLI_BIN: ${AIOS_WECOM_CLI_BIN:-/opt/wecom-cli/wecom-cli}
+      # ★ 容器内路径**故意不用 /opt**：/opt 是系统保留目录，本项目约定所有落盘内容
+      #   一律放在仓库目录内（宿主 <仓库>/data/ 下）。容器内对应 /data/*。
+      AIOS_WECOM_CLI_BIN: ${AIOS_WECOM_CLI_BIN:-/data/wecom-cli-bin/wecom-cli}
       AIOS_WECOM_CLI_ROOT: /data/wecom-cli
       AIOS_WECOM_CLI_TIMEOUT: ${AIOS_WECOM_CLI_TIMEOUT:-30}
       WECOM_MOCK: ${WECOM_MOCK:-1}
@@ -436,8 +438,9 @@ services:
       AIOS_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
     volumes:
       # 宿主目录不存在时 Docker 会**静默建空目录** ⇒ 表现为「wecom-cli 未安装」，不会报错。
+      # 默认落在**仓库内** ../data/wecom-cli-bin（不放 /opt，见仓库 .gitignore 第 60 行）。
       # 目录与权限见 .env.production「5c-2 · 企业微信扫码连接器」段。
-      - ${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}:/opt/wecom-cli:ro
+      - ${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}:/data/wecom-cli-bin:ro
       # hub 以 uid 10001 运行 ⇒ 宿主目录需 chown 10001，否则扫码时写凭据失败
       - ${AIOS_WECOM_CLI_ROOT_DIR:-../data/wecom-cli}:/data/wecom-cli
       # 连接器凭据库（/app/data/wecom.db，SQLite + WAL；wecom 与通用连接器共用一份）。

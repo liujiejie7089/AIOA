@@ -9,7 +9,7 @@
 本脚本改用「按行重写」：不做任何模式替换，只把 `KEY=...` 那一行整体换掉，因此对
 `$ | & # ! ' " \\ 空格` 全部安全。
 
-用法（在部署机 /opt/aios 下跑）：
+用法（在部署机的**仓库根目录**下跑，本项目生产为 /data/aioa/AIOA；不要放 /opt）：
     python3 deploy/ops/set-secrets.py --check                 # 只体检，不改
     python3 deploy/ops/set-secrets.py                         # 交互式逐项输入（不回显）
     python3 deploy/ops/set-secrets.py --only mysql,redis      # 只改指定的几项

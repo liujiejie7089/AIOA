@@ -148,19 +148,33 @@ def run_script(source: str, data: dict, timeout: float = 5.0) -> SandboxResult:
         return SandboxResult(ok=False, error=err)
 
     data_json = json.dumps(data, default=str, ensure_ascii=False)
+    # ★ 2026-11-01 加固：data 走 **stdin**，不再拼进源码。
+    #   旧写法是 `DATA = json.loads(r'''<data>''')` + `data.replace("'", "\\'")`。
+    #   实测（不是推测）该转义方案的真实后果：
+    #     · data 里只要**有一个撇号**（"don't" / `it's` / 英文邮件正文常见），
+    #       json 里的 `'` 被改成 `\'`，而外层是 **raw 字符串** ⇒ 字面量里留下 `\'`
+    #       ⇒ `json.loads` 报 `Invalid \escape`，**整个数据脚本工具直接失败**。
+    #       （反斜杠不受影响：json 里本来就是 `\\`，是合法转义 —— 这点也实测过。）
+    #   注：三引号本身也被转义掉了，所以**没有**构成逃逸——但「靠字符串转义把数据塞进代码」
+    #   这个方案本身就是脆的，任何一处转义规则对不上就是一个必炸的输入。
+    #   改成 stdin 后源码里只剩常量，转义层彻底消失（顺带也免掉了 injection 这类风险）。
     wrapper = (
-        "import json\n"
-        "DATA = json.loads(r'''__DATA_JSON__''')\n"
+        "import json, sys\n"
+        "DATA = json.loads(sys.stdin.read() or '{}')\n"
         + _SERIALIZE_FN
         + "__RESULT__ = None\n"
         + source + "\n"
         "print('__SANDBOX_RESULT__' + json.dumps(_sbx_serialize(__RESULT__), default=str, ensure_ascii=False))\n"
-    ).replace("__DATA_JSON__", data_json.replace("'", "\\'"))
+    )
 
     try:
         proc = subprocess.run(
             [sys.executable, "-c", wrapper],
-            capture_output=True, text=True, timeout=timeout,
+            # encoding 必须显式给 UTF-8：不写就用 locale（Windows 是 cp936），
+            # 中文数据在开发机上直接 UnicodeDecodeError，而容器里（UTF-8）又完全正常
+            # —— 典型的「本地炸、线上好」反过来那一种。
+            input=data_json, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         return SandboxResult(ok=False, error=f"脚本执行超时（>{timeout}s）",

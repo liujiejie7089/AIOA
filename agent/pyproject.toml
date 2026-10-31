@@ -42,6 +42,14 @@ dependencies = [
     #   判据：容器内 `python -c "import langchain_mcp_adapters, mcp"` 必须成功。
     "mcp>=1.30,<2",
     "langchain-mcp-adapters>=0.3,<0.4",
+    # ★ 以下是**直接 import 但一直靠上游传递依赖活着**的两个包，2026-11-01 依赖审计补上：
+    #   · `aios_ai/tools/client.py` → langchain_core.utils.function_calling
+    #   · `aios_ai/speech/router.py` → starlette.concurrency.run_in_threadpool
+    #   它们以前分别由 langchain-mcp-adapters / fastapi 间接带进来，所以本地和镜像都能跑；
+    #   但只要上游哪天把依赖关系改掉（或换成 extras），镜像**构建期不会报错**，
+    #   运行到那条路径才 ModuleNotFoundError —— 与 langgraph 漏声明同一类事故，故显式声明。
+    "langchain-core>=1.0,<2",
+    "starlette>=0.37",
 ]
 
 [tool.setuptools.packages.find]

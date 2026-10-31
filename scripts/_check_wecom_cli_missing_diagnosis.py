@@ -6,7 +6,8 @@
 2026-10-31 生产现场：用户「连接了企业微信」，对话里却回「当前没有可用的企业微信连接」。
 
 链路是：`bin_path()` → `create_subprocess_exec` → `cli_auth.status()` → REST。
-compose 里 `AIOS_WECOM_CLI_BIN` 有默认值 `/opt/wecom-cli/wecom-cli`，
+compose 里 `AIOS_WECOM_CLI_BIN` 有默认值 `/data/wecom-cli-bin/wecom-cli`（容器内路径；
+宿主侧是**仓库内**的 `<repo>/data/wecom-cli-bin`，刻意不放 /opt），
 而宿主目录不存在时 Docker 会**静默建一个空目录**再挂进来 ⇒ **路径恒有、文件恒无**。
 原实现拿 env 直接 return，于是：
 

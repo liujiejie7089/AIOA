@@ -76,12 +76,14 @@ spec:
       volumes:
         # ★ ASR 模型目录（节点路径）。必须含 <模型名>/（默认 small/）那 4 个文件，约 483MB。
         #   与 deploy/docker-compose.yml 的 agent.volumes 同义（那边默认 ../agent/.models）。
+        #   ★ 路径约定：**一律放仓库目录内**（`<仓库>/agent/.models`），不要放 /opt 等系统路径。
+        #     下方 /data/aioa/AIOA 是本项目生产机的仓库根，换机器要同步改（用 -f 覆盖或改本文件）。
         #   ⚠️ 刻意用 DirectoryOrCreate 而不是 Directory：缺目录时建空目录即可 ——
         #      若用 Directory，模型缺失会让**整个 agent** 起不来，连普通对话一起挂掉。
         #      ASR 到底可不可用，以 /internal/v1/asr/status 的 available 为准（H5 也会据此置灰麦克风）。
         - name: asr-models
           hostPath:
-            path: /opt/aios/asr-models
+            path: /data/aioa/AIOA/agent/.models
             type: DirectoryOrCreate
 ---
 apiVersion: v1

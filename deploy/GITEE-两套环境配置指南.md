@@ -248,7 +248,7 @@ source .env.gitee-real && bash start-all.sh
 #      AIOS_GITEE_CLIENT_ID / AIOS_GITEE_CLIENT_SECRET
 #      AIOS_GITEE_TOKEN_ENC_KEY=$(openssl rand -base64 48)
 # 3) 送到服务器（走你的隧道机通道），然后：
-cd /opt/aios/deploy
+cd /data/aioa/AIOA/deploy
 cp .env .env.bak-$(date +%Y%m%d)                 # 回滚点
 docker compose config | grep AIOS_GITEE          # 核对容器真正会收到的值
 docker compose up -d server agent                # up -d 会重建才重读 .env；restart 不重读

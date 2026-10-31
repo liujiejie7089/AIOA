@@ -27,7 +27,30 @@ from . import profiles
 
 logger = logging.getLogger("mcp_hub.wecom_cli")
 
-TIMEOUT = float(os.environ.get("AIOS_WECOM_CLI_TIMEOUT", "30"))
+
+def _env_seconds(name: str, default: float) -> float:
+    """读一个「秒数」型环境变量，**配置写错时给一句人话**而不是裸 traceback。
+
+    原来直接 `float(os.environ.get(...))`：`.env` 里写成 `AIOS_WECOM_CLI_TIMEOUT=30s`
+    或者多打一个引号，hub 会在 **import 阶段**抛 `ValueError: could not convert string to
+    float` —— 现象是容器起不来，日志里只有一个跟业务毫无关系的栈。
+    现在仍然 fail-fast（配置错就该拒绝启动），但错因和改法写在异常里。
+    """
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        raise RuntimeError(
+            f"环境变量 {name}={raw!r} 不是数字。请在 deploy/.env 里写成纯数字秒数，"
+            f"例如 {name}={int(default)}（不要带引号或单位）") from None
+    if val <= 0:
+        raise RuntimeError(f"环境变量 {name}={val} 必须大于 0（单位：秒）")
+    return val
+
+
+TIMEOUT = _env_seconds("AIOS_WECOM_CLI_TIMEOUT", 30.0)
 MAX_OUTPUT = 4 * 1024 * 1024
 
 _PKG_ROOT = Path.home() / ".workbuddy" / "binaries" / "node" / "cli-connector-packages"
@@ -66,7 +89,7 @@ def bin_path() -> str:
         return _bin_cache
     env = (os.environ.get("AIOS_WECOM_CLI_BIN") or "").strip()
     if env:
-        # ⚠️ 不能直接信 env。compose 里给了默认值 `/opt/wecom-cli/wecom-cli`，
+        # ⚠️ 不能直接信 env。compose 里给了默认值 `/data/wecom-cli-bin/wecom-cli`，
         # 而宿主目录不存在时 Docker 会**静默建一个空目录**再挂进来 ⇒
         # 路径恒有、文件恒无。原先这里直接 return，于是
         # `create_subprocess_exec` 抛裸 `FileNotFoundError`：
@@ -78,9 +101,9 @@ def bin_path() -> str:
             return _bin_cache
         raise CliError(
             f"未找到企微 CLI：{env} 不存在或不可执行。"
-            f"请把官方 wecom-cli（原生可执行文件）放到宿主目录 "
+            f"请把官方 wecom-cli（原生可执行文件）放到**仓库内**目录 "
             f"（compose 里是 ${{AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}}，"
-            f"挂到容器 /opt/wecom-cli），或把 AIOS_WECOM_CLI_BIN 指到容器内正确路径。")
+            f"挂到容器 /data/wecom-cli-bin），或把 AIOS_WECOM_CLI_BIN 指到容器内正确路径。")
     for c in _candidates():
         if c.is_file():
             _bin_cache = str(c)
@@ -144,8 +167,40 @@ def _parse(stdout: str) -> Any:
     raise CliError(f"输出不是合法 JSON：{text[:200]}")
 
 
-async def run(args: list[str], profile_dir: Path, timeout: float | None = None) -> Any:
-    """执行一条 CLI 命令并返回解析后的 JSON。失败抛 CliError（中文，可直接展示）。"""
+async def _communicate(proc: asyncio.subprocess.Process, timeout: float,
+                       what: str) -> tuple[bytes, bytes]:
+    """等子进程输出，并保证**任何退出路径都不留活进程 / 不挂 fd**。
+
+    2026-11-01 加固前这里有三个洞：
+      ① `wait_for` 超时后只 `kill()` 不 `await proc.wait()` ⇒ 传输层没关，
+         每超时一次泄漏一对管道 fd，压测下最终 `Too many open files`；
+      ② 没接 `CancelledError`：客户端断开时 FastAPI 会 cancel 这个协程，
+         `wait_for` 抛 `CancelledError` 直接穿透 ⇒ **子进程变成孤儿继续跑**
+         （企微 CLI 是长驻进程，一次断开泄漏一个），
+      ③ 超时/取消时 `PIPE` 里的残留没人读，子进程若还在写就会：
+
+    统一收口成：kill → await wait() → 再抛。`finally` 兜最后一道。
+    """
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise CliError(f"企业微信接口超时（{int(timeout)}s）：{what}")
+    finally:
+        if proc.returncode is None:
+            # 走到这里说明是超时 / 取消 / 别的异常：必须亲手收尸，别指望 GC
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await asyncio.shield(proc.wait())
+            except (asyncio.CancelledError, ProcessLookupError, RuntimeError):
+                pass
+
+
+async def _exec(args: list[str], profile_dir: Path, timeout: float | None,
+                what: str) -> tuple[bytes, bytes, int | None]:
+    """起子进程 + 收输出，收口所有异常路径（见 `_communicate` 的注释）。"""
     cmd = [bin_path(), *args]
     t = timeout or TIMEOUT
     proc = await asyncio.create_subprocess_exec(
@@ -156,18 +211,21 @@ async def run(args: list[str], profile_dir: Path, timeout: float | None = None) 
         cwd=str(profile_dir),
         limit=MAX_OUTPUT,
     )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=t)
-    except asyncio.TimeoutError:
-        proc.kill()
-        raise CliError(f"企业微信接口超时（{int(t)}s）：{args[0]} {' '.join(args[1:2])}")
+    out, err = await _communicate(proc, t, what)
+    return out, err, proc.returncode
+
+
+async def run(args: list[str], profile_dir: Path, timeout: float | None = None) -> Any:
+    """执行一条 CLI 命令并返回解析后的 JSON。失败抛 CliError（中文，可直接展示）。"""
+    what = f"{args[0]} {' '.join(args[1:2])}".strip()
+    out, err, rc = await _exec(args, profile_dir, timeout, what)
     stdout = out.decode("utf-8", "replace")
     stderr = err.decode("utf-8", "replace")
-    if proc.returncode != 0:
+    if rc != 0:
         detail = (stderr or stdout).strip().replace("\n", " ")[:200]
         if "unauthorized" in detail.lower() or "授权" in detail:
             raise CliError("企业微信授权已失效，请到「连接器 → 企业微信」重新扫码绑定")
-        raise CliError(f"企业微信命令失败：{detail or f'exit {proc.returncode}'}")
+        raise CliError(f"企业微信命令失败：{detail or f'exit {rc}'}")
     return _parse(stdout)
 
 
@@ -177,25 +235,12 @@ async def run_text(args: list[str], profile_dir: Path, timeout: float | None = N
     存在的理由：`auth show --status` 输出的是裸文本 `authorized` / `unauthorized`，不是 JSON。
     用 `run()` 会把它当坏数据抛错 —— 而「未授权」恰恰是正常状态，不该走异常路径。
     """
-    cmd = [bin_path(), *args]
-    t = timeout or TIMEOUT
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=_env(profile_dir),
-        cwd=str(profile_dir),
-        limit=MAX_OUTPUT,
-    )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=t)
-    except asyncio.TimeoutError:
-        proc.kill()
-        raise CliError(f"企业微信接口超时（{int(t)}s）：{' '.join(args[:2])}")
+    what = " ".join(args[:2])
+    out, err, rc = await _exec(args, profile_dir, timeout, what)
     text = out.decode("utf-8", "replace").strip()
-    if proc.returncode != 0:
+    if rc != 0:
         detail = (err.decode("utf-8", "replace") or text).strip().replace("\n", " ")[:200]
-        raise CliError(f"企业微信命令失败：{detail or f'exit {proc.returncode}'}")
+        raise CliError(f"企业微信命令失败：{detail or f'exit {rc}'}")
     return text
 
 

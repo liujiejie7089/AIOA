@@ -11,7 +11,8 @@
 #
 # 用法：
 #     bash deploy/ops/host-check.sh
-#     bash deploy/ops/host-check.sh /opt/aios          # 指定仓库根目录
+#     bash deploy/ops/host-check.sh /data/aioa/AIOA    # 指定仓库根目录（默认取本脚本上两级）
+#   ★ 仓库一律放在数据盘/项目目录内，**不要放 /opt** 等系统保留路径。
 # ==============================================================================
 set -uo pipefail
 

@@ -56,7 +56,7 @@ docker build -f deploy/Dockerfile.agent  -t aios/agent:latest  agent/
    命中不到缓存而重跑计划。见《docs/adr/ADR-004-计划执行按run_id幂等回放.md》。
 5. **ASR 模型必须由节点提供**：`aios/agent` 镜像**不含**语音模型（`deploy/Dockerfile.agent` 只 `COPY app`；
    模型约 483MB，且被 `.gitignore` 忽略，进不了 git）。`20-agent.yaml` 已声明
-   `hostPath: /opt/aios/asr-models` 以**只读**方式挂到容器 `/app/.models`
+   `hostPath: /data/aioa/AIOA/agent/.models`（**仓库内目录**，不要用 /opt）以**只读**方式挂到容器 `/app/.models`
    ⇒ **每个可能被调度到的节点都要在该目录下放好 `<模型名>/`（默认 `small/`，含
    model.bin / config.json / tokenizer.json / vocabulary.txt）**。
    缺了不会让 Pod 起不来（`DirectoryOrCreate` 会建一个空目录），但语音接口会返回 503、

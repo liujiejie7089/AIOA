@@ -21,13 +21,15 @@
 # ─── 在「能上外网 + 有 Docker」的机器上 ────────────────────────────────────────
 #   git clone <仓库> && cd aios
 #   bash deploy/ops/offline-images.sh export            # 产出 aios-images.tar.gz
-#   scp aios-images.tar.gz root@<目标机>:/opt/aios/
+#   scp aios-images.tar.gz root@<目标机>:$REPO/
 #
 # ─── 在目标机 10.0.0.3 上 ────────────────────────────────────────────────────
-#   cd /opt/aios
+#   cd $REPO                                            # 本项目生产为 /data/aioa/AIOA
 #   bash deploy/ops/offline-images.sh import aios-images.tar.gz
 #   bash deploy/ops/offline-images.sh list              # 核对齐备
 #   cd deploy && docker compose up -d server agent
+#
+#   ★ $REPO 必须是**项目目录**（如 /data/aioa/AIOA）；不要放 /opt 等系统保留路径。
 #
 # 备选（目标机能上国内网、只是 Hub 不通）：其实本档已不需要任何外部镜像，
 # 只要那台机器自己能 `docker compose build`，就不用搬包。搬包主要解决「连源码构建都做不了」。
@@ -55,6 +57,10 @@ OPTIONAL_IMAGES=(nginx:1.27-alpine)
 ASR_MODEL_NAME="${AIOS_ASR_MODEL:-small}"
 ASR_MODELS_DIR="$DEPLOY_DIR/../agent/.models"
 ASR_MODEL_ARCHIVE="aios-asr-models.tar.gz"
+
+# 目标机上的**仓库根目录**（导出一侧只是把提示语打出来，不会去碰这个路径）。
+# ★ 一律指向项目目录，不要用 /opt；可用 AIOS_REPO_DIR 覆盖。
+TARGET_REPO="${AIOS_REPO_DIR:-/data/aioa/AIOA}"
 
 # 本机是否具备 ASR 模型：✅ 就绪 / ⚠️ 目录在但缺 model.bin / ❌ 目录不存在
 asr_model_state() {
@@ -148,18 +154,18 @@ do_export() {
   fi
 
   hr "完成：把包拷到目标机（用隧道机 → 真实服务器那条既有通道）"
-  echo "  scp $out_abs root@10.0.0.3:/opt/aios/"
-  [ -z "$asr_abs" ] || echo "  scp $asr_abs root@10.0.0.3:/opt/aios/"
+  echo "  scp $out_abs root@10.0.0.3:$TARGET_REPO/"
+  [ -z "$asr_abs" ] || echo "  scp $asr_abs root@10.0.0.3:$TARGET_REPO/"
   echo "  目标机执行："
-  echo "    cd /opt/aios && bash deploy/ops/offline-images.sh import $out"
+  echo "    cd $TARGET_REPO && bash deploy/ops/offline-images.sh import $out"
   if [ -n "$asr_abs" ]; then
     echo "    # ★ 语音识别必需：放到**仓库的 agent/** 下（compose 默认挂 ../agent/.models）"
-    echo "    mkdir -p /opt/aios/agent/.models"
-    echo "    tar -xzf /opt/aios/$ASR_MODEL_ARCHIVE -C /opt/aios/agent/.models"
+    echo "    mkdir -p $TARGET_REPO/agent/.models"
+    echo "    tar -xzf $TARGET_REPO/$ASR_MODEL_ARCHIVE -C $TARGET_REPO/agent/.models"
   else
     echo "    # ⚠️ 未打包 ASR 模型（--with-asr-model）⇒ 目标机语音仍会 503、H5 麦克风置灰"
   fi
-  echo "    cd /opt/aios/deploy && docker compose up -d server agent   # 不要加 --build"
+  echo "    cd $TARGET_REPO/deploy && docker compose up -d server agent   # 不要加 --build"
   echo "  验收：curl -s http://127.0.0.1:8080/actuator/health"
   echo "        curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/aios/h5/"
   echo "        curl -s http://127.0.0.1:8080/aios/api/v1/asr/status   # 语音：期望 available=true"
