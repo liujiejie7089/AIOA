@@ -1450,3 +1450,25 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     - 本地自测方式（不必起全栈）：直接 `await _handle_http({...path:'/mcp/qq_mail'}, ...)`
       并伪造 `_CHILDREN['qq_mail'].ok=False` ⇒ 应得 503+message；把 `child.app` 换成会抛错的
       假 app ⇒ 应得 500+message 且只发 2 条消息（start+body）。
+
+46. **FastMCP 的 Host 白名单只认 localhost ⇒ 生产 421，连接器全线不可用**
+    - 2026-10-31：生产「连接器用不了」的**第一步**闸门其实是 421，不是 500。
+      agent 访问 `http://mcp-hub:8099/mcp/qq_mail` ⇒ `Host: mcp-hub:8099`。
+    - 机制（`mcp/server/fastmcp/server.py:191`）：`transport_security is None`
+      **且** FastMCP 自身 `host` 参数 ∈ {127.0.0.1, localhost, ::1} 时，SDK 才自动装
+      `allowed_hosts=["127.0.0.1:*","localhost:*","[::1]:*"]`。hub 是 **uvicorn 拉起来的**，
+      FastMCP 那个 host 参数恒为默认 127.0.0.1 ⇒ **白名单恒生效、只认本机** ⇒
+      `TransportSecurityMiddleware` 在 `/mcp/*` 最外层直接 `421 Invalid Host header`，
+      早于任何业务逻辑。**本地永远用 127.0.0.1 测 ⇒ 永远复现不出来。**
+    - 判据特征：httpx 侧看到的可能是 421，也可能是被上游包一层后的 500；
+      hub 日志里 `Invalid Host header: mcp-hub:8099` 是决定性一行（warning 级，别只看 ERROR）。
+    - 修法：`mcp_hub/transport.py` 作唯一构造点，**保留防护**、只加白名单：
+      localhost 三件套 + `mcp-hub:*`，另可用 `AIOS_MCP_ALLOWED_HOSTS`（逗号分隔，
+      裸主机名自动补 `:*`）追加。**两处 FastMCP 都必须显式传**
+      （`builtin.py` 代理工厂 + `wecom_cli/server.py` 原生工厂），漏一处那台服务器必 421。
+    - 哨兵：`scripts/_check_mcp_hub_host_allowlist.py`（9/9）。它用**真实 SDK 的
+      `_validate_host`** 做运行时判据（`mcp-hub:8099` 过 / `evil.example:8099` 拒），
+      并含「抹掉 `mcp-hub:*` 后必须变红」的负向自检。必须用 `agent/.venv` 跑（要 mcp SDK）。
+    - 复现手法（值得记住）：`httpx` 显式 `Host` 头 + `--http h11`（生产的 uvicorn 是裸装，
+      只有 h11；本地 venv 有 httptools，默认行为不同）。⚠️ httpx 默认读系统代理，
+      本机必须 `trust_env=False`，否则会拿到代理的 502「upstream connect failed」。
