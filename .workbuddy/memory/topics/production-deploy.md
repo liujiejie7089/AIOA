@@ -428,3 +428,24 @@ compose 默认值反而是对的（`:-10.0.0.5`/`:-13049`/`:-aios`/空口令）�
 Access denied(28000)，会 08S01 就说明 `.env` 存在且 MYSQL_HOST/PORT 是错的**。
 另：在 `.env` 里改 `SPRING_DATASOURCE_URL` **不生效**（compose `environment:` 现拼、
 同名覆盖）——只有 `MYSQL_HOST/PORT/DB/USER/PASSWORD` 五个键算数。
+
+## ⚠️ `deploy/.env` 里那两把钥匙（2026-10-31 实测生产状态）
+
+生产 `deploy/.env` **只有 `WECOM_MOCK=1`**，`WECOM_CONNECTOR_KEY` 与
+`AIOS_CONNECTOR_SECRET_KEY` **都没写**。后果三选一：
+
+| 键 | 缺了会怎样 |
+|---|---|
+| `AIOS_CONNECTOR_SECRET_KEY` | compose 回落到 `DevSecretPlaceholders.CONNECTOR_SECRET_KEY` ⇒ 连接器凭据**近乎明文** |
+| `WECOM_CONNECTOR_KEY` + `WECOM_MOCK=1` | `crypto` 生成**进程内临时密钥** ⇒ 每次重启所有人的企微授权解不开（表现为「又要重新认证」） |
+| `WECOM_MOCK=0` 但缺 `WECOM_CONNECTOR_KEY` | hub **启动即失败**（fail-fast，刻意的） |
+
+⚠️ **改 `AIOS_CONNECTOR_SECRET_KEY` 会让已存密文解不开**（`SecretCodec` 解密失败会抛
+「请确认 aios.connector.secret-key 未被变更」）⇒ 如果管理端「连接器」里已经填过凭据，
+改完要重填一次。
+
+**另**：hub **镜像里不带企微 CLI**（原生 ELF ≈10MB），靠 compose 把宿主
+`${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}` 只读挂到 `/opt/wecom-cli`。
+所以 `WECOM_MOCK=0` 之前必须先 `ls -l data/wecom-cli-bin/wecom-cli`；
+宿主目录不存在时 Docker 会**静默建空目录**，表现为「wecom-cli 未安装」而不报错。
+（`WECOM_MOCK` 只管「密钥与 mock 身份」，不管 CLI 是否存在。）
