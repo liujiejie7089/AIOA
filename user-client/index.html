@@ -1206,6 +1206,10 @@
 .oa .tl-item:last-child{padding-bottom:0}
 .oa .tl-item::before{content:""; position:absolute; left:-22px; top:5px; width:12px; height:12px; border-radius:50%; background:var(--surface); border:2.5px solid var(--brand)}
 .oa .tl-item.mute::before{border-color:var(--border-strong)}
+/* 日程行内操作（会议接受/谢绝、日程删除）：复用确认卡的 .cbtn，但收窄为小号内联按钮，
+   避免与气泡里的确认卡抢视觉重量。 */
+.oa .tl-act{display:flex; gap:6px; margin-top:6px}
+.oa .tl-act .cbtn{flex:0 0 auto; min-height:28px; padding:0 10px; font-size:11.5px}
 .oa .tl-time{font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--brand-ink); font-variant-numeric:tabular-nums}
 .oa .tl-body{font-size:13px; font-weight:600; margin-top:2px}
 .oa .tl-meta{font-size:11px; color:var(--text-3); margin-top:3px; display:flex; align-items:center; gap:5px}
@@ -3075,6 +3079,17 @@ const API = {
   },
   fileUrl(id){ return this.base+'/v1/files/'+id; },
   approvalList(scope){ return this.req('/v1/approvals?scope='+(scope||'mine')); },
+  /* 门户模块（日程 / 会议）：2026-10-31 打通写链路 —— V94 只建了表和只读查询、且全仓零调用方，
+     前端此前是「请假起止 + 数字员工排班」本地合成的假日程。这里接真接口，并给出创建/取消/应答。 */
+  portalSchedulesToday(){ return this.req('/v1/portal/schedules/today'); },
+  portalSchedules(month){ return this.req('/v1/portal/schedules?month='+encodeURIComponent(month)); },
+  portalMeetings(scope){ return this.req('/v1/portal/meetings?scope='+(scope||'invited')); },
+  portalScheduleCreate(body){ return this.req('/v1/portal/schedules',{method:'POST',body:JSON.stringify(body)}); },
+  portalScheduleUpdate(id, body){ return this.req('/v1/portal/schedules/'+id,{method:'PUT',body:JSON.stringify(body)}); },
+  portalScheduleRemove(id){ return this.req('/v1/portal/schedules/'+id,{method:'DELETE'}); },
+  portalMeetingCreate(body){ return this.req('/v1/portal/meetings',{method:'POST',body:JSON.stringify(body)}); },
+  portalMeetingCancel(id){ return this.req('/v1/portal/meetings/'+id+'/cancel',{method:'POST'}); },
+  portalMeetingRespond(id, decision){ return this.req('/v1/portal/meetings/'+id+'/respond?decision='+encodeURIComponent(decision),{method:'POST'}); },
   approvalDecide(id, decision, note){ return this.req('/v1/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({decision,note})}); },
   /* 多级审批引擎（V24）：待我审批按「节点指派人」返回；我发起的带完整流转路径 */
   workflowTodo(){ return this.req('/v1/workflow/tasks?scope=todo'); },
@@ -7897,7 +7912,10 @@ var S = {
   skillsTab:'plugins',     // 当前选中的三段子项（默认插件）
   plugins:null, pluginsLoaded:false, pluginsErr:null,
   connectors:null, connectorsLoaded:false, connectorsErr:null,
-  mcpServers:null, mcpLoaded:false, mcpErr:null, mcpOpen:{}, mcpToolsCache:{}, mcpToolsErr:{}
+  mcpServers:null, mcpLoaded:false, mcpErr:null, mcpOpen:{}, mcpToolsCache:{}, mcpToolsErr:{},
+  // 门户模块（2026-10-31 打通写链路）：日程与会议来自 /v1/portal 的真实业务数据，
+  // agendaErr 记的是「拉不到」的原因 —— 空列表与拉不到必须可区分。
+  schedules:null, meetings:null, agendaErr:''
 };
 
 /* 对话级「知识库」开关（OA 形态自带，与经典态 state.kbOn 互不干扰）。
@@ -8628,10 +8646,26 @@ function renderApprDetail(){
   if(rej) rej.onclick = function(){ askApprovalNote('REJECT'); };
 }
 
-/* 日程：两个真实日期字段合并（请假起止 + 数字员工排班）。
+/* 日程：真实数据源 = /v1/portal 的「我的日程 + 邀请我的会议」，
+   再叠加两个本地可信来源（请假起止、数字员工排班）。
    审批单不进日程 —— approval_order 无 due/deadline 列，拿 createdAt 当日程是伪造语义。 */
 function scheduleItems(){
   var out = [];
+  // ① 门户日程（真库数据，含起始时刻，可精确到分）
+  arr(S.schedules).forEach(function(s){
+    out.push({time:(s.startAt || '').slice(5, 16).replace(' ', ' '), body:txt(s.title),
+      meta:((s.startAt||'').slice(11,16) || '全天') + ((s.endAt ? ' - ' + s.endAt.slice(11,16) : ''))
+           + (s.location ? ' · ' + txt(s.location) : ''),
+      mute:false, src:'schedule', id:s.id});
+  });
+  // ② 会议（受邀的在前，未应答的标红提示）
+  arr(S.meetings).forEach(function(m){
+    var st = m.inviteStatus || 'INVITED';
+    out.push({time:(m.startAt || '').slice(5, 16), body:'会议 · '+txt(m.title),
+      meta:(txt(m.location || '地点未定')) + ' · ' + (st === 'ACCEPTED' ? '已接受'
+            : st === 'DECLINED' ? '已谢绝' : '待应答'),
+      mute:st === 'DECLINED', warn:st === 'INVITED', src:'meeting', id:m.id, inviteStatus:st});
+  });
   arr(S.leave).forEach(function(l){
     if(l.startDate) out.push({time:day(l.startDate), body:'请假开始 · '+bizName(l.leaveTypeCode || 'LEAVE'),
       meta:'至 '+day(l.endDate)+'（'+n(l.days)+' 天）', mute:l.status !== 'APPROVED', src:'leave'});
@@ -8649,16 +8683,134 @@ function scheduleItems(){
 }
 function renderSchedulePanel(sch){
   var el = $o('p-schedule'); if(!el) return;
-  if(!sch.length){ el.innerHTML = empty('暂无由请假与排班合成的日程'); return; }
-  el.innerHTML = '<div class="hintbar">'+ic('info')+
+  var hint = '<div class="hintbar">'+ic('info')+
       '<div><b>日程口径</b><div class="muted" style="margin-top:3px">'+
-      '由「我的请假起止日期」与「数字员工排班时刻」合成；审批单无截止字段，不计入</div></div></div>' +
-    '<div class="task-card"><div class="tl">' + sch.slice(0, 40).map(function(x){
+      '我的日程与邀请我的会议来自真实业务数据；另附「请假起止」与「数字员工排班」；'+
+      '审批单无截止字段，不计入</div></div></div>';
+  if(S.agendaErr){
+    hint += '<div class="hintbar" style="border-color:var(--red)">'+ic('warn')+
+      '<div><b>日程数据未能加载</b><div class="muted" style="margin-top:3px">'+txt(S.agendaErr)+'</div></div></div>';
+  }
+  if(!sch.length){
+    el.innerHTML = hint + empty('暂无日程（可在下方新建，或等会议邀请）') + scheduleCreateCardHtml();
+    bindScheduleCreate(el);
+    return;
+  }
+  el.innerHTML = hint + '<div class="task-card"><div class="tl">' + sch.slice(0, 40).map(function(x){
+      var ico = x.src === 'worker' ? ic('clock',13) : (x.src === 'meeting' ? ic('people',13) : ic('cal',13));
+      var act = '';
+      if(x.src === 'meeting' && x.inviteStatus === 'INVITED'){
+        act = '<div class="tl-act">'+
+          '<button type="button" class="cbtn confirm" data-mt-accept="'+esc(x.id)+'">接受</button>'+
+          '<button type="button" class="cbtn cancel" data-mt-decline="'+esc(x.id)+'">谢绝</button></div>';
+      } else if(x.src === 'schedule' && x.id){
+        act = '<div class="tl-act"><button type="button" class="cbtn cancel" data-sc-del="'+esc(x.id)+'">删除</button></div>';
+      }
       return '<div class="tl-item'+(x.mute ? ' mute' : '')+'">'+
         '<div class="tl-time">'+txt(x.time)+'</div>'+
         '<div class="tl-body">'+txt(x.body)+'</div>'+
-        '<div class="tl-meta">'+(x.src === 'worker' ? ic('clock',13) : ic('cal',13))+txt(x.meta)+'</div></div>';
-    }).join('') + '</div></div>';
+        '<div class="tl-meta">'+ico+txt(x.meta)+'</div>'+ act +'</div>';
+    }).join('') + '</div></div>' + scheduleCreateCardHtml();
+  bindScheduleCreate(el);
+  bindScheduleRowActions(el);
+}
+
+/* 新建日程卡（内联小表）：直接打真实写接口，不走表单引擎 ——
+   meeting_book/calendar_event 两张表单模板是 LEDGER 策略（提交即完结，不写 portal_* 表），
+   拿它们当「新建日程」入口会做出假的闭环（用户以为建了，其实库里没有）。 */
+function scheduleCreateCardHtml(){
+  return '<div class="task-card" id="scCreate">'+
+    '<div class="pc-title">'+ic('cal',13)+' 新建日程</div>'+
+    '<div class="form-item"><label>标题</label><input id="scTitle" placeholder="例如：季度复盘会"></div>'+
+    '<div class="form-item"><label>开始（yyyy-MM-dd HH:mm）</label><input id="scStart" placeholder="2026-10-31 14:00"></div>'+
+    '<div class="form-item"><label>结束（可空）</label><input id="scEnd" placeholder="2026-10-31 15:00"></div>'+
+    '<div class="form-item"><label>地点（可空）</label><input id="scLoc" placeholder="3 号会议室"></div>'+
+    '<div class="confirm-row"><button type="button" class="cbtn cancel" id="scCancel">清空</button>'+
+    '<button type="button" class="cbtn confirm" id="scSave">保存</button></div>'+
+    '<div class="cf-note err" id="scErr" style="display:none"></div></div>';
+}
+
+function bindScheduleCreate(root){
+  var save = root.querySelector('#scSave'); if(!save) return;
+  var errEl = root.querySelector('#scErr');
+  save.onclick = async function(){
+    var title = (root.querySelector('#scTitle').value || '').trim();
+    var start = (root.querySelector('#scStart').value || '').trim();
+    if(!title || !start){
+      errEl.style.display = ''; errEl.textContent = '标题与开始时间必填';
+      return;
+    }
+    // 加载中：立即禁用并给出可见反馈（与确认卡同一套 .cbtn 状态口径）
+    save.disabled = true; save.textContent = '保存中…';
+    errEl.style.display = 'none';
+    try{
+      await API.portalScheduleCreate({
+        title: title,
+        startAt: start,
+        endAt: (root.querySelector('#scEnd').value || '').trim() || null,
+        location: (root.querySelector('#scLoc').value || '').trim() || null
+      });
+      save.textContent = '保存'; save.disabled = false;
+      await loadPortalAgenda();
+      if(S.mode === 'oa') oaRender();
+      toast('日程已创建');
+    }catch(e){
+      save.textContent = '保存'; save.disabled = false;
+      errEl.style.display = ''; errEl.textContent = '创建失败：' + ((e && e.message) || '请稍后重试');
+    }
+  };
+  var clr = root.querySelector('#scCancel');
+  if(clr) clr.onclick = function(){
+    ['scTitle','scStart','scEnd','scLoc'].forEach(function(id){ var n = root.querySelector('#'+id); if(n) n.value = ''; });
+    errEl.style.display = 'none';
+  };
+}
+
+function bindScheduleRowActions(root){
+  if(!root) return;
+  root.querySelectorAll('[data-mt-accept],[data-mt-decline]').forEach(function(b){
+    var accept = b.hasAttribute('data-mt-accept');
+    b.onclick = async function(){
+      var id = b.getAttribute(accept ? 'data-mt-accept' : 'data-mt-decline');
+      b.disabled = true; b.textContent = '处理中…';
+      try{
+        await API.portalMeetingRespond(id, accept ? 'ACCEPTED' : 'DECLINED');
+        await loadPortalAgenda();
+        if(S.mode === 'oa') oaRender();
+      }catch(e){
+        b.disabled = false; b.textContent = accept ? '接受' : '谢绝';
+        toast('操作失败：' + ((e && e.message) || ''));
+      }
+    };
+  });
+  root.querySelectorAll('[data-sc-del]').forEach(function(b){
+    b.onclick = async function(){
+      var id = b.getAttribute('data-sc-del');
+      b.disabled = true; b.textContent = '删除中…';
+      try{
+        await API.portalScheduleRemove(id);
+        await loadPortalAgenda();
+        if(S.mode === 'oa') oaRender();
+      }catch(e){
+        b.disabled = false; b.textContent = '删除';
+        toast('删除失败：' + ((e && e.message) || ''));
+      }
+    };
+  });
+}
+
+/* 拉真实的「今日日程 + 邀请我的会议」。失败不静默：把原因留在 S.agendaErr，
+   由面板显示出来 —— 「空列表」和「没拉到」必须能区分，否则用户以为是今天没安排。 */
+async function loadPortalAgenda(){
+  S.agendaErr = '';
+  try{
+    var s = await API.portalSchedulesToday();
+    S.schedules = arr((s && s.list) || []);
+  }catch(e){ S.schedules = []; S.agendaErr = (e && e.message) || '日程接口不可用'; }
+  try{
+    var m = await API.portalMeetings('invited');
+    S.meetings = arr((m && m.list) || []);
+  }catch(e){ S.meetings = []; }
 }
 
 /* ---------------------------------------------------------- 5. 知识库页面 */
@@ -11209,7 +11361,10 @@ async function loadOaExtras(){
   var r = await Promise.all([
     loadOrgAll().catch(function(){ return null; }),
     API.leaveMine().catch(function(){ return []; }),
-    (!arr(state.conversations).length ? API.listConversations().catch(function(){ return []; }) : Promise.resolve(state.conversations))
+    (!arr(state.conversations).length ? API.listConversations().catch(function(){ return []; }) : Promise.resolve(state.conversations)),
+    // 日程 / 会议（真实业务数据）：失败在 loadPortalAgenda 内部吞掉并记 S.agendaErr，
+    // 不能让它拖垮整批加载（OA 首页还有五个面板要渲染）。
+    loadPortalAgenda().catch(function(){ return null; })
   ]);
   S.leave = arr(r[1]);
   if(arr(r[2]).length) state.conversations = arr(r[2]);

@@ -20,6 +20,7 @@ import httpx
 from langgraph.config import get_stream_writer
 from langgraph.types import interrupt
 
+from aios_ai import capabilities
 from aios_ai.config import settings
 from aios_ai.contracts import RunRequest
 from aios_ai.guard import WallClock, check_text_len
@@ -348,8 +349,6 @@ async def prepare(state: dict) -> dict:
     # 失败通过 tool_client.mcp_error 反映，工具表与改造前逐字节一致（关闭开关时整段不进入）。
     # 关闭 mcp_hub_enabled 时不连 hub、不发 manifest 请求 ⇒ tools 与既有实现完全相同。
     mcp_tools = await tool_client.list_mcp_tools()
-    if mcp_tools:
-        tools = list(mcp_tools) + list(tools)
     mcp_degraded = bool(settings.mcp_hub_enabled and tool_client.enabled and tool_client.mcp_error)
     if mcp_degraded:
         effective["mcpDegraded"] = True
@@ -358,21 +357,20 @@ async def prepare(state: dict) -> dict:
         logger.error("run %s: MCP 连接器清单不可用（%s）⇒ 本轮连接器工具不可用，已在提示中显式降级",
                      req.run_id, tool_client.mcp_error)
 
-    # 联网检索（内置，免密钥）：用户说「在网上找 / 查最新的」时模型必须有真实可用的工具。
-    # 放在最前面（和 HITL 控制工具同级），保证它不会因为连接器/manifest 抖动而消失。
-    if settings.web_search_enabled:
-        tools = [web_search_tool.WEB_SEARCH_TOOL, web_search_tool.WEB_FETCH_TOOL] + list(tools)
-
-    # HITL：注入内置澄清工具（不由业务工具网关执行，命中即暂停等待用户选择）。
-    # 只在开关打开时注入 —— 关闭时工具表与既有实现逐字节一致（零回归）。
-    if _hitl_enabled():
-        # 三个内置控制工具都在此注入（都不由业务网关执行，命中即暂停等待用户决策）：
-        #   ask_user        标量澄清 → need_clarification
-        #   request_form    表单回执 → need_form
-        #   request_confirm 二值确认 → need_confirm
-        # 关闭时工具表与既有实现逐字节一致（零回归）。
-        tools = [ask_user_tool.ASK_USER_TOOL, request_form_tool.REQUEST_FORM_TOOL,
-                 request_confirm_tool.REQUEST_CONFIRM_TOOL] + list(tools)
+    # —— 内置 / 外部能力一律经**能力注册表**（aios_ai.capabilities）装配 ——
+    # 改造前这里有三段手工前置拼接（MCP / 联网 / HITL 三工具），每加一类能力就要再添一段，
+    # 且没有任何一处能回答「现在注册了哪些能力、各自健不健康」。现在收敛成一处：
+    # 注入顺序 = 注册表注册顺序 = HITL 三工具 → 联网两工具 → MCP → 技能，
+    # 之后才是业务网关工具（``tools``），与旧实现**逐项同序**（零回归由哨兵与单测盯着）。
+    head, cap_states = await capabilities.get_registry().load(
+        {"mcp_tools": mcp_tools, "run_id": req.run_id})
+    tools = list(head) + list(tools)
+    # 观测（docs/60 P2-12 口径：Run 日志要能解释「模型为什么没看到某类工具」）
+    effective["capabilities"] = [s.as_dict() for s in cap_states]
+    degraded = [s.as_dict() for s in cap_states if s.state.value in ("ERROR", "UNRESOLVED")]
+    if degraded:
+        logger.info("run %s: capabilities degraded=%s", req.run_id,
+                    [(d["code"], d["state"]) for d in degraded])
 
     # 对话级知识库开关（KB）：由 Java 后端从 CreateRunRequest 透传，缺省视为 True。
     # False = 本次 run 完全不使用知识库（剔除检索工具，模型无法发起检索）；

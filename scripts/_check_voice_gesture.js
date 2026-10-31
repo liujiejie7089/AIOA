@@ -35,7 +35,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const htmlPath = process.argv[2] || 'user-client/_backup_index_pre_oa.html';
+const htmlPath = process.argv[2] || 'user-client/index.html';
 const html = fs.readFileSync(path.resolve(htmlPath), 'utf8');
 
 /* ---------- 从 HTML 里切出 VoiceInput + bindVoice 这一段（不跑整页） ---------- */

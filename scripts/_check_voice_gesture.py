@@ -105,7 +105,10 @@ def main():
         _out("[SKIP] 找不到 node 运行时 ⇒ 前置不满足，记非 0（不伪装 PASS）。")
         return 2
 
-    targets = ["user-client/_backup_index_pre_oa.html", "user-client/index.html"]
+    # 2026-10-31：构建基线已删，只测真源。（PREFIX_PATH 仍指向历史路径，**不要改** ——
+    # 它配合 PREFIX_REV 走 `git show <rev>:<path>` 取的是那个提交时的历史版本，
+    # 改成 index.html 会失去「修复前版本」这个负向对照。）
+    targets = ["user-client/index.html"]
     missing = [t for t in targets if not os.path.isfile(os.path.join(ROOT, t))]
     if missing:
         _out("[FAIL] 被测文件缺失：%s" % ", ".join(missing))
@@ -119,8 +122,7 @@ def main():
     for t in targets:
         code, out = run_engine(node, t)
         _out(out.rstrip())
-        tag = "源" if t.endswith("_backup_index_pre_oa.html") else "产物"
-        _out("  -> [%s] %s  失败=%d" % (tag, t, code))
+        _out("  -> [%s] %s  失败=%d" % ("真源" if t.endswith("index.html") else "目标", t, code))
         total += code
     _out("")
     if total == 0:

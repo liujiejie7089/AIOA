@@ -398,7 +398,7 @@ async def task5(page):
     ask = read(os.path.join(REPO, 'agent', 'aios_ai', 'tools', 'ask_user.py'))
     facade = read(os.path.join(REPO, 'agent', 'aios_ai', 'graph', 'facade.py'))
     run_svc = read(os.path.join(REPO, 'server', 'aios-chat', 'src', 'main', 'java', 'cn', 'aios', 'chat', 'service', 'RunService.java'))
-    backup = read(os.path.join(REPO, 'user-client', '_backup_index_pre_oa.html'))
+    h5_src = read(os.path.join(REPO, 'user-client', 'index.html'))
 
     # agent：build_clarification 产出 question + suggested_options，每项 value + label
     chk('L1 agent build_clarification 含 key question',
@@ -415,15 +415,15 @@ async def task5(page):
     chk('L5 Java EVENT_NEED_CLARIFICATION == "need_clarification"',
         'EVENT_NEED_CLARIFICATION = "need_clarification"' in run_svc)
     # H5：分支比较 'need_clarification'、读 suggested_options、resume 路径 + body {answer:}
-    chk('L6 H5 识别事件 "need_clarification"', "ev.event === 'need_clarification'" in backup)
-    chk('L7 H5 读取 suggested_options', 'p.suggested_options' in backup)
+    chk('L6 H5 识别事件 "need_clarification"', "ev.event === 'need_clarification'" in h5_src)
+    chk('L7 H5 读取 suggested_options', 'p.suggested_options' in h5_src)
     chk('L8 H5 resume 路径 /v1/runs/ + /resume',
-        "/v1/runs/'+runId+'/resume" in backup or "/v1/runs/" in backup and "/resume" in backup)
-    chk('L9 H5 resume body 含 answer', "body:JSON.stringify({answer:answer})" in backup)
+        "/v1/runs/'+runId+'/resume" in h5_src or "/v1/runs/" in h5_src and "/resume" in h5_src)
+    chk('L9 H5 resume body 含 answer', "body:JSON.stringify({answer:answer})" in h5_src)
 
     # 跨层字面量一致：三处均为 "need_clarification"
     three = ('need_clarification' in facade) and ('need_clarification' in run_svc) \
-        and ("ev.event === 'need_clarification'" in backup)
+        and ("ev.event === 'need_clarification'" in h5_src)
     chk('L10 三层事件名字面量一致（need_clarification）', three)
 
 

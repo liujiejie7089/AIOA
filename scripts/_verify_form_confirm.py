@@ -34,7 +34,8 @@ from playwright.async_api import async_playwright
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INDEX = os.path.join(REPO, 'user-client', 'index.html')
-BACKUP = os.path.join(REPO, 'user-client', '_backup_index_pre_oa.html')
+# 2026-10-31：删除构建基线，index.html 唯一真源。
+H5_SRC = os.path.join(REPO, 'user-client', 'index.html')
 
 fails = []
 oks = 0
@@ -153,17 +154,17 @@ async def main():
                 ' return r.querySelector("b").textContent; } return null; }',
                 label)
 
-        # ===================== C1：构建源静态一致性 =====================
-        print('\n=== C1：构建源静态一致性 ===')
-        if os.path.exists(BACKUP):
-            src = open(BACKUP, 'r', encoding='utf-8').read()
+        # ===================== C1：真源静态一致性 =====================
+        print('\n=== C1：真源静态一致性 ===')
+        if os.path.exists(H5_SRC):
+            src = open(H5_SRC, 'r', encoding='utf-8').read()
             chk('C1 源含 data-form-confirm（汇总确认按钮）', 'data-form-confirm' in src)
             chk('C1 源含 formSummaryHtml（汇总纯函数）', 'function formSummaryHtml' in src)
             chk('C1 源含 rule_violation（规则命中字段）', 'rule_violation' in src)
             chk('C1 源含 40090（规则命中码）', '40090' in src)
             chk('C1 源含 .lf-rule-opt（规则选项按钮样式/类）', '.lf-rule-opt' in src)
         else:
-            chk('C1 构建源存在', False, BACKUP)
+            chk('C1 被测文件存在', False, H5_SRC)
 
         # ===================== C2 / C4 / C3：两段式提交（FORM_A）=====================
         print('\n=== C2/C4/C3：两段式提交（FORM_A）===')

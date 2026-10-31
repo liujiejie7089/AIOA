@@ -33,7 +33,8 @@ from playwright.async_api import async_playwright
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INDEX = os.path.join(REPO, 'user-client', 'index.html')
-BACKUP = os.path.join(REPO, 'user-client', '_backup_index_pre_oa.html')
+# 2026-10-31：删除构建基线，index.html 是唯一真源（详见 _check_form_contract.py 的注释）。
+H5_SRC = os.path.join(REPO, 'user-client', 'index.html')
 
 fails = []
 oks = 0
@@ -231,10 +232,10 @@ async def main():
 
         await browser.close()
 
-    # ===================== S1：构建源静态一致性 =====================
-    print('\n=== S1：构建源静态一致性 ===')
-    if os.path.exists(BACKUP):
-        src = open(BACKUP, 'r', encoding='utf-8').read()
+    # ===================== S1：真源静态一致性 =====================
+    print('\n=== S1：真源静态一致性 ===')
+    if os.path.exists(H5_SRC):
+        src = open(H5_SRC, 'r', encoding='utf-8').read()
         chk('S1 源含 need_form 分支', "ev.event === 'need_form'" in src)
         chk('S1 源含 mountFormCard', 'function mountFormCard' in src)
         chk('S1 源含 renderFormHtml', 'function renderFormHtml' in src)
@@ -244,7 +245,7 @@ async def main():
             all(t in src for t in ['text', 'textarea', 'number', 'amount', 'date',
                                    'datetime', 'select', 'multiselect', 'file', 'boolean']))
     else:
-        chk('S1 构建源存在', False, BACKUP)
+        chk('S1 被测文件存在', False, H5_SRC)
 
     return report()
 

@@ -74,7 +74,11 @@ PY_CONTRACTS = "agent/aios_ai/contracts.py"
 PY_BUILDER = "agent/aios_ai/prompt/builder.py"
 PY_TOOL = "agent/aios_ai/tools/request_form.py"
 JAVA_RULE = "server/aios-resource/src/main/java/cn/aios/resource/controller/FormRuleExceptionHandler.java"
-H5_BACKUP = "user-client/_backup_index_pre_oa.html"
+# 被测目标统一为 **唯一真源** user-client/index.html。
+# 2026-10-31 结构精简：已删除 OA 构建链（_build_oa.py + _oa_*.js/css/html + _backup_index_pre_oa.html）。
+# 此前本哨兵读的是「构建基线」，但 index.html 已绕过基线直接改了 10 天 ⇒ 基线里的判定与线上产物
+# 不一致（对着旧副本判绿，等于假绿）。现在只读产物。
+H5_SRC = "user-client/index.html"
 
 oks = 0
 fails = []
@@ -336,7 +340,7 @@ def main():
         chk("K6", False, "文件不存在：%s" % e)
         return report()
     try:
-        h5_src = read(H5_BACKUP)
+        h5_src = read(H5_SRC)
     except FileNotFoundError as e:
         chk("K5", False, "文件不存在：%s" % e)
         return report()
