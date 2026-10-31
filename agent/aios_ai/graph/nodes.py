@@ -111,6 +111,34 @@ def _drop_control_calls(calls: list[dict] | None) -> list[dict]:
     return [c for c in (calls or []) if not _is_control_call(c.get("name"))]
 
 
+def _connector_of_tool_name(name: str | None) -> str:
+    """从 MCP 工具名解析连接器 code。
+
+    工具名形如 ``mcp__<serverCode>__<toolName>``；非 MCP 工具返回空串。
+    """
+    parts = str(name or "").split("__")
+    return parts[1] if len(parts) >= 3 and parts[0] == "mcp" else ""
+
+
+def _blocked_connector_calls(calls: list[dict] | None,
+                              disabled: list[str] | None) -> list[dict]:
+    """挑出「本次对话已屏蔽连接器」的工具调用（**纯函数**，便于单测）。
+
+    对话级连接器开关（2026-10-31，用户口径「关闭只是本次对话不调用对应应用」）
+    的第二道闸：prepare 已把这些连接器的工具从清单里摘掉，
+    但模型可能凭记忆硬编出工具名 ⇒ 执行前再拦一次。
+
+    ⚠️ 返回的是「被拦下的调用」而不是「保留的调用」：调用方要把它们从执行队列里
+    排除，但**仍要回注一条 ok=False 的 tool 结果**（丢弃会让 tool_call_id 找不到
+    对应的 tool 消息，上游会判为协议错误）。
+    """
+    blocked_codes = {str(c).strip() for c in (disabled or []) if str(c).strip()}
+    if not blocked_codes:
+        return []
+    return [c for c in (calls or [])
+            if _connector_of_tool_name(c.get("name")) in blocked_codes]
+
+
 def filter_intent_write_tools(tools: list[dict], action: str | None) -> list[dict]:
     """按动作意图收敛写工具（**纯函数**，便于单测与被测面直接引用）。
 
@@ -349,6 +377,32 @@ async def prepare(state: dict) -> dict:
     # 失败通过 tool_client.mcp_error 反映，工具表与改造前逐字节一致（关闭开关时整段不进入）。
     # 关闭 mcp_hub_enabled 时不连 hub、不发 manifest 请求 ⇒ tools 与既有实现完全相同。
     mcp_tools = await tool_client.list_mcp_tools()
+
+    # —— 对话级「本次不调用某连接器」开关（2026-10-31）——
+    # 语义：**只屏蔽本次对话的工具**，不改任何持久状态（授权 / trusted / manifest 可见性都不动）
+    # ⇒ 用户把开关关掉再打开，不需要重新扫码（与旧的「关闭=disconnect」最本质的区别）。
+    # 过滤按工具的 source（= 连接器 code）匹配；MCP 工具名形如 mcp__<serverCode>__<tool>，
+    # source 与 serverCode 同源，两者都判一次，避免 manifest 未带 source 时漏筛。
+    disabled_connectors = {
+        str(c).strip() for c in (req.disabled_connectors or []) if str(c).strip()
+    }
+    if disabled_connectors and mcp_tools:
+        def _connector_of(t: dict) -> str:
+            src = str(t.get("source") or "").strip()
+            if src:
+                return src
+            return _connector_of_tool_name(((t.get("function") or {}).get("name")))
+
+        kept = [t for t in mcp_tools if _connector_of(t) not in disabled_connectors]
+        if len(kept) != len(mcp_tools):
+            logger.info("run %s: 本次对话屏蔽连接器 %s ⇒ MCP 工具 %d → %d",
+                        req.run_id, sorted(disabled_connectors),
+                        len(mcp_tools), len(kept))
+        mcp_tools = kept
+    # 观测：让 Run 日志能解释「为什么模型没看到某个连接器的工具」
+    if disabled_connectors:
+        effective["disabledConnectors"] = sorted(disabled_connectors)
+
     mcp_degraded = bool(settings.mcp_hub_enabled and tool_client.enabled and tool_client.mcp_error)
     if mcp_degraded:
         effective["mcpDegraded"] = True
@@ -594,6 +648,15 @@ async def tools(state: dict) -> dict:
     # 防御性过滤：ask_user / request_form / request_confirm 都是内置控制工具、不由业务网关执行
     # （正常路由不会送到这里，但从 clarify 交回的「本轮其余调用」若混入也一律剔除，避免误打网关）。
     calls = _drop_control_calls(state.get("pending_calls"))
+    # 防御性过滤（对话级连接器开关）：本次对话被屏蔽的连接器，其工具**即使被模型硬编出来**
+    # 也不许执行 —— prepare 已从工具清单里摘掉，这里是第二道闸（模型可能凭记忆编工具名）。
+    # ⚠️ 这里**不能直接丢弃**调用：每个 tool_call_id 都必须有对应的 tool 消息，
+    # 丢掉会让下一轮请求被上游判为「tool 消息缺失」。正确做法是执行队列里排除、
+    # 但仍回注一条 ok=False 的结果 —— 模型据此如实说「该应用在本次对话中未启用」。
+    blocked_calls = _blocked_connector_calls(calls, _req(state).disabled_connectors)
+    if blocked_calls:
+        blocked_ids = {c.get("id") for c in blocked_calls}
+        calls = [c for c in calls if c.get("id") not in blocked_ids]
     clock = _clock(state)
     # 运行期对象不进状态（checkpointer 要求纯数据）：按入参重建工具客户端
     tool_client = ToolClient.from_request(_req(state).user_token)
@@ -627,6 +690,21 @@ async def tools(state: dict) -> dict:
             "content": json.dumps({"ok": outcome.ok,
                                    "data": None if outcome.data is None else outcome.data,
                                    "error": outcome.error}, ensure_ascii=False),
+        })
+
+    # 被对话级开关拦下的连接器调用：回注一条 ok=False 的结果。
+    # 必须回注而不是丢弃 —— 每个 tool_call_id 都要有对应的 tool 消息，
+    # 丢掉会让下一轮请求被上游判为协议错误（"tool message missing"）。
+    for call in blocked_calls:
+        tool_calls_log.append({"name": call.get("name"), "arguments": call.get("arguments") or {},
+                                "ok": False})
+        messages.append({
+            "role": "tool",
+            "tool_call_id": call["id"],
+            "content": json.dumps({
+                "ok": False, "data": None,
+                "error": "该连接器在本次对话中已被关闭，未执行该调用（连接器本身未被解绑，"
+                         "重新开启后即可使用）"}, ensure_ascii=False),
         })
 
     return {"messages": messages, "tool_calls_log": tool_calls_log,

@@ -40,4 +40,18 @@ public class CreateRunRequest {
      * 再按 name 命中（本租户优先、回落 tenant_id=0）；命中不到则当没传。
      */
     private String expert;
+
+    /**
+     * 对话级连接器开关：**本次对话不调用**哪些连接器（code 列表）。
+     *
+     * <p>语义边界（2026-10-31 用户口径：「关闭时不解绑连接器，只是本次对话不调用对应的应用」）：
+     * 这只是<b>本次对话</b>的工具屏蔽，<b>不改任何持久状态</b> ——
+     * 连接器的授权凭据、trusted 标记、manifest 可见性全部不动，
+     * 因此关掉再打开<b>不需要重新扫码</b>（这是与旧「关闭 = disconnect」最本质的区别）。
+     *
+     * <p>缺省（null / 空表）= 不屏蔽任何连接器，Agent 侧工具清单与改动前逐字节一致。
+     * 顶层优先于 {@code context.disabled_connectors}（历史写法），二者皆无则不下发该字段。</p>
+     */
+    @JsonProperty("disabled_connectors")
+    private List<String> disabledConnectors;
 }

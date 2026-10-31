@@ -89,6 +89,15 @@ class RunRequest(BaseModel):
     # 键：from_worker_id / from_worker_name / to_worker_id / to_worker_name / task_name / question。
     # 非空时提示词会追加一段说明，让接收方数字人直接承接同一句用户原话、不要要求重述。
     handoff: dict[str, Any] | None = None
+    # 本次对话**不调用**的连接器 code 列表（对话级开关，2026-10-31）。
+    #
+    # 语义边界（用户口径：「关闭时不解绑连接器，只是本次对话不调用对应的应用」）：
+    #   · 这只是**本次对话**的工具屏蔽，不改任何持久状态；
+    #   · 连接器的授权、trusted 状态、manifest 可见性**完全不动**
+    #     ⇒ 关掉再打开不需要重新扫码（这是与旧「关闭=disconnect」最本质的区别）。
+    # 键名与后端 CreateRunRequest.disabled_connectors 一致。
+    # 缺省（None/空表）= 不屏蔽任何连接器，工具清单与改动前逐字节一致。
+    disabled_connectors: list[str] | None = None
 
 
 class SubTaskSpec(BaseModel):

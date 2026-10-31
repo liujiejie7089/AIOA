@@ -46,6 +46,20 @@ public class AgentRunRequest {
     @JsonProperty("kb_on")
     private Boolean kbOn;
 
+    /**
+     * 对话级连接器开关：本次对话**不调用**哪些连接器（code 列表）。
+     *
+     * <p>键名 {@code disabled_connectors} 必须与此处 @JsonProperty 一致
+     * （agent 侧 RunRequest.disabled_connectors 契约）。
+     *
+     * <p>只影响本轮的工具可见性，<b>不改任何持久状态</b>：连接器的授权凭据 / trusted 标记
+     * 全部不动 ⇒ 用户关掉再打开不需要重新扫码。</p>
+     *
+     * <p>缺省（null / 空表）由 Agent 侧当作「不屏蔽」，后端不补默认值。</p>
+     */
+    @JsonProperty("disabled_connectors")
+    private List<String> disabledConnectors;
+
     @JsonProperty("user_context")
     private AgentUserContext userContext;
 

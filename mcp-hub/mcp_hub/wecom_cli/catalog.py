@@ -43,7 +43,9 @@ TOOLS: list[dict] = [
         "name": "recent_group_sessions",
         "description": ("列出我最近 N 天有消息的**群聊**会话（群名、最后消息时间、消息数）。"
                         "用户问『最近群里在聊什么』『我有哪些群有动静』时先用它拿列表，"
-                        "再用 session_messages 看具体内容。官方限制只能查最近 7 天。"),
+                        "再用 session_messages 看具体内容。官方限制只能查最近 7 天。\n"
+                        "返回的每条会话都带一个 **chat_id** 字段 —— 要看某群的具体消息时，"
+                        "把它原样作为 session_messages 的 chat_id 入参传进去。"),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -56,7 +58,8 @@ TOOLS: list[dict] = [
     {
         "name": "session_messages",
         "description": ("读取某个会话最近 N 天的消息（谁说的、什么时间、内容）。"
-                        "chat_id 必须来自 recent_group_sessions 的结果，或用户明确给出的会话标识；"
+                        "chat_id 必须**原样取自 recent_group_sessions 返回的 chat_id 字段**"
+                        "（不要自己拼、不要用群名替代）；"
                         "**不要把 chat_id 原样念给用户听**，用群名/人名指代即可。"),
         "input_schema": {
             "type": "object",

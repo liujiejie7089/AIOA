@@ -158,7 +158,7 @@ public class RunService {
      */
     public String start(Long conversationId, String text, Map<String, Object> context,
                         List<Long> attachments, String modelRef, Boolean kbOn,
-                        String expertKey, String expert) {
+                        String expertKey, String expert, List<String> disabledConnectorCodes) {
         AuthUser user = AuthUserContext.require();
         if (text == null || text.isBlank()) {
             throw BizException.badRequest("text 不能为空");
@@ -232,6 +232,41 @@ public class RunService {
                 context = new java.util.LinkedHashMap<>();
             }
             context.put("kb_on", kbOn);
+        }
+
+        // 对话级连接器开关 disabled_connectors：本次对话**不调用**哪些连接器（code 列表）。
+        // 与 kb_on 同构 —— 顶层优先于 context 里的历史写法，合并进 context 快照：
+        //   · 快照落库 ⇒ 后续独立的 subscribe 请求能回读该值（会话级持久）；
+        //   · **不改任何持久状态**：连接器的授权凭据 / trusted / manifest 可见性都不动
+        //     ⇒ 用户把开关关掉再打开，不需要重新扫码。
+        // 缺省（null / 空表）⇒ 不下发该字段，Agent 侧工具清单与改动前逐字节一致。
+        List<String> disabledConnectors = null;
+        if (disabledConnectorCodes != null && !disabledConnectorCodes.isEmpty()) {
+            disabledConnectors = disabledConnectorCodes.stream()
+                    .filter(c -> c != null && !c.isBlank())
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+            if (!disabledConnectors.isEmpty()) {
+                if (context == null) {
+                    context = new java.util.LinkedHashMap<>();
+                }
+                context.put("disabled_connectors", disabledConnectors);
+            } else {
+                disabledConnectors = null;
+            }
+        } else if (context != null) {
+            Object raw = context.get("disabled_connectors");
+            if (raw instanceof List<?> list && !list.isEmpty()) {
+                List<String> parsed = list.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(String::valueOf)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .distinct()
+                        .toList();
+                disabledConnectors = parsed.isEmpty() ? null : parsed;
+            }
         }
 
         userMessage.setContextSnapshot(context);
@@ -940,6 +975,23 @@ public class RunService {
             }
         }
         request.setKbOn(kbOn);
+        // 对话级连接器开关：回落读取 context.disabled_connectors（已在 start 阶段解析/合并），
+        // 保持 null 原样（不下发 = 不屏蔽任何连接器，工具清单与改动前逐字节一致）。
+        List<String> disabledConnectors = null;
+        if (context != null) {
+            Object raw = context.get("disabled_connectors");
+            if (raw instanceof List<?> list && !list.isEmpty()) {
+                List<String> parsed = list.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(String::valueOf)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .distinct()
+                        .toList();
+                disabledConnectors = parsed.isEmpty() ? null : parsed;
+            }
+        }
+        request.setDisabledConnectors(disabledConnectors);
         request.setUserContext(userContext);
         return request;
     }

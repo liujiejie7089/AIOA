@@ -1153,7 +1153,16 @@
 .oa .pm-sw.on i{left:21px}
 .oa .pm-sw:disabled{opacity:.55; cursor:progress}
 .oa .pm-empty{padding:12px 10px; font-size:12px; color:var(--text-3)}
-.oa .cbtn{width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:var(--text-2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+/* 图标按钮：尺寸固定，绝不参与 flex 伸缩。
+   ⚠️ 必须显式写 flex:0 0 auto —— 通用 .cbtn（确认卡的文字按钮）带 `flex:1 1 0`，
+   只覆盖 flex-shrink 的话 flex-grow 仍是 1 ⇒ 输入栏里的麦克风/「＋」被撑成
+   一大块椭圆（实测 #oaMicBtn 宽 89px 而非 44px）。min-height:0 同理：
+   通用 .cbtn 的 min-height:36px 会让 34px 的图标按钮被顶高。 */
+.oa .cbtn{
+  width:34px;height:34px;min-height:0;border-radius:50%;border:0;background:transparent;
+  color:var(--text-2);display:flex;align-items:center;justify-content:center;cursor:pointer;
+  flex:0 0 auto;padding:0;
+}
 .oa .cbtn:hover{background:var(--surface-3)}
 .oa .cbtn.send{background:var(--brand);color:#fff;width:42px;height:42px}
 .oa .collab-head{
@@ -1207,9 +1216,11 @@
 .oa .tl-item::before{content:""; position:absolute; left:-22px; top:5px; width:12px; height:12px; border-radius:50%; background:var(--surface); border:2.5px solid var(--brand)}
 .oa .tl-item.mute::before{border-color:var(--border-strong)}
 /* 日程行内操作（会议接受/谢绝、日程删除）：复用确认卡的 .cbtn，但收窄为小号内联按钮，
-   避免与气泡里的确认卡抢视觉重量。 */
+   避免与气泡里的确认卡抢视觉重量。
+   ⚠️ width 必须显式给 auto —— .oa .cbtn 是 34px 的**图标**按钮尺寸，
+   文字按钮沿用它会被压成一个 34px 的方块（「接受」两个字放不下）。 */
 .oa .tl-act{display:flex; gap:6px; margin-top:6px}
-.oa .tl-act .cbtn{flex:0 0 auto; min-height:28px; padding:0 10px; font-size:11.5px}
+.oa .tl-act .cbtn{flex:0 0 auto; width:auto; min-height:28px; height:auto; padding:0 10px; font-size:11.5px; border-radius:var(--r-sm)}
 .oa .tl-time{font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--brand-ink); font-variant-numeric:tabular-nums}
 .oa .tl-body{font-size:13px; font-weight:600; margin-top:2px}
 .oa .tl-meta{font-size:11px; color:var(--text-3); margin-top:3px; display:flex; align-items:center; gap:5px}
@@ -1422,14 +1433,28 @@
    —— 不再是「过 24px 阈值瞬跳」，中间区域保持隐藏，避免跳变与闪烁。
 
    ⚠️ 两个刻意为之：
-   ① 只动 `.assist`（标题块）。数字人是会话锚点，保持常显；把 robot 也藏掉会让对话失去指向。
-   ② 不收 `.assist` 的高度：收高度会让 dock 变高 → 滚动位置跳，正在翻历史的人被顶走
-     （与数字人同理）。渐隐后 pointer-events 一并关掉，免得隐形标题拦点击。 */
+   ① **只淡出、不收高度**：收高度会让 dock 变高 → 滚动位置跳，正在翻历史的人被顶走。
+     渐隐后 pointer-events 一并关掉，免得隐形内容拦点击。
+   ② 数字人是气泡尾巴的锚点（oaLayoutTails 量它的位置算尾巴朝向）——
+     锚点「淡出」但**位置不动**（不收高度、不改布局），尾巴朝向才不会在滚动时乱转。 */
 .oa #v-home .assist{
   opacity:calc(1 - var(--hd, 0));
   transform:translateY(calc(var(--hd, 0) * -30px));
   transition:opacity 120ms linear, transform 120ms linear;
 }
+/* 顶部机器人区（数字人 + 指标卡）同样随滚动渐隐入顶部（2026-10-31 用户口径：
+   「往上滑记录的时候，我圈起来的地方也要渐变隐入顶部消失」）。
+   做法与 .assist 同源：同一个 `--hd` 连续插值 ⇒ 两者同步淡出，不会出现
+   「标题没了机器人还在」的割裂感。
+   ⚠️ 不能给 .stage 收高度：它是 flex:1 的布局撑点，收了会把对话坞顶走（滚动跳位）。
+   ⚠️ 只在**聊天态**做：首页（未进入对话）时 .stage 是整屏主体，
+   淡出它会让首页看起来像加载失败。 */
+.oa #v-home.chatting .stage{
+  opacity:calc(1 - var(--hd, 0));
+  transform:translateY(calc(var(--hd, 0) * -24px));
+  transition:opacity 120ms linear, transform 120ms linear;
+}
+.oa #v-home.dock-scrolled .stage{pointer-events:none}
 .oa #v-home.dock-scrolled .assist{pointer-events:none}
 
 /* 顶栏「工作助手」**固定常显**（2026-10-30 第四轮口径，撤销第二轮的 bar-hidden）：
@@ -2756,11 +2781,16 @@
       <div id="oaTimersList"></div>
     </section>
 
-    <!-- ⑨ 插件 · 技能 · 连接器（抽屉进入）：三段分段控件，默认「插件」 -->
+    <!-- ⑨ 插件 · 技能 · 连接器（抽屉进入）：三段分段控件，默认「系统工具」 -->
     <section class="view" id="v-skills">
       <div class="sec-title" style="margin-left:2px">插件-技能-连接器 <span class="muted">可被数字员工调用</span></div>
       <div class="oa-seg" id="oaSkillsSeg" role="tablist">
-        <button type="button" data-seg="plugins" role="tab">插件<span class="n" id="oaSegNPlugins"></span></button>
+        <!-- ⚠️ 第一段叫「系统工具」而不是「插件」（2026-10-31 用户口径）：
+             这一段列的是**管理员在库里预置的系统工具目录**（tool_definition），
+             不是「用户添加的插件」。原来叫「插件」并直接显示 46/64 的数量，
+             用户看到后问「我根本没添加过插件，为什么有 46 个」——
+             数字没错，是**命名与来源没交代**。改名 + 说明来源即可消除误解。 -->
+        <button type="button" data-seg="plugins" role="tab">系统工具<span class="n" id="oaSegNPlugins"></span></button>
         <button type="button" data-seg="skills" role="tab">技能<span class="n" id="oaSegNSkills"></span></button>
         <button type="button" data-seg="connectors" role="tab">连接器<span class="n" id="oaSegNConnectors"></span></button>
       </div>
@@ -2905,6 +2935,9 @@ const state = {
   token:null, user:null, isAdmin:false, canManageWorker:false, model:'default',
   quota:0, used:0, free:0, left:null, quotaInfo:null,
   chatExpert:null, chatWorker:null, kbOn:true, busy:false,
+  /* 对话级连接器开关（2026-10-31）：「本次对话不调用」的连接器 code 集合。
+     语义 = 只屏蔽本轮工具，**不解绑、不改授权状态**（与 OA 态共用同一组读写函数）。 */
+  disabledConnectors:[],
   roleTypes:[],
   /* V36 需求①：权限申请 */
   permCatalog:null, permHoldings:[], permGrants:[],
@@ -2997,6 +3030,9 @@ const API = {
     var ctx = Object.assign({}, context);   // 浅拷贝，避免改写调用方原对象（防副作用）
     var body = {text, context: ctx, model_ref: state.model};
     if('kb_on' in ctx){ body.kb_on = ctx.kb_on; delete ctx.kb_on; }  // kb_on 提升到 body 顶层（两种前端共用，改一处两形态受益）
+    /* 对话级连接器开关：同样提升到 body 顶层（后端 CreateRunRequest.disabled_connectors）。
+       语义 = 「本次对话不调用这些连接器」，**不解绑、不改授权状态**。 */
+    if('disabled_connectors' in ctx){ body.disabled_connectors = ctx.disabled_connectors; delete ctx.disabled_connectors; }
     if(attachments && attachments.length) body.attachments = attachments;
     return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify(body)});
   },
@@ -3249,6 +3285,45 @@ const API = {
     return this.req('/v1/forms/'+code+'/submit', {method:'POST', body:JSON.stringify(body)});
   },
 };
+
+/* ============================================================================
+   连接器「本次对话不调用」开关（2026-10-31）—— **两形态共用**，别各写一套
+   ---------------------------------------------------------------------------
+   语义（用户口径）：关闭连接器**不解绑**，只是**本次对话不调用**对应的应用。
+   ⇒ 授权凭据 / trusted / manifest 可见性全部不动，重新开启不需要重新扫码。
+   与旧的「关闭 = disconnect」是本质区别（旧的会删本机凭据）。
+
+   实现：把被关闭的连接器 code 放进一个会话级集合，随 createRun 下发
+   disabled_connectors；后端只在本轮过滤工具，**不落任何状态**。
+
+   两个形态各自持有一份集合（经典态 state.disabledConnectors / OA 态
+   S.disabledConnectors），但**读写走同一组函数** —— 语义一致，避免两处漂移。 */
+function mutedConnectorCodes(){
+  var a = (state && state.disabledConnectors) || [];
+  var b = (typeof S !== 'undefined' && S && S.disabledConnectors) || [];
+  return Array.prototype.concat.call(a, b);
+}
+function isConnectorMuted(code){
+  if(!code) return false;
+  return mutedConnectorCodes().indexOf(String(code)) >= 0;
+}
+/** 设置某连接器「本次对话不调用」。返回是否发生了变化。 */
+function setConnectorMuted(code, muted){
+  if(!code) return false;
+  code = String(code);
+  var changed = false;
+  /* 两形态都更新：经典态与 OA 态是同一个账号的同一批连接器，
+     集合不一致会让「经典态关了、OA 态还开着」的诡异表现。 */
+  [ (typeof state !== 'undefined' ? state : null),
+    (typeof S !== 'undefined' ? S : null) ].forEach(function(holder){
+    if(!holder) return;
+    if(!Array.isArray(holder.disabledConnectors)) holder.disabledConnectors = [];
+    var idx = holder.disabledConnectors.indexOf(code);
+    if(muted && idx < 0){ holder.disabledConnectors.push(code); changed = true; }
+    else if(!muted && idx >= 0){ holder.disabledConnectors.splice(idx, 1); changed = true; }
+  });
+  return changed;
+}
 
 function parseSseFrame(block){
   let event = null, data = '';
@@ -6438,7 +6513,8 @@ async function send(){
   };
   try{
     const convId = await API.ensureConversation();
-    const run = await API.createRun(convId, effectiveQ, {kb_on:state.kbOn, expert_key:(state.chatExpert && state.chatExpert.key) || null},
+    const run = await API.createRun(convId, effectiveQ, {kb_on:state.kbOn, expert_key:(state.chatExpert && state.chatExpert.key) || null,
+                                                        disabled_connectors:mutedConnectorCodes()},
                                     pendingFiles.map(function(f){ return f.id; }));
     state.runId = run.id || run.runId;
     pendingFiles = []; renderAttachStrip();   /* 成功后才清空；失败（下面 catch）不静默丢文档 */
@@ -7909,6 +7985,11 @@ var S = {
   projectConvWorker:{},  // projectId → 该会话创建时绑定的 workerId（null=未绑）；换人后必须新建会话
   projectWorkerIds:[],   // 当前项目可用的数字员工 workerId（enabled 且未缺失；渲染数字人卡时按它过滤）
   kbOn:true,              // 对话级知识库开关，默认开，随 createRun 下发
+  /* 对话级连接器开关（2026-10-31）：「本次对话不调用」的连接器 code 集合。
+     ⚠️ 语义边界：只是**本次对话**的工具屏蔽，**不解绑、不改授权状态** ——
+     关掉再打开不需要重新扫码（这与旧的「关闭 = disconnect」是本质区别）。
+     随 createRun 下发 disabled_connectors（顶层）。 */
+  disabledConnectors:[],
   skillsTab:'plugins',     // 当前选中的三段子项（默认插件）
   plugins:null, pluginsLoaded:false, pluginsErr:null,
   connectors:null, connectorsLoaded:false, connectorsErr:null,
@@ -9499,8 +9580,12 @@ function renderPlugins(){
   }
   if(S.pluginsErr){ el.innerHTML = '<div class="muted">插件加载失败：'+txt(S.pluginsErr)+'</div>'; return; }
   var list = arr(S.plugins);
-  if(!list.length){ el.innerHTML = empty('暂无插件：插件是可被数字员工调用的工具，由管理员注册后出现'); return; }
-  el.innerHTML = list.map(function(p){
+  if(!list.length){ el.innerHTML = empty('暂无系统工具：系统工具是管理员在管理端预置的、数字员工可直接调用的能力目录'); return; }
+  /* 顶部说明来源：这一段列的是**管理员预置的系统工具目录**，不是「用户添加的插件」。
+     不说清楚的话，用户会以为「我没添加过插件，为什么有 46 个」。 */
+  el.innerHTML = '<div class="muted" style="margin:0 0 8px">共 ' + list.length
+    + ' 项，由管理员在管理端预置（不是您添加的）；数字员工可直接调用。</div>'
+    + list.map(function(p){
     var ik = DOMAIN_ICON[p.domain] || 'puzzle';
     var right = (p.requiresApproval === true) ? '<span class="chip wait">需审批</span>' : '';
     return '<div class="lrow">'+
@@ -9563,6 +9648,7 @@ function renderConnectors(){
       if(act === 'connect') openConnector(code);
       else if(act === 'disconnect') disconnectConnector(code);
       else if(act === 'verify') verifyConnector(code);
+      else if(act === 'mute') muteConnectorForConversation(code, b.getAttribute('data-name'));
     };
   });
   el.querySelectorAll('[data-mcp-act]').forEach(function(b){
@@ -9790,7 +9876,14 @@ function connCardHtml(c){
   if(c.configReady === false){
     act = '<button class="btn small" disabled>连接</button>';
   } else if(c.status === 'CONNECTED'){
-    act = '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">断开</button>';
+    /* 两个动作语义不同，必须分开：
+       · 「断开」= 解绑（破坏性：扫码类连接器会删本机凭据，重开要重扫）—— 保留原义并说清后果；
+       · 「本次对话不调用」= 只屏蔽本轮工具，**授权保留**（2026-10-31 用户口径）。 */
+    var muted = isConnectorMuted(c.code);
+    act = '<button class="btn ghost small" data-act="mute" data-code="'+txt(c.code)+'"'
+        + ' data-name="'+txt(c.name || c.code)+'">'
+        + (muted ? '本次对话恢复调用' : '本次对话不调用') + '</button>'
+        + '<button class="btn ghost small" data-act="disconnect" data-code="'+txt(c.code)+'">断开</button>';
   } else if(c.status === 'UNVERIFIED'){
     act = '<button class="btn small" data-act="verify" data-code="'+txt(c.code)+'">重新检测</button>';
   } else {
@@ -10019,10 +10112,44 @@ function openQrModal(code, d){
 
 /* 断开 / 重新检测：成功后刷新面板；失败 toast */
 function disconnectConnector(code){
-  API.connectorDisconnect(code).then(function(){
-    toast('已断开');
+  /* 断开 = **解绑**（破坏性）：扫码类连接器会删掉本机凭据，下次要重新扫码。
+     明确说清后果 —— 用户若只是想「本次不调用」，应该用面板里的「本次对话不调用」。 */
+  askDialog({
+    title: '断开连接器',
+    message: '断开后会**解绑**该连接器：扫码类连接器（如企业微信）会删掉本机授权，'
+           + '下次使用需要重新扫码。\n若只是想「本次对话不调用它」，请用「本次对话不调用」。',
+    okText: '确认断开', danger: true,
+    onOk: function(){
+      API.connectorDisconnect(code).then(function(){
+        toast('已断开');
+        refreshConnectors();
+      }).catch(function(err){ toast(err.message || '断开失败'); });
+    }
+  });
+}
+
+/* 「本次对话不调用」开关（2026-10-31）：只屏蔽本轮工具，**不解绑**。
+   与 disconnectConnector 的区别是本轮的核心：授权保留，重新开启无需重扫。 */
+function muteConnectorForConversation(code, name){
+  if(!code) return;
+  var muted = isConnectorMuted(code);
+  if(muted){
+    setConnectorMuted(code, false);
+    toast('本次对话将重新调用「' + (name || code) + '」');
     refreshConnectors();
-  }).catch(function(err){ toast(err.message || '断开失败'); });
+    return;
+  }
+  askDialog({
+    title: '本次对话不调用「' + (name || code) + '」',
+    message: '本次对话将不再调用它。**不会解绑连接器**，授权仍然保留，'
+           + '随时可以重新开启（无需重新扫码）。',
+    okText: '不再调用', danger: true,
+    onOk: function(){
+      setConnectorMuted(code, true);
+      toast('本次对话不再调用它，连接器未解绑');
+      refreshConnectors();
+    }
+  });
 }
 
 function verifyConnector(code){
@@ -10450,7 +10577,9 @@ async function oaSend(){
     var convId = await oaEnsureConv();
     var run = await API.createRun(convId, effectiveQ, {
       kb_on: (S.kbOn !== false),
-      expert_key: S.expert && S.expert.key ? S.expert.key : null
+      expert_key: S.expert && S.expert.key ? S.expert.key : null,
+      /* 对话级连接器开关：本次对话不调用哪些连接器（**不解绑**） */
+      disabled_connectors: mutedConnectorCodes()
     }, (S.pendingFiles||[]).map(function(f){ return f.id; }));
     var runId = run && (run.id || run.runId);
     // 与经典形态共用 state.runId：停止生成按钮只有一个真值来源
@@ -10645,7 +10774,11 @@ function oaOpenPlusMenu(){
   oaLoadPlusConns();
 }
 
-/* 拉连接器目录并渲染开关。用接口返回的 status 作唯一真值（CONNECTED 才算开）。 */
+/* 拉连接器目录并渲染开关。
+   ⚠️ 开关语义（2026-10-31 用户口径变更）：开关表示「**本次对话是否调用**这个连接器」，
+   **不再表示「断开授权」**。开关的「开」= 授权有效 **且** 本次对话未禁用它。
+   ⇒ 关掉只是本次对话不调用它，**授权不动**（关掉再打开不需要重新扫码）。
+   真正的解绑（删凭据）是另一件事，保留在连接器面板的「断开」按钮上。 */
 function oaLoadPlusConns(){
   var box = $o('oaPlusConns'); if(!box) return;
   API.connectors().then(function(list){
@@ -10653,15 +10786,20 @@ function oaLoadPlusConns(){
     var items = (arr(list) || []).filter(function(c){ return c && c.code; });
     if(!items.length){ box.innerHTML = '<div class="pm-empty">暂无可用的连接器</div>'; return; }
     box.innerHTML = items.map(function(c){
-      var on = c.status === 'CONNECTED';
+      var connected = c.status === 'CONNECTED';
+      /* 开关态 = 授权有效 且 本次对话未禁用它 */
+      var muted = oaConnectorMuted(c.code);
+      var on = connected && !muted;
       /* configReady=false 是「管理员还没填凭据」，不是「用户没连」：
          这种卡片在连接器面板里也是禁用连接按钮的，这里同样不给开关，免得点了必然失败。 */
       var ready = (c.configReady !== false);
       var sub = !ready
         ? '管理员尚未完成配置'
-        : (on
+        : (muted
+            ? '本次对话不调用（授权仍保留）'
+            : (on
             ? ('已连接' + (c.accountLabel ? ' · ' + c.accountLabel : ''))
-            : (c.status === 'UNVERIFIED' ? '检测未通过，需重新授权' : '未连接，开启后去授权'));
+            : (c.status === 'UNVERIFIED' ? '检测未通过，需重新授权' : '未连接，开启后去授权')));
       return '<div class="pm-conn" data-code="'+txt(c.code)+'">'+
         '<span class="pm-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
         '<div class="pm-main"><b>'+txt(c.name || c.code)+'</b>'+
@@ -10669,7 +10807,7 @@ function oaLoadPlusConns(){
         '<button class="pm-sw'+(on ? ' on' : '')+'" type="button" role="switch"'+
           ' aria-checked="'+(on ? 'true' : 'false')+'" data-code="'+txt(c.code)+'"'+
           ' data-name="'+txt(c.name || c.code)+'"'+(ready ? '' : ' disabled')+
-          ' aria-label="'+(on ? '关闭' : '开启')+txt(c.name || c.code)+'"><i></i></button>'+
+          ' aria-label="'+(on ? '本次对话不调用' : '本次对话调用')+txt(c.name || c.code)+'"><i></i></button>'+
       '</div>';
     }).join('');
     box.querySelectorAll('.pm-sw').forEach(function(sw){
@@ -10686,27 +10824,34 @@ function oaLoadPlusConns(){
   });
 }
 
-/* 开关：开 = 走授权（QR 扫码 / 填授权码），关 = 断开（manifest 立刻收回该连接器的工具）。
-   关闭必须先确认：企业微信这类扫码连接器断开时会把本机凭据一起删掉，重开要重新扫码。 */
+function oaConnectorMuted(code){ return isConnectorMuted(code); }
+function oaSetConnectorMuted(code, muted){ return setConnectorMuted(code, muted); }
+
+/* 开关：开 = 本次对话调用它；关 = 本次对话不调用它。
+   ⚠️ 语义变更（2026-10-31 用户口径）：「关闭」**不解绑连接器** ——
+   只是本次对话不调用对应的应用，授权凭据原样保留，重新开启不需要重新扫码。
+   （旧实现调 /disconnect，扫码类连接器会连本机凭据一起删掉，下次开要重扫。）
+   真正的解绑保留在连接器面板的「断开」按钮上（那是明确的破坏性动作）。 */
 function oaToggleConnector(code, name, isOn){
   if(!code) return;
   if(isOn){
     oaClosePlusMenu();
     askDialog({
-      title: '关闭「' + (name || code) + '」',
-      message: '关闭后数字人将不再调用它。扫码类连接器（如企业微信）会同时解绑本机授权，'
-             + '下次开启需要重新扫码。',
-      okText: '关闭', danger: true,
+      title: '本次对话不调用「' + (name || code) + '」',
+      message: '本次对话将不再调用它。**不会解绑连接器**，授权仍然保留，'
+             + '随时可以重新开启（无需重新扫码）。',
+      okText: '不再调用', danger: true,
       onOk: function(){
-        API.connectorDisconnect(code).then(function(){
-          toast('已关闭');
-          refreshConnectors();
-        }).catch(function(e){ toast(e.message || '关闭失败'); });
+        oaSetConnectorMuted(code, true);
+        toast('本次对话不再调用它，连接器未解绑');
+        refreshConnectors();
       }
     });
     return;
   }
   oaClosePlusMenu();                                   // 先把浮层收起，弹层才不会叠在上面
+  /* 重新开启：先从「本次对话禁用」里去掉；若连接器本来就没授权，则走授权流程 */
+  oaSetConnectorMuted(code, false);
   if(typeof openConnector === 'function') openConnector(code);
   else toast('无法打开授权窗口');
 }

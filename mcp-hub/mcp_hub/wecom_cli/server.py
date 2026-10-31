@@ -130,15 +130,21 @@ async def _exec_recent_sessions(ctx: Context, days: int = 7, **kw) -> CallToolRe
     for c in rows[:20]:
         if not isinstance(c, dict):
             continue
+        # chat_id 是官方「框架加密输出」的句柄，用于下一步取消息；不要念给用户听。
+        # ⚠️ 字段名必须是 chat_id（与 session_messages 的入参同名）——
+        # 早期这里叫 ref，模型拿到 ref 却要填 chat_id ⇒ 「chat_id 无效」
+        # （2026-10-31 用户实测）。ref 保留为兼容别名，老客户端仍能读到。
+        chat_id = c.get("chat_id") or ""
         out.append({
             "chatName": c.get("chat_name") or "",
             "lastMessageTime": c.get("last_msg_time") or "",
             "messageCount": c.get("msg_count") or 0,
-            # chat_id 是官方「框架加密输出」的句柄，用于下一步取消息；不要念给用户听
-            "ref": c.get("chat_id") or "",
+            "chat_id": chat_id,
+            # 兼容别名：老代码按 ref 读
+            "ref": chat_id,
         })
     return _ok({"range": {"begin": b, "end": e}, "count": len(out), "sessions": out,
-                "note": "ref 只能用于 session_messages，不要向用户展示"})
+                "note": "chat_id 用于 session_messages 的入参，不要向用户展示该值本身"})
 
 
 async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 1, limit: int = 20,
