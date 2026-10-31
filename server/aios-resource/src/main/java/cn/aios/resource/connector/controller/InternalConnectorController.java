@@ -3,8 +3,10 @@ package cn.aios.resource.connector.controller;
 import cn.aios.common.exception.BizException;
 import cn.aios.common.resp.ApiResponse;
 import cn.aios.resource.connector.entity.ConnectorConnection;
+import cn.aios.resource.connector.mcp.service.McpRegistryService;
 import cn.aios.resource.connector.service.ConnectorConnectionService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,12 +39,14 @@ import java.util.Map;
  *   <li>不接收 {@code status} 以外的自由字段，凭据字段整包加密存，不回显。</li>
  * </ul>
  */
+@Slf4j
 @RestController
 @RequestMapping("/internal/v1/connectors")
 @RequiredArgsConstructor
 public class InternalConnectorController {
 
     private final ConnectorConnectionService connectionService;
+    private final McpRegistryService mcpRegistry;
 
     /**
      * 标记「该用户已在该连接器上完成授权」。
@@ -62,6 +66,22 @@ public class InternalConnectorController {
         }
         connectionService.upsertConnectedByUser(body.tenantId(), body.userId(), code,
                 body.accountLabel(), body.credential());
+        // 连上 ≠ AI 能用：内置 MCP 服务器种子行是 trusted=0，而 manifest 与执行闸门都只认
+        // trusted=1 ⇒ 用户扫码成功、面板显示「已连接」，AI 那边却回「没有可用的连接」
+        // （2026-10-31 生产现场，企微）。这里在连接态落库后顺手把内置服务器过一遍信任闸门。
+        // 失败**不阻断**连接态：连没连上 与 给不给 AI 用 是两件事，探测抖不该让授权白扫。
+        try {
+            McpRegistryService.TrustResult tr = mcpRegistry.trustBuiltinByConnector(code);
+            if (!tr.ok()) {
+                log.warn("连接器 {} 已置为 CONNECTED，但内置 MCP 服务器自动信任未通过：{}", code, tr.error());
+            } else if (tr.error() != null) {
+                log.warn("连接器 {} 已信任，但探测未通过（工具目录可能为空）：{}", code, tr.error());
+            } else {
+                log.info("连接器 {} 已信任，工具 {} 个", code, tr.toolCount());
+            }
+        } catch (Exception e) {
+            log.warn("连接器 {} 自动信任异常（不影响连接态）：{}", code, e.toString());
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("status", ConnectorConnection.STATUS_CONNECTED);
         out.put("tenantId", body.tenantId());

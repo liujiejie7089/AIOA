@@ -277,6 +277,59 @@ public class McpRegistryService {
         return new TrustResult(true, null, count);
     }
 
+    /**
+     * 内置连接器「连上即信任」：扫码/授权成功、连接态回写之后由内部通道调用。
+     *
+     * <p><b>为什么必须有这一步</b>：内置服务器的种子行是 {@code trusted=0}
+     * （V97 / V102 都刻意如此，注释写的是「需经信任闸门探测后才对 agent 可见」），
+     * 而 {@link #manifest} 与 {@code McpBuiltinBridge#doCall} 都只认 {@code trusted=1}。
+     * 于是出现一种极难自查的组合：<b>连接器面板显示「已连接」，AI 却回「没有可用的连接」</b>。
+     * 2026-10-31 生产现场：企微扫码成功、{@code connector_connection} 已是 CONNECTED
+     * （{@code /api/v1/connectors} 回 {@code wecom_cli | CONNECTED | 刘洋}），
+     * 但 {@code /api/v1/mcp/manifest} 里只有 qq_mail —— 因为没人去点过「信任」。</p>
+     *
+     * <p><b>只对 BUILTIN 自动信任</b>：内置服务器的地址与工具目录都来自本仓库，
+     * 不存在「管理员被诱导去信任一个外部地址」的风险；EXTERNAL 仍然必须人工 trust。</p>
+     *
+     * <p><b>探测失败也照样置 trusted=1</b>，理由：信任闸门解决的是「这东西能不能进清单」，
+     * 而「能不能用」在调用期还有两道硬闸 —— {@code doCall} 会再校验 CONNECTED 与
+     * handler 是否存在。探测此时失败多半是 hub 抖动，不该让用户永远拿不到工具；
+     * 探测结果如实落 status/lastError，面板与日志都看得见。</p>
+     */
+    @Transactional
+    public TrustResult trustBuiltinByConnector(String connectorCode) {
+        if (connectorCode == null || connectorCode.isBlank()) {
+            return new TrustResult(false, "缺少 connectorCode", 0);
+        }
+        McpServer s = serverMapper.selectOne(new LambdaQueryWrapper<McpServer>()
+                .eq(McpServer::getTenantId, 0L)
+                .eq(McpServer::getSource, McpServer.SOURCE_BUILTIN)
+                .eq(McpServer::getConnectorCode, connectorCode)
+                .orderByAsc(McpServer::getSort)
+                .last("LIMIT 1"));
+        if (s == null) {
+            return new TrustResult(false, "没有对应的内置 MCP 服务器：" + connectorCode, 0);
+        }
+        if (s.getTrusted() != null && s.getTrusted() == 1) {
+            int n = toolMapper.selectCount(new LambdaQueryWrapper<McpServerTool>()
+                    .eq(McpServerTool::getServerId, s.getId())).intValue();
+            return new TrustResult(true, null, n);
+        }
+        McpProbeClient.ProbeResult r = probeClient.probe(s);
+        persistProbe(s, r, LocalDateTime.now());
+        McpServer fresh = serverMapper.selectById(s.getId());
+        if (fresh == null) { // 并发删除：当作没有，不抛
+            return new TrustResult(false, "服务器已被删除：" + connectorCode, 0);
+        }
+        fresh.setTrusted(1);
+        if (r.isOk()) {
+            fresh.setStatus(McpServer.STATUS_OK);
+        }
+        serverMapper.updateById(fresh);
+        int count = r.isOk() ? syncTools(fresh, r.getTools()) : 0;
+        return new TrustResult(true, r.isOk() ? null : r.getError(), count);
+    }
+
     /** 取消信任：保留工具目录便于回看。 */
     public TrustResult untrust(AuthUser user, String code) {
         McpServer s = requireVisible(user, code);
