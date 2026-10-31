@@ -449,3 +449,22 @@ Access denied(28000)，会 08S01 就说明 `.env` 存在且 MYSQL_HOST/PORT 是�
 所以 `WECOM_MOCK=0` 之前必须先 `ls -l data/wecom-cli-bin/wecom-cli`；
 宿主目录不存在时 Docker 会**静默建空目录**，表现为「wecom-cli 未安装」而不报错。
 （`WECOM_MOCK` 只管「密钥与 mock 身份」，不管 CLI 是否存在。）
+
+## ★ 企微「连接了却说没有可用连接」第一步：先比账号，别急着查代码
+
+2026-10-31 生产实测结论：**`admin` 是 `tenant 0 / user 1`（平台账号），而扫码授权落在
+`tenant 1 / user 35`**（`/data/aioawork/...` 实际是 `/data/aioa/wecom-cli/1/35/personal/credentials.enc`，
+CLI 手动跑 `auth show --status` 回 `authorized`）。
+
+判定口径：`connector_connection` 的唯一键是 `(tenant_id, user_id, connector_code)`，
+`McpRegistryService.usableForAgent()` 只认**当前 token 那个人**的 CONNECTED。
+企微是**一人一账号**，A 扫的码对 B 完全不生效 ⇒ 对 admin 来说
+`/api/v1/connectors` 全 `NEED_AUTH`、`/api/v1/mcp/manifest` 返回 `[]` 是**正确行为**。
+
+排障顺序（30 秒定案，别先怀疑 CLI / 权限 / 密钥）：
+1. `curl -H "Authorization: Bearer $TOKEN" :8080/api/v1/auth/me` → 拿到 `id` 与 `tenantId`；
+2. `ls /data/aioa/wecom-cli/` → 看实际落在哪个 `<tenant>/<user>/`；
+3. 两者不一致 ⇒ 账号不一致，不是 bug。
+
+⚠️ 附带注意：`admin` 的 `tenantId=0`。`manifest` 用 `tenantId(user)` 查
+`mcp_server`（tenant 0 的行可见），但连接是 tenant 1 的 ⇒ **平台账号永远连不上业务租户的连接器**。
