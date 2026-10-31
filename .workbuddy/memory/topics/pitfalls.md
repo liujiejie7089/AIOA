@@ -1502,3 +1502,25 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
       `asyncio.run` 里跑完），否则 FastMCP 的 session manager task group 跨循环 ⇒
       **恒 500**（第一版就这样假失败过，且与缺陷无关）；另外 SSE 响应体可能抓不全，
       「真建了会话」要看响应头 `mcp-session-id`，别只看 body。
+
+48. **意图词表会吞掉「外部投递 / 阅读诉求」；提示词不写死就会答非所问**
+    - 2026-10-31 用户现场（一条对话里连着 5 个错答）：
+      ① 「把这个文件传到我的企业微信上去」被判 `UPLOAD_FILE` ⇒ H5 提示「先进项目」；
+      ② 「请解析我上传的文档」同样被判 `UPLOAD_FILE`（裸「上传」3.0）；
+      ③ 「企业微信最新消息」被答成邮箱 INBOX/邮件列表；
+      ④ 「显示这5封详细内容」被回「内容较长，无法一次性显示」而一封没读；
+      ⑤ 解析《配置信息.txt》时把 gitea/ngrok token **原样复述**。
+    - 修法两层，缺一不可：
+      a. `intent/intake.py`：`_UPLOAD_EXTERNAL_TARGET`（企业微信/邮箱/同事/群…）与
+         `_UPLOAD_READ_INTENT`（解析/解读/总结…）命中且句中无「项目」⇒ 不判 UPLOAD_FILE。
+         排除必须放在阈值判断**之前**（组合命中分数够高，调阈值拦不住）。
+      b. `prompt/builder.py`：新增【连接器语义路由】（企微≠邮箱；明细必须逐个
+         `read_message`；企微**只读**，不传文件不谎报；无工具不编造）与
+         【附件与凭据】（附件就是「这个文件」，不得反问；敏感串只给掩码并提醒吊销）。
+    - 判据要**运行时**：直接调 `detect_action(用户原话)`，别只看源码正则。
+      哨兵 `scripts/_check_ai_answer_accuracy.py`（19/19）含负向自检：
+      把外部目标词表换成永不命中后，必须**变回** UPLOAD_FILE，否则前面的绿是假绿。
+    - 同场顺手修的配置空转：`AIOS_CONNECTOR_SECRET_KEY`（Java SecretCodec）在
+      application.yml 里被引用但 compose 从未透传 ⇒ 生产一直用 dev 占位默认值
+      （= 凭据明文）。`_check_compose_env_wiring.py` 就是干这个的，别把它当噪声。
+      它与 hub 的 `WECOM_CONNECTOR_KEY` 是**两把不同的钥匙**，不要设成同一个值。

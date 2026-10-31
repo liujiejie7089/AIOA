@@ -275,6 +275,10 @@ Vite 只读**各应用自己的** `.env`；H5 读 `user-client/.env`。后端 en
 | TLS | 不涉及 | `AIOS_GITEA_INSECURE_SKIP_VERIFY=false` + 自签 CA 信任库 |
 | 并发 | `AGENT_MAX_CONCURRENCY=4` | `8`（按容器规格） |
 | 模型 | `echo`（零依赖） | 真实云端/本地模型 |
+| 企微连接器目录 | 仓库内 `../data/wecom-cli-bin` / `../data/wecom-cli` | `/data/aioa/wecom-cli-bin` / `/data/aioa/wecom-cli`（**不要互抄**：绝对路径在本地不存在） |
+| 企微身份 `WECOM_MOCK` | `1`（无令牌时合成身份，便于演示） | **`0`**（真实身份；缺密钥时 wecom_cli 不可用、`/health` 转 503，故意暴露而不是假装可用） |
+| 企微密钥 `WECOM_CONNECTOR_KEY` | 一把**固定开发密钥**（与 `start-all.sh` 同一把；换了本地已扫码授权解不开） | **必填**，`openssl rand -base64 32` 单独生成，**不得复用本地那把**；留空 + `WECOM_MOCK=1` 会退成进程内临时密钥 ⇒ 每次重启所有人的授权都失效 |
+| 连接器凭据库 | 本地 `mcp-hub/data/wecom.db`（不进 git） | 容器 `/app/data/wecom.db`，由命名卷 `mcphubdata` 持久化（**不要改 bind mount**：Docker 会以 root 建宿主目录，uid 10001 写不进去） |
 
 ## 6. 安全纪律
 

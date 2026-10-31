@@ -87,6 +87,21 @@ _ACTION_RULES = [
     ]),
 ]
 
+# 「上传到企业微信 / 发给同事 / 发到群里」是**外部投递**，不是项目文档上传。
+# 2026-10-31 用户现场：「把这个文件传到我的企业微信上去」被判成 UPLOAD_FILE，
+# H5 于是回「这个操作要归属到某个项目：请先在「任务 → 项目」里进入一个项目」——
+# 答非所问：用户要的是连接器动作，而企微连接器目前**只读**（根本不能传文件），
+# 正确响应是说明能力边界，不是把人赶去开项目。
+# 句中明确带「项目」时仍按项目上传处理（如「把文件上传到项目里」）。
+_UPLOAD_EXTERNAL_TARGET = re.compile(
+    r"(企业微信|企微|微信|QQ|qq|邮箱|邮件|群聊|群里|同事|客户|好友|钉钉|飞书)")
+
+# 「请解析我上传的文档」是**阅读**诉求，不是上传诉求。
+# 2026-10-31 用户现场：这句话命中裸「上传」(3.0) ⇒ 被判 UPLOAD_FILE ⇒ 弹项目上传窗口，
+# 而用户要的是让 AI 读附件内容。句中带阅读动词时不再判上传（含「项目」的除外）。
+_UPLOAD_READ_INTENT = re.compile(
+    r"(解析|解读|读取|看看|看一下|看下|总结|归纳|分析一下|讲讲|讲一下|翻译|提炼)")
+
 _ACTION_META = {"UPLOAD_FILE": "上传文件", "REPORT_EXPENSE": "上报花费", "CREATE_WORKER": "创建数字员工", "APPLY_LEAVE": "请假"}
 # 疑问 / 制度类语句优先按「问答」处理：命中这些词且动作得分不强时，不判为动作意图，
 # 否则「公司费用报销制度是怎么规定的」会被误判成「要上报花费」。
@@ -202,6 +217,12 @@ def _detect_action(text: str) -> tuple[str | None, list[str]]:
         if s > best_score:
             best, best_score, best_hits = code, s, hits
     if best is None:
+        return None, []
+    # 外部投递 ≠ 项目上传（见 _UPLOAD_EXTERNAL_TARGET 的注释）。这一条必须在阈值判断之前：
+    # 否则「传到企业微信上去」这类组合命中分数够高，后面再怎么调阈值都拦不住。
+    if best == "UPLOAD_FILE" and _UPLOAD_EXTERNAL_TARGET.search(text) and "项目" not in text:
+        return None, []
+    if best == "UPLOAD_FILE" and _UPLOAD_READ_INTENT.search(text) and "项目" not in text:
         return None, []
     # 疑问/制度类语境需要更强的证据：光有裸动词「上传/上报」(单条 3.0) 不够，
     # 必须带宾语的组合命中（如「上传文件」=5.8）才判动作意图；否则「可以上传多大的文件」

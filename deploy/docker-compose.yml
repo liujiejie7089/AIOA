@@ -143,6 +143,11 @@ services:
       # ---- JWT 密钥 ----
       AIOS_JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-bytes-long}
       AIOS_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      # 连接器凭据加密钥（Java 侧 SecretCodec / aios.connector.secret-key）。
+      # ⚠️ 不透传就等于「在 .env 里改它是空转」（_check_compose_env_wiring.py 实测 FAIL），
+      #    生产会一直用 dev 占位默认值 ⇒ 连接器凭据等于明文。
+      #    与 hub 的 WECOM_CONNECTOR_KEY 是**两把不同的钥匙**（各管各的库），别互相抄。
+      AIOS_CONNECTOR_SECRET_KEY: ${AIOS_CONNECTOR_SECRET_KEY:-aios-dev-connector-secret-key-please-change}
 
       # ---- Agent / MinIO ----
       AIOS_AGENT_BASE_URL: http://agent:8000
