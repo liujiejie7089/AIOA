@@ -6544,6 +6544,12 @@ async function send(){
   let form = null;            // need_form 暂停帧：模型要结构化数据才能继续
   let cfm = null;             // need_confirm 暂停帧：模型要用户对某个动作做「确认 / 取消」二选一
   let cancelled = false;      // 用户在确认卡上点了「取消」：收口文案要说「已取消」，不能说「没生成内容」
+  /* onError 拿到的**真实原因**（后端 run.failed / error 帧）不许写进 tx：
+     收口处 tx 会被整套重渲染（text 非空 ⇒ formatAnswer(text)；text 为空 ⇒ 空输出兜底），
+     写进去必被冲掉 —— 用户从此永远看不到报错，只剩一句无信息量的提示。
+     所以只在这里记账，由收口处按「有正文 / 无正文」两种位置补出去。 */
+  let errored = false;
+  let errMsg = '';
   const h = {
     onDelta: t => {
       const tp = bubble.querySelector('.typing'); if(tp) tp.remove();
@@ -6569,7 +6575,8 @@ async function send(){
       }
     },
     onError: err => {
-      tx.textContent = '生成失败：' + (err.message || '未知错误');
+      errored = true;                 // 见 errored 声明处：真实原因交给收口处统一呈现
+      errMsg = (err && err.message) || '未知错误';
       bubble.style.color = 'var(--red)';
     },
     onClarification: p => { clar = p; },
@@ -6599,7 +6606,14 @@ async function send(){
         // 收口时若还停在等待提示（续跑没来过正文），清掉它，给 delta 让位
         const wait = bubble.querySelector('.typing');
         if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        const beforeClar = text.length;
         await API.resumeStream(state.runId, pick.value, h);   // 标量走原路
+        // 续跑完全可能「没有新增正文」（模型没再产出、或又停在不产生文本的分支）。
+        // 静默收口的观感就是「点了确认什么都没发生」—— 2026-10-31 用户现场截图即此：
+        // 卡片显示「已选择：…」之后整条气泡再无下文。必须显式说明已提交 + 无新内容。
+        if(text.length === beforeClar){
+          appendSysNote(bubble, '已提交你的选择「' + (pick.label || pick.value) + '」，本轮没有新的内容返回。');
+        }
       } else if(form){
         const fc = form.form_code;                 // 先记下 code，随后把 form 置空
         const res = await mountFormCard(bubble, form);
@@ -6636,12 +6650,26 @@ async function send(){
     }
     state.lastAnswer = text;
     if(!text){
-      tx.textContent = cancelled ? '已取消，未执行任何操作。'
-                                 : '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
+      // ⚠️ 必须嵌在 `if(!text)` 里面，不能写成 `if(!text && !errored)` ——
+      //    那样 errored 会掉进下面的 else 执行 formatAnswer('')，报错照样被冲成空。
+      if(errored){
+        tx.textContent = '生成失败：' + errMsg;
+      } else {
+        // 空输出不再只丢一句「再问一次」：按三类最常见原因给可执行提示
+        // （连接器未连接/已关闭、调用超时、该连接器没有匹配数据）。2026-10-31 用户反馈
+        // 「点了确认之后并没有返回内容」，当时界面就停在这里且没有任何原因说明。
+        tx.textContent = cancelled ? '已取消，未执行任何操作。'
+                                   : '这次没有拿到任何内容。可能是：① 连接器未连接或已关闭（到「连接器」里确认状态为「已连接」）；② 接口调用超时（稍后重试，或把问题拆小一点）；③ 该连接器没有匹配的数据（换个关键词或时间范围）。';
+      }
     }
     // 回答统一做层级化突出（标题 / 列表 / 重点 / 数字），不再只限数字员工会话：
     // 默认助手与租户专家的回答同样是长文，纯文本铺开一样难读。
-    else { bubble.classList.add('ans'); tx.innerHTML = formatAnswer(text); }
+    else {
+      bubble.classList.add('ans'); tx.innerHTML = formatAnswer(text);
+      // 正文已有、但本轮是中断收场：报错补在正文下方。不能只染个红色了事 ——
+      // 那会让人以为「回答就到这里」，而实际上是连接器/模型调用失败。
+      if(errored) appendSysNote(bubble, '本轮生成中断：' + errMsg);
+    }
     // 产出后的收口动作
     afterAnswer(bubble, text);
   }catch(e){
@@ -10688,6 +10716,8 @@ async function oaSend(){
   var form = null;            // need_form 暂停帧：与经典形态共用同一套渲染/挂载/续跑口径
   var cfm = null;             // need_confirm 暂停帧：与经典形态共用同一套渲染/挂载/续跑口径
   var cancelled = false;      // 用户在确认卡上点了「取消」：收口文案要说「已取消」
+  var errored = false;        // onError 的真实原因不写进 tx（会被收口重渲染冲掉），交给收口呈现
+  var errMsg = '';
   var handoff = null;         // worker.handoff 帧：会话内自动转交（只改当前数字人、不换会话）
   var h = {
     onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
@@ -10706,7 +10736,8 @@ async function oaSend(){
       });
     },
     onError: function(err){
-      tx.textContent = '生成失败：' + (err.message || '未知错误');
+      errored = true;           // 与经典形态同口径：只记账，位置由收口处决定
+      errMsg = (err && err.message) || '未知错误';
       tx.style.color = 'var(--red)';
     },
     onClarification: function(p){ clar = p; },
@@ -10743,7 +10774,12 @@ async function oaSend(){
         if(!pick) break;                            // 用户放弃：就地收口
         var wait = bubble.querySelector('.typing');
         if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        var beforeClar = text.length;
         await API.resumeStream(runId, pick.value, h);   // 标量走原路
+        // 与经典形态同口径：没有新增正文时必须说话，不能静默（否则用户以为按钮失灵）。
+        if(text.length === beforeClar){
+          appendSysNote(bubble, '已提交你的选择「' + (pick.label || pick.value) + '」，本轮没有新的内容返回。');
+        }
       } else if(form){
         var fc = form.form_code;                     // 先记下 code，随后把 form 置空
         var fres = await mountFormCard(bubble, form);
@@ -10775,13 +10811,22 @@ async function oaSend(){
       }
     }
     if(!text){
-      tx.textContent = cancelled ? '已取消，未执行任何操作。'
-                                 : '这一轮没有生成内容，请再问一次，或把问题说得更具体些。';
+      // 与经典形态同口径：errored 时不许被兜底文案覆盖；且必须嵌在 `if(!text)` 内
+      // （写成 `if(!text && !errored)` 会掉进 else 用 formatAnswer('') 把报错冲成空）。
+      if(errored){
+        tx.textContent = '生成失败：' + errMsg;
+      } else {
+        // 空输出要给出原因归类，不能只让用户「再问一次」。
+        tx.textContent = cancelled ? '已取消，未执行任何操作。'
+                                   : '这次没有拿到任何内容。可能是：① 连接器未连接或已关闭（到「连接器」里确认状态为「已连接」）；② 接口调用超时（稍后重试，或把问题拆小一点）；③ 该连接器没有匹配的数据（换个关键词或时间范围）。';
+      }
     }
     else{
       bubble.classList.add('ans');
       tx.innerHTML = (typeof formatAnswer === 'function' ? formatAnswer(text) : txt(text));
       answered = true;
+      // 有正文但中断收场：报错补在正文下方，别让人误以为「回答就到这里」
+      if(errored) appendSysNote(bubble, '本轮生成中断：' + errMsg);
     }
   }catch(e){
     if(stopped || (e && e.name === 'AbortError')){
