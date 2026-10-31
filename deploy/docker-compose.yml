@@ -402,11 +402,39 @@ services:
   mcp-hub:
     build:
       context: ../mcp-hub
+      # 与 agent 同一套口子：pip 源写在 .env，Dockerfile 保持干净
+      # （直连 pypi.org 实测 13 kB/s，走清华源 40~50 秒；见 Dockerfile 注释）
+      args:
+        PIP_EXTRA_ARGS: ${PIP_EXTRA_ARGS:-}
     container_name: aios-mcp-hub
     environment:
       AIOS_SERVER_BASE_URL: http://server:8080
       MCP_HUB_PORT: "8099"
       TZ: Asia/Shanghai
+      # ---- 企业微信扫码连接器（wecom_cli，docs/64）----
+      # 之前这一段整个是空的 ⇒ 容器里没有 CLI、没有密钥、授权目录也没挂，
+      # 表现就是「本地能扫码、生产扫码 404/失败」。三处都要有：
+      #  ① CLI 可执行文件：官方 wecom-cli 是**原生 ELF**（约 10MB），镜像里不带，
+      #     由宿主机目录只读挂进来（见 .env.production 的安装命令）。
+      #     runner.py 的定位顺序：AIOS_WECOM_CLI_BIN → WorkBuddy 内置包 → PATH。
+      #  ② 授权目录：一人一账号的凭据（<ROOT>/<tenant>/<user>/personal/credentials.enc），
+      #     必须挂出来，否则**容器一重建，所有人的扫码授权全丢**。
+      #  ③ 密钥与身份：WECOM_MOCK=0 时缺 WECOM_CONNECTOR_KEY 会让 hub **启动失败**
+      #     （wecom/crypto.py fail-fast，刻意的：绝不静默用临时密钥）。
+      #     故默认给 1 保底「起得来」，生产要真实身份再显式设 0 并配密钥。
+      AIOS_WECOM_CLI_BIN: ${AIOS_WECOM_CLI_BIN:-/opt/wecom-cli/wecom-cli}
+      AIOS_WECOM_CLI_ROOT: /data/wecom-cli
+      AIOS_WECOM_CLI_TIMEOUT: ${AIOS_WECOM_CLI_TIMEOUT:-30}
+      WECOM_MOCK: ${WECOM_MOCK:-1}
+      WECOM_CONNECTOR_KEY: ${WECOM_CONNECTOR_KEY:-}
+      # hub → server 的内部回写令牌（连接态同步），必须与 server 的 aios.service-jwt.secret 一致
+      AIOS_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+    volumes:
+      # 宿主目录不存在时 Docker 会**静默建空目录** ⇒ 表现为「wecom-cli 未安装」，不会报错。
+      # 目录与权限见 .env.production「5c-2 · 企业微信扫码连接器」段。
+      - ${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}:/opt/wecom-cli:ro
+      # hub 以 uid 10001 运行 ⇒ 宿主目录需 chown 10001，否则扫码时写凭据失败
+      - ${AIOS_WECOM_CLI_ROOT_DIR:-../data/wecom-cli}:/data/wecom-cli
     expose:
       - "8099"
     # 与 agent 同理：hub 自身无鉴权、只转发调用方 token，绑 127.0.0.1 供本机排查即可。

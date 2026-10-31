@@ -1384,3 +1384,32 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     - ⚠️ Playwright 坑：`page.evaluate(fn, [a,b])` 是**一个**参数（数组），
       不是两个参数 ⇒ 打桩函数里 `status` 拿到 `["CONNECTED","刘洋"]`，
       界面显示「未连接」而排查半天。传对象（`{status, label}`）最稳。
+43. **生产连接器用不了 = mcp-hub 镜像旧 + docker 档从未支持 wecom-cli**（2026-10-31 线上）：
+    - 症状：① 企微扫码弹层「企业微信连接器返回异常（HTTP 404）」；② 问邮箱，模型答
+      「连接器服务暂时不可用，我无法查询您的邮件」（那是 `agent/aios_ai/graph/nodes.py:68`
+      的**兜底话术**，说明 agent 手里根本没有 mcp__* 工具，不是模型在胡说）。
+    - **定位 404 的关键技巧（不看日志也能判）**：Java `WeComCliGateway.renderReason()` 在
+      hub 响应**没有 `message` 字段**时才拼出「返回异常（HTTP <code>）」。
+      而 hub 的两层 404 形态不同：
+        · 最外层 `_send_json(404, {"ok":false,"error":"not found"})` —— 无 message
+          ⇒ Java 显示「返回异常（HTTP 404）」（**前缀都没匹配上 = 镜像太旧**）
+        · `wecom_cli/admin_api` 内部未匹配 ⇒ `{"code":404,"message":"未知路由：POST …"}`
+          ⇒ Java 会把「未知路由：…」原样显示（**前缀匹配了但路径错**）
+      ⇒ 看到「返回异常（HTTP 404）」就等于「hub 不认识 /api/v1/wecom_cli 这个前缀」。
+    - 根因：生产只重建了 `server`，`mcp-hub` / `agent` 还是旧镜像。`/api/v1/wecom_cli/*`
+      与 `/api/v1/connectors/*` 是 2026-10-30（docs/64）才加的路由。
+      ⚠️ **给部署命令时必须以改动落点反推要 build 哪些服务**：
+      `server/**`、`user-client/**` → server；`agent/**` → agent；`mcp-hub/**` → mcp-hub。
+      只 `--build server` 会让连接器整条链停在旧 hub 上（本次就是这么来的）。
+    - 更深一层缺口（重建后仍会踩）：**docker 部署档从未支持 wecom_cli 连接器**
+      · `mcp-hub/Dockerfile` 只有 python + requirements，**没装 `wecom-cli` 二进制**
+        （`wecom_cli/runner.py` 靠 `AIOS_WECOM_CLI_BIN` / `~/.workbuddy/binaries/...` / PATH 找）；
+      · compose 的 `mcp-hub` 段没透传 `WECOM_MOCK` / `WECOM_CONNECTOR_KEY` /
+        `AIOS_WECOM_CLI_ROOT` / `AIOS_WECOM_CLI_BIN`；
+      · 没挂凭据目录卷 ⇒ 容器重建即丢授权（`<ROOT>/<tenant>/<user>/personal/credentials.enc`）。
+      本地能跑是因为 `start-all.sh` 用了宿主机的 wecom-cli 与 `data/wecom-cli` 目录 ——
+      「本地正常、生产不行」的经典来源。
+    - 判据命令（在服务器上跑，只读）：
+      `docker compose images | grep aios-` 对比 `git log -1 --date=iso`；
+      `docker compose exec server sh -c 'curl -s -m5 -X POST http://mcp-hub:8099/api/v1/wecom_cli/qr'`
+      ⇒ 回 `{"ok":false,"error":"not found"}` 即旧镜像。

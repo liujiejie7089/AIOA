@@ -12,7 +12,15 @@ WORKDIR /app
 
 # 先装依赖再加代码，改代码不会打掉依赖层
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# ★ 构建期依赖源**必须可覆盖**：国内服务器直连 pypi.org 实测 13 kB/s（一个 4.8MB 的
+#   cryptography 轮子跑了 1471 秒），而走清华源同样的依赖只要 40~50 秒。
+#   与 deploy/Dockerfile.agent 完全同一套口子：镜像源写在 .env / --build-arg 里，
+#   **本文件保持干净**（手改这里会让生产机 git pull 永远被未提交改动挡住）。
+#     在 deploy/.env 里设 PIP_EXTRA_ARGS，或临时：
+#     docker compose build --build-arg PIP_EXTRA_ARGS="-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn" mcp-hub
+#   留空 = 走上游默认源，行为与改造前完全一致。
+ARG PIP_EXTRA_ARGS=
+RUN pip install ${PIP_EXTRA_ARGS} --no-cache-dir -r requirements.txt
 
 COPY run.py ./
 COPY mcp_hub ./mcp_hub
