@@ -26,7 +26,13 @@ COPY run.py ./
 COPY mcp_hub ./mcp_hub
 
 # 非 root：本进程只做 HTTP 转发，不需要任何写权限
-RUN useradd -m -u 10001 hub
+# ⚠️ 唯一例外是连接器凭据库：`WECOM_DB_PATH` 默认落在 `/app/data/wecom.db`（SQLite + WAL）。
+#    它是 uid 10001 进程要**写**的目录，必须按 hub 的属主建好 —— 否则
+#    `wecom/store.py::init()` 直接 PermissionError，lifespan 中断，
+#    **所有** `/mcp/<code>` 子服务都起不来（2026-10-31 生产实测：连接器全线不可用）。
+#    配合 compose 的命名卷 `mcphubdata:/app/data`：命名卷首次创建时按**镜像内**属主初始化，
+#    所以这里的 chown 决定了卷里目录的属主（bind mount 不会继承，那种情况要宿主 chown 10001）。
+RUN useradd -m -u 10001 hub && mkdir -p /app/data && chown -R hub:hub /app/data
 USER hub
 
 EXPOSE 8099

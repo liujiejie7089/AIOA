@@ -435,6 +435,14 @@ services:
       - ${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}:/opt/wecom-cli:ro
       # hub 以 uid 10001 运行 ⇒ 宿主目录需 chown 10001，否则扫码时写凭据失败
       - ${AIOS_WECOM_CLI_ROOT_DIR:-../data/wecom-cli}:/data/wecom-cli
+      # 连接器凭据库（/app/data/wecom.db，SQLite + WAL；wecom 与通用连接器共用一份）。
+      # **必须用命名卷，不能用 bind mount**：
+      #   · 不挂 ⇒ 容器一重建，所有人的连接器授权全丢；
+      #   · bind mount ⇒ Docker 以 root 建宿主目录，uid 10001 写不进去
+      #     （2026-10-31 生产实测：store.init() PermissionError '/app/data'
+      #      ⇒ lifespan 中断 ⇒ **所有** /mcp 子服务起不来 ⇒ 连接器全线不可用）；
+      #   · 命名卷首次创建时按**镜像内**属主初始化，Dockerfile 已把 /app/data chown 给 hub。
+      - mcphubdata:/app/data
     expose:
       - "8099"
     # 与 agent 同理：hub 自身无鉴权、只转发调用方 token，绑 127.0.0.1 供本机排查即可。
@@ -675,6 +683,9 @@ services:
 volumes:
   # server 上传文件（/app/uploads）。不声明会随容器重建丢失。
   serveruploads:
+  # mcp-hub 的连接器凭据库（/app/data/wecom.db）。命名卷而不是 bind mount 的理由见
+  # mcp-hub 服务的 volumes 注释（bind mount 会被 Docker 建成 root 属主，uid 10001 写不进去）。
+  mcphubdata:
   # 仅 profile=minio 时用（默认不起）
   miniodata:
   hfcache:

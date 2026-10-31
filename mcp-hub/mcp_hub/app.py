@@ -29,6 +29,11 @@ from .wecom import store as wecom_store
 
 logger = logging.getLogger("mcp_hub")
 
+# 连接器共享底座（SQLite + 主密钥）初始化失败的原因；None = 正常。
+# 只为观测而存在：失败时进程仍起来（纯代理连接器还能用），但 /health 转 503，
+# 让 `docker compose ps` / HEALTHCHECK 立刻看得见，而不是「健康着却什么都不可用」。
+_INIT_ERROR: "str | None" = None
+
 # 每个内置服务器一个 FastMCP 实例，及其 streamable-http ASGI app（路由在 "/"）
 APPS = {code: mcp.streamable_http_app() for code, mcp in builtin.SERVERS.items()}
 
@@ -87,21 +92,30 @@ _CHILDREN = {code: _ChildLife(code, app) for code, app in APPS.items()}
 
 
 async def _lifespan(receive, send):
+    global _INIT_ERROR
     while True:
         message = await receive()
         if message["type"] == "lifespan.startup":
-            # 连接器共享底座先就绪（生产模式缺密钥在此 fail fast，见 wecom/crypto.py）
-            try:
-                wecom_store.init()
-            except Exception as e:  # noqa: BLE001
-                logger.error("连接器存储初始化失败：%s", e)
-                raise
-            # 通用连接器凭证库与它共用同一 SQLite 文件与同一把密钥
-            try:
-                connector_vault.init()
-            except Exception as e:  # noqa: BLE001
-                logger.error("连接器凭证库初始化失败：%s", e)
-                raise
+            # 连接器共享底座（SQLite + 主密钥）。
+            # ★ 失败**不再中断启动**：只有 wecom_cli 依赖它，qq_mail 只是把调用转给 Java。
+            #   2026-10-31 生产事故的直接成因就是这里的 `raise`：真正的错只有一行
+            #   `Permission denied: '/app/data'`，异常抛出后 uvicorn 把它当成
+            #   「ASGI 'lifespan' protocol appears unsupported.」**照常开始服务**，
+            #   于是所有 /mcp/<code> 都落到从未启动的子 app 上 —— 现象是「连接器全线不可用」，
+            #   而根因被埋在一行 ERROR 里。现在改成：记下来、继续起子服务、把原因透出去。
+            errs = []
+            for name, fn in (("连接器存储", wecom_store.init),
+                             ("连接器凭证库", connector_vault.init)):
+                try:
+                    fn()
+                except Exception as e:  # noqa: BLE001
+                    errs.append(f"{name}初始化失败：{type(e).__name__}: {e}")
+                    logger.exception(
+                        "%s初始化失败 —— 依赖它的连接器（wecom_cli）会在调用时报错，"
+                        "不依赖它的（qq_mail 等纯代理连接器）不受影响；/health 会转为 503",
+                        name)
+            if errs:
+                _INIT_ERROR = "；".join(errs)
             for child in _CHILDREN.values():
                 try:
                     await child.start()
@@ -138,6 +152,17 @@ async def _send_json(send, status: int, payload: dict):
 
 
 async def _health(send):
+    # 底座起不来时**不要**回 200：HEALTHCHECK 用的是 urlopen，非 2xx 即失败 ⇒
+    # `docker compose ps` 直接显示 unhealthy。否则会出现「健康但连接器全废」
+    # （2026-10-31 生产就是这种状态，白白多排查了一轮）。
+    if _INIT_ERROR:
+        await _send_json(send, 503, {
+            "ok": False,
+            "error": "init_failed",
+            "message": _INIT_ERROR,
+            "servers": builtin.SERVER_INFO,
+        })
+        return
     await _send_json(send, 200, {"ok": True, "servers": builtin.SERVER_INFO})
 
 
