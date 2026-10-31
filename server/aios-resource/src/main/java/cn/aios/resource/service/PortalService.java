@@ -1,5 +1,6 @@
 package cn.aios.resource.service;
 
+import cn.aios.common.exception.BizException;
 import cn.aios.resource.entity.PortalAnnouncement;
 import cn.aios.resource.entity.PortalMeeting;
 import cn.aios.resource.entity.PortalMeetingAttendee;
@@ -196,7 +197,7 @@ public class PortalService {
                 // 换下一个候选格式
             }
         }
-        throw new IllegalArgumentException("时间格式不合法（" + field + "）：" + s
+        throw BizException.badRequest("时间格式不合法（" + field + "）：" + s
                 + "，应为 yyyy-MM-dd HH:mm:ss 或 yyyy-MM-ddTHH:mm");
     }
 
@@ -208,10 +209,10 @@ public class PortalService {
     private static String requireText(Object raw, String field, int max) {
         String s = raw == null ? null : String.valueOf(raw).trim();
         if (s == null || s.isEmpty()) {
-            throw new IllegalArgumentException(field + "不能为空");
+            throw BizException.badRequest(field + "不能为空");
         }
         if (s.length() > max) {
-            throw new IllegalArgumentException(field + "过长（最多 " + max + " 字）");
+            throw BizException.badRequest(field + "过长（最多 " + max + " 字）");
         }
         return s;
     }
@@ -223,7 +224,7 @@ public class PortalService {
 
     private static void checkOrder(LocalDateTime start, LocalDateTime end) {
         if (start != null && end != null && end.isBefore(start)) {
-            throw new IllegalArgumentException("结束时间不能早于开始时间");
+            throw BizException.badRequest("结束时间不能早于开始时间");
         }
     }
 
@@ -291,7 +292,7 @@ public class PortalService {
         if (row == null || row.getDeletedAt() != null
                 || !tenantScope(tenantId).contains(row.getTenantId())
                 || !java.util.Objects.equals(row.getUserId(), userId)) {
-            throw new cn.aios.common.exception.BizException(404, "日程不存在或无权操作");
+            throw BizException.notFound("日程不存在或无权操作");
         }
         return row;
     }
@@ -321,7 +322,7 @@ public class PortalService {
         if (start != null && end != null && m.getLocation() != null && !m.getLocation().isBlank()) {
             PortalMeeting clash = findRoomClash(m.getTenantId(), m.getLocation(), start, end, null);
             if (clash != null) {
-                throw new IllegalArgumentException("该时间段「" + m.getLocation()
+                throw BizException.badRequest("该时间段「" + m.getLocation()
                         + "」已被占用：#" + clash.getId() + " " + clash.getTitle()
                         + "（" + fmt(clash.getStartAt()) + " ~ " + fmt(clash.getEndAt()) + "）");
             }
@@ -371,14 +372,14 @@ public class PortalService {
         String status = INVITE_ACCEPTED.equalsIgnoreCase(decision) ? INVITE_ACCEPTED
                 : INVITE_DECLINED.equalsIgnoreCase(decision) ? INVITE_DECLINED : null;
         if (status == null) {
-            throw new IllegalArgumentException("应答值只能是 ACCEPTED 或 DECLINED");
+            throw BizException.badRequest("应答值只能是 ACCEPTED 或 DECLINED");
         }
         PortalMeeting m = meetingMapper.selectById(id);
         if (m == null || !tenantScope(tenantId).contains(m.getTenantId())) {
-            throw new cn.aios.common.exception.BizException(404, "会议不存在或无权访问");
+            throw BizException.notFound("会议不存在或无权访问");
         }
         if (STATUS_CANCELED.equals(m.getStatus())) {
-            throw new IllegalArgumentException("会议已取消，无法应答");
+            throw BizException.badRequest("会议已取消，无法应答");
         }
         long updated = attendeeMapper.update(null,
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<PortalMeetingAttendee>()
@@ -387,7 +388,7 @@ public class PortalService {
                         .set(PortalMeetingAttendee::getInviteStatus, status)
                         .set(PortalMeetingAttendee::getUpdatedAt, LocalDateTime.now()));
         if (updated == 0) {
-            throw new cn.aios.common.exception.BizException(404, "你不在该会议的参会人名单中");
+            throw BizException.notFound("你不在该会议的参会人名单中");
         }
     }
 
@@ -396,7 +397,7 @@ public class PortalService {
         if (m == null || m.getDeletedAt() != null
                 || !tenantScope(tenantId).contains(m.getTenantId())
                 || !java.util.Objects.equals(m.getOrganizerId(), userId)) {
-            throw new cn.aios.common.exception.BizException(404, "会议不存在或只有组织者可以取消");
+            throw BizException.notFound("会议不存在或只有组织者可以取消");
         }
         return m;
     }

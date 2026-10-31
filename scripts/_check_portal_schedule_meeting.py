@@ -18,6 +18,9 @@
   P8  H5：API 七个新入口齐全、面板改读真实数据、loadPortalAgenda 进了数据加载链
   P9  H5 失败可见：拉不到要显示原因，不能把「没拉到」显示成「今天没安排」
   P10 负向对照：把关键字面量去掉后判据必须变红（证明不是恒真）
+  P11 业务异常语义：业务校验失败必须抛 BizException.badRequest（信封 code=400），
+      **不得**用 IllegalArgumentException —— 全局兜底会把它包成 500「服务内部错误」，
+      客户端看到的是「后端崩了」而不是「标题为空」这类可读原因（2026-10-31 实测踩到）
 
 跑法：C:/Users/刘尖尖/.workbuddy/binaries/python/envs/default/Scripts/python.exe scripts/_check_portal_schedule_meeting.py
 """
@@ -114,7 +117,7 @@ def main():
         'ownSchedule(' in svc and svc.count('ownSchedule(') >= 3)
     chk('P4 会议取消先查组织者（ownMeeting）', 'ownMeeting(' in svc)
     chk('P4 越权/不存在一律 404（不泄露他人数据存在与否）',
-        svc.count('BizException(404') >= 3, 'count=%d' % svc.count('BizException(404'))
+        svc.count('BizException.notFound(') >= 4, 'count=%d' % svc.count('BizException.notFound('))
 
     # ---------------- P5 逻辑删除 ----------------
     chk('P5 日程删除用 LambdaUpdateWrapper.set(deletedAt)',
@@ -142,6 +145,21 @@ def main():
         'PortalMeetingAttendee::getInviteStatus' in svc
         and 'set(PortalMeetingAttendee::getInviteStatus, INVITE_DECLINED)' in svc)
     chk('P7 已取消会议不可应答', '会议已取消，无法应答' in svc)
+
+    # ---------------- P11 业务异常语义 ----------------
+    # 背景：GlobalExceptionHandler 只把 BizException 与 Spring 参数类异常映射成 4xx，
+    # 其余一律落到 Exception 兜底 ⇒ 500「服务内部错误」。若在服务层用
+    # IllegalArgumentException 表达「标题为空 / 时间倒序 / 房间冲突」这类业务校验失败，
+    # 客户端看到的就是 500（像后端崩了），而不是可读的业务错误。
+    # 铁律：业务校验失败一律 BizException.badRequest（信封 code=400，HTTP 200）。
+    chk('P11 业务校验失败用 BizException.badRequest（不落 500）',
+        svc.count('BizException.badRequest(') >= 5,
+        'count=%d' % svc.count('BizException.badRequest('))
+    chk('P11 服务层不抛 IllegalArgumentException（会被兜底成 500）',
+        'throw new IllegalArgumentException' not in svc,
+        '出现次数=%d' % svc.count('throw new IllegalArgumentException'))
+    chk('P11 已 import BizException',
+        'import cn.aios.common.exception.BizException;' in svc)
 
     # ---------------- P8/P9 前端 ----------------
     apis = ['portalSchedulesToday', 'portalSchedules', 'portalMeetings', 'portalScheduleCreate',
@@ -171,6 +189,10 @@ def main():
         '@PostMapping("/meetings")' not in stripped2)
     stripped3 = h5.replace('arr(S.schedules)', 'arr([])')
     chk('P10 负向：去掉真实日程源后 P8 应失败', 'arr(S.schedules)' not in stripped3)
+    stripped4 = svc.replace('BizException.badRequest(', 'new IllegalArgumentException(')
+    chk('P10 负向：把 badRequest 换回 IllegalArgumentException 后 P11 应失败',
+        'throw new IllegalArgumentException' in stripped4
+        and stripped4.count('BizException.badRequest(') < 5)
 
     print('\n通过：%d / 失败：%d' % (oks, len(fails)))
     if fails:
