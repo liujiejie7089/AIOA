@@ -98,17 +98,25 @@ async def _stream(compiled, stream_input, config: dict | None, seq_start: int,
     except GuardError:
         raise  # 交由 app/main.py 的 event_stream 统一转成 error + run.failed
     except UpstreamError as exc:  # 上游非 200：可重试的上游错误
+        # 原始 JSON（含 request_id）只进日志：它是给运维查单号用的，
+        # 甩到界面上用户既看不懂也不知道怎么办（2026-10-31 用户现场截图：
+        # 「生成失败：{"code":"MODEL_UPSTREAM_ERROR"...request_id...}」）。
+        logger.warning("run %s 上游模型失败（重试已耗尽）：%s", run_id, exc, exc_info=False)
         yield SseEvent(seq=seq, type="error",
-                       data={"code": "MODEL_UPSTREAM_ERROR", "message": str(exc)[:200],
-                             "retryable": True})
+                       data={"code": "MODEL_UPSTREAM_ERROR", "message": exc.user_message,
+                             "detail": str(exc)[:200], "retryable": exc.retryable})
         seq += 1
         yield SseEvent(seq=seq, type="run.failed",
                        data={"reason": "upstream error", "error_code": "MODEL_UPSTREAM_ERROR"})
     except Exception as exc:  # 网络/解析等：流内异常按 error + run.failed 上报，不中断服务
         logger.exception("graph run %s failed", run_id)
+        # 与 UpstreamError 同口径：界面只给一句话 + 异常类型（够定位、不吓人），
+        # 完整信息进日志与 detail 字段。
         yield SseEvent(seq=seq, type="error",
-                       data={"code": "MODEL_STREAM_ERROR", "message": str(exc)[:200],
-                             "retryable": True})
+                       data={"code": "MODEL_STREAM_ERROR",
+                             "message": "生成过程中出现异常（%s），可重试一次或稍后再试。"
+                                        % type(exc).__name__,
+                             "detail": str(exc)[:200], "retryable": True})
         seq += 1
         yield SseEvent(seq=seq, type="run.failed",
                        data={"reason": str(exc)[:200], "error_code": "MODEL_STREAM_ERROR"})
