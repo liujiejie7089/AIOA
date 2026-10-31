@@ -11,7 +11,7 @@
 | 功能域要点（H5/OA/表单三道闸/HITL/多租户） | `topics/features.md` |
 | 结构·打包·起服务·端口·账号·env·Flyway | `topics/runtime-env.md` |
 | 编码·排查（**已修坑勿回退**；禁删清单） | `topics/pitfalls.md` |
-| 跑套件·验收·收口（项数与前置） | `topics/e2e-suites.md` |
+| 跑套件·验收·收口（项数/前置） | `topics/e2e-suites.md` |
 | 接口·登录·角色·权限链 | `topics/api-permissions.md` |
 | 向量库 / Gitee / 模型 / 部署 | `topics/vector-store-milvus.md` · `repo-provider-gitea.md` · `model-config.md` · `production-deploy.md` |
 | 缺口 / git / 进度 | `topics/known-gaps.md` · `topics/git-remote.md` · `docs/28 §6` |
