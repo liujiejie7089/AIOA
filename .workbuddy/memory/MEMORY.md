@@ -16,7 +16,7 @@
 | 缺口/git/进度 | `topics/known-gaps.md` · `topics/git-remote.md` · `docs/28 §6` |
 | 连接器接入 MCP·企微扫码连接态 | `docs/59 §10` · hub :8099 · V97 三表 · `docs/64 §九` |
 | 能力层/日程会议 | `aios_ai/capabilities/` · `docs/65` · `_e2e_portal…`(24) |
-| **对话级开关/UI 语义/顶部渐隐** | `2026-10-31.md` 第七轮 · pitfalls 33–39 |
+| **对话级开关/UI 语义/顶部渐隐** | `2026-10-31.md` 第七轮 · pitfalls 33–40 |
 
 ## 最常踩的五条（全文见 iron-rules）
 
@@ -28,7 +28,8 @@
 
 ## 新增坑（全文见 pitfalls，引用只报编号）
 
-- **29 / 30**：校验失败 **≠ HTTP 400** —— 本仓约定 **HTTP 200 + 信封 `code=400`**（只有 401/403/404 映射状态码）⇒ 断言查 `body.code`。Java 侧禁用 `IllegalArgumentException`（落 500），用 `BizException.badRequest`。
+- **29 / 30**：校验失败 **≠ HTTP 400** —— 约定 **HTTP 200 + 信封 `code=400`**（仅 401/403/404 映射状态码）⇒ 断言查 `body.code`。Java 侧禁 `IllegalArgumentException`（落 500），用 `BizException.badRequest`。
 - **31 / 32**：起后端加 `-Dspring.flyway.validate-on-migrate=false`；e2e 期望值按真实 uid 动态算。
-- **33–39**：对话级开关走「前端集合→顶层字段→Java context 快照→agent 顶层字段」（同 `kb_on`）；`.cbtn` 必须写全 `flex:0 0 auto`；`--hd` 渐隐在 scroll 监听器里、滚动容器是 `#oaDockList`；用户报的计数要去接口核来源；e2e 用带 pymysql 的解释器。
-- 其余：哨兵「快照→复位→跑→恢复」；工具描述决定调不调、凭据从**依赖日志**漏；`mcp_server_tool` 是 trust 快照 ⇒ 扩工具重跑 trust、清快照（V104）；**mock 掩盖真机差异**，H5 生效文件 `user-client/index.html`；**`#oaRoot` 自带 `.oa`** ⇒ 别写 `.oa #oaRoot.xxx`；**`task.completed` 必带 `tool`**；**模型不知「今天」** ⇒ 每轮注入时间；**个人数据禁编**、**原文不得外发**。
+- **33–39**：对话级开关同 `kb_on` 链路（前端集合→顶层字段→Java context 快照→agent 顶层字段）；`.cbtn` 必须写全 `flex:0 0 auto`；`--hd` 渐隐在 scroll 监听器里、滚动容器是 `#oaDockList`；用户报的计数要去接口核来源；e2e 用带 pymysql 的解释器。
+- **40**：中文提交信息**不能用 `-m "中文"`**（argv 编码 ⇒ 汉字成 U+FFFD，push 不报错）⇒ 用 heredoc 或 `-F 文件`；改已推送信息先比 `^{tree}` 再 `--force-with-lease`。
+- 其余散项（全文见 pitfalls）：哨兵快照复位 · 工具描述/依赖日志 · trust 快照 V104 · mock 掩盖真机差异 · H5 生效文件 `user-client/index.html` · `#oaRoot` 自带 `.oa` · `task.completed` 带 `tool` · 模型不知「今天」 · 禁编禁外发。

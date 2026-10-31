@@ -1326,3 +1326,12 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
 39. **跑 e2e 要用带 pymysql 的解释器**（`agent/.venv` 或 workbuddy envs/default）：
     系统 python 没有 ⇒ 脚本里「回库核对」的断言被**静默跳过**（只降级不算失败，
     但也不代表通过 —— 看输出里的「数据库不可达」提示，别误读成全绿）。
+40. **中文提交信息必须用 `-F 文件` 或 heredoc，不能用 `-m "中文"`**：
+    bash 的 `-m "…中文…"` 走 argv 编码转换（Git Bash on Windows 的 codepage）⇒
+    个别汉字被打成 **U+FFFD 替换字符**（实测「不」→ `��`，提交信息里静默损坏，push 不报错）。
+    两种可靠写法：
+    - `git commit -m "$(cat <<'EOF' … EOF\n)"`（heredoc 走管道，不经 argv）；
+    - `Write` 工具落一个 UTF-8 临时文件到 `.git/`，再 `git commit -F .git/XXX.txt`，用完删掉。
+    **改已推送的提交信息**：`git commit --amend -F 文件` → 推送前必须先
+    `git rev-parse <old>^{tree} <new>^{tree}` 比对 tree 相同（证明只改了信息没改内容），
+    再用 `git push --force-with-lease=refs/heads/main:<oldSHA> origin main`（带 lease 防覆盖他人提交）。
