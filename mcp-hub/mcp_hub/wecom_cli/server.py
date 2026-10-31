@@ -24,7 +24,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from ..transport import security_settings
 from . import auth as cli_auth
-from . import catalog, identity, profiles, runner
+from . import argv, catalog, identity, profiles, runner
 
 logger = logging.getLogger("mcp_hub.wecom_cli")
 
@@ -41,6 +41,23 @@ def _ok(data: Any) -> CallToolResult:
 
 def _err(msg: str) -> CallToolResult:
     return CallToolResult(isError=True, content=[TextContent(type="text", text=msg)])
+
+
+# 日志里要打码的入参：`chat_id` 是官方框架加密出来的句柄，不该原样落日志。
+_SENSITIVE_ARG = frozenset({"chat_id"})
+
+
+def _mask(kwargs: dict) -> str:
+    """把工具入参压成一行可安全落日志的字符串（长值截断、敏感值打码）。"""
+    out: dict[str, Any] = {}
+    for k, v in (kwargs or {}).items():
+        if k in _SENSITIVE_ARG and isinstance(v, str):
+            out[k] = (v[:6] + "…") if len(v) > 8 else "***"
+        elif isinstance(v, str) and len(v) > 60:
+            out[k] = v[:60] + "…"
+        else:
+            out[k] = v
+    return json.dumps(out, ensure_ascii=False, default=str)
 
 
 # ---------- 小工具 ----------
@@ -97,7 +114,7 @@ async def _exec_contact_search(ctx: Context, keywords: str = "", **kw) -> CallTo
         return _err("keywords 不能为空：请给出要搜索的姓名或拼音")
     try:
         _, d = await _profile(ctx)
-        data = await runner.run(["contact", "users", "search", "--keywords", *kws], d, timeout=25)
+        data = await runner.run(argv.contact_search(keywords), d, timeout=25)
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as e:
         return _err(str(e))
     rows = _first_list(data, "users", "user_list", "list")
@@ -123,7 +140,7 @@ async def _exec_recent_sessions(ctx: Context, days: int = 7, **kw) -> CallToolRe
     b, e = _since(days)
     try:
         _, d = await _profile(ctx)
-        data = await runner.run(["chat", "groups", "list", "--begin-time", b, "--end-time", e], d, timeout=25)
+        data = await runner.run(argv.recent_sessions(b, e), d, timeout=25)
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as e:
         return _err(str(e))
     rows = _first_list(data, "chats", "groups", "list")
@@ -155,9 +172,7 @@ async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 1,
     b, e = _since(days)
     try:
         _, d = await _profile(ctx)
-        data = await runner.run(
-            ["chat", "messages", "list", "--chat-id", chat_id.strip(),
-             "--begin-time", b, "--end-time", e], d, timeout=25)
+        data = await runner.run(argv.session_messages(chat_id.strip(), b, e), d, timeout=25)
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as e:
         return _err(str(e))
     rows = _first_list(data, "messages", "msg_list", "list")
@@ -178,13 +193,11 @@ async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 1,
 async def _exec_mail_search(ctx: Context, keywords: str = "", days: int = 7, limit: int = 10,
                             onlyUnread: bool = False, **kw) -> CallToolResult:
     b, e = _since(days)
-    args = ["mail", "search", "--begin-time", b, "--end-time", e,
-            "--limit", str(max(1, min(int(limit or 10), 30)))]
-    kws = _kw_list(keywords)
-    if kws:
-        args += ["--keywords", *kws]
-    if onlyUnread:
-        args += ["--only-unread", "true"]
+    # ★ 参数向量一律走 argv.py（纯函数、有哨兵核对）：
+    #   2026-10-31 生产事故是这里内联拼成 `["--only-unread", "true"]`，
+    #   而该 flag 是**布尔开关不带值** ⇒ CLI 回 `error: unexpected argument 'true' found`
+    #   ⇒ 模型对用户说「参数错误」。只有问「未读」才会触发，所以极其像「模型不会用工具」。
+    args = argv.mail_search(b, e, keywords=keywords, limit=limit, only_unread=onlyUnread)
     try:
         _, d = await _profile(ctx)
         data = await runner.run(args, d, timeout=30)
@@ -246,7 +259,21 @@ def _make_tool_fn(tool_name: str, props: list[tuple[str, type, Any]]):
     fn_impl = _EXEC[tool_name]
 
     async def _fn(ctx: Context, **kwargs):
-        return await fn_impl(ctx, **kwargs)
+        # ★ 工具失败必须**进日志**：模型只会对用户说一句「参数错误」，
+        #   而真实原因是 CLI 的原话（例如 `error: unexpected argument 'true' found`）。
+        #   2026-10-31 那次事故就是没有这行 —— 只能靠猜，猜错了方向就跑到「模型不会用工具」上。
+        res = await fn_impl(ctx, **kwargs)
+        if getattr(res, "isError", False):
+            text = ""
+            try:
+                text = res.content[0].text if res.content else ""
+            except Exception:                                   # noqa: BLE001
+                pass
+            logger.warning("wecom_cli.%s 失败 args=%s err=%s",
+                           tool_name, _mask(kwargs), (text or "")[:300])
+        else:
+            logger.debug("wecom_cli.%s ok args=%s", tool_name, _mask(kwargs))
+        return res
 
     params = [inspect.Parameter("ctx", inspect.Parameter.KEYWORD_ONLY, annotation=Context)]
     for pname, ptype, default in props:
