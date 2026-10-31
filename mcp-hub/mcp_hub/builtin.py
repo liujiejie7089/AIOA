@@ -25,6 +25,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from .connectors import registry as connector_registry
+from .transport import security_settings
 
 logger = logging.getLogger("mcp_hub")
 
@@ -151,7 +152,9 @@ def build_servers() -> "dict[str, FastMCP]":
                 f"连接器 {code} 既无原生实现，specs.BUILTIN_SERVERS 里也没有工具目录；"
                 f"请在 specs.py 补齐工具声明，或为其提供 server_factory"
             )
-        mcp = FastMCP(code, streamable_http_path="/")
+        # transport_security 必须显式传：否则 FastMCP 会装「只信 localhost」的白名单，
+        # 生产里 agent 用 Host: mcp-hub:8099 访问会直接被 421 挡在最外层（见 transport.py）。
+        mcp = FastMCP(code, streamable_http_path="/", transport_security=security_settings())
         for tool in tool_list:
             name = tool["name"]
             fn = _make_tool_fn(

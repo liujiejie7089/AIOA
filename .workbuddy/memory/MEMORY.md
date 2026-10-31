@@ -16,7 +16,7 @@
 | 缺口/git/进度 | `topics/known-gaps.md` · `topics/git-remote.md` · `docs/28 §6` |
 | 连接器接入 MCP·企微扫码连接态 | `docs/59 §10` · hub :8099 · V97 三表 · `docs/64 §九` |
 | 能力层/日程会议 | `aios_ai/capabilities/` · `docs/65` · `_e2e_portal…`(24) |
-| **对话级开关/遮罩渐隐/连接器开关** | `2026-10-31.md` 第七~九轮 · pitfalls 33–43 |
+| **对话级开关/遮罩渐隐/连接器开关** | `2026-10-31.md` 第七~九轮 · pitfalls 33–45 |
 
 ## 最常踩的五条（全文见 iron-rules）
 

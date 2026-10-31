@@ -22,6 +22,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
+from ..transport import security_settings
 from . import auth as cli_auth
 from . import catalog, identity, profiles, runner
 
@@ -262,7 +263,9 @@ def _make_tool_fn(tool_name: str, props: list[tuple[str, type, Any]]):
 
 def build_server() -> FastMCP:
     _assert_params_in_sync()
-    mcp = FastMCP(SERVER_CODE, streamable_http_path="/")
+    # 与 builtin.py 同一理由：不显式传，FastMCP 会装「只信 localhost」的 Host 白名单，
+    # 生产里 Host: mcp-hub:8099 会被 421 挡掉（见 mcp_hub/transport.py）。
+    mcp = FastMCP(SERVER_CODE, streamable_http_path="/", transport_security=security_settings())
     for tool in TOOLS:
         name = tool["name"]
         mcp.add_tool(

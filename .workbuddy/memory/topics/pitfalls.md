@@ -1413,3 +1413,40 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
       `docker compose images | grep aios-` 对比 `git log -1 --date=iso`；
       `docker compose exec server sh -c 'curl -s -m5 -X POST http://mcp-hub:8099/api/v1/wecom_cli/qr'`
       ⇒ 回 `{"ok":false,"error":"not found"}` 即旧镜像。
+
+44. **对不可变列表就地变更 ⇒ `UnsupportedOperationException`（本地永远复现不出来）**
+    - 2026-10-31 生产：`GET /api/v1/portal/meetings?scope=invited` 稳定 500，
+      栈是 `java.util.ImmutableCollections$AbstractImmutableList.sort` →
+      `PortalService.listMeetings`。
+    - 根因一行：`mids.isEmpty() ? List.of() : meetingMapper.selectBatchIds(mids)`
+      —— **空分支 `List.of()` 不可变**，紧接着无条件 `sort()`。用户一条会议邀请都没有时必现；
+      本地 admin 有邀请数据，走 `selectBatchIds`（MyBatis 给的是可变 `ArrayList`）⇒ 200。
+      **「本地过、生产不过」的又一典型来源是数据分支差异，不是版本差异。**
+    - 同族不可变来源：`List.of(...)` / `stream().toList()` / `Collections.unmodifiableList(...)` /
+      `Arrays.asList()`（定长，`set` 可以但 `add/remove` 不行）。凡是要 `sort/add/remove` 的，
+      一律 `new ArrayList<>(...)` 包一层，**不要赌 mapper/上游返回的容器实现**。
+    - 判据：`scripts/_check_portal_meeting_scope_empty.py`（5/5）—— 除静态扫描全仓 588 个
+      java 文件外，含 **JDK 21 单文件运行时证明**（`List.of().sort()` 必抛 UOE、
+      `new ArrayList<>(List.of())` 可排序）与**负向自检**（把修法还原成缺陷原样后，
+      P1 必须变红、P2 扫描器仍能抓到 ⇒ 证明判据非恒真）。
+    - 排查提示：看到 `ImmutableCollections$...uoe` 直接按「用了 `List.of()`/`toList()` 又去改它」
+      搜索，别去怀疑 MP / 事务。
+
+45. **hub 的裸 500 曾经零线索：`/mcp/<code>` 子 app 抛错必须自己接住**
+    - 2026-10-31 生产：`POST http://mcp-hub:8099/mcp/qq_mail` 恒 **500**，而
+      `GET /api/v1/mcp/manifest` 200、`/api/v1/wecom_cli/qr` 也正常 ⇒ 闸门已放行，
+      只有 MCP 面崩。旧 `app.py` 把子 app 的异常直接抛给 ASGI 层：
+      调用方只看到 `Internal Server Error`，前端只看到「连接器返回异常（HTTP 500）」，
+      **没有任何可下手的信息**。
+    - 现在的行为（`mcp_hub/app.py`）：
+      · 子 app 抛错 ⇒ `logger.exception` 打全栈 + 回 `{"error":"mcp_server_failed","message":"…"}`。
+        Java 侧 `renderReason()` **只在响应缺 `message` 时才拼那句「返回异常」**，
+        带 message 就能把真实原因透到前端。
+      · 子 app lifespan 启动失败 ⇒ 认 `lifespan.startup.failed`（原来只认 complete，
+        失败时干等 10s 超时，日志只剩 TimeoutError），记下原因，路由层直接回
+        **503 `mcp_server_unavailable`「未就绪：原因」**，不再把请求丢进死 app。
+      · 回响应前用 `sent["started"]` 判断响应头是否已发出，避免二次发 start（uvicorn 会报错）。
+    - 判读命令：`docker compose logs --tail=200 mcp-hub | grep -E "Exception in ASGI|子 app lifespan|MCP 子服务"`。
+    - 本地自测方式（不必起全栈）：直接 `await _handle_http({...path:'/mcp/qq_mail'}, ...)`
+      并伪造 `_CHILDREN['qq_mail'].ok=False` ⇒ 应得 503+message；把 `child.app` 换成会抛错的
+      假 app ⇒ 应得 500+message 且只发 2 条消息（start+body）。
