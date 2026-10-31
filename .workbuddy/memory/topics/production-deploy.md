@@ -221,7 +221,8 @@ docker compose logs server | grep -Ei "Migrating schema|Successfully applied" | 
 
 ## 哪些文件要改、哪些不用改（★真实值只写 `.env`）
 - **真实密钥只写 `deploy/.env`** —— 实测 `git check-ignore deploy/.env` = IGNORED（`.gitignore:33 .env`）。
-  本机路径 `D:\aios\deploy\.env`；服务器路径 `/opt/aios/deploy/.env`（`cp .env.production .env` 生成）。
+  本机路径 `D:\aios\deploy\.env`；服务器路径 **`<仓库>/deploy/.env`**（本项目生产为 `/data/aioa/AIOA/deploy/.env`；`cp .env.production .env` 生成）。
+  ★ **一律放项目目录内，严禁 `/opt`**：/opt 下目录属主是 root，hub 以 uid 10001 运行会 PermissionError。
 - ⚠️ **`deploy/.env.production` 不被 git 忽略**：`.gitignore` 有 `!deploy/.env.production` 反选，
   实测 `git check-ignore` 判 **NOT ignored**，且**已入库**（2026-09-20 起跟踪）。
   ⇒ 它只允许放 `CHANGE_ME__` 占位，**填真实密钥等于把密码提交进仓库**。
@@ -445,7 +446,7 @@ Access denied(28000)，会 08S01 就说明 `.env` 存在且 MYSQL_HOST/PORT 是�
 改完要重填一次。
 
 **另**：hub **镜像里不带企微 CLI**（原生 ELF ≈10MB），靠 compose 把宿主
-`${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}` 只读挂到 `/opt/wecom-cli`。
+`${AIOS_WECOM_CLI_BIN_DIR:-../data/wecom-cli-bin}` 只读挂到容器 `/data/wecom-cli-bin`。
 所以 `WECOM_MOCK=0` 之前必须先 `ls -l data/wecom-cli-bin/wecom-cli`；
 宿主目录不存在时 Docker 会**静默建空目录**，表现为「wecom-cli 未安装」而不报错。
 （`WECOM_MOCK` 只管「密钥与 mock 身份」，不管 CLI 是否存在。）
