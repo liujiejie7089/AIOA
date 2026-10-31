@@ -23,6 +23,8 @@
 | **连接态同源** | `wecom/sync.py` → `connector_connection` 唯一源 · `_verify_connector_state_sync`(7) |
 | **联网检索** | `agent/aios_ai/tools/web_search.py` · `docs/03 §6` · `_verify_agent_web_search`(20) |
 | **H5 顶栏随滚动隐藏** | `docs/39 §11.3` · `#oaRoot.bar-hidden` · `_verify_h5_inputbar`(59) |
+| **能力层扩展点（skills/connectors 预留）** | `agent/aios_ai/capabilities/`（827 行）· `docs/65` · `_check_portal…`(40) |
+| **日程/会议端到端** | `docs/65 §三` · `PortalService` 写链路 6 端点 · `_e2e_portal_schedule_meeting`(24) |
 
 ## 最常踩的五条（全文见 iron-rules）
 
@@ -41,3 +43,8 @@
 - **`#oaRoot` 自己带 `.oa`** ⇒ 别写 `.oa #oaRoot.xxx`（永不匹配）；透明描边仍占 1px。
 - **`task.completed` 必带 `tool`**（否则 `name=null`）；**模型不知「今天」** ⇒ 每轮注入时间。
 - **个人数据禁编**（只准原值/缺则说没有）；**调用原文不得外发**（救援≠收回，流式也要扣）。
+- **业务校验失败≠HTTP 400**：本仓约定 **HTTP 200 + 信封 `code=400`**（只有 401/403/404 映射
+  状态码）⇒ 断言查 `body.code`。Java 侧**禁用 `IllegalArgumentException`**（落 500 兜底），
+  必须 `BizException.badRequest`（pitfalls 29/30）。
+- **起 Java 后端要 `-Dspring.flyway.validate-on-migrate=false`**（本机库 checksum 与本地不一致）；
+  `nohup &` 起的进程会被回收（pitfalls 31）。

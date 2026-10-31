@@ -1282,3 +1282,18 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     为准，tool_calls 轮后接正文轮时必须在两次真实模型调用里分别 yield（每轮恰好一个 done）。
 28. **操作性提示别写进 `.tx`**：确认后 `.tx` 会被 `formatAnswer(text)` 整套重写 innerHTML，
     写在里面的「已取消」会被静默冲掉 ⇒ 独立容器（`appendSysNote`）。
+29. **业务校验失败落 500 而不是 400（Java 侧）**：`GlobalExceptionHandler` 只把 `BizException`
+    与 Spring 参数类异常映射成 4xx，**其余全部落到 `@ExceptionHandler(Exception.class)` ⇒
+    500「服务内部错误」**。⇒ 服务层**禁止**用 `IllegalArgumentException` 表达业务校验
+    （空标题 / 时间倒序 / 格式非法 / 资源冲突 / 非法枚举），必须 `BizException.badRequest(msg)`；
+    归属与不存在用 `BizException.notFound(msg)`。现象极具误导性：「标题为空」看起来像「后端崩了」。
+30. **本项目业务失败的判据是信封 `code`，不是 HTTP 状态码**：约定为 **HTTP 200 + `code=400`**
+    （只有 BizException 的 401/403/404 才映射 HTTP 状态，docs/36 §、docs/38 § 有明文）。
+    ⇒ e2e / 断言脚本一律查 `body.code`，按 `http_status==400` 断言必假红。
+31. **起 Java 后端必须带 `-Dspring.flyway.validate-on-migrate=false`**：本机库 V89–V95 的
+    checksum 是 NULL、V100 已应用但本地文件被 revert（`d5974af` revert `cd79d79`）
+    ⇒ 直接 `java -jar` 会 `Validate failed` 起不来。`start-all.sh` 本就带此参数。
+    另：`nohup &` 起的 Java 进程**会被回收**（jps 里立刻消失），必须用受管后台任务或用户自起。
+32. **e2e 里写死 uid 会把「组织者本人」算成受邀人**：`createMeeting` 会跳过 organizer，
+    而 `zhangsan` 真实 uid=2 ⇒ 写 `attendeeIds=[2,3]` 恰含自己，invited 期望值对不上。
+    **这不是产品缺陷**。⇒ 期望值必须按登录返回的真实 uid 动态算；用第二个真实账号做受邀人。
