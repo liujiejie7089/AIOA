@@ -1,6 +1,6 @@
 # AIOS 长期记忆（索引）
 
-> 仓库根 `D:\aios`。**≤3000 字节**（超限静默截断）⇒ 只放索引；铁律见 `topics/iron-rules.md`，明细 `topics/`，故事 `YYYY-MM-DD.md`。
+> 仓库根 `D:\aios`。**≤3000 字节**（超限静默截断）⇒ 只放索引；铁律见 `topics/iron-rules.md`，故事 `YYYY-MM-DD.md`。
 
 ## 索引
 
@@ -17,6 +17,7 @@
 | 连接器接入 MCP·企微扫码连接态 | `docs/59 §10` · hub :8099 · V97 三表 · `docs/64 §九` |
 | 能力层/日程会议 | `aios_ai/capabilities/` · `docs/65` · `_e2e_portal…`(24) |
 | **对话级开关/遮罩渐隐/连接器开关** | `2026-10-31.md` 第七~九轮 · pitfalls 33–48 |
+| **依赖/落盘归位（禁 /opt）** | `docs/67` · deps(28)/reap(26)/sandbox(21) · `deploy/ops/move-into-repo.sh` |
 
 ## 最常踩的五条（全文见 iron-rules）
 
@@ -28,9 +29,9 @@
 
 ## 新增坑（全文见 pitfalls，引用只报编号）
 
-- **29 / 30**：校验失败 **≠ HTTP 400** —— 约定 **HTTP 200 + 信封 `code=400`**（仅 401/403/404 映射）⇒ 断言查 `body.code`。Java 侧禁 `IllegalArgumentException`（落 500），用 `BizException.badRequest`。
+- **29 / 30**：校验失败 **≠ 400** —— 约定 **200 + 信封 `code=400`**（仅 401/403/404 映射）⇒ 断言查 `body.code`。Java 侧用 `BizException.badRequest`，禁 `IllegalArgumentException`（落 500）。
 - **31 / 32**：起后端加 `-Dspring.flyway.validate-on-migrate=false`；e2e 期望值按真实 uid 动态算。
-- **33–39**：对话级开关同 `kb_on` 链路；`.cbtn` 必须写全 `flex:0 0 auto`；`--hd` 渐隐在 scroll 监听器、滚动容器 `#oaDockList`；计数要回接口核来源；e2e 用带 pymysql 的解释器。
+- **33–39**：对话级开关同 `kb_on`；`.cbtn` 写全 `flex:0 0 auto`；`--hd` 渐隐在 scroll 监听器、容器 `#oaDockList`；计数回接口核来源；e2e 用带 pymysql 的解释器。
 - **40**：中文提交信息**不能用 `-m "中文"`**（argv 编码 ⇒ 汉字成 U+FFFD，push 不报错）⇒ 用 heredoc 或 `-F 文件`；改已推送信息先比 `^{tree}` 再 `--force-with-lease`。
 - **41**：遮罩让位**只能移 `.dock` 视口**（负 margin-top）+ **实测**遮罩高 `--mask-h`；收 `.assist/.stage` 高度会移走数字人锚点并让 `maxScroll` 变小 ⇒ 翻历史被顶走。
-- 其余散项：哨兵快照复位 · 工具描述日志 · trust 快照 V104 · mock 掩盖真机差异 · H5 生效文件 `user-client/index.html` · 禁编禁外发。
+- 其余散项：哨兵快照复位 · trust 快照 V104 · mock 掩盖真机差异 · H5 生效文件 `user-client/index.html` · 禁编禁外发。
