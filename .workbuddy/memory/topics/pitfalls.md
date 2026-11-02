@@ -1538,3 +1538,15 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
     `compile` 绿不算数。
     **本仓有三处手工 `new RunService(...)`**（不走 Spring）：`ChatAttachmentRunTest`、
     `RunServiceFormFrameTest`、`RunServiceHitlTest` —— 以后加构造参数要一次改这三个。
+
+## 50. CLI 的 `--dry-run` 不校验 JSON 载荷字段名
+
+`wecom-cli <domain> <cmd> --dry-run` 只做「参数解析 + 请求体拼装」，把请求体打印出来就退出 0。
+**它不校验字段名**。2026-11-02 实测：`todo create --items '[{"title":"x","deadline":{"type":"date","date":"2026-11-07"}}]' --dry-run`
+照常打印请求，真调用才报 `存在未知字段 'items.deadline.date'`（schema 是 `{type,value}`）。
+
+⇒ 参数哨兵的 dry-run 断言（`_check_wecom_cli_argv.py` 的 R6b）只能证明 flag 拼对，
+**证明不了载荷对**。必须另有一条拿 CLI 自己的 `--schema` 比对键集合的断言（现为 R6c）：
+拉 `<cmd> --schema`，取 `request.$ref` → `schemas[ref].properties`（数组就再钻 `items.$ref`），
+断言我们构造的 JSON 键 ⊆ 允许键。同类坑还有 `--attendees`（要 `[{"userid":…}]` 不是 `["uid"]`，
+错形态报 640027）。

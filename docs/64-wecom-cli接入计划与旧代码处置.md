@@ -615,3 +615,66 @@ hub 的 Python 改动必须重启才生效（`bash start-all.sh`，:8099 重新�
 **环境动作**：hub 改动必须重启 `bash start-all.sh`（:8099）；Java 改动按纪律先停 8080 再打包。
 重启后需让 Java 重新探测一次 hub（`POST /api/v1/mcp/servers/wecom_cli/trust`），
 否则 `mcp_tool` 表里还是旧的 5 条快照，模型看不到新工具。
+
+### 9.11 逐项跑通授权页八项能力（2026-11-02 真实数据）
+
+用户实测反馈「企业微信还是查不出来信息」，并给出截图要求把授权页上每一项都用真实数据跑通。
+本轮以 tenant 56 / user 3240（刘洋）真实凭据离线驱动 `server._EXEC[...]`，逐项记录结果与暴露的问题。
+
+#### 9.11.1 八项能力实测矩阵
+
+| 授权页能力 | 工具 | 真实数据结果 |
+|---|---|---|
+| 发送与获取消息 | `recent_group_sessions` / `session_messages` / `message_send` | 群「成都易构」7 天 8 条，含发言人/时间；实发 1 条成功（`chat_id=wrbVcoRg…`） |
+| 搜索与获取邮件内容 | `mail_search` / `mail_get` | 收件箱 3 封；读「开始使用邮件」正文全文与 inline_images |
+| 发送邮件 | `mail_send` | 按 **userid** 投递成功，`mail_id=CiBqTKyr…`；收件箱随即可见 |
+| 新建文档 | `doc_create` | 「AIOS联调-1102」`docid=w3_AHEAgXinAJ0CNclqdhrzsTp0k1S2R_a` |
+| 编辑文档 | `doc_content` / `doc_append` | 回读原文 → 追加 52 字 → 再回读，追加段落在末尾且原文完好 |
+| 搜索文档 | `doc_search` | 关键词「报告」命中「营业报告」（收集表类型） |
+| 新建与跟进待办 | `todo_create` / `todo_get` / `todo_list` | `todo_id=tdbVcoRg…`，提醒 2026-11-05 18:00，参与人自动含刘洋，`status=proceed` |
+| 新建与管理日程 | `calendar_create` / `calendar_list` | `schedule_id=44f6ae87…`，列表回读参与人显示「刘洋」 |
+| 预约与更新会议 | `meeting_create` / `meeting_get` | `meeting_id=mtbVcoRg…`，会议号 360595163，`meeting_get` 参会人「刘洋」 |
+
+#### 9.11.2 本轮新暴露并修掉的四类「形态不符」
+
+这四类都不是授权问题，是**入参/回包形态与 CLI schema 不一致**，共同点是
+「`--dry-run` 不报错、只在真调用时失败」或「能跑但结果不可读」：
+
+1. **待办 deadline**：schema 是 `{type, value}`，原实现写 `{type, date}` ⇒ 服务端
+   `存在未知字段 'items.deadline.date'`。构造统一收到 `argv.todo_item()`。
+2. **`--attendees`**：schema 是 `[{"userid": ...}]`（`ScheduleAttendee` / `AttendUserId`），
+   原实现传 `["userid"]` ⇒ `640027`。新增 `argv._attendees()` 收口，dict 透传。
+3. **发信收件人**：通讯录 `email` 字段**恒为 null**（实测），只按 `emails` 发等于发不出。
+   `contact_search` 现在回 `userid`；`mail_send` 含 `@` 走 `emails`、否则走 `userids`。
+4. **回包可读性**：`_clip(dict)` 会把 `"{'type': 'date', 'value': ...}"` 塞给模型，
+   followers 截断在 dict 中间。新增 `_deadline_text()` / `_names()`，
+   参与人输出「刘洋」而不是 userid 串。
+
+#### 9.11.3 判据补强：dry-run 不是 schema 校验
+
+实测把 deadline 写错后 `todo create --dry-run` **照样打印完整请求体并退出 0** ——
+它只做参数解析与请求体拼装，不校验 JSON 字段名。因此：
+
+- R6b（dry-run 接受参数）只能证明 flag 拼对，**不能**证明载荷字段对；
+- 新增 **R6c**：拉 CLI 自己的 `--schema`，校验我们构造的 JSON 键集合 ⊆ schema 允许集合
+  （待办 item、deadline 两项，日程/会议 attendees 各一项）。
+- 哨兵总数 47 → **56 项全绿**；工具数 23 → **25**（只读 18）。
+
+#### 9.11.4 已知边界（不是 bug，但用户会问到）
+
+- **收集表（forms）读不了**：`doc_search` 命中「营业报告」的 docid 形如
+  `c2_…_base`，`doc_content` / `sheet_info` / `smartsheet_info` 全部报
+  `640027 无法识别此 docid`。CLI 没有 form 域，四类可读文档只覆盖 doc/sheet/smartsheet/smartpage。
+- **机器人创建的文档不进用户搜索索引**：`doc_search("AIOS联调")` 仍为 0，
+  但用 `doc_create` 返回的 docid 直接读正文正常。搜索是**用户视角**索引。
+- **`meeting_list` 的 `attendee_count` 恒为 0**（`meeting_get` 才带 attendees），
+  需要参会人信息时要再调 `meeting_get`。
+- **机器人代发的群消息在消息列表里显示为「刘洋」**：`chat messages list` 的
+  `user_name` 就是授权真人，不是机器人名，别据此判断「谁发的」。
+
+#### 9.11.5 收口
+
+- `scripts/_check_wecom_cli_argv.py`：**56 项全绿**（R6 20 条 help + R6b 8 条 dry-run + R6c 4 条 schema）
+- `build_server().list_tools()` ⇒ 25 个，只读 18 / 写 7
+- `catalog.required` 与 `_PARAMS` 自检通过（`_assert_params_in_sync`）
+- `_verify_mcp_registry.py` 期望工具数同步为 **25**
