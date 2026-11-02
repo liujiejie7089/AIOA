@@ -4,9 +4,11 @@ import cn.aios.chat.config.AgentProperties;
 import cn.aios.chat.dto.AgentRunRequest;
 import cn.aios.chat.dto.AgentUserContext;
 import cn.aios.chat.entity.AgentRun;
+import cn.aios.chat.entity.AgentRunStep;
 import cn.aios.chat.entity.ChatConversation;
 import cn.aios.chat.entity.ChatMessage;
 import cn.aios.chat.mapper.AgentRunMapper;
+import cn.aios.chat.mapper.AgentRunStepMapper;
 import cn.aios.chat.mapper.ChatConversationMapper;
 import cn.aios.chat.mapper.ChatMessageMapper;
 import cn.aios.common.exception.BizException;
@@ -113,6 +115,8 @@ public class RunService {
     private final ChatConversationMapper conversationMapper;
     private final ChatMessageMapper messageMapper;
     private final AgentRunMapper agentRunMapper;
+    /** 工具级审计（agent_run_step）：每条 tool_calls 落一行，见 {@link #persistToolSteps}。 */
+    private final AgentRunStepMapper runStepMapper;
     private final WebClient agentWebClient;
     private final ServiceTokenProvider serviceTokenProvider;
     private final ObjectMapper objectMapper;
@@ -820,9 +824,63 @@ public class RunService {
                         : formatAttachmentDocsBrief(atts);    // 更早轮次：占位
                 content = prefix + (content == null ? "" : content);
             }
+            // 工具摘要必须一起回灌：模型上一轮查到过 chat_id / mail_id 这类**句柄**，
+            // 但这些值不在回答正文里（工具描述还叮嘱过「不要念给用户听」）⇒
+            // 只带 content 的话，下一轮模型手里没有任何标识，只能拿群名硬当 chat_id 传，
+            // 企微回 40073「非法的 chat_id」，模型随即宣布「我无法获取具体消息」。
+            // （2026-10-31 会话 1436 第 3→5 轮实测）
+            if (ChatMessage.ROLE_ASSISTANT.equals(m.getRole())) {
+                String digest = formatToolDigest(m.getToolCalls());
+                if (!digest.isEmpty()) {
+                    content = digest + "\n" + (content == null ? "" : content);
+                }
+            }
             out.add(new AgentRunRequest.ChatTurn(m.getRole(), content));
         }
         return out;
+    }
+
+    /** 单条工具摘要进 prompt 的长度上限（与 agent 侧 `_TOOL_DIGEST_CHARS` 同量级）。 */
+    private static final int TOOL_DIGEST_MAX = 240;
+
+    /**
+     * 把某轮 assistant 的 `tool_calls` 压成一行摘要，供下一轮续用其中的标识。
+     *
+     * <p>`tool_calls` 的落库形状是 agent 的 `tool_calls_log`：
+     * {@code [{name, arguments, ok, digest}]}，其中 {@code digest} 是工具返回的截断原文
+     * （agent `nodes._tool_digest`）。老数据没有 {@code digest} 字段 ⇒ 只输出「调用了什么」，
+     * 不编造结果。</p>
+     */
+    static String formatToolDigest(List<Object> toolCalls) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (Object o : toolCalls) {
+            if (!(o instanceof java.util.Map<?, ?> m)) {
+                continue;
+            }
+            Object name = m.get("name");
+            if (name == null || String.valueOf(name).isBlank()) {
+                continue;
+            }
+            if (n++ > 0) {
+                sb.append("；");
+            }
+            sb.append(name).append(Boolean.FALSE.equals(m.get("ok")) ? "(失败)" : "(成功)");
+            Object digestObj = m.get("digest");
+            String digest = digestObj == null ? "" : String.valueOf(digestObj).trim();
+            if (!digest.isEmpty()) {
+                sb.append("→").append(digest.length() > TOOL_DIGEST_MAX
+                        ? digest.substring(0, TOOL_DIGEST_MAX) + "…" : digest);
+            }
+        }
+        if (sb.length() == 0) {
+            return "";
+        }
+        return "【上一轮工具返回：其中的 chat_id/mail_id/文件名等标识要原样照抄，"
+                + "不要用群名或猜测值代替】" + sb;
     }
 
     /** 历史轮附件的「省略占位」：只留文件名，不重复正文（见 {@link #toChatTurns} 的策略说明）。 */
@@ -1929,6 +1987,9 @@ public class RunService {
                             .eq(ChatConversation::getId, run.getConversationId())
                             .setSql("msg_count = COALESCE(msg_count, 0) + 1")
                             .set(ChatConversation::getLastMsgAt, endedAt));
+            // 工具级审计：随回答一起落 agent_run_step（原先这张表**一行都没写过**，
+            // 排查「模型传给企微的参数到底是什么」只能翻正文反推）。
+            persistToolSteps(run, toolCalls);
         }
         Usage u = usage == null ? Usage.ZERO : usage;
         AgentRun patch = new AgentRun();
@@ -1948,6 +2009,89 @@ public class RunService {
         } catch (Exception e) {
             log.warn("record token usage failed for run {}: {}", run.getRunId(), e.getMessage());
         }
+    }
+
+    // ---------- 工具级审计（agent_run_step） ----------
+
+    /** 入参里要整值抹掉的键（凭据类）。其余照录 —— 审计的价值就在于能看真实的 chat_id / 群名。 */
+    private static final java.util.Set<String> SECRET_ARG_KEYS = java.util.Set.of(
+            "password", "token", "accesstoken", "authorization", "cookie", "secret",
+            "clientsecret", "apikey");
+
+    /**
+     * 把一次 run 的 `tool_calls` 逐条落成 `agent_run_step`。
+     *
+     * <p>形状来自 agent 的 `tool_calls_log`：`[{name, arguments, ok, digest}]`。
+     * 这张表在 V1 就建好了却**从来没有写入方**（`select count(*)` 恒为 0），
+     * 导致 2026-11-02 排查「企微回 40073 非法的 chat_id」时，无法回答
+     * 「模型这一轮到底把什么值当 chat_id 传了进去」，只能靠会话正文反推。</p>
+     *
+     * <p>审计是**旁路**：任何异常只告警，绝不影响回答落库。</p>
+     */
+    private void persistToolSteps(AgentRun run, List<Object> toolCalls) {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return;
+        }
+        int seq = 0;
+        for (Object o : toolCalls) {
+            if (!(o instanceof Map<?, ?> m)) {
+                continue;
+            }
+            Object name = m.get("name");
+            if (name == null || String.valueOf(name).isBlank()) {
+                continue;
+            }
+            try {
+                AgentRunStep step = new AgentRunStep();
+                step.setTenantId(run.getTenantId());
+                step.setRunId(run.getRunId());
+                step.setStepSeq(++seq);
+                step.setStepType("tool");
+                step.setToolCode(truncate(String.valueOf(name), 64));
+                step.setInputMasked(maskArgs(m.get("arguments")));
+                Object digest = m.get("digest");
+                step.setOutputDigest(truncate(digest == null ? "" : String.valueOf(digest), 128));
+                step.setStatus(Boolean.FALSE.equals(m.get("ok")) ? "FAILED" : "OK");
+                step.setCreatedAt(LocalDateTime.now());
+                step.setCreatedBy(run.getUserId());
+                runStepMapper.insert(step);
+            } catch (Exception e) {
+                log.warn("persist tool step failed for run {} tool {}: {}",
+                        run.getRunId(), name, e.getMessage());
+            }
+        }
+    }
+
+    /** 入参打码：凭据键整值抹掉，超长字符串截断，最多保留 30 个键。 */
+    private static Map<String, Object> maskArgs(Object args) {
+        if (!(args instanceof Map<?, ?> raw) || raw.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        int kept = 0;
+        for (Map.Entry<?, ?> e : raw.entrySet()) {
+            if (kept++ >= 30) {
+                break;
+            }
+            String key = String.valueOf(e.getKey());
+            Object value = e.getValue();
+            if (SECRET_ARG_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
+                out.put(key, "***");
+            } else if (value instanceof String s && s.length() > 200) {
+                out.put(key, truncate(s, 200));
+            } else {
+                out.put(key, value);
+            }
+        }
+        return out;
+    }
+
+    /** 截断到列宽上限（超长就砍尾并加省略号，不做静默丢弃）。 */
+    private static String truncate(String s, int max) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() <= max ? s : s.substring(0, Math.max(0, max - 1)) + "…";
     }
 
     /** 账单标题取会话标题（前端建会话时形如「政策咨询专家 · 会话」）。 */

@@ -3264,6 +3264,7 @@ const API = {
     const c = await this.createConversation((state.chatExpert ? state.chatExpert.name : '会话')+' · 对话','aios-client', workerId);
     state.conversationId = c && (c.id || c.conversationId);
     if(!state.conversationId) throw new Error('会话创建失败');
+    convMemoSave(state.conversationId);   // 记下来，刷新后由 restoreLastConversation 接上
     return state.conversationId;
   },
 
@@ -3696,6 +3697,51 @@ function collapseHomeFallback(){
 }
 
 /* 逐块渲染并隔离异常：任一区块出错只影响自身，不会让整页变空白 */
+/* ---- 会话记忆（经典对话页）----
+   state.conversationId 原先只活到页面刷新为止（localStorage 只存了 token/user），
+   刷新后下一句必然新建会话，后端 loadHistory 就查不到上文。
+   这里按 (账号, 对话对象) 记一条，重进页面时接上；换对象不恢复（防串台）。 */
+var LS_CONV = 'aios_last_conv';
+var CONV_TTL = 7 * 24 * 3600 * 1000;
+
+function convTargetKey(){
+  if(state.chatWorker && state.chatWorker.id) return 'w:' + state.chatWorker.id;
+  var k = state.chatExpert && state.chatExpert.key;
+  return 'e:' + (k || 'default');
+}
+
+function convMemoSave(id){
+  try{
+    if(!id){ localStorage.removeItem(LS_CONV); return; }
+    localStorage.setItem(LS_CONV, JSON.stringify({
+      id: id, uid: (state.user && (state.user.id || state.user.userId)) || 0,
+      target: convTargetKey(), at: Date.now()
+    }));
+  }catch(e){}
+}
+
+/* 恢复上次会话：只补 conversationId，不重绘历史气泡（经典页进入时已有欢迎态，
+   强行灌历史反而像「上次没答完」）。用户想看历史可以走「会话记录」。 */
+var convRestoring = false;
+async function restoreLastConversation(){
+  if(state.conversationId || convRestoring) return;
+  var m = null;
+  try{ m = JSON.parse(localStorage.getItem(LS_CONV) || 'null'); }catch(e){ m = null; }
+  if(!m || !m.id) return;
+  if(Date.now() - (m.at || 0) > CONV_TTL){ convMemoSave(null); return; }
+  var uid = (state.user && (state.user.id || state.user.userId)) || 0;
+  if(m.uid && uid && String(m.uid) !== String(uid)) return;         // 换账号不恢复
+  if(m.target !== convTargetKey()) return;                          // 换对象不恢复
+  convRestoring = true;
+  try{
+    var msgs = asArray(await API.listMessages(m.id));
+    if(!msgs.length){ convMemoSave(null); return; }
+    state.conversationId = m.id;
+    toast('已接上你上次的对话，可直接继续提问');
+  }catch(e){ convMemoSave(null); }
+  finally{ convRestoring = false; }
+}
+
 function renderAll(){
   const steps = [renderGreet, renderOrgScope, renderKPI, renderToday, renderSkills, renderExperts,
                  renderTodo, renderAgents, renderResults, renderPermission, renderMyStats, renderMe, renderBill,
@@ -3707,6 +3753,8 @@ function renderAll(){
   // 未选专家时也要有对话对象（默认 AI）——否则「进来就问」会被 send 的硬拦截挡回去。
   // 这里只确定对象，不导航（renderAll 期间跳页会打断其他区块的渲染）。
   if(!state.chatExpert) ensureDefaultChatTarget();
+  // 刷新后接上上次的会话（只在还没绑会话、且对话对象对得上时生效）
+  if(!state.conversationId) restoreLastConversation();
 }
 
 function renderGreet(){
@@ -10620,6 +10668,7 @@ async function oaEnsureConv(){
     S.convId = c && (c.id || c.conversationId);
   }
   if(!S.convId) throw new Error('会话创建失败');
+  oaConvMemoSave();        // 记下这条会话，刷新后用得上（见「12b. 会话记忆」）
   return S.convId;
 }
 
@@ -11093,6 +11142,7 @@ function oaNewChat(){
   if(S.busy){ toast('正在生成，请先停止'); return; }
   var pid = currentProjectId();
   S.convId = null; S.worker = null; S.expert = null;
+  oaConvMemoClear();                   // 用户明确要开新对话 ⇒ 清掉「上次会话」记忆，别再自动恢复回去
   if(pid > 0){ S.projectConvId[pid] = null; S.projectConvWorker[pid] = null; }   // 项目内新对话 = 重新开一条项目专属会话（不串到上一条）
   oaAnswerSeq++;                       // 清空对话坞 ⇒ 作废在途收口（否则它会往空坞里补一条）
   var list = dockEl(); if(list) list.innerHTML = '';
@@ -11707,7 +11757,7 @@ function renderDrawer(){
 }
 
 /* 续聊：载入历史消息到对话坞（原地，不跳经典会话页） */
-async function oaResumeConversation(id){
+async function oaResumeConversation(id, restored){
   try{
     var msgs = arr(await API.listMessages(id));
     S.convId = id;
@@ -11724,7 +11774,11 @@ async function oaResumeConversation(id){
       var d = document.createElement('div');
       d.className = 'oa-who';
       d.style.cssText = 'align-self:center;font-size:11px;color:var(--text-3);margin:2px 0 4px';
-      d.textContent = '历史会话 #' + id + '（继续输入可持续对话）';
+      // 自动恢复（刷新后接上上次对话）不暴露内部会话号，只说明状态；
+      // 从「会话记录」手动点进来才显示 #id，方便用户对号。
+      d.textContent = restored
+        ? '已接上你上次的对话，可以直接继续问'
+        : ('历史会话 #' + id + '（继续输入可持续对话）');
       list.insertBefore(d, list.firstChild);
     }
   }catch(e){
@@ -11899,11 +11953,86 @@ function bind(){
 }
 
 /* ------------------------------------------------------------------ 13. 引导 */
+
+/* ============================================================================
+   12b. 会话记忆（对话坞）
+   问题：S.convId 只存在内存里，页面一刷新 / 关掉重开就是 null ⇒ 下一次提问走
+   oaEnsureConv 新建一条会话 ⇒ 后端 RunService.loadHistory 按 conversation 查历史，
+   查到空 ⇒ 观感就是「AI 不记得我刚才说什么了」（2026-10-31 会话 1441 实测：
+   用户只打「企业微信」两个字，AI 反问四个选项；回「2」它就讲企微使用指南）。
+
+   做法：把「上次正在聊的会话」按 (账号, 项目, 数字员工/专家) 记进 localStorage，
+   重进页面时**只有这几项对得上**才恢复；换人/换项目故意不恢复，避免两个对象的
+   上下文串台（这与「换人即新建会话」的既有约束一致）。
+   有效期 7 天：再久的会话恢复出来也没有接着聊的价值，且会让用户困惑。
+   ============================================================================ */
+var LS_OA_CONV = 'aios_oa_last_conv';
+var OA_CONV_TTL = 7 * 24 * 3600 * 1000;
+
+function oaConvKey(){
+  var pid = currentProjectId();
+  return {pid: pid || 0,
+          worker: S.worker ? (S.worker.id || null) : null,
+          expert: S.worker ? null : ((S.expert && S.expert.key) || null)};
+}
+
+function oaConvMemoSave(){
+  try{
+    if(!S.convId){ localStorage.removeItem(LS_OA_CONV); return; }
+    var k = oaConvKey();
+    localStorage.setItem(LS_OA_CONV, JSON.stringify({
+      id: S.convId,
+      uid: (state.user && (state.user.id || state.user.userId)) || 0,
+      pid: k.pid, worker: k.worker, expert: k.expert, at: Date.now()
+    }));
+  }catch(e){}
+}
+
+function oaConvMemoClear(){ try{ localStorage.removeItem(LS_OA_CONV); }catch(e){} }
+
+function oaConvMemoMatch(){
+  try{
+    var m = JSON.parse(localStorage.getItem(LS_OA_CONV) || 'null');
+    if(!m || !m.id) return null;
+    if(Date.now() - (m.at || 0) > OA_CONV_TTL) return null;
+    var uid = (state.user && (state.user.id || state.user.userId)) || 0;
+    if(m.uid && uid && String(m.uid) !== String(uid)) return null;   // 换账号不恢复
+    if(Number(m.pid || 0) !== Number(oaConvKey().pid || 0)) return null;  // 换项目不恢复
+    return m;
+  }catch(e){ return null; }
+}
+
+/* 恢复上次会话：只在「刚进页面、还没绑会话」时做一次。
+   记忆里的对象（数字员工/专家）若当前没选，先按 id 把他选回来，再校验一次 key ——
+   否则恢复出来的会话会挂在「无人称」状态下，下一条消息按 (pid, worker) 分账时又新建一条。 */
+async function oaRestoreLastConv(){
+  if(S.convId) return null;
+  var m = oaConvMemoMatch(); if(!m) return null;
+  try{
+    if(!S.worker && m.worker){
+      var w = arr(state.workers).filter(function(x){ return String(x.id) === String(m.worker); })[0];
+      if(w) S.worker = w;
+    }
+    if(!S.worker && !S.expert && m.expert){
+      var e = arr(state.experts).filter(function(x){ return x.key === m.expert; })[0];
+      if(e) S.expert = e;
+    }
+    var k = oaConvKey();
+    if(String(k.worker || '') !== String(m.worker || '')) return null;   // 对象对不上，放弃恢复
+    if(String(k.expert || '') !== String(m.expert || '')) return null;
+    var msgs = arr(await API.listMessages(m.id));
+    if(!msgs.length){ oaConvMemoClear(); return null; }   // 空会话不值得恢复
+    await oaResumeConversation(m.id, true);
+    oaBanner();
+    return m.id;
+  }catch(e){ oaConvMemoClear(); return null; }
+}
+
 function oaBoot(){
   oaHandleConnectorCallback();   // 解析授权回跳参数并清理 URL（防刷新重放），须在重绘前完成
   applyMode();
   if(S.mode !== 'oa') return;
-  loadOaExtras().then(function(){ fillSheet(); oaRender(); }).catch(function(){});
+  loadOaExtras().then(function(){ fillSheet(); oaRender(); return oaRestoreLastConv(); }).catch(function(){});
   fillSheet();
 }
 window.oaBoot = oaBoot;

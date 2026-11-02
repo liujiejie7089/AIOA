@@ -131,7 +131,14 @@ def test_graph_tool_round(monkeypatch):
 
     completed = next(d for _, t, d in events if t == "message.completed")
     assert completed["content"] == "剩余10"
-    assert completed["tool_calls"] == [{"name": "get_my_quota", "arguments": {}, "ok": True}]
+    # digest 是「工具结果摘要」，随 tool_calls 一起回传并落库（供下一轮续用 chat_id 这类句柄）。
+    # 这里只比对调用身份三项，摘要单独断言存在且非空 —— 否则每次调整摘要长度都要改断言。
+    def _no_digest(calls):
+        return [{k: v for k, v in c.items() if k != "digest"} for c in calls]
+
+    assert _no_digest(completed["tool_calls"]) == [
+        {"name": "get_my_quota", "arguments": {}, "ok": True}]
+    assert completed["tool_calls"][0]["digest"], "工具结果摘要不能为空（否则跨轮拿不到句柄）"
     assert completed["usage"] == {"prompt_tokens": 13, "completion_tokens": 3}
 
     # 第二轮模型调用必须能看到回注的工具结果（role=tool）
@@ -353,7 +360,7 @@ def test_graph_rescues_textual_tool_call(monkeypatch):
     assert calls["n"] == 2, "救回调用后必须再跑一轮，让模型依据工具结果作答"
 
     completed = next(d for _, t, d in events if t == "message.completed")
-    assert completed["tool_calls"] == [
+    assert [{k: v for k, v in c.items() if k != "digest"} for c in completed["tool_calls"]] == [
         {"name": "mcp__wecom_cli__recent_group_sessions", "arguments": {"days": 7}, "ok": True}]
 
     # 第二轮必须能看到 role=tool 的结果，且 tool_call_id 与救回来的 id 一致（否则上游 400）

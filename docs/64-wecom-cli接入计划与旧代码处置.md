@@ -541,3 +541,77 @@ Java 落库 `CONNECTED`，`accountLabel` 写的是那个共享账号的名字。
 **环境动作**：Java 改动按纪律先 `Stop-Process` 8080 再 `mvnw -DskipTests package`（BUILD SUCCESS），
 hub 的 Python 改动必须重启才生效（`bash start-all.sh`，:8099 重新拉起后 `/health` 仍为
 `{"wecom_cli":5,"qq_mail":6}`）。
+
+---
+
+### 9.10 企微工具从 5 个只读扩到 23 个 + 三处根修（2026-11-02）
+
+用户口径：「授权页说机器人能发消息/发邮件/建待办/排日程/约会议，为什么数字人做不到」
++「上一轮那四条（7 天边界、chat_id 跨轮丢失、会话丢失、工具审计）先改掉」。
+
+#### 9.10.1 为什么授权页和实际差这么多
+
+授权页写的是**机器人身份在企微侧的能力上限**（CLI 有 14 个服务域），
+数字人能用多少取决于 `wecom_cli/catalog.py` 把哪些命令包成了工具。
+改之前只包了 5 个只读（chat/contact/mail 三域），覆盖那 8 项里的 1.5 项 —— 不是授权受限，是没实现。
+
+#### 9.10.2 三次实测出来的死结
+
+1. **`begin_time不能早于7天前`（850016）是我们自己的 bug，不是玄学。**
+   `_since()` 里 `begin = now - days×24h` 再截到秒，等 node CLI 起进程、走完网络，
+   begin 已经比服务端「恰好 168h」的下界老 1~3 秒 ⇒ **days=7 必然越界**。
+   本机二分实测（now=2026-11-02 17:55:23，同一个合法 chat_id）：
+   `10-26 15:55` → 850016；`10-26 17:55`（Python 精确算出的 now-7d）→ 850016；
+   `10-26 18:10` → 正常 7 条；`10-27 00:00/09:00` → 正常。
+   修法：`_BEGIN_MARGIN = timedelta(hours=1)`，让出这 3 秒的死区。
+2. **`40073 非法的 'chat_id'` 是模型把群名当句柄传。**
+   `wecom-cli chat messages list --chat-id 成都易构` 能一字不差复现该报错。
+   根因：`chat_id` 是框架加密句柄，只存在于当次工具结果里；而历史回灌
+   `RunService.toChatTurns` 只带 role+content，**工具结果全丢** ⇒ 下一轮模型手里没有 id。
+   两层修：① agent `_tool_digest` + Java `formatToolDigest` 把工具结果摘要（600/240 字符）随历史回灌；
+   ② `session_messages` / `message_send` 接受**群名**，内部用最近 7 天会话列表解析（重名返回候选）。
+3. **CLI 业务错误是 `exit 0 + {"error":{...}}`**，不是非零退出。
+   原先 executor 直接取列表 ⇒ 拿到空数组 ⇒ 工具「成功返回 0 条」⇒ 模型对用户说「这个群没消息」。
+   修法：新增 `_call()` 统一把 `error` 键转成 `CliError`。
+
+#### 9.10.3 工具清单（23 = 17 只读 + 6 写）
+
+| 梯队 | 工具 | 说明 |
+|---|---|---|
+| 一（只读） | `whoami` `contact_search` `recent_group_sessions` `session_messages` `mail_search` | 原有 5 个 |
+| 二（写） | `message_send` `mail_get` `mail_send` `todo_list` `todo_get` `todo_create` `calendar_list` `calendar_create` `meeting_list` `meeting_get` `meeting_create` | 新增 11 |
+| 三（文档） | `doc_search` `doc_create` `sheet_info` `smartsheet_info` `smartsheet_records` `smartpage_get` `disk_search` | 新增 7 |
+
+**官方写边界**（实测原文）：仅在 doc/sheet/smartsheet/smartpage 四类文档允许跨身份，
+其余品类只能改机器人自己创建的数据。因此：
+`todo list` 对本人待办返回 0 条（机器人不是创建人）、`message send` 的发送方是机器人。
+写工具的 description 里都带了这条 + 「先跟用户确认」，工具回包也标注 `note`。
+
+#### 9.10.4 会话丢失（「下次提问就不知道我在说什么」）
+
+`conversationId` 原先只在内存（localStorage 只存 token/user），刷新即丢。
+`user-client/index.html` 新增会话记忆：按 `(账号, 项目, 数字员工/专家)` 存 localStorage，
+有效期 7 天，**三样都对得上才恢复**（换人/换项目不恢复，避免串台）；
+自动恢复时只提示「已接上你上次的对话」，不暴露内部会话号。
+经典页（`state`）与对话坞（`S`）各一套独立 key，互不覆盖。
+
+#### 9.10.5 工具级审计
+
+`agent_run_step` 表 V1 就建好，但**从来没有写入方**（`count(*)` 恒为 0），
+导致定位 40073 时无法回答「模型这一轮到底把什么值当 chat_id 传了进去」。
+现在 `RunService.persistToolSteps` 在落 assistant 消息后逐条写：
+`tool_code / input_masked（凭据键打码）+ output_digest(128) / status / step_seq`，异常只告警。
+
+#### 9.10.6 验收
+
+- `scripts/_check_wecom_cli_argv.py`：**47 项全绿**（新增 R6 18 条 help 比对 + R6b 5 条写命令 dry-run）
+- `mcp-hub` 启动自检：`catalog.required` 与 `_PARAMS` 一致，23 个工具注册齐
+- 离线驱动真实凭据（tenant 56 / user 3240）实测：
+  `whoami` 刘洋/刘洋的机器人 · `session_messages("成都易构")` 7 条带发言人 ·
+  `disk_search("pdf")` 2 个文件 · `todo_list` 0 条（符合机器人视角口径）
+- `mvn -pl aios-chat -am compile` BUILD SUCCESS
+- `_verify_mcp_registry.py` 的期望工具数同步为 **23**
+
+**环境动作**：hub 改动必须重启 `bash start-all.sh`（:8099）；Java 改动按纪律先停 8080 再打包。
+重启后需让 Java 重新探测一次 hub（`POST /api/v1/mcp/servers/wecom_cli/trust`），
+否则 `mcp_tool` 表里还是旧的 5 条快照，模型看不到新工具。

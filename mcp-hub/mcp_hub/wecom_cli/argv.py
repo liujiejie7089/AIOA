@@ -29,6 +29,8 @@ CLI 会返回一句 `error: unexpected argument 'true' found`，被 `_err()` 包
 """
 from __future__ import annotations
 
+import json
+
 # 官方 CLI 里「布尔开关」型 flag：**只写 flag 本身，后面绝不跟值**。
 # 新增命令时如果用到新的布尔 flag，先登记在这里，再写进 argv 构造函数。
 BOOLEAN_FLAGS: frozenset[str] = frozenset({
@@ -74,6 +76,167 @@ def recent_sessions(begin: str, end: str) -> list[str]:
 def contact_search(keywords: str) -> list[str]:
     """`wecom-cli contact users search`。`--keywords` 是**变参**，可跟多个词。"""
     return ["contact", "users", "search", "--keywords", *kw_list(keywords)]
+
+
+# ---------------------------------------------------------------------------
+# 二、三梯队：待办 / 日程 / 会议 / 文档 / 表格 / 微盘 / 发消息
+#
+# 这些命令的入参形态比一梯队复杂（有 JSON 数组、有变参、有布尔开关），
+# 一律在这里构造并登记，**不在 server.py 里内联拼** —— 理由见模块头：
+# 拼错 flag 的后果是模型对用户说「参数错误」，而不是本地异常。
+# 每条都过 `scripts/_check_wecom_cli_argv.py` 的 help 比对。
+# ---------------------------------------------------------------------------
+
+def _json_array(values: list[str]) -> str:
+    """JSON 数组入参（`--items` / `--attendees` / `--meeting-ids` 都要求这种形态）。
+
+    注意：runner 用 `create_subprocess_exec` 传 argv，**不经过 shell**，
+    所以字符串里的引号不会被 shell 吃掉，也不需要额外转义。
+    """
+    return json.dumps([str(v) for v in values if str(v).strip()], ensure_ascii=False)
+
+
+def _json_obj(value) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def todo_list(limit: int = 10, status: str = "", keywords: str = "") -> list[str]:
+    """`wecom-cli todo list` —— 机器人视角（**只包含机器人创建的待办**）。"""
+    args = ["todo", "list", "--limit", str(max(1, min(int(limit or 10), 20)))]
+    kws = kw_list(keywords)
+    if kws:
+        args += ["--keywords", *kws]
+    st = kw_list(status)
+    if st:
+        args += ["--status-filter", *st]
+    return args
+
+
+def todo_get(ids: list[str]) -> list[str]:
+    """`wecom-cli todo get`。待办 id 最多 20 个。"""
+    return ["todo", "get", "--items", _json_array(ids[:20])]
+
+
+def todo_create(item: dict) -> list[str]:
+    """`wecom-cli todo create`。一次只建一条 —— 批量创建会让用户难以确认建了什么。"""
+    return ["todo", "create", "--items", _json_obj([item])]
+
+
+def calendar_list(begin: str, end: str) -> list[str]:
+    """`wecom-cli calendar schedules list`。"""
+    return ["calendar", "schedules", "list", "--begin-time", begin, "--end-time", end]
+
+
+def calendar_create(subject: str, begin: str, end: str, attendees: list[str] | None = None,
+                    location: str = "", description: str = "") -> list[str]:
+    """`wecom-cli calendar schedules create`（写）。subject/begin/end 三项必填。"""
+    args = ["calendar", "schedules", "create",
+            "--subject", subject, "--begin-time", begin, "--end-time", end]
+    if attendees:
+        args += ["--attendees", _json_array(attendees)]
+    if location:
+        args += ["--location", location]
+    if description:
+        args += ["--description", description]
+    return args
+
+
+def meeting_list(begin: str, end: str, limit: int = 20) -> list[str]:
+    """`wecom-cli meeting list`。上限 100。"""
+    return ["meeting", "list", "--begin-time", begin, "--end-time", end,
+            "--limit", str(max(1, min(int(limit or 20), 100)))]
+
+
+def meeting_get(ids: list[str]) -> list[str]:
+    """`wecom-cli meeting get`。meeting_ids 最多 10 个。"""
+    return ["meeting", "get", "--meeting-ids", _json_array(ids[:10])]
+
+
+def meeting_create(subject: str, begin: str, end: str, attendees: list[str] | None = None,
+                   location: str = "", description: str = "") -> list[str]:
+    """`wecom-cli meeting create`（写）。subject/begin/end 三项必填。"""
+    args = ["meeting", "create",
+            "--subject", subject, "--begin-time", begin, "--end-time", end]
+    if attendees:
+        args += ["--attendees", _json_array(attendees)]
+    if location:
+        args += ["--location", location]
+    if description:
+        args += ["--description", description]
+    return args
+
+
+def message_send(chat_id: str, text: str) -> list[str]:
+    """`wecom-cli message send`（写）。`--msg-type` 目前只支持 text，`--text` 是对象。"""
+    return ["message", "send",
+            "--chat-id", chat_id,
+            "--msg-type", "text",
+            "--text", _json_obj({"content": text})]
+
+
+def mail_get(mail_ids: list[str]) -> list[str]:
+    """`wecom-cli mail get`。`--mail-ids` 是**变参**，不是 JSON 数组。"""
+    return ["mail", "get", "--mail-ids", *[str(x) for x in mail_ids[:10] if str(x).strip()]]
+
+
+def mail_send(to_emails: list[str], subject: str, content: str) -> list[str]:
+    """`wecom-cli mail send`（写）。`--to` 是对象：`{emails:[...]}`。"""
+    return ["mail", "send",
+            "--to", _json_obj({"emails": [str(x) for x in to_emails if str(x).strip()]}),
+            "--subject", subject,
+            "--content", content]
+
+
+def doc_search(keywords: str, limit: int = 10, doc_types: str = "") -> list[str]:
+    """`wecom-cli doc search`。`--keywords` 变参必填；`--doc-types` 也是变参。"""
+    args = ["doc", "search", "--keywords", *kw_list(keywords),
+            "--limit", str(max(1, min(int(limit or 10), 100)))]
+    types = kw_list(doc_types)
+    if types:
+        args += ["--doc-types", *types]
+    return args
+
+
+def doc_create(doc_name: str, doc_type: str = "doc", content: str = "") -> list[str]:
+    """`wecom-cli doc create`（写）。doc_type ∈ doc/sheet/smartsheet/smartpage/ppt。"""
+    args = ["doc", "create", "--doc-name", doc_name, "--doc-type", doc_type]
+    if content and doc_type in ("doc", "smartpage"):
+        args += ["--content", content, "--content-type",
+                 "markdown" if doc_type == "smartpage" else "text"]
+    return args
+
+
+def sheet_info(docid: str) -> list[str]:
+    """`wecom-cli sheet get`。docid 支持文档 ID 或链接。"""
+    return ["sheet", "get", "--docid", docid]
+
+
+def smartsheet_info(docid: str) -> list[str]:
+    """`wecom-cli smartsheet get`。"""
+    return ["smartsheet", "get", "--docid", docid]
+
+
+def smartsheet_records(docid: str, sheet_id: str = "", limit: int = 20) -> list[str]:
+    """`wecom-cli smartsheet records list`。sheet_id 不传则由服务端选默认子表。"""
+    args = ["smartsheet", "records", "list", "--docid", docid,
+            "--limit", str(max(1, min(int(limit or 20), 100)))]
+    if sheet_id:
+        args += ["--sheet-id", sheet_id]
+    return args
+
+
+def smartpage_get(docid: str, page_id: str = "") -> list[str]:
+    """`wecom-cli smartpage pages get` —— 读智能主页正文。"""
+    args = ["smartpage", "pages", "get", "--docid", docid]
+    if page_id:
+        args += ["--page-id", page_id]
+    return args
+
+
+def disk_search(keywords: str, limit: int = 10) -> list[str]:
+    """`wecom-cli disk files search`。`--keywords` 是变参（OR 关系）。"""
+    return ["disk", "files", "search", "--keywords", *kw_list(keywords),
+            "--limit", str(max(1, min(int(limit or 10), 100)))]
 
 
 def flag_violations(argv: list[str], takes_value: dict[str, bool]) -> list[str]:

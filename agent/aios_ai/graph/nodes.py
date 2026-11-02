@@ -213,6 +213,33 @@ def _parse_tool_calls(message: dict) -> list[dict]:
     return out
 
 
+# 单条工具结果的摘要长度上限。历史回灌时每条都带，太长会把 prompt 撑爆
+# （10 条历史 × 每个结果几十 KB 是真实发生过的），240~600 字符足够装下
+# `chat_id` / `mail_id` / 文件名这类「下一轮还要用」的标识。
+_TOOL_DIGEST_CHARS = 600
+
+
+def _tool_digest(data) -> str:
+    """把工具返回压成一句**能续用标识**的短摘要，随 tool_calls 一起回传并落库。
+
+    为什么需要：`tool_calls_log` 原先只有 `{name, arguments, ok}`，**结果是丢的**。
+    而 `RunService.loadHistory` 回灌历史时只带 role+content ⇒ 模型上一轮明明查到过
+    `chat_id`，这一轮却拿不到，只能把**群名**当 chat_id 硬传 ⇒ 企微回
+    `40073 非法的 'chat_id'`，模型随即对用户说「我无法获取具体消息」。
+    （2026-10-31 会话 1436 第 3→5 轮实测；docs/64 §9.10）
+
+    只保留标识类信息，不做语义加工：摘要原样截断，避免把工具结果「改写」出事实错误。
+    """
+    if data is None:
+        return ""
+    try:
+        text = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return ""
+    text = " ".join(str(text).split())
+    return text[:_TOOL_DIGEST_CHARS]
+
+
 # 代码块里的「调用表达式」：```typescript\nfunctions.mcp__x__y({"k": 1})\n```
 # 语言标记可有可无，`functions.` 前缀可能有也可能没（MiniMax 两种都写过）。
 _FENCE_BLOCK_RE = re.compile(r"```[^\n`]*\n(.*?)```", re.S)
@@ -680,7 +707,8 @@ async def tools(state: dict) -> dict:
             outcomes = item[1]
 
     for call, outcome in zip(calls, outcomes):
-        tool_calls_log.append({"name": outcome.name, "arguments": outcome.arguments, "ok": outcome.ok})
+        tool_calls_log.append({"name": outcome.name, "arguments": outcome.arguments, "ok": outcome.ok,
+                               "digest": _tool_digest(outcome.data)})
         seen = {x["docId"] for x in citations}
         citations.extend(c for c in _citations_from_tool(outcome.name, outcome)
                          if c["docId"] not in seen)
@@ -697,7 +725,7 @@ async def tools(state: dict) -> dict:
     # 丢掉会让下一轮请求被上游判为协议错误（"tool message missing"）。
     for call in blocked_calls:
         tool_calls_log.append({"name": call.get("name"), "arguments": call.get("arguments") or {},
-                                "ok": False})
+                                "ok": False, "digest": ""})
         messages.append({
             "role": "tool",
             "tool_call_id": call["id"],

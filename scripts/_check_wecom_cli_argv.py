@@ -199,6 +199,61 @@ def main() -> int:
         if "Dry Run" in out:
             ok("R5 dry-run 真的构造出请求（说明参数组合完全合法）")
 
+    # ------------------------------------------------------------------ R6
+    head("R6 二/三梯队：18 个新构造函数的 flag 与 CLI help 一致")
+    # (名字, 构造出的 argv, 对应的 help 命令路径)
+    NEW_VECTORS = [
+        ("todo list", argv.todo_list(limit=5, status="proceed", keywords="报销,审批"), ["todo", "list"]),
+        ("todo get", argv.todo_get(["T1", "T2"]), ["todo", "get"]),
+        ("todo create", argv.todo_create({"title": "写周报", "description": "本周",
+                                          "follower_ids": ["zhangsan"],
+                                          "deadline": {"type": "date", "date": "2026-11-07"}}),
+         ["todo", "create"]),
+        ("calendar schedules list", argv.calendar_list(BEGIN, END), ["calendar", "schedules", "list"]),
+        ("calendar schedules create",
+         argv.calendar_create("周会", BEGIN, END, attendees=["zhangsan"], location="3F"),
+         ["calendar", "schedules", "create"]),
+        ("meeting list", argv.meeting_list(BEGIN, END, limit=50), ["meeting", "list"]),
+        ("meeting get", argv.meeting_get(["M1"]), ["meeting", "get"]),
+        ("meeting create", argv.meeting_create("评审会", BEGIN, END, attendees=["zhangsan"]),
+         ["meeting", "create"]),
+        ("message send", argv.message_send("CHATID123", "你好"), ["message", "send"]),
+        ("mail get", argv.mail_get(["MAIL1", "MAIL2"]), ["mail", "get"]),
+        ("mail send", argv.mail_send(["a@b.com"], "主题", "正文"), ["mail", "send"]),
+        ("doc search", argv.doc_search("预算", limit=5, doc_types="sheet"), ["doc", "search"]),
+        ("doc create", argv.doc_create("测试文档", "doc", "正文"), ["doc", "create"]),
+        ("sheet get", argv.sheet_info("DOCID"), ["sheet", "get"]),
+        ("smartsheet get", argv.smartsheet_info("DOCID"), ["smartsheet", "get"]),
+        ("smartsheet records list", argv.smartsheet_records("DOCID", "SID", limit=10),
+         ["smartsheet", "records", "list"]),
+        ("smartpage pages get", argv.smartpage_get("DOCID", "P1"), ["smartpage", "pages", "get"]),
+        ("disk files search", argv.disk_search("预算,报表", limit=5), ["disk", "files", "search"]),
+    ]
+    if not cli:
+        skip("R6 全部 18 条", "本机没有 wecom-cli（静态构造已完成，见上面的 import 成功）")
+    else:
+        for label, nvec, path in NEW_VECTORS:
+            table = flags_of(help_text(cli, path))
+            if not table:
+                bad(f"R6 {label} 解析 help 失败", " / ".join(path))
+                continue
+            validate(f"R6 {label}", nvec, table)
+
+        head("R6b 写命令端到端 dry-run（不实际发送）")
+        for label, wvec in [
+            ("message send", argv.message_send("CHATID123", "你好")),
+            ("todo create", argv.todo_create({"title": "写周报"})),
+            ("calendar create", argv.calendar_create("周会", BEGIN, END)),
+            ("meeting create", argv.meeting_create("评审会", BEGIN, END)),
+            ("doc create", argv.doc_create("测试文档", "doc", "正文")),
+        ]:
+            p = subprocess.run([cli, *wvec, "--dry-run"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=60)
+            out = (p.stdout or "") + (p.stderr or "")
+            chk("unexpected argument" not in out and "error" not in out.lower()[:200],
+                f"R6b {label} 参数被 CLI 接受",
+                [ln for ln in out.splitlines() if "unexpected" in ln][:1] or "无 unexpected argument")
+
     # ------------------------------------------------------------------ C1
     head("C1 负向自检：改回带值必须转红")
     broken = list(vec)                      # 已有 "--only-unread"
