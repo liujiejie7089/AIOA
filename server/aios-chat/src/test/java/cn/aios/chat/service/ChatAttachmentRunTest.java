@@ -49,6 +49,8 @@ class ChatAttachmentRunTest {
                 mock(cn.aios.chat.mapper.ChatConversationMapper.class),
                 mock(cn.aios.chat.mapper.ChatMessageMapper.class),
                 mock(cn.aios.chat.mapper.AgentRunMapper.class),
+                // 工具级审计（2026-11-02）：RunService 新增 AgentRunStepMapper；本测试不触达其逻辑
+                mock(cn.aios.chat.mapper.AgentRunStepMapper.class),
                 mock(org.springframework.web.reactive.function.client.WebClient.class),
                 mock(cn.aios.security.ServiceTokenProvider.class),
                 new ObjectMapper(),
@@ -77,6 +79,8 @@ class ChatAttachmentRunTest {
                 mock(cn.aios.chat.mapper.ChatConversationMapper.class),
                 mock(cn.aios.chat.mapper.ChatMessageMapper.class),
                 mock(cn.aios.chat.mapper.AgentRunMapper.class),
+                // 工具级审计（2026-11-02）：RunService 新增 AgentRunStepMapper；本测试不触达其逻辑
+                mock(cn.aios.chat.mapper.AgentRunStepMapper.class),
                 mock(org.springframework.web.reactive.function.client.WebClient.class),
                 mock(cn.aios.security.ServiceTokenProvider.class),
                 new ObjectMapper(),

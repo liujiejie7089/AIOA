@@ -141,7 +141,10 @@ class RunServiceHitlTest {
         });
 
         runService = new RunService(
-                conversationMapper, messageMapper, agentRunMapper, agentWebClient, serviceTokenProvider,
+                conversationMapper, messageMapper, agentRunMapper,
+                // 工具级审计（2026-11-02）：RunService 新增 AgentRunStepMapper；本测试不触达其逻辑
+                mock(cn.aios.chat.mapper.AgentRunStepMapper.class),
+                agentWebClient, serviceTokenProvider,
                 objectMapper, sseHeartbeatExecutor, agentProperties, billingService, activityLogService,
                 contentGuard, workerMapper,
                 // 表单域 + 专家参数（docs/52）：构造器新增三依赖；本测试只验澄清挂起/续跑，不触达其逻辑

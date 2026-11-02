@@ -67,6 +67,8 @@ class RunServiceFormFrameTest {
         workerCapabilityService = mock(WorkerCapabilityService.class);
         runService = new RunService(
                 mock(ChatConversationMapper.class), mock(ChatMessageMapper.class), mock(AgentRunMapper.class),
+                // 工具级审计（2026-11-02）：RunService 新增 AgentRunStepMapper；本测试不触达其逻辑
+                mock(cn.aios.chat.mapper.AgentRunStepMapper.class),
                 mock(WebClient.class), mock(ServiceTokenProvider.class), mapper,
                 mock(ScheduledExecutorService.class), mock(AgentProperties.class),
                 mock(BillingService.class), mock(ActivityLogService.class), mock(ContentGuardService.class),
