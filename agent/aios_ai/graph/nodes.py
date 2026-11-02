@@ -31,6 +31,7 @@ from aios_ai.llm import gateway
 from aios_ai.llm.upstream import UpstreamError, _post_non_stream, _post_stream
 from aios_ai.prompt.builder import build_messages
 from aios_ai.tools import ask_user as ask_user_tool
+from aios_ai.tools import entity_clarify as entity_clarify_tool
 from aios_ai.tools import request_confirm as request_confirm_tool
 from aios_ai.tools import request_form as request_form_tool
 from aios_ai.tools import web_search as web_search_tool
@@ -500,6 +501,27 @@ async def prepare(state: dict) -> dict:
     # 这是确定性闸（不给工具），绑了数字员工（scope 非空）的办理类会话原样返回，零回归。
     tools = filter_expert_tools(tools, req.expert, req.scope)
 
+    # —— 「模糊的人」确定性预取（2026-11-02，**连接器无关**）——
+    # 提示词早已写了「先查候选人再 ask_user」，但工具存在 ≠ 模型会用：用户实测「帮我给同事
+    # 发条消息」时，模型看到没给姓名就直接认定「没法查」，只回一句「请提供姓名/部门/职位」。
+    # 这里改成代码先查一次人源（`entity_clarify.find_people_source` 按**工具短名**发现，
+    # 通讯录类优先、没有就退到邮件发件人聚合 —— 所以企微和 QQ 邮箱走的是同一条路）：
+    #   · 查到候选 ⇒ 往系统提示里写「已为你查好」，并把候选存进 state；
+    #   · agent 节点若这一轮**零工具调用**，再用这批候选合成 ask_user（下面那段确定性闸）。
+    # 预取失败/超时/无权限一律吞掉（prefetch 内部已兜），不能因为查候选把整条 run 打挂。
+    entity_candidates: list[dict] = []
+    entity_source = ""
+    if _hitl_enabled() and entity_clarify_tool.needs_entity_clarify(req.text):
+        entity_candidates, entity_source = await entity_clarify_tool.prefetch(tool_client, tools)
+        entity_block = entity_clarify_tool.build_block(entity_candidates, entity_source or "contact")
+        if entity_block and messages:
+            messages[0]["content"] = (messages[0].get("content") or "") + entity_block
+        if entity_candidates:
+            effective["entityCandidates"] = len(entity_candidates)
+            effective["entitySource"] = entity_source
+        logger.info("run %s: 模糊实体预取 %d 个候选（source=%s）",
+                    req.run_id, len(entity_candidates), entity_source or "-")
+
     # 观测（docs/60 P2-12）：附件注入量与检索参数进同一条 run 日志，线上排查
     # 「模型为什么看不见附件」不再靠猜。
     _att_count = len(req.attachment_docs or [])
@@ -524,6 +546,8 @@ async def prepare(state: dict) -> dict:
         "tool_calls_log": [],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         "fatal": None,
+        "entity_candidates": entity_candidates,
+        "entity_source": entity_source,
     }
 
 
@@ -544,6 +568,39 @@ async def agent(state: dict) -> dict:
     stream = bool(settings.agent_stream)
     content_parts = list(state.get("content_parts") or [])
     usage = dict(state.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0})
+
+    # —— 确定性短路：这一轮本来就不该让模型开口（2026-11-02，模糊实体澄清）——
+    # 前置条件：prepare 已经查到候选（`entity_candidates`）、HITL 开着、还没澄清过、
+    # 用户**没有点名**其中任何人、也不是群发语义。
+    # 为什么要抢在调模型之前：真机实测模型拿到候选后不肯调 ask_user，而是把名单写进正文
+    # （`[阿修bot.](wobVcoRg…)`，userid 成了链接），代码再补一张卡 ⇒ 用户同时看到一段
+    # 带机器值的废话和一张按钮卡。这种写法提示词挡不住，只能不给它写的机会。
+    # 代价：这一轮不消耗 `agent_rounds`、不产生任何正文 delta —— 界面直接出按钮，更快更干净。
+    # 只抢**第一轮**（`rounds == 0`）：一旦模型已经动过工具（比如它自己先查了通讯录），
+    # 后续的「它又改成正文列名单」由下面那段兜底合成来接，而不是在这里截胡。
+    if (rounds == 0 and _hitl_enabled() and not (state.get("clarifications") or [])
+            and entity_clarify_tool.can_short_circuit(state.get("entity_candidates"),
+                                                      req.text)):
+        early = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"))
+        if early:
+            logger.info("run %s: 候选已就绪且用户未点名 ⇒ 跳过模型，直接弹澄清卡（%d 个候选）",
+                        req.run_id, len(early["arguments"]["options"]))
+            return {
+                "agent_rounds": rounds,
+                "allow_tools": allow_tools,
+                "pending_calls": [early],
+                "content_parts": content_parts,
+                "usage": usage,
+                "messages": messages + [{
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{
+                        "id": early["id"], "type": "function",
+                        "function": {"name": early["name"],
+                                     "arguments": json.dumps(early["arguments"], ensure_ascii=False)},
+                    }],
+                }],
+                "_assistant_message": {"role": "assistant", "content": None},
+            }
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as http:
         message: dict = {}
@@ -655,6 +712,36 @@ async def agent(state: dict) -> dict:
                                      "arguments": json.dumps(hint_args, ensure_ascii=False),
                                  },
                              }]})
+
+    # —— 确定性澄清卡（2026-11-02，**连接器无关**）——
+    # 与上面 form_hint 同一套思路：模型这一轮**一个工具都没调**（典型表现就是把「请提供姓名」
+    # 当成了答案直接收尾），而 prepare 已经查到真实候选 ⇒ 代码替它把按钮弹出来。
+    # 条件比 form_hint 更严，三层缺一不可：
+    #   ① 真查到候选（查不到就退回模型的文字追问 —— 宁可不弹，也不弹空卡）；
+    #   ② 本轮零工具调用、且还没澄清过（`clarifications` 为空 ⇒ 不是续跑后的第二轮）；
+    #   ③ 模型这句回复**确实是在反问人名**、或者干脆是空的 ——
+    #      若它已经给出了答案（哪怕答错），再插一张「要发给哪一位」的卡只会更乱。
+    # 合成后走 clarify 节点 interrupt()，前端渲染真按钮。
+    _model_text = str(message.get("content") or "").strip()
+    if (not calls and _hitl_enabled() and not (state.get("clarifications") or [])
+            and (state.get("entity_candidates") or [])
+            and not entity_clarify_tool.names_in_text(state.get("entity_candidates"), req.text)
+            and (not _model_text
+                 or entity_clarify_tool.looks_like_person_question(_model_text))):
+        synth = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"))
+        if synth:
+            calls = [synth]
+            messages.append({"role": "assistant", "content": message.get("content"),
+                             "tool_calls": [{
+                                 "id": synth["id"],
+                                 "type": "function",
+                                 "function": {
+                                     "name": synth["name"],
+                                     "arguments": json.dumps(synth["arguments"], ensure_ascii=False),
+                                 },
+                             }]})
+            logger.info("run %s: 模型零工具调用 ⇒ 用预取的 %d 个候选合成 ask_user（澄清卡）",
+                        req.run_id, len(synth["arguments"]["options"]))
 
     return {
         "agent_rounds": rounds + 1,

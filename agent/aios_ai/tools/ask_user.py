@@ -43,7 +43,11 @@ ASK_USER_TOOL: dict[str, Any] = {
                 "question": {"type": "string", "description": "要问用户的问题，一句话说清。"},
                 "options": {
                     "type": "array",
-                    "description": "2~10 个互斥选项，供用户单选。",
+                    "description": (
+                        "2~10 个互斥选项，供用户单选。**确实一个候选都没有时留空**"
+                        "（界面上会渲染成一个输入框让用户自己填），"
+                        "但只要有候选就必须列出来 —— 不要为了省事留空让用户手打。"
+                    ),
                     "items": {
                         "type": "object",
                         "properties": {
@@ -54,7 +58,11 @@ ASK_USER_TOOL: dict[str, Any] = {
                     },
                 },
             },
-            "required": ["question", "options"],
+            # options 不再 required（2026-11-02）：「我同事」这种完全没给姓名片段的问法
+            # 在通讯录里**没有任何关键词可搜**（search 的 keywords 必填），此时既不能猜、
+            # 也不该用正文反问一句了事。留空 ⇒ H5 的 clarCardHtml 走 else 分支渲染
+            # `.clar-free` 输入框，用户填完仍走 resume 回填，比正文反问多一个可交互控件。
+            "required": ["question"],
         },
     },
 }

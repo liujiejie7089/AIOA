@@ -1566,3 +1566,35 @@ LangGraph 的 `clarify` 节点里，assistant 消息带着 N 个 `tool_calls`；
 H5（`slice(0,6)`），结果第 7~10 个候选被两级静默丢弃，用户选不到人且无任何报错。
 教训：**哨兵要判「三处相等」而不是「各自等于某个字面量」**，再加一条负向自检
 （改回旧值必须转红），否则将来只改一处照样绿。详见 `scripts/_check_entity_clarify_flow.py` E1/E7。
+
+## 53. `file://` 页面里的请求**拦不住** —— 必须把 `API.base` 指到一个假域
+
+用 Playwright 测本地单文件 H5（`user-client/index.html`，`file://` 打开）时，
+页面里的 `fetch('/api/v1/…')` 会变成 `file:///api/v1/…`，而 **Playwright 的 `page.route`
+不代理 file 协议**。表现极具误导性：`page.route('**/v1/**', handler)` 明明注册了，
+控制台却是一串 `blocked by CORS policy (origin 'null')`，然后 `send()` 直接进 catch、
+澄清卡永远不出现 —— 你会以为是卡片渲染坏了。
+正确做法（既有哨兵 `_check_clar_no_silent_deadend.py` 早就这么干了）：
+`await page.evaluate("() => { API.base = 'https://shot.local'; state.token = ''; }")`
+把 base 指到假域，请求才会真的走网络栈、被 route 接管。另外必须先等 `boot()` 跑完
+（`wait_for_function("() => typeof state !== 'undefined' && !!$('msgs')")` + 1~2s），
+否则它初始化时会把刚设的 state 盖掉。
+
+## 54. 卡片/气泡的 `min-width` 用百分比 = 等于没写（循环依赖）
+
+`.clar-card{min-width:min(260px,100%)}` 想给卡片一个下限宽度，实测**完全无效**（仍是 190px）：
+百分比是相对**气泡**宽度算的，而气泡宽度又由内容（=卡片）决定 ⇒ 循环依赖，浏览器取小值。
+把 `min-width` 直接加到卡片上还会撑出气泡（卡片比气泡宽，视觉破框）。
+正确做法：给**气泡**设下限宽度并用视口单位 ——
+`.bubble:has(.clar-card), .bub:has(.clar-card){ min-width:min(284px,86vw); }`，
+卡片保持 `width:100%`。`:has()` 不支持时只是退回「跟着气泡收缩」，不阻断功能。
+
+## 55. 「先查再问」写成提示词必然失效一次 —— 要用代码截胡
+
+2026-11-02 连续两轮实测同一个教训：
+① 提示词写「先查候选再 ask_user」⇒ 模型看到没给姓名就直接反问，一次都没查；
+② 补了代码预取 + 「调 ask_user，value 用系统给的值」⇒ 模型把名单写进**正文**
+   （`[阿修bot.](wobVcoRg…)`，userid 还成了 Markdown 链接），照样不调 ask_user。
+真正管用的是**确定性截胡**：候选已就绪、用户没点名、非群发时，
+`agent` 第一轮**根本不调模型**，直接合成 `ask_user` 走 `clarify` 的 `interrupt()`。
+判据要分层收紧（人称+动作词 / 已点名 / 群发 / 候选为空），否则会变成「见谁都弹卡」。

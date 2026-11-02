@@ -225,14 +225,58 @@ async def _exec_whoami(ctx: Context, **kw) -> CallToolResult:
 _CONTACT_MAX = 10
 
 
+async def _recent_people(d) -> list[dict]:
+    """「我最近和谁有往来」—— 空关键词时的候选来源。
+
+    为什么要这么绕：CLI 的 `contact users search` **没有「列出全员」的接口**
+    （`keywords` 必填，传空数组直接被服务端判 40058），部门名也搜不到人（实测）。
+    所以在用户只说「我同事」、没给任何姓名片段时，唯一能拿到的真实候选就是
+    「最近 7 天在群里说过话的人」—— 每条消息都带 userid 与 user_name，可直接当按钮值。
+
+    局限（要对用户诚实）：这是**最近有往来的人**，不等于全公司通讯录；
+    因此返回里带 `source` 与 `note`，提示模型说明来源。
+    """
+    b, e = _since(7)
+    sess = await _call(argv.recent_sessions(b, e), d)
+    groups = [c for c in _first_list(sess, "chats", "groups", "list")
+              if isinstance(c, dict) and (c.get("chat_id") or "")][:3]
+    seen: dict[str, dict] = {}
+    for g in groups:
+        gname = g.get("chat_name") or ""
+        try:
+            data = await _call(argv.session_messages(g["chat_id"], b, e), d)
+        except runner.CliError:
+            continue        # 单个群取不到不影响其它群（权限/退群等）
+        for m in _rows(data, "messages", "msg_list", "list"):
+            uid = str(m.get("userid") or "").strip()
+            name = str(m.get("user_name") or "").strip()
+            if uid and name and uid not in seen:
+                seen[uid] = {"name": name, "userid": uid, "from": gname}
+        if len(seen) >= _CONTACT_MAX:
+            break
+    return list(seen.values())
+
+
 async def _exec_contact_search(ctx: Context, keywords: str = "", searchMode: str = "",
                                **kw) -> CallToolResult:
     kws = _kw_list(keywords)
-    if not kws:
-        return _err("keywords 不能为空：请给出要搜索的姓名、姓名片段或拼音")
     mode = (searchMode or "").strip().lower()
     if mode not in ("", "list"):
         return _err("searchMode 只支持 list（全量枚举候选）或留空（默认热度优先，只回前 3）")
+    if not kws:
+        # 没给任何姓名片段：不再让模型「回去问用户」，而是先把真实候选查出来（2026-11-02）。
+        try:
+            _, d = await _profile(ctx)
+            people = await _recent_people(d)
+        except (profiles.NotBound, runner.CliError, identity.IdentityError) as e:
+            return _err(str(e))
+        return _ok({
+            "count": len(people), "total": len(people), "hasMore": False,
+            "members": people, "source": "recent_group_messages",
+            "note": "没给姓名时按「最近 7 天群里说过话的人」取候选；这不是全公司通讯录，"
+                    "人数可能不全。直接把这些人做成按钮让用户选，不要再用正文反问用户要姓名。",
+            "scope": "我所在企业的通讯录（不代表对方授权过我任何东西）",
+        })
     try:
         _, d = await _profile(ctx)
         data = await _call(argv.contact_search(keywords, mode), d)
@@ -815,7 +859,7 @@ _EXEC = {
 # 第二处参数事实源：default=None ⇒ 必填。必须与 catalog 的 required 一致。
 _PARAMS: dict[str, list[tuple[str, type, Any]]] = {
     "whoami": [],
-    "contact_search": [("keywords", str, None), ("searchMode", str, "")],
+    "contact_search": [("keywords", str, ""), ("searchMode", str, "")],
     "recent_group_sessions": [("days", int, 7)],
     "session_messages": [("chat_id", str, None), ("days", int, 7), ("limit", int, 20)],
     "mail_search": [("keywords", str, ""), ("days", int, 7), ("limit", int, 10),

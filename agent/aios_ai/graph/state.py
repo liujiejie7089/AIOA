@@ -33,6 +33,8 @@ class RunState(TypedDict, total=False):
     effective: dict              # 回传前端的生效参数
     fatal: dict | None           # 致命错误（如 provider 未配置）：置位后直接结束，不调模型
     citations: list[dict]        # 引用溯源条目
+    entity_candidates: list[dict]  # 「模糊的人」预取到的候选人（连接器无关，见 tools/entity_clarify）
+    entity_source: str           # 候选来源：contact（通讯录）/ mail（最近邮件发件人）/ ""（没查）
 
     # ---- 循环态 ----
     agent_rounds: int            # 已调模型的次数

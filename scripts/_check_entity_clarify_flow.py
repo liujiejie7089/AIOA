@@ -22,6 +22,8 @@
   E5  提示词块存在，且四个边界（>10 / 无结果 / 接口失败 / 只澄清）都写死
   E6  行为断言：ask_user 轮的业务调用被丢弃 + 补 tool 消息；confirm 轮照旧放行
   E7  负向自检：把上限改回 6（内存里改，不碰磁盘）⇒ E1 必须转红
+  E8  连接器无关：人源按工具短名发现（企微通讯录 / QQ 邮箱 list_messages 走同一条链）
+  E9  图里真的接上了两处确定性路径（prepare 预取 + agent 合成），且负向不弹空卡
 
 跑法：
   agent/.venv/Scripts/python.exe scripts/_check_entity_clarify_flow.py
@@ -132,9 +134,13 @@ def main() -> int:
     finally:
         prompt_builder.settings.agent_hitl = _orig
     chk("模糊的人先澄清" in blob, "E5 有【模糊的人先澄清】段")
-    for kw in ("searchMode=list", "这一轮只澄清", "hasMore=true", "不许编人",
-               "降级请用户直接给姓名或工号", "就此终止"):
+    for kw in ("searchMode=list", "这一轮只澄清", "hasMore=true", "不许编人", "就此终止",
+               # 2026-11-02 用户实测「帮我给同事发条消息」被正文反问一句 —— 这三个词就是那条退化
+               "严禁", "options 传空数组", "请输入姓名或工号"):
         chk(kw in blob, f"E5 边界写死：{kw}")
+    # 反向：提示词里不能再出现「让用户自己打字补充」式的旧措辞（那正是被投诉的行为）
+    chk("降级请用户直接给姓名或工号" not in blob,
+        "E5 旧措辞已清除（不许再用正文索要姓名）")
 
     # ------------------------------------------------------------------ E6
     head("E6 行为断言：ask_user 轮不执行本轮业务调用")
@@ -181,6 +187,82 @@ def main() -> int:
             f"hub={hub_cap} agent={now} h5={h5_cap}")
     finally:
         ask_user_tool.MAX_OPTIONS = real
+
+    # ------------------------------------------------------------------ E8
+    head("E8 连接器无关：人源按工具短名发现")
+    from aios_ai.tools import entity_clarify as ec                 # noqa: E402
+
+    def _t(n):
+        return {"type": "function", "function": {"name": n}}
+
+    wecom_src = ec.find_people_source([_t("mcp__wecom_cli__contact_search")])
+    mail_src = ec.find_people_source([_t("mcp__qq_mail__list_messages")])
+    chk(wecom_src == {"kind": "contact", "tool": "mcp__wecom_cli__contact_search"},
+        "E8 企微：contact_search 识别为通讯录人源", str(wecom_src))
+    chk(mail_src == {"kind": "mail", "tool": "mcp__qq_mail__list_messages"},
+        "E8 QQ 邮箱：list_messages 识别为邮件人源（不写死连接器 code）", str(mail_src))
+    chk(ec.find_people_source([_t("mcp__qq_mail__search_messages")]) is None,
+        "E8 负向：只有 search_messages 不算人源（query 必填，这里恰恰不知道搜什么）")
+    chk(ec.find_people_source([_t("kb_search")]) is None,
+        "E8 负向：没有连接器工具 ⇒ 不造人")
+
+    # 两条链路最终产出**同一种**澄清卡形状：value 是机器值、label 是人看的
+    mail_rows = ec.parse_members({"messages": [{"from": '"张三" <zhang@x.com>'},
+                                               {"from": "li@x.com"}]}, "mail")
+    mail_opts = ec.build_options(mail_rows)
+    chk([o["value"] for o in mail_opts] == ["zhang@x.com", "li@x.com"],
+        "E8 邮件候选的 value 是邮箱（可直接喂 send_draft 的 to）", str(mail_opts))
+    contact_rows = ec.parse_members({"members": [
+        {"name": "刘洋", "userid": "wob1", "departments": "研发部", "position": "工程师"}]},
+        "contact")
+    chk(ec.build_options(contact_rows) == [
+        {"value": "wob1", "label": "刘洋（研发部 / 工程师）"}],
+        "E8 通讯录候选的 value 是 userid、label 带部门/职位")
+
+    # ------------------------------------------------------------------ E9
+    head("E9 图里的两处确定性接线")
+    nodes_src = _read(os.path.join(REPO, "agent", "aios_ai", "graph", "nodes.py"))
+    state_src = _read(os.path.join(REPO, "agent", "aios_ai", "graph", "state.py"))
+    chk("entity_clarify_tool.prefetch(" in nodes_src,
+        "E9 prepare 里真的调了 prefetch（不是只有提示词）")
+    chk("entity_clarify_tool.build_clarify_call(" in nodes_src,
+        "E9 agent 里真的会合成 ask_user")
+    chk("entity_clarify_tool.looks_like_person_question(" in nodes_src,
+        "E9 合成前先确认模型是在反问人名（已作答就不打扰）")
+    chk("entity_candidates" in state_src and "entity_source" in state_src,
+        "E9 RunState 声明了预取结果（LangGraph 要求节点写回的键都在 schema 里）")
+
+    # 负向：候选为空时必须返回 None —— 证明判据不是恒真，不会弹空卡
+    chk(ec.build_clarify_call([]) is None, "E9 负向：0 个候选 ⇒ 不合成调用")
+    synth = ec.build_clarify_call(contact_rows)
+    chk(synth and synth["name"] == "ask_user"
+        and synth["arguments"]["options"][0]["value"] == "wob1",
+        "E9 有候选 ⇒ 合成的是 ask_user，value 用通讯录 userid")
+
+    # ------------------------------------------------------------------ E10
+    head("E10 真机反馈：短路调模型 + 不泄露机器值")
+    # 2026-11-02 真机（DeepSeek）实测两条退化，都必须被代码挡住：
+    #   ① 模型拿到候选后不肯调 ask_user，把名单写进正文，还把 userid 渲染成
+    #      `[阿修bot.](wobVcoRg…)` 链接 ⇒ 用户看到一段带机器值的废话 + 一张卡；
+    #   ② 「给同事刘洋发消息」其实已经点名，却还要弹「要发给哪一位」。
+    members = [{"name": "刘洋", "userid": "u1", "departments": "研发部"},
+               {"name": "小亮", "userid": "u2", "departments": "研发部"}]
+    chk("entity_clarify_tool.can_short_circuit(" in nodes_src,
+        "E10 agent 第一轮会短路（不给模型写正文的机会）")
+    chk("names_in_text(" in nodes_src,
+        "E10 兜底合成也会避开「用户已点名」的情况")
+    chk(ec.can_short_circuit(members, "帮我给同事发条消息说下午三点开会") is True,
+        "E10 正常诉求 ⇒ 短路弹卡")
+    chk(ec.can_short_circuit(members, "给同事刘洋发条消息") is False,
+        "E10 用户已点名刘洋 ⇒ 不短路（再问就是打扰）")
+    chk(ec.can_short_circuit(members, "给同事群发个通知") is False,
+        "E10 群发语义 ⇒ 不收敛成选一个人")
+    chk(ec.can_short_circuit([], "帮我给同事发条消息") is False,
+        "E10 没候选 ⇒ 不短路（不许弹空卡）")
+    block = ec.build_block(members, "contact")
+    chk('"value": "u1"' in block and "逐字照抄" in block,
+        "E10 注入块直接给可照抄的 options JSON（只给姓名时模型会退回正文列名单）")
+    chk("不要把名单写进正文" in block, "E10 注入块明令不许把名单写进正文")
 
     print("\n" + "=" * 60)
     if fails:
