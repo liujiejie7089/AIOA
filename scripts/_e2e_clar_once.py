@@ -105,20 +105,51 @@ def main() -> int:
 
         clar = next((json.loads(d) for t, d in f1 if t == "need_clarification"), None) or {}
         opts = clar.get("suggested_options") or []
+        flds = clar.get("fields") or []
         print(f"  question: {clar.get('question')}")
-        for o in opts:
-            print("   ·", o)
-        chk("候选以按钮形式给出", len(opts) >= 1, f"{len(opts)} 个")
-        chk("选项带 needs_text（同一次交互里要内容）",
-            bool(opts) and all(o.get("needs_text") is True for o in opts),
-            str([o.get("text_label") for o in opts][:2]))
-        chk("value 是机器值、label 是人看的名字",
-            bool(opts) and opts[0]["value"] != opts[0]["label"], str(opts[:1]))
+        if flds:
+            # 字段卡：动作未定时代码合成的「做什么 / 对谁 / 依赖字段」
+            for f in flds:
+                dep = f.get("visible_when")
+                print(f"   · [{f['type']}] {f['id']} — {f['label']}"
+                      + (f"（{f['options'][0]['label']}… 共{len(f['options'])}项）"
+                         if f.get("options") else "")
+                      + (f" ← 依赖 {dep['field']}={dep.get('value')}" if dep else ""))
+            chk("字段卡：动作菜单 + 对象候选 + 三支依赖 + 其它出口",
+                [f["id"] for f in flds] == ["action", "person", "content", "when", "title", "other"],
+                str([f["id"] for f in flds]))
+            person = next(f for f in flds if f["id"] == "person")
+            chk("对象字段是可检索候选框，候选来自真实通讯录",
+                person.get("searchable") is True and len(person.get("options") or []) >= 1,
+                str(len(person.get("options") or [])))
+            chk("依赖字段声明了 visible_when（不是靠前端写死）",
+                all(f.get("visible_when") for f in flds
+                    if f["id"] in ("content", "when", "title", "other")),
+                str([f["id"] for f in flds if f.get("visible_when")]))
+            chk("value 是机器值、label 是人看的名字",
+                person["options"][0]["value"] != person["options"][0]["label"],
+                str(person["options"][:1]))
+        else:
+            for o in opts:
+                print("   ·", o)
+            chk("候选以按钮形式给出", len(opts) >= 1, f"{len(opts)} 个")
+            chk("选项带 needs_text（同一次交互里要内容）",
+                bool(opts) and all(o.get("needs_text") is True for o in opts),
+                str([o.get("text_label") for o in opts][:2]))
+            chk("value 是机器值、label 是人看的名字",
+                bool(opts) and opts[0]["value"] != opts[0]["label"], str(opts[:1]))
 
-        if a.dry or not opts:
+        if a.dry or not (opts or flds):
             return _report()
 
-        # ---- 一次回填：选中值 + 补充内容，同一个对象 ----
+        # ---- 一次回填 ----
+        # 字段卡不在这里回填：动作一旦落到「发消息」就是一次**真实外发**，
+        # 而这条脚本的职责是「证明卡是代码按语义合成的」，执行链由
+        # _shots_clar_fields.py（浏览器全链路）+ 单选卡的真机回归覆盖。
+        if flds:
+            print("\n（字段卡：本次只验证生成，不回填 —— 避免真机外发）")
+            return _report()
+
         answer = {"value": opts[0]["value"], "label": opts[0]["label"],
                   "text": "下午三点开会"}
         print(f"\n=== resume 一次回填 {json.dumps(answer, ensure_ascii=False)} ===")

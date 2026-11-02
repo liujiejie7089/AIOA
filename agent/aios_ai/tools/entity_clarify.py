@@ -110,9 +110,39 @@ def needs_entity_clarify(text: str | None) -> bool:
       · 人称指代（`同事` 等）—— 说明对象没被唯一确定；
       · 动作/渠道词（`发给` / `消息` / `邮件` / `日程` …）—— 说明真的要做动作。
     「公司同事的报销流程是什么」只满足前者 ⇒ 不预取、不弹卡，走正常知识问答。
+
+    泛动作（「说个事」「联系一下」）也算：那种话缺的不只是对象，连**做什么**都没定，
+    同样需要先问一嘴（见 `needs_action_clarify`）。
     """
     t = text or ""
-    return bool(ENTITY_HINT_RE.search(t)) and bool(ACTION_RE.search(t))
+    if not ENTITY_HINT_RE.search(t):
+        return False
+    return bool(ACTION_RE.search(t)) or needs_action_clarify(t)
+
+
+# 「泛动作」：说了要对人做事，但没说**做哪件**。
+# 2026-11-02 真机实测：「帮我和同事说个事」既不命中 ACTION_RE（没有渠道词），
+# 也就不会预取候选 ⇒ 模型拿不到任何材料，直接写了一段散文反问
+# （「请告诉我您要传达的具体内容，以及您想发给哪位同事」）—— 又一次「提示词挡不住」。
+# 这类话缺的是**动作本身**，只能用一张「做什么」的菜单接住。
+GENERIC_ACTION_RE = re.compile(
+    r"(说个事|说件事|说一下|说下|说一声|聊一聊|聊聊|聊一下|聊个|"
+    r"联系一下|联系|沟通|商量|对接|处理一下|跟进一下|跟进|找一下|"
+    r"跟.{1,4}说|和.{1,4}说)")
+
+# 已经说了具体渠道/产物 ⇒ 不缺「做什么」，不该再弹动作菜单（否则是答错题）。
+_CONCRETE_ACTION_RE = re.compile(
+    r"(消息|私信|邮件|日程|会议|开会|待办|提醒|抄送|邀请|审批|请假|报销)")
+
+
+def needs_action_clarify(text: str | None) -> bool:
+    """是「人称 + 泛动作 + 没说做哪件」吗？（此时该问的是**做什么**，不是发给谁）"""
+    t = text or ""
+    if not ENTITY_HINT_RE.search(t):
+        return False
+    if _CONCRETE_ACTION_RE.search(t):
+        return False
+    return bool(GENERIC_ACTION_RE.search(t))
 
 
 def looks_like_person_question(text: str | None) -> bool:
@@ -312,6 +342,58 @@ def build_clarify_call(members: list[dict] | None,
             "arguments": {"question": build_question(), "options": options}}
 
 
+def build_action_fields_call(members: list[dict] | None) -> dict[str, Any] | None:
+    """合成一张**字段卡**：先问「做什么」，再问「对谁做」，后面跟着依赖字段。
+
+    用在「人称 + 泛动作 + 没说做哪件」的场景（`needs_action_clarify`）。
+    与 `build_clarify_call` 的区别：那张卡的对象是**确定**的（只是不知道具体是谁），
+    所以单选一个人就够；这张卡连动作都还没确定，必须一次把
+    「做什么 / 对谁 / 还需要什么」问全 —— 否则用户选完人还得再说一句做什么。
+
+    字段之间是**声明式依赖**（`visible_when`），不是前端写死的 if：
+    选了「发消息」才出现内容框、选「约会议」才出现时间框；「其它」留一个出口，
+    免得把「让同事批个假」这类诉求硬塞进三选一。
+    """
+    options = build_options(members)
+    if not options:
+        return None
+    fields = [
+        {"id": "action", "label": "想做什么", "type": "select", "required": True,
+         "options": [{"value": "message", "label": "发消息"},
+                     {"value": "meeting", "label": "约会议"},
+                     {"value": "todo", "label": "建待办"},
+                     {"value": "other", "label": "其它"}]},
+        {"id": "person", "label": "对象", "type": "select", "searchable": True,
+         "required": True, "placeholder": "输入姓名筛选…", "options": options},
+        {"id": "content", "label": "要发送的内容", "type": "textarea", "required": True,
+         "placeholder": "例如：下午三点开会",
+         "visible_when": {"field": "action", "op": "eq", "value": "message"}},
+        {"id": "when", "label": "会议时间", "type": "datetime", "required": True,
+         "visible_when": {"field": "action", "op": "eq", "value": "meeting"}},
+        {"id": "title", "label": "待办标题", "type": "text", "required": True,
+         "max_len": 60, "placeholder": "例如：周五前提交周报",
+         "visible_when": {"field": "action", "op": "eq", "value": "todo"}},
+        {"id": "other", "label": "具体要做什么", "type": "textarea", "required": True,
+         "placeholder": "用一句话说清，例如：让他把合同盖章后寄回",
+         "visible_when": {"field": "action", "op": "eq", "value": "other"}},
+    ]
+    return {"id": SYNTH_CALL_ID, "name": "ask_user",
+            "arguments": {"question": "要我帮你做哪件事、对谁做？", "fields": fields}}
+
+
+def build_call(members: list[dict] | None,
+               text: str | None = None) -> dict[str, Any] | None:
+    """按语义挑一张卡：动作未定 ⇒ 字段卡；动作明确只缺人 ⇒ 单选卡。
+
+    两条合成路径（代码短路 / 兜底补卡）都走这里，避免两处判断分叉。
+    """
+    if needs_action_clarify(text):
+        card = build_action_fields_call(members)
+        if card:
+            return card
+    return build_clarify_call(members, text)
+
+
 def build_block(members: list[dict] | None, source: str = "contact",
                 text: str | None = None) -> str:
     """把预取到的候选写进系统提示，让模型知道「已经查过了、照抄就能调」。
@@ -340,6 +422,13 @@ def build_block(members: list[dict] | None, source: str = "contact",
             "\n注意：这次动作还缺一段内容（" + gaps[0] + "）。上面 JSON 里每项都带了 "
             "`needs_text: true` —— **照抄**，界面上会跟着选项弹出输入框，"
             "用户填完一次提交。**不要**在用户选完后再追问「要发送什么内容」。"
+        )
+    else:
+        extra = (
+            "\n如果连「要做什么」都还没确定（发消息 / 约会议 / 建待办），可以改用 ask_user 的 "
+            "`fields`：先给一个 action 菜单（select），再给依赖字段 —— "
+            "消息内容只在 action=message 时显示、会议时间只在 action=meeting 时显示"
+            "（用 `visible_when`），用户在一次交互里把该填的都填完。"
         )
     return (
         "\n\n【已为你查好候选】用户说的是「同事」这类没有唯一标识的指向，"

@@ -672,5 +672,72 @@ def test_short_circuit_card_asks_for_content_in_one_shot(monkeypatch) -> None:
     assert opts[0].get("text_label") == "要发送的内容"
 
 
+# ============================================================ E12 泛动作 ⇒ 字段卡
+# 真机教训（2026-11-02 第三轮）：「帮我和同事说个事」既不命中「渠道词」，
+# 于是不预取候选、也短路不了 ⇒ 模型写了一段散文反问
+# （「请告诉我您要传达的具体内容，以及您想发给哪位同事」）。这类话缺的是**动作本身**，
+# 只能用一张「做什么」的菜单接住 —— 提示词又一次没挡住。
+
+def test_needs_action_clarify_only_for_generic_action() -> None:
+    ec = _ec()
+    assert ec.needs_action_clarify("帮我和同事说个事") is True
+    assert ec.needs_action_clarify("帮我联系一下同事") is True
+    # 已经说了具体渠道 ⇒ 不缺"做什么"，不该弹动作菜单
+    assert ec.needs_action_clarify("帮我给同事发条消息") is False
+    assert ec.needs_action_clarify("帮我约同事开个会") is False
+    assert ec.needs_action_clarify("帮同事建个待办") is False
+    # 只是知识问答 ⇒ 完全不该触发
+    assert ec.needs_action_clarify("公司同事的报销流程是什么") is False
+
+
+def test_generic_action_enters_prefetch_path() -> None:
+    """泛动作也要预取候选：不预取就没有人可选，那张字段卡等于空转。"""
+    ec = _ec()
+    assert ec.needs_entity_clarify("帮我和同事说个事") is True
+
+
+def test_build_call_picks_fields_card_for_generic_action() -> None:
+    """动作未定 ⇒ 字段卡（做什么 / 对谁 / 依赖字段），而不是「选一个人」。"""
+    ec = _ec()
+    call = ec.build_call(_MEMBERS, "帮我和同事说个事")
+    args = call["arguments"]
+    assert "options" not in args, "字段卡不该再带旧选项"
+    fields = args["fields"]
+    assert [f["id"] for f in fields] == ["action", "person", "content", "when", "title", "other"]
+    person = next(f for f in fields if f["id"] == "person")
+    assert person["type"] == "select" and person["searchable"] is True
+    assert [o["value"] for o in person["options"]] == ["wob1", "wob2"]
+    # 依赖：选「发消息」才出现内容框，选「其它」才有自填说明
+    content = next(f for f in fields if f["id"] == "content")
+    assert content["visible_when"] == {"field": "action", "op": "eq", "value": "message"}
+    other = next(f for f in fields if f["id"] == "other")
+    assert other["visible_when"]["value"] == "other", "必须有「其它」这条逃生通道"
+
+
+def test_build_call_keeps_select_card_for_concrete_action() -> None:
+    """动作明确（发消息）⇒ 仍然是「选人 + needs_text」的单选卡，零回归。"""
+    ec = _ec()
+    call = ec.build_call(_MEMBERS, "帮我给同事发条消息说下午三点开会")
+    assert "fields" not in call["arguments"]
+    assert all(o.get("needs_text") is True for o in call["arguments"]["options"])
+
+
+def test_agent_short_circuits_generic_action_into_fields_card(monkeypatch) -> None:
+    """确定性：这类话根本不该让模型开口（它会写散文反问）。"""
+    async def _boom(*a, **kw):
+        raise AssertionError("泛动作短路路径下不该调用模型")
+
+    monkeypatch.setattr(nodes, "_post_non_stream", _boom)
+    monkeypatch.setattr(nodes.settings, "agent_stream", False, raising=False)
+    monkeypatch.setattr(nodes.settings, "agent_hitl", True, raising=False)
+
+    out = asyncio.run(nodes.agent(_agent_state(members=_MEMBERS, text="帮我和同事说个事")))
+    calls = out["pending_calls"]
+    assert len(calls) == 1 and calls[0]["name"] == "ask_user"
+    assert "fields" in calls[0]["arguments"], "应该弹字段卡而不是单选卡"
+    assert out["content_parts"] == [], "短路轮不许产出正文"
+    assert nodes.route_after_agent({**out, "allow_tools": True}) == "clarify"
+
+
 if __name__ == "__main__":   # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

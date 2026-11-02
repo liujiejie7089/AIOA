@@ -544,6 +544,61 @@
   }
   .clar-text:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
   .clar-text:disabled{ opacity:.7; }
+  /* ---------- 动态字段卡（p.fields）：菜单 / 候选框 / 文本框 / 多选 / 日期 / 数字 ----------
+     一条消息里缺几样就问几样；字段之间可以有依赖（visible_when）。
+     类名与 JS（clarFieldsHtml / mountClarFields）严格对应，别单边改名。 */
+  .clar-fields{ margin:2px 0 4px; }
+  .clar-field[hidden]{ display:none; }
+  .clar-field{ margin-bottom:10px; }
+  .clar-flabel{ font-size:11.5px; color:var(--text-2); margin-bottom:4px; }
+  .clar-flabel .clar-req{ color:var(--red); margin-left:2px; }
+  .clar-fhint{ font-size:11px; color:var(--text-2); opacity:.75; margin:-2px 0 5px; }
+  .clar-inp{
+    width:100%; min-height:38px; box-sizing:border-box;
+    border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--text);
+    padding:0 10px;
+  }
+  .clar-inp:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  /* 可检索候选框：一个输入框 + 一列候选；输入即过滤（不做远程查询，候选已在卡里） */
+  .clar-search{
+    width:100%; min-height:34px; box-sizing:border-box; margin-bottom:6px;
+    border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--text);
+    padding:0 10px;
+  }
+  .clar-search:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  .clar-cands{ max-height:176px; overflow-y:auto; overscroll-behavior:contain; }
+  .clar-cands::-webkit-scrollbar{ width:4px; }
+  .clar-cands::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+  .clar-cand{
+    display:block; width:100%; text-align:left; min-height:34px;
+    border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); font-family:inherit; font-size:12.5px; color:var(--text);
+    cursor:pointer; margin-bottom:5px; padding:0 10px;
+  }
+  .clar-cand[hidden]{ display:none; }
+  .clar-cand.sel{ border-color:var(--blue); background:var(--blue-soft); font-weight:500; }
+  .clar-cand:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  /* 多选：方形标记，与单选的圆点区分（用户一眼看出「这个能选多个」） */
+  .clar-opt.multi .co-mark{ border-radius:3px; }
+  .clar-opt.multi.sel .co-mark{
+    background:var(--blue); border-color:var(--blue);
+    box-shadow:none;
+  }
+  .clar-opt.multi.sel .co-mark::after{
+    content:''; display:block; width:4px; height:8px; margin:1px auto 0;
+    border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg);
+  }
+  /* 校验失败：字段红框 + 就地说明。**不用弹窗** —— 弹窗会打断"一次填完"的节奏 */
+  .clar-field.bad .clar-inp,
+  .clar-field.bad .clar-text,
+  .clar-field.bad .clar-search{ border-color:var(--red); }
+  /* 按钮组/候选列表没有 border 可染，用 inset 描边示意（不占布局、不抖动） */
+  .clar-field.bad .clar-opts,
+  .clar-field.bad .clar-cands{ box-shadow:inset 0 0 0 1px var(--red); border-radius:var(--r-sm); }
+  .clar-err{ color:var(--red); font-size:11px; margin-top:4px; }
+  .clar-err[hidden]{ display:none; }
   .clar-ok{
     background:var(--blue); color:#fff; border:0; border-radius:var(--r-sm);
     min-height:36px; padding:0 14px; font-family:inherit; font-size:12.5px; cursor:pointer;
@@ -6973,6 +7028,344 @@ var CLAR_MAX_OPTS = 10;
    - 有选项时，输入框默认**收起**；选中带 needs_text 的选项才展开（且变必填）；
    - 卡级 text_input 则从一开始就展开（required 决定确认按钮是否可点）；
    - 一个选项都没有时仍走老的 `.clar-free`（那个输入框本身就是答案）。 */
+
+/* ============================================================================
+   动态字段卡（p.fields）—— 一条消息里缺几样就问几样
+   ----------------------------------------------------------------------------
+   与单选卡的关系：单选卡 = 「一个 select + 可选补充文本」；字段卡是它的**超集**，
+   多了 多选 / 日期 / 数字 / 字段间依赖。
+
+   分工是刻意的：
+     · **语义判断在 agent 侧**（模型按用户这句话决定该问哪几样、用什么控件）；
+     · **合法性/依赖求值/校验/提交在代码侧** —— 模型给出坏 schema（未知类型、
+       依赖指向不存在的字段、条件成环）也会被服务端归一或在这里被兜住，不至于白屏。
+
+   契约冻结：.clar-fields / .clar-field[data-fid] / .clar-flabel / .clar-req /
+             .clar-fhint / .clar-opts.multi / .clar-search / .clar-cands / .clar-cand /
+             .clar-inp / .clar-err —— 验证脚本按这些类名断言，不得改名。
+   ============================================================================ */
+
+/* 单选/多选候选上限：与 agent `ask_user.py::MAX_OPTIONS` 同口径。
+   可检索候选框（searchable）放宽到 50 —— 它本来就是为了「候选多到按钮放不下」而存在，
+   再卡 10 就等于把检索能力阉掉。 */
+var CLAR_FIELD_MAX_OPTS = 10;
+var CLAR_SEARCH_MAX_OPTS = 50;
+
+function clarFieldsHtml(fields){
+  var html = '<div class="clar-fields">';
+  fields.forEach(function(f, i){
+    var fid = String(f.id || ('f' + i));
+    var type = String(f.type || 'text');
+    var req = f.required === true;
+    var opts = Array.isArray(f.options) ? f.options : [];
+    var cap = (type === 'select' && f.searchable === true) ? CLAR_SEARCH_MAX_OPTS : CLAR_FIELD_MAX_OPTS;
+    html += '<div class="clar-field" data-fid="' + esc(fid) + '" data-type="' + esc(type) + '">' +
+      '<div class="clar-flabel">' + esc(f.label || fid) + (req ? '<span class="clar-req">*</span>' : '') + '</div>';
+    if(f.hint) html += '<div class="clar-fhint">' + esc(f.hint) + '</div>';
+
+    if(type === 'select' && f.searchable === true && opts.length){
+      // 候选框：输入即过滤（候选已在卡里，不做远程查询）
+      html += '<input class="clar-search" placeholder="' +
+        esc(f.placeholder || '输入关键词筛选…') + '" autocomplete="off">' +
+        '<div class="clar-cands">';
+      opts.slice(0, cap).forEach(function(o){
+        var v = (o && o.value !== undefined) ? o.value : '';
+        var l = (o && o.label) ? o.label : v;
+        html += '<button type="button" class="clar-cand" role="radio" aria-checked="false" data-value="' +
+          esc(v) + '">' + esc(l) + '</button>';
+      });
+      html += '</div>';
+    } else if(type === 'select' || type === 'multi'){
+      var multi = type === 'multi';
+      html += '<div class="clar-opts' + (multi ? ' multi' : '') + '">';
+      opts.slice(0, cap).forEach(function(o){
+        var v = (o && o.value !== undefined) ? o.value : '';
+        var l = (o && o.label) ? o.label : v;
+        html += '<button type="button" class="clar-opt' + (multi ? ' multi' : '') + '" role="' +
+          (multi ? 'checkbox' : 'radio') + '" aria-checked="false" data-value="' + esc(v) + '">' +
+          '<span class="co-mark"></span><span class="co-label"><label>' + esc(l) + '</label></span>' +
+          '</button>';
+      });
+      html += '</div>';
+    } else if(type === 'textarea'){
+      html += '<textarea class="clar-text" rows="3" placeholder="' + esc(f.placeholder || '') + '"></textarea>';
+    } else {
+      var itype = type === 'date' ? 'date'
+                : type === 'datetime' ? 'datetime-local'
+                : type === 'number' ? 'number' : 'text';
+      var extra = '';
+      if(type === 'number'){
+        if(typeof f.min === 'number') extra += ' min="' + f.min + '"';
+        if(typeof f.max === 'number') extra += ' max="' + f.max + '"';
+        extra += ' step="any" inputmode="decimal"';
+      }
+      if(f.max_len) extra += ' maxlength="' + f.max_len + '"';
+      var dv = (f["default"] != null) ? ' value="' + esc(f["default"]) + '"' : '';
+      html += '<input class="clar-inp" type="' + itype + '"' + extra +
+        ' placeholder="' + esc(f.placeholder || '') + '"' + dv + '>';
+    }
+    html += '<div class="clar-err" hidden></div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+/* 把字段卡接上：绑定交互 → 求值依赖 → 校验 → 汇总提交值。
+   返回控制器（refresh / valid / markTouched / collect / summaryHtml），
+   由 mountClarCard 负责「挂确认按钮、落款、resolve」这几件事。 */
+function mountClarFields(card, fields, onChange){
+  var els = {}, touched = {}, defaulted = {};
+  var okBtn = card.querySelector('.clar-ok');
+
+  function isEmpty(v){
+    return v === '' || v == null || (Array.isArray(v) && v.length === 0);
+  }
+
+  function labelOf(f, x){
+    var hit = (f.options || []).filter(function(o){ return String(o.value) === String(x); })[0];
+    return hit ? (hit.label || hit.value) : x;
+  }
+
+  function selVal(el){
+    var t = el.spec.type;
+    if(t === 'multi'){
+      return Array.prototype.map.call(
+        el.wrap.querySelectorAll('.clar-opt.sel'),
+        function(b){ return b.getAttribute('data-value'); });
+    }
+    if(t === 'select'){
+      var s = el.wrap.querySelector('.clar-cand.sel') || el.wrap.querySelector('.clar-opt.sel');
+      return s ? s.getAttribute('data-value') : '';
+    }
+    return el.input ? String(el.input.value || '').trim() : '';
+  }
+
+  // ---- 建引用 + 绑事件 ----
+  fields.forEach(function(f){
+    var wrap = card.querySelector('.clar-field[data-fid="' + f.id + '"]');
+    if(!wrap) return;
+    var el = {spec:f, wrap:wrap,
+              err:wrap.querySelector('.clar-err'),
+              input:wrap.querySelector('.clar-inp, .clar-text'),
+              search:wrap.querySelector('.clar-search')};
+    els[f.id] = el;
+
+    Array.prototype.forEach.call(wrap.querySelectorAll('.clar-opt'), function(btn){
+      btn.addEventListener('click', function(){
+        if(btn.disabled) return;
+        if(f.type === 'multi'){
+          btn.classList.toggle('sel');
+          btn.setAttribute('aria-checked', btn.classList.contains('sel') ? 'true' : 'false');
+        } else {
+          Array.prototype.forEach.call(wrap.querySelectorAll('.clar-opt'), function(b){
+            b.classList.remove('sel'); b.setAttribute('aria-checked', 'false');
+          });
+          btn.classList.add('sel'); btn.setAttribute('aria-checked', 'true');
+        }
+        touched[f.id] = 1;
+        refresh();
+      });
+    });
+
+    Array.prototype.forEach.call(wrap.querySelectorAll('.clar-cand'), function(btn){
+      btn.addEventListener('click', function(){
+        if(btn.disabled) return;
+        Array.prototype.forEach.call(wrap.querySelectorAll('.clar-cand'), function(b){
+          b.classList.remove('sel'); b.setAttribute('aria-checked', 'false');
+        });
+        btn.classList.add('sel'); btn.setAttribute('aria-checked', 'true');
+        touched[f.id] = 1;
+        refresh();
+      });
+    });
+
+    if(el.search){
+      // 输入即过滤；Enter 不提交（用户是在找候选，不是在交答案）
+      el.search.addEventListener('input', function(){
+        var q = String(el.search.value || '').trim().toLowerCase();
+        Array.prototype.forEach.call(wrap.querySelectorAll('.clar-cand'), function(b){
+          b.hidden = q !== '' && String(b.textContent || '').toLowerCase().indexOf(q) < 0;
+        });
+      });
+      el.search.addEventListener('keydown', function(e){
+        if(e.key === 'Enter'){ e.preventDefault(); }
+      });
+    }
+
+    if(el.input){
+      el.input.addEventListener('input', function(){ touched[f.id] = 1; refresh(); });
+      el.input.addEventListener('change', function(){ touched[f.id] = 1; refresh(); });
+      el.input.addEventListener('keydown', function(e){
+        if(e.key !== 'Enter') return;
+        // 多行框里 Enter 是换行；单行控件 Enter 直接提交（少一次鼠标移动）
+        if(f.type === 'textarea'){
+          if(e.ctrlKey || e.metaKey){ e.preventDefault(); if(okBtn) okBtn.click(); }
+        } else {
+          e.preventDefault();
+          if(okBtn) okBtn.click();
+        }
+      });
+    }
+  });
+
+  // ---- 依赖求值 ----
+  function values(){
+    var v = {};
+    fields.forEach(function(f){
+      var el = els[f.id];
+      if(!el || el.wrap.hidden) return;          // 隐藏字段：不提交（也不可能被校验）
+      v[f.id] = selVal(el);
+    });
+    return v;
+  }
+
+  function condOk(cond, vals){
+    if(!cond) return true;
+    var v = vals[cond.field];
+    switch(String(cond.op || 'eq')){
+      case 'empty':  return isEmpty(v);
+      case 'truthy': return !isEmpty(v);
+      case 'in':     return (cond.value || []).map(String).indexOf(String(v)) >= 0;
+      case 'neq':    return String(v) !== String(cond.value);
+      default:       return String(v) === String(cond.value);
+    }
+  }
+
+  function clearField(el){
+    if(el.spec.type === 'select' || el.spec.type === 'multi'){
+      Array.prototype.forEach.call(el.wrap.querySelectorAll('.sel'), function(b){
+        b.classList.remove('sel'); b.setAttribute('aria-checked', 'false');
+      });
+      if(el.search){
+        el.search.value = '';
+        Array.prototype.forEach.call(el.wrap.querySelectorAll('.clar-cand'), function(b){ b.hidden = false; });
+      }
+    } else if(el.input){
+      el.input.value = '';
+    }
+    delete touched[el.spec.id];       // 隐藏即视为「没填过」：再显示时不带红框
+  }
+
+  function applyDefault(el){
+    if(defaulted[el.spec.id]) return;
+    defaulted[el.spec.id] = 1;
+    var d = el.spec["default"];
+    if(d == null || d === '') return;
+    if(el.spec.type === 'select' || el.spec.type === 'multi'){
+      Array.prototype.forEach.call(el.wrap.querySelectorAll('.clar-opt, .clar-cand'), function(b){
+        if(String(b.getAttribute('data-value')) === String(d)){
+          b.classList.add('sel'); b.setAttribute('aria-checked', 'true');
+        }
+      });
+    } else if(el.input){ el.input.value = String(d); }
+  }
+
+  function visible(){ return fields.filter(function(f){ return els[f.id] && !els[f.id].wrap.hidden; }); }
+
+  function errOf(el){
+    var f = el.spec, v = selVal(el);
+    if(f.required && isEmpty(v)) return '必填';
+    if(isEmpty(v)) return '';
+    if(f.type === 'multi') return '';                       // 多选只校验"是否为空"
+    var s = String(v);
+    if(f.max_len && s.length > f.max_len) return '最多 ' + f.max_len + ' 字（当前 ' + s.length + '）';
+    if(f.type === 'number'){
+      var n = Number(s);
+      if(!isFinite(n)) return '请填数字';
+      if(typeof f.min === 'number' && n < f.min) return '不能小于 ' + f.min;
+      if(typeof f.max === 'number' && n > f.max) return '不能大于 ' + f.max;
+    }
+    if(f.type === 'date' && !/^\d{4}-\d{2}-\d{2}/.test(s)) return '请选择日期';
+    if(f.type === 'datetime' && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return '请选择日期时间';
+    return '';
+  }
+
+  function paint(){
+    visible().forEach(function(f){
+      var el = els[f.id], e = errOf(el);
+      // 红框与红字都只在「碰过这个字段」之后出现：一进卡片全是红框等于噪音，
+      // 用户还没开始填就先被指责一遍。
+      var show = !!e && !!touched[f.id];
+      el.wrap.classList.toggle('bad', show);
+      if(el.err){
+        el.err.hidden = !show;
+        el.err.textContent = show ? e : '';
+      }
+    });
+  }
+
+  function valid(){ return visible().every(function(f){ return errOf(els[f.id]) === ''; }); }
+
+  function refresh(){
+    // 可见性由「当前值」决定，而「当前值」又只统计可见字段 ⇒ 迭代到不动点。
+    // 步数上限 = 字段数 + 2，足以覆盖任何链形依赖；成环的边已在服务端剪掉。
+    for(var pass = 0; pass <= fields.length + 1; pass++){
+      var vals = values(), changed = false;
+      fields.forEach(function(f){
+        var el = els[f.id];
+        if(!el) return;
+        var show = condOk(f.visible_when, vals);
+        if(el.wrap.hidden === show){          // 需要翻转
+          el.wrap.hidden = !show;
+          if(show) applyDefault(el); else clearField(el);
+          changed = true;
+        }
+      });
+      if(!changed) break;
+    }
+    paint();
+    if(typeof onChange === 'function') onChange();
+  }
+
+  function markTouched(){
+    visible().forEach(function(f){ touched[f.id] = 1; });
+    paint();
+  }
+
+  /* 汇总成回填载荷：
+     · values  —— 每个（可见）字段一项，键就是 schema 的 id；
+     · value/label —— 取第一个「选了值」的选择型字段（兼容旧的单选语义）；
+     · text   —— 取第一个非空的文本型字段（兼容旧的「补充内容」语义）。 */
+  function collect(){
+    var vals = values(), vis = visible();
+    var firstSel = null, textVal = '';
+    vis.forEach(function(f){
+      var v = vals[f.id];
+      if(!firstSel && !isEmpty(v) && (f.type === 'select' || f.type === 'multi')) firstSel = {f:f, v:v};
+      if(!textVal && (f.type === 'textarea' || f.type === 'text') && !isEmpty(v)) textVal = String(v);
+    });
+    var value = '', label = '';
+    if(firstSel){
+      var arr = Array.isArray(firstSel.v) ? firstSel.v : [firstSel.v];
+      value = arr.join(',');
+      label = arr.map(function(x){ return labelOf(firstSel.f, x); }).join('、');
+    }
+    if(!value){
+      var any = vis.map(function(f){ return vals[f.id]; })
+                   .filter(function(v){ return !isEmpty(v); })[0];
+      value = any == null ? '' : String(any);
+    }
+    return {value:value, label:(label || value), text:textVal, values:vals};
+  }
+
+  function summaryHtml(){
+    var vals = values(), parts = [];
+    visible().forEach(function(f){
+      var v = vals[f.id];
+      if(isEmpty(v)) return;
+      var shown = Array.isArray(v)
+        ? v.map(function(x){ return labelOf(f, x); }).join('、')
+        : labelOf(f, v);
+      parts.push(esc(f.label || f.id) + '：<label>' + esc(shown) + '</label>');
+    });
+    return '已提交：' + (parts.join('；') || '（空）');
+  }
+
+  refresh();
+  return {refresh:refresh, valid:valid, markTouched:markTouched,
+          values:values, collect:collect, summaryHtml:summaryHtml};
+}
+
 function clarCardHtml(p, opts){
   opts = opts || {};
   const q = (p && p.question != null) ? String(p.question) : '需要你补充一点信息';
@@ -6980,6 +7373,15 @@ function clarCardHtml(p, opts){
   const ti = (p && p.text_input && typeof p.text_input === 'object') ? p.text_input : null;
   let html = '<div class="clar-card" data-clar="1">' +
     '<div class="clar-q">' + esc(q) + '</div>';
+  // 字段卡优先：有 fields 就整卡交给字段引擎（旧 options/text_input 一律不渲染，
+  // 否则用户会看到两套控件、两套必填规则，谁也说不清哪套算数）。
+  const flds = (p && Array.isArray(p.fields)) ? p.fields : [];
+  if(flds.length){
+    html += clarFieldsHtml(flds);
+    // 不 disabled：多字段卡的可点性由「点后校验」承担（见 mountClarCard 字段分支）
+    html += '<button type="button" class="clar-ok" data-clar-ok="1">确认</button>';
+    return html + '</div>';
+  }
   if(optsL.length){
     html += '<div class="clar-opts">';
     optsL.slice(0, CLAR_MAX_OPTS).forEach(function(o){
@@ -7094,7 +7496,8 @@ function mountClarCard(host, p){
     function freeze(extra){
       card.classList.add('done');
       Array.prototype.forEach.call(
-        card.querySelectorAll('.clar-opt, .clar-ok, .clar-free, .clar-text'),
+        card.querySelectorAll('.clar-opt, .clar-ok, .clar-free, .clar-text, ' +
+                              '.clar-inp, .clar-search, .clar-cand'),
         function(el){ el.disabled = true; });
       const note = document.createElement('div');
       note.className = 'clar-picked';
@@ -7113,6 +7516,35 @@ function mountClarCard(host, p){
       freeze('已放弃');
       clarPendingResolve = null;
       resolve(null);
+    }
+
+    // ---- 字段卡分支：依赖求值 + 校验 + 一次提交 ----
+    // 放在 freeze/settle/abandon 之后（复用它俩），并在旧的选项绑定之前 return，
+    // 两条路径互不干扰：字段卡不会走到 selIdx/textGate 那套单选逻辑。
+    //
+    // 「确认」**不置灰**（与单选卡不同）：多字段卡里，按钮灰掉只会让用户对着表单猜
+    // 自己漏了哪一项；让它可点、点了就地指出问题，才是能自解释的交互。
+    const fieldSpecs = (p && Array.isArray(p.fields)) ? p.fields : [];
+    if(fieldSpecs.length){
+      const ctl = mountClarFields(card, fieldSpecs, null);
+      if(ok){
+        ok.addEventListener('click', function(){
+          if(!ctl.valid()){
+            // 不提交，但必须**说清是哪儿不对**：点亮问题字段 + 把焦点送到第一个错的
+            ctl.markTouched();
+            const bad = card.querySelector('.clar-field.bad');
+            const focusable = bad && bad.querySelector('.clar-inp, .clar-text, .clar-search, .clar-opt');
+            if(focusable) focusable.focus();
+            return;
+          }
+          freeze(ctl.summaryHtml());
+          const pick = ctl.collect();
+          clarPendingResolve = null;
+          resolve(pick);          // {value, label, text, values}
+        });
+      }
+      clarPendingResolve = function(){ abandon(); };
+      return;
     }
 
     // 单选：点 .clar-opt = 只选中不提交（单选语义）；选中后按 needs_text 动态展开输入框
@@ -7173,14 +7605,18 @@ function cancelClarCard(){
   if(typeof clarPendingResolve === 'function'){ const fn = clarPendingResolve; clarPendingResolve = null; fn(); }
 }
 
-/* 澄清卡回填载荷：**始终**是 {value,label,text} 对象。
+/* 澄清卡回填载荷：**始终**是 {value,label,text} 对象（字段卡额外带 values）。
    以前只回传标量 value —— 于是「选完人」和「要发什么」被拆成两轮：
    模型拿到一个 userid，不知道内容，只能再问一句（2026-11-02 现场）。
    text 为空时也带上：形状统一，agent 侧的 _clarify_answer 不用再猜。
-   两形态（经典 / OA）共用这一个函数，避免各写一份走形。 */
+   两形态（经典 / OA）共用这一个函数，避免各写一份走形。
+   `values` 只在**确有字段卡**时出现 —— 老形状（三键）一个字节都不变，
+   所以老断言、老客户端、老回放脚本都不受影响。 */
 function clarAnswerPayload(pick){
   if(!pick) return null;
-  return {value:pick.value, label:pick.label, text:(pick.text || '')};
+  var out = {value:pick.value, label:pick.label, text:(pick.text || '')};
+  if(pick.values && typeof pick.values === 'object') out.values = pick.values;
+  return out;
 }
 
 /* 卡片落定后，把**空的**正文容器挪到卡片之后。

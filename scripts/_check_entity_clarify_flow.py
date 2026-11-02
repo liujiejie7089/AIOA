@@ -225,8 +225,11 @@ def main() -> int:
     state_src = _read(os.path.join(REPO, "agent", "aios_ai", "graph", "state.py"))
     chk("entity_clarify_tool.prefetch(" in nodes_src,
         "E9 prepare 里真的调了 prefetch（不是只有提示词）")
-    chk("entity_clarify_tool.build_clarify_call(" in nodes_src,
-        "E9 agent 里真的会合成 ask_user")
+    chk("entity_clarify_tool.build_call(" in nodes_src,
+        "E9 agent 里真的会合成 ask_user（两条合成路径统一走 build_call）")
+    chk(nodes_src.count("entity_clarify_tool.build_call(") == 2,
+        "E9 短路与兜底两处都走同一个入口（判断不分叉）",
+        f"{nodes_src.count('entity_clarify_tool.build_call(')} 处")
     chk("entity_clarify_tool.looks_like_person_question(" in nodes_src,
         "E9 合成前先确认模型是在反问人名（已作答就不打扰）")
     chk("entity_candidates" in state_src and "entity_source" in state_src,
@@ -318,6 +321,51 @@ def main() -> int:
         "E11 会议类动作要「时间与主题」")
     chk(ec.content_hint("帮我给同事发条消息说下午三点开会")[0] == "要发送的内容",
         "E11 一句话里同时有「消息」「开会」⇒ 按先出现的动作判（消息）")
+
+    # ------------------------------------------------------------------ E12
+    head("E12 动态字段卡：菜单 / 候选框 / 文本框 / 依赖 / 校验 / 一次提交")
+    # 用户口径：「根据语义动态生成菜单、候选框和文本框，并依据输入驱动后续流程」。
+    # 判据钉在三处：① 模型侧能声明 fields（schema 有枚举）；② 服务端会收敛坏 schema；
+    # ③ H5 有字段引擎（渲染/依赖/校验/提交），并且旧的单选卡不受影响。
+    chk("fields" in ask_user_tool.ASK_USER_TOOL["function"]["parameters"]["properties"],
+        "E12 ask_user 暴露 fields（模型才能按语义给控件）")
+    props = ask_user_tool.ASK_USER_TOOL["function"]["parameters"]["properties"]["fields"]["items"]
+    chk(set(props["properties"]["type"]["enum"]) == set(ask_user_tool.FIELD_TYPES),
+        "E12 控件类型是封闭枚举（select/multi/text/textarea/date/datetime/number）",
+        str(ask_user_tool.FIELD_TYPES))
+    chk("visible_when" in props["properties"],
+        "E12 依赖条件有独立声明（visible_when），不是靠提示词约定")
+
+    spec_f = ask_user_tool.build_clarification({
+        "question": "q",
+        "options": [{"value": "a", "label": "A"}],
+        "fields": [{"id": "x", "label": "X", "type": "weird"},
+                   {"id": "y", "label": "Y", "type": "select"},
+                   {"id": "z", "label": "Z", "type": "text",
+                    "visible_when": {"field": "nope", "value": 1}}],
+    })
+    chk(spec_f["suggested_options"] == [] and "text_input" not in spec_f,
+        "E12 有 fields ⇒ 旧选项/卡级输入一律丢弃（一张卡不能两套规则）")
+    chk([f["type"] for f in spec_f["fields"]] == ["text", "text", "text"],
+        "E12 未知类型、无候选的菜单都降级成 text（不留死控件）",
+        str([f["type"] for f in spec_f["fields"]]))
+    chk("visible_when" not in spec_f["fields"][2],
+        "E12 依赖指向不存在的字段 ⇒ 剪掉条件（字段保留）")
+
+    chk("function clarFieldsHtml(" in html_now and "function mountClarFields(" in html_now,
+        "E12 H5 有字段渲染与字段引擎两个入口")
+    for cls in ("clar-search", "clar-cand", "clar-inp", "clar-err", "clar-fields"):
+        chk(cls in html_now, f"E12 控件类名 {cls} 存在")
+    chk("data-fid=" in html_now, "E12 每个字段带 data-fid（依赖与校验按 id 定位）")
+    chk("function condOk(" in html_now and "condOk(f.visible_when" in html_now,
+        "E12 依赖求值真的被调用（不是只渲染不计算）")
+    chk("function clearField(" in html_now, "E12 字段隐藏时清空（不把上一支的内容带过去）")
+    chk("function errOf(" in html_now, "E12 每个字段有独立校验")
+    chk("visible().every(" in html_now, "E12 提交前对所有**可见**字段做整体校验")
+    chk("out.values = pick.values" in html_now,
+        "E12 回填载荷带 values（一次交齐全字段）")
+    chk('data-clar-ok="1">确认' in html_now,
+        "E12 字段卡的确认键不置灰（点后校验并点亮问题字段，而不是让用户猜）")
 
     print("\n" + "=" * 60)
     if fails:

@@ -582,11 +582,13 @@ async def agent(state: dict) -> dict:
     if (rounds == 0 and _hitl_enabled() and not (state.get("clarifications") or [])
             and entity_clarify_tool.can_short_circuit(state.get("entity_candidates"),
                                                       req.text)):
-        early = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"),
-                                                      req.text)
+        early = entity_clarify_tool.build_call(state.get("entity_candidates"), req.text)
         if early:
-            logger.info("run %s: 候选已就绪且用户未点名 ⇒ 跳过模型，直接弹澄清卡（%d 个候选）",
-                        req.run_id, len(early["arguments"]["options"]))
+            _args = early["arguments"]
+            _what = (f"{len(_args['fields'])} 个字段" if _args.get("fields")
+                     else f"{len(_args.get('options') or [])} 个候选")
+            logger.info("run %s: 候选已就绪且用户未点名 ⇒ 跳过模型，直接弹澄清卡（%s）",
+                        req.run_id, _what)
             return {
                 "agent_rounds": rounds,
                 "allow_tools": allow_tools,
@@ -730,8 +732,7 @@ async def agent(state: dict) -> dict:
             and not entity_clarify_tool.names_in_text(state.get("entity_candidates"), req.text)
             and (not _model_text
                  or entity_clarify_tool.looks_like_person_question(_model_text))):
-        synth = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"),
-                                                      req.text)
+        synth = entity_clarify_tool.build_call(state.get("entity_candidates"), req.text)
         if synth:
             calls = [synth]
             messages.append({"role": "assistant", "content": message.get("content"),
@@ -743,8 +744,9 @@ async def agent(state: dict) -> dict:
                                      "arguments": json.dumps(synth["arguments"], ensure_ascii=False),
                                  },
                              }]})
-            logger.info("run %s: 模型零工具调用 ⇒ 用预取的 %d 个候选合成 ask_user（澄清卡）",
-                        req.run_id, len(synth["arguments"]["options"]))
+            logger.info("run %s: 模型零工具调用 ⇒ 用预取的 %d 个候选合成 ask_user（%s）",
+                        req.run_id, len(state.get("entity_candidates") or []),
+                        "字段卡" if synth["arguments"].get("fields") else "单选卡")
 
     return {
         "agent_rounds": rounds + 1,
@@ -875,11 +877,12 @@ async def _run_tool_calls(calls: list[dict], tool_client: ToolClient, search_par
 # --------------------------------------------------------------------------- clarify
 
 def _clarify_answer(answer: Any) -> dict[str, Any]:
-    """把回填的答案归一成 ``{value, label, text}``（**标量也要能进**）。
+    """把回填的答案归一成 ``{value, label, text, values?}``（**标量也要能进**）。
 
-    三种历史形状都要认，否则老客户端/老脚本会静默丢答案：
-      · 标量（老路径，用户选了一个值）       ⇒ ``{"value": 标量, "text": ""}``
+    四种历史形状都要认，否则老客户端/老脚本会静默丢答案：
+      · 标量（最老路径，用户选了一个值）      ⇒ ``{"value": 标量, "text": ""}``
       · ``{value,label,text}``（2026-11-02）  ⇒ 原样保留（`text` 是同一张卡里填的补充内容）
+      · ``{value,label,text,values}``（字段卡）⇒ 额外带上 ``values``（多字段一次交齐）
       · 其它对象（例如只给了 ``{text: …}``）  ⇒ 尽量凑出 value/text，凑不出就当空答案
 
     为什么必须归一：这条 tool 消息是**模型唯一的输入**。2026-11-02 现场，用户选完人之后
@@ -891,11 +894,20 @@ def _clarify_answer(answer: Any) -> dict[str, Any]:
         value = answer.get("value")
         text = answer.get("text")
         label = answer.get("label")
-        return {
+        values = answer.get("values")
+        out: dict[str, Any] = {
             "value": value if value is not None else text,
             "label": label if label is not None else value,
             "text": str(text).strip() if text is not None else "",
         }
+        if isinstance(values, dict) and values:
+            # 字段卡：把每个字段原样交给模型（键就是 schema 里的 id），
+            # 它才能一次拿到「动作=会议 / 时间=… / 参与人=…」这样的完整一组答案。
+            out["values"] = {str(k): v for k, v in values.items()}
+            if out["value"] is None:
+                first = next((v for v in out["values"].values() if v not in (None, "", [])), None)
+                out["value"] = first
+        return out
     return {"value": answer, "text": ""}
 
 async def clarify(state: dict) -> dict:
