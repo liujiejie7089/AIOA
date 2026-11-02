@@ -1550,3 +1550,19 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
 拉 `<cmd> --schema`，取 `request.$ref` → `schemas[ref].properties`（数组就再钻 `items.$ref`），
 断言我们构造的 JSON 键 ⊆ 允许键。同类坑还有 `--attendees`（要 `[{"userid":…}]` 不是 `["uid"]`，
 错形态报 640027）。
+
+## 51. 丢弃 tool_call 必须补 tool 回包，否则下一次请求 400
+
+LangGraph 的 `clarify` 节点里，assistant 消息带着 N 个 `tool_calls`；只要有一个 id 没有对应的
+`role=tool` 回包，**下一次**请求就会被严格实现（OpenAI 等）判 400 `tool_call_id not found`。
+所以「本轮只澄清、丢弃业务调用」（2026-11-02，docs/68）在丢弃的同时必须逐条补：
+`{"ok": false, "error": "SKIPPED_PENDING_CLARIFICATION", "message": "未执行…"}`。
+补消息还有个副作用是好的 —— 模型能区分「查了没数据」和「根本没查」，
+否则它会拿上一轮的候选瞎编结果。
+
+## 52. 同一个产品上限写在三处，就一定会走形
+
+候选/选项上限曾同时存在于 hub（`_CONTACT_MAX`=10）、agent（`ask_user.MAX_OPTIONS`=6）、
+H5（`slice(0,6)`），结果第 7~10 个候选被两级静默丢弃，用户选不到人且无任何报错。
+教训：**哨兵要判「三处相等」而不是「各自等于某个字面量」**，再加一条负向自检
+（改回旧值必须转红），否则将来只改一处照样绿。详见 `scripts/_check_entity_clarify_flow.py` E1/E7。

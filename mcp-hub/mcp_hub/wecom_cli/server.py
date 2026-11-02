@@ -220,20 +220,33 @@ async def _exec_whoami(ctx: Context, **kw) -> CallToolResult:
         return _err(str(e))
 
 
-async def _exec_contact_search(ctx: Context, keywords: str = "", **kw) -> CallToolResult:
+#  通讯录候选上限：与澄清卡能渲染的按钮数（agent ask_user 上限 10）对齐。
+#  超过就别再往回塞 —— 模型看到 10 条以外的人做不出选择，用户也只能盲选。
+_CONTACT_MAX = 10
+
+
+async def _exec_contact_search(ctx: Context, keywords: str = "", searchMode: str = "",
+                               **kw) -> CallToolResult:
     kws = _kw_list(keywords)
     if not kws:
-        return _err("keywords 不能为空：请给出要搜索的姓名或拼音")
+        return _err("keywords 不能为空：请给出要搜索的姓名、姓名片段或拼音")
+    mode = (searchMode or "").strip().lower()
+    if mode not in ("", "list"):
+        return _err("searchMode 只支持 list（全量枚举候选）或留空（默认热度优先，只回前 3）")
     try:
         _, d = await _profile(ctx)
-        data = await _call(argv.contact_search(keywords), d)
+        data = await _call(argv.contact_search(keywords, mode), d)
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as e:
         return _err(str(e))
-    rows = _first_list(data, "users", "user_list", "list")
+    rows = [u for u in _first_list(data, "users", "user_list", "list") if isinstance(u, dict)]
+    # total 用上游的 users_count（缺省退回列表长度）。注意：默认模式上游自己就截到
+    # 热度 top3，所以 total 只能当「这次返回了几人」，不能当「公司里有几个人叫这个」——
+    # 要枚举候选必须传 searchMode=list（2026-11-02 实测两种模式返回数不同）。
+    total = data.get("users_count") if isinstance(data, dict) else None
+    if not isinstance(total, int) or total < len(rows):
+        total = len(rows)
     out = []
-    for u in rows[:10]:
-        if not isinstance(u, dict):
-            continue
+    for u in rows[:_CONTACT_MAX]:
         deps = u.get("departments") or u.get("department") or []
         if isinstance(deps, str):
             deps = [deps]
@@ -247,8 +260,19 @@ async def _exec_contact_search(ctx: Context, keywords: str = "", **kw) -> CallTo
             "departments": " / ".join(str(x) for x in deps if x),
             "email": u.get("email"),
         })
-    return _ok({"count": len(out), "members": out,
-                "scope": "我所在企业的通讯录（不代表对方授权过我任何东西）"})
+    payload: dict[str, Any] = {
+        "count": len(out), "total": total, "hasMore": total > len(out), "members": out,
+        "scope": "我所在企业的通讯录（不代表对方授权过我任何东西）",
+    }
+    if payload["hasMore"]:
+        payload["hint"] = (f"命中 {total} 人，这里只回了前 {len(out)} 个："
+                           "**不要**拿这份列表弹按钮，先让用户补充部门/工号或更完整的姓名")
+    elif not out:
+        payload["hint"] = ("通讯录里没搜到：告诉用户没找到，并建议按部门/工号或更完整的姓名再搜；"
+                           "不要自己编一个人出来")
+    elif len(out) > 1:
+        payload["hint"] = "候选不止一个：用 ask_user 让用户选，value 填 userid、label 填「姓名（部门/职位）」"
+    return _ok(payload)
 
 
 async def _exec_recent_sessions(ctx: Context, days: int = 7, **kw) -> CallToolResult:
@@ -791,7 +815,7 @@ _EXEC = {
 # 第二处参数事实源：default=None ⇒ 必填。必须与 catalog 的 required 一致。
 _PARAMS: dict[str, list[tuple[str, type, Any]]] = {
     "whoami": [],
-    "contact_search": [("keywords", str, None)],
+    "contact_search": [("keywords", str, None), ("searchMode", str, "")],
     "recent_group_sessions": [("days", int, 7)],
     "session_messages": [("chat_id", str, None), ("days", int, 7), ("limit", int, 20)],
     "mail_search": [("keywords", str, ""), ("days", int, 7), ("limit", int, 10),

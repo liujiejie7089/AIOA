@@ -19,6 +19,12 @@ from typing import Any
 # 工具名（模型可见；也是 Java 侧识别「这是澄清、不是业务工具」的依据）
 ASK_USER_TOOL_NAME = "ask_user"
 
+# 选项上限：2026-11-02 由 6 提到 10。
+# 起因是「同事」类模糊实体的澄清需要把通讯录命中的候选列成按钮（产品口径：候选 ≤10 条，
+# 超过就不弹按钮、先让用户补条件）。原来 6 的上限**静默截断**——第 7~10 个候选会被丢掉，
+# 而模型以为已经列全了，用户就等于选不到人。H5 侧同步 slice(0,10)，两处必须一致。
+MAX_OPTIONS = 10
+
 # 给模型的 function-calling schema。描述里强调「只在一个问题、确实无法继续时才用」，
 # 避免模型拿它当万能追问、把简单请求也拆成多轮。
 ASK_USER_TOOL: dict[str, Any] = {
@@ -37,7 +43,7 @@ ASK_USER_TOOL: dict[str, Any] = {
                 "question": {"type": "string", "description": "要问用户的问题，一句话说清。"},
                 "options": {
                     "type": "array",
-                    "description": "2~6 个互斥选项，供用户单选。",
+                    "description": "2~10 个互斥选项，供用户单选。",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -77,7 +83,7 @@ def _as_options(raw: Any) -> list[dict[str, str]]:
             value = str(item.get("value") or label).strip()
             if label or value:
                 out.append({"value": value or label, "label": label or value})
-        if len(out) >= 6:  # 契约给的 UI 是单选卡，超过 6 个选项已不适合卡片
+        if len(out) >= MAX_OPTIONS:  # 与 H5 clarCardHtml 的 slice 上限必须一致
             break
     return out
 

@@ -48,14 +48,20 @@ TOOLS: list[dict] = [
     },
     {
         "name": "contact_search",
-        "description": ("在企业微信通讯录里按姓名/拼音/英文名找同事，返回姓名、职务、部门路径、邮箱。"
-                        "用于把『张三』这种名字换成后续接口要用的标识，或回答『XX 是哪个部门的』。"
+        "description": ("在企业微信通讯录里按姓名/拼音/英文名找同事，返回姓名、userid、职务、部门路径、邮箱。"
+                        "用于把『张三』这种名字换成后续接口要用的标识，或回答『XX 是哪个部门的』。\n"
+                        "**要枚举候选（重名 / 用户只说『我同事』）时必须传 searchMode=list** —— "
+                        "默认模式上游只回热度前 3，会把同名同事吃掉。"
+                        "返回的 total/hasMore 表示命中有多少人；hasMore=true 时不要弹按钮，先让用户补条件。"
                         "注意：这是**我所在企业的通讯录**，不等于对方授权过我任何东西。"),
         "input_schema": {
             "type": "object",
             "properties": {
                 "keywords": {"type": "string",
-                             "description": "搜索关键词，多个用逗号分隔（如「张三,李四」）"},
+                             "description": "搜索关键词，多个用逗号分隔（如「张三,李四」）。"
+                                            "只支持姓名/拼音片段，按部门名搜不到（实测）。"},
+                "searchMode": {"type": "string",
+                               "description": "list=全量枚举候选（澄清重名时用）；留空=默认热度优先，只回前 3"},
             },
             "required": ["keywords"],
         },

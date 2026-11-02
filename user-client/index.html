@@ -484,6 +484,22 @@
     margin-top:var(--sp-2); box-shadow:var(--sh-1);
   }
   .clar-card .clar-q{ font-size:12.5px; color:var(--text); font-weight:600; margin-bottom:var(--sp-2); line-height:1.5; }
+  /* 选项多于 6 个时（通讯录候选澄清，上限 10）卡片会顶出一个屏幕：给容器设上限并内部滚动。
+     2~6 个选项时高度远小于 320px，观感与加这条之前逐字一致。 */
+  .clar-opts{
+    max-height:320px; overflow-y:auto; overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+  .clar-opts::-webkit-scrollbar{ width:4px; }
+  .clar-opts::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+  /* 选项真的超过可视高度（.many，由 mountClarCard 量出来后加）：
+     底部压一层渐隐避免「半截行 + 确认按钮」贴在一起，并给按钮留出间距。
+     只在溢出时生效 ⇒ 2~6 个选项的常规卡片样式一字未变。 */
+  .clar-card.many .clar-opts{
+    -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 16px),transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 calc(100% - 16px),transparent 100%);
+  }
+  .clar-card.many .clar-ok{ margin-top:10px; }
   .clar-opt{
     display:flex; align-items:center; gap:8px; width:100%; text-align:left;
     min-height:44px; border:1px solid var(--border); border-radius:var(--r-sm);
@@ -6926,6 +6942,10 @@ function formatAnswer(raw){
    cancelClarCard 供「停止生成」时把未决卡片以 null 收掉。
    ============================================================================ */
 /* DOM/CSS 契约冻结：类名与属性必须与验证脚本断言一字不差。 */
+/* 选项上限 10：与 agent `ask_user.py::MAX_OPTIONS` 必须一致。
+   改这里是「少渲染」而不是「渲染不下」—— 曾经是 6，第 7~10 个候选被静默丢弃，
+   用户就选不到人（2026-11-02 同事澄清需求）。 */
+var CLAR_MAX_OPTS = 10;
 function clarCardHtml(p, opts){
   opts = opts || {};
   const q = (p && p.question != null) ? String(p.question) : '需要你补充一点信息';
@@ -6934,7 +6954,7 @@ function clarCardHtml(p, opts){
     '<div class="clar-q">' + esc(q) + '</div>';
   if(optsL.length){
     html += '<div class="clar-opts">';
-    optsL.slice(0, 6).forEach(function(o){
+    optsL.slice(0, CLAR_MAX_OPTS).forEach(function(o){
       const v = (o && o.value !== undefined) ? o.value : '';
       const l = (o && o.label !== undefined && o.label !== '') ? o.label : v;
       html += '<button type="button" class="clar-opt" role="radio" aria-checked="false" data-value="' + esc(v) + '">' +
@@ -6968,6 +6988,12 @@ function mountClarCard(host, p){
     const optsWrap = card.querySelector('.clar-opts');
     const free = card.querySelector('.clar-free');
     const ok = card.querySelector('.clar-ok');
+
+    // 选项超过可视高度时打 .many：底部渐隐 + 按钮间距（见样式区）。
+    // 必须**挂载后**量，否则 scrollHeight 恒为 0（元素还没进文档）。
+    if(optsWrap && optsWrap.scrollHeight > optsWrap.clientHeight + 1){
+      card.classList.add('many');
+    }
 
     function freeze(extra){
       card.classList.add('done');

@@ -73,9 +73,18 @@ def recent_sessions(begin: str, end: str) -> list[str]:
     return ["chat", "groups", "list", "--begin-time", begin, "--end-time", end]
 
 
-def contact_search(keywords: str) -> list[str]:
-    """`wecom-cli contact users search`。`--keywords` 是**变参**，可跟多个词。"""
-    return ["contact", "users", "search", "--keywords", *kw_list(keywords)]
+def contact_search(keywords: str, search_mode: str = "") -> list[str]:
+    """`wecom-cli contact users search`。`--keywords` 是**变参**，可跟多个词。
+
+    `--search-mode` 只有两个取值：`list`（全量列表，按热度+部门距离排序，数量截断）
+    或不传（默认模式，**热度 top3 截断**）。枚举候选/重名澄清必须传 `list`，
+    否则「刘」只会回一个人（2026-11-02 实测）。
+    """
+    args = ["contact", "users", "search", "--keywords", *kw_list(keywords)]
+    mode = (search_mode or "").strip().lower()
+    if mode == "list":
+        args += ["--search-mode", "list"]
+    return args
 
 
 # ---------------------------------------------------------------------------

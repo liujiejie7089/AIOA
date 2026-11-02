@@ -846,9 +846,41 @@ async def clarify(state: dict) -> dict:
     else:
         clarifications.append({"question": spec.get("question"), "answer": answer})
 
-    # 本轮若还夹带了其它（非内置控制）调用，交回 tools 执行 —— 它们此前从未执行过，
-    # 不会重复；反之直接回到 agent，让模型带着答案继续。
-    return {"messages": messages, "pending_calls": _drop_control_calls(calls),
+    # —— 澄清轮「只澄清」的确定性闸（2026-11-02，模糊实体澄清口径）——
+    # 模型有时会在同一轮里**既**问「是哪位同事」、**又**先把业务查询用猜的人跑掉。
+    # 用户选完之后，那份错误结果已经躺在上下文里，答案就会「错得看起来很像对的」。
+    # 提示词只是软约束，这里按链别区分：
+    #   · ask_user（澄清）：本轮其余业务调用**整轮丢弃**，等用户选定后再重新调用；
+    #   · request_form / request_confirm：保持原行为（这些轮的余下调用是有意的，例如
+    #     表单提交后紧跟一条通知），不做改动以免回归。
+    # ⚠️ 丢弃必须**补 tool 消息**：assistant 消息里的 tool_calls 若无对应 tool 回包，
+    # 下一次请求会被严格实现直接判 400（"tool_call_id not found"）。
+    leftovers = _drop_control_calls(calls)
+    if chain == "clarify" and leftovers:
+        tool_calls_log = list(state.get("tool_calls_log") or [])
+        for c in leftovers:
+            messages.append({
+                "role": "tool",
+                "tool_call_id": c.get("id") or "",
+                "content": json.dumps({
+                    "ok": False, "error": "SKIPPED_PENDING_CLARIFICATION",
+                    "message": "本轮只向用户澄清，该调用未执行；请等用户选定后用确认后的标识重新调用",
+                }, ensure_ascii=False),
+            })
+            tool_calls_log.append({
+                "name": c.get("name"), "arguments": c.get("arguments"),
+                "status": "SKIPPED", "reason": "本轮只澄清（ask_user 未答复）",
+            })
+        logger.info("run %s clarify: 本轮只澄清，丢弃 %d 个业务调用（%s）",
+                    (state.get("req") or {}).get("run_id"),
+                    len(leftovers), [c.get("name") for c in leftovers])
+        return {"messages": messages, "pending_calls": [],
+                "clarifications": clarifications,
+                "tool_calls_log": tool_calls_log}
+
+    # 其它控制链（表单/确认）：本轮若还夹带了其它（非内置控制）调用，交回 tools 执行 ——
+    # 它们此前从未执行过，不会重复；反之直接回到 agent，让模型带着答案继续。
+    return {"messages": messages, "pending_calls": leftovers,
             "clarifications": clarifications}
 
 

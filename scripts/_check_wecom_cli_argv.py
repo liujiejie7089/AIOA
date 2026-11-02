@@ -204,9 +204,11 @@ def main() -> int:
             ok("R5 dry-run 真的构造出请求（说明参数组合完全合法）")
 
     # ------------------------------------------------------------------ R6
-    head("R6 二/三梯队：20 个新构造函数的 flag 与 CLI help 一致")
+    head("R6 二/三梯队：21 个新构造函数的 flag 与 CLI help 一致")
     # (名字, 构造出的 argv, 对应的 help 命令路径)
     NEW_VECTORS = [
+        ("contact users search（枚举候选）", argv.contact_search("刘", "list"),
+         ["contact", "users", "search"]),
         ("todo list", argv.todo_list(limit=5, status="proceed", keywords="报销,审批"), ["todo", "list"]),
         ("todo get", argv.todo_get(["T1", "T2"]), ["todo", "get"]),
         ("todo create", argv.todo_create({"title": "写周报", "description": "本周",
@@ -236,7 +238,7 @@ def main() -> int:
         ("disk files search", argv.disk_search("预算,报表", limit=5), ["disk", "files", "search"]),
     ]
     if not cli:
-        skip("R6 全部 20 条", "本机没有 wecom-cli（静态构造已完成，见上面的 import 成功）")
+        skip("R6 全部 21 条", "本机没有 wecom-cli（静态构造已完成，见上面的 import 成功）")
     else:
         for label, nvec, path in NEW_VECTORS:
             table = flags_of(help_text(cli, path))

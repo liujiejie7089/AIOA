@@ -68,6 +68,16 @@ def _forms_tool_enabled() -> bool:
     return bool(getattr(settings, "agent_hitl", False))
 
 
+def _hitl_enabled() -> bool:
+    """HITL 控制链（ask_user / request_form / request_confirm）是否可用。
+
+    与 ``capabilities/providers.py::HitlProvider.available`` 同源（都读 ``config.agent_hitl``）。
+    提示词里凡是要求「调用 ask_user」的段落都必须过这一道：工具表在 HITL 关闭时**不注入**
+    ask_user，此时写死「必须调用 ask_user」等于让模型幻觉调用一个不存在的工具。
+    """
+    return bool(getattr(settings, "agent_hitl", False))
+
+
 def _strip_control_chars(value: str) -> str:
     """剥掉控制字符与换行（保留可读文本）：防止通过换行/制表符伪造或截断提示结构。"""
     if not value:
@@ -466,6 +476,32 @@ def build_messages(req: RunRequest, max_context: int = 0) -> list[dict]:
             "也不要自己画按钮文本框（[确认] [取消]）—— 那不是真按钮，用户点了没用。"
             "要确认就**调用 request_confirm**，让界面给真的按钮。\n"
             "5. 填写 title 时把关键对象写清楚（收件人/数据表/单据名与条数），让用户一眼知道自己在确认什么。")
+    # 模糊实体先澄清（2026-11-02）：用户说「查我同事考勤」这类话时，模型有两种坏习惯 ——
+    # ① 直接猜一个人（通常猜成用户自己）就把业务查询跑了；② 反问一句「是哪位同事？」，用户只能手打全名。
+    # 产品口径是：先用通讯录枚举候选，再把候选**渲染成按钮**让用户点，点完再执行。
+    # 这条必须与 ask_user 的可用性同源判定（HITL 关掉时没有 ask_user 工具）。
+    if _hitl_enabled():
+        sys_parts.append(
+            "【模糊的人先澄清再执行】\n"
+            "1. 当用户说「我同事」「同事」「那个人」等**没有唯一标识**的指向（没给工号/完整姓名/邮箱），"
+            "而接下来要做的事取决于「到底是谁」（查考勤、发消息、拉日程、查待办、发邮件…）时，"
+            "**先澄清**，不要猜、也不要把用户本人当成默认人选。已经能唯一确定的（给了全名且通讯录只命中一人）"
+            "就直接执行，不要多问一遍。\n"
+            "2. 澄清的第一步是调 contact_search 枚举候选：`keywords` 用用户给的姓名片段，"
+            "**必须带 `searchMode=list`**（默认模式只回热度前 3，同名同事会被吃掉）。\n"
+            "3. 候选 1~10 个时，调 ask_user 提**一个**问题，选项 label 写成「姓名（部门/职位）」，"
+            "**value 填 userid**；用户选完再拿着这个 userid 去执行原业务查询。\n"
+            "4. **这一轮只澄清**：调了 ask_user 就不要再调任何业务工具（考勤/消息/日程/邮件…），"
+            "系统会丢弃本轮其余调用；也不要先按猜的人跑一遍再问，更不要在正文里自己画按钮或写"
+            "「请回复 1/2/3」，要用 ask_user 让界面给出真按钮。\n"
+            "5. 边界：\n"
+            "   · 一个都没搜到：如实说「通讯录里没找到」，请用户给部门、工号或更完整的姓名，**不许编人**；\n"
+            "   · 返回 hasMore=true（超过 10 人）：**不要**弹按钮，先请用户补充部门/工号/更完整的姓名；\n"
+            "   · 重名：label 里带上部门与职位区分；仍分不清就用 ask_user 再问一轮部门；\n"
+            "   · contact_search 失败或没权限：如实说明查不了通讯录，并降级请用户直接给姓名或工号；\n"
+            "   · 用户不选/取消：就此终止，不要退回去猜一个默认的人继续查。\n"
+            "6. 隐私：只呈现姓名/部门/职位这些必要字段，不要把未选中同事的 userid、邮箱、手机号等"
+            "写进回答；选中之后 userid 只用于调接口，不要念给用户听。")
     # 当前租户可用表单清单（Java 从 form_template 查得并随 run 下发，顶层字段 available_forms）。
     # 仅清单非空时注入；表单名/编码来自 DB，按不可信数据经 _neutralize_injection 中和（内部会调
     # _strip_control_chars 剥换行/控制字符），保证每行单行、不会被换行截断或伪造提示结构。
