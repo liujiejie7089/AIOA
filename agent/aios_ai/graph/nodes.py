@@ -513,7 +513,8 @@ async def prepare(state: dict) -> dict:
     entity_source = ""
     if _hitl_enabled() and entity_clarify_tool.needs_entity_clarify(req.text):
         entity_candidates, entity_source = await entity_clarify_tool.prefetch(tool_client, tools)
-        entity_block = entity_clarify_tool.build_block(entity_candidates, entity_source or "contact")
+        entity_block = entity_clarify_tool.build_block(
+            entity_candidates, entity_source or "contact", req.text)
         if entity_block and messages:
             messages[0]["content"] = (messages[0].get("content") or "") + entity_block
         if entity_candidates:
@@ -581,7 +582,8 @@ async def agent(state: dict) -> dict:
     if (rounds == 0 and _hitl_enabled() and not (state.get("clarifications") or [])
             and entity_clarify_tool.can_short_circuit(state.get("entity_candidates"),
                                                       req.text)):
-        early = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"))
+        early = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"),
+                                                      req.text)
         if early:
             logger.info("run %s: 候选已就绪且用户未点名 ⇒ 跳过模型，直接弹澄清卡（%d 个候选）",
                         req.run_id, len(early["arguments"]["options"]))
@@ -728,7 +730,8 @@ async def agent(state: dict) -> dict:
             and not entity_clarify_tool.names_in_text(state.get("entity_candidates"), req.text)
             and (not _model_text
                  or entity_clarify_tool.looks_like_person_question(_model_text))):
-        synth = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"))
+        synth = entity_clarify_tool.build_clarify_call(state.get("entity_candidates"),
+                                                      req.text)
         if synth:
             calls = [synth]
             messages.append({"role": "assistant", "content": message.get("content"),
@@ -871,6 +874,30 @@ async def _run_tool_calls(calls: list[dict], tool_client: ToolClient, search_par
 
 # --------------------------------------------------------------------------- clarify
 
+def _clarify_answer(answer: Any) -> dict[str, Any]:
+    """把回填的答案归一成 ``{value, label, text}``（**标量也要能进**）。
+
+    三种历史形状都要认，否则老客户端/老脚本会静默丢答案：
+      · 标量（老路径，用户选了一个值）       ⇒ ``{"value": 标量, "text": ""}``
+      · ``{value,label,text}``（2026-11-02）  ⇒ 原样保留（`text` 是同一张卡里填的补充内容）
+      · 其它对象（例如只给了 ``{text: …}``）  ⇒ 尽量凑出 value/text，凑不出就当空答案
+
+    为什么必须归一：这条 tool 消息是**模型唯一的输入**。2026-11-02 现场，用户选完人之后
+    模型拿不到「选的是谁 / 要发什么」，只能再问一遍 —— 一次任务被拆成三轮往返。
+    """
+    if answer is None:
+        return {"value": None, "text": ""}
+    if isinstance(answer, dict):
+        value = answer.get("value")
+        text = answer.get("text")
+        label = answer.get("label")
+        return {
+            "value": value if value is not None else text,
+            "label": label if label is not None else value,
+            "text": str(text).strip() if text is not None else "",
+        }
+    return {"value": answer, "text": ""}
+
 async def clarify(state: dict) -> dict:
     """澄清轮：模型调用了内置控制工具 ⇒ 暂停等待用户决策，再带着答案继续。
 
@@ -915,12 +942,27 @@ async def clarify(state: dict) -> dict:
 
     # —— 以下代码只在 resume 之后执行一次。——
     # answer 的回填形状与调用契约逐字对齐（tools.py#build_* 产出什么形状，这里就回填什么形状）：
-    #   clarify → 标量；form → 回执对象；confirm → {"decision": true|false}
+    #   clarify → 标量或 {value,label,text}；form → 回执对象；confirm → {"decision": true|false}
+    #
+    # ⚠️ 归一化**只对 clarify 链**做。三条链共用 interrupted 的位置，但形状各不相同：
+    # 早先无差别套 `_clarify_answer`，把 confirm 的 `{"decision": true}` 压成了
+    # `{"value": null}` —— 决策被吃掉，模型看不见「用户点了确认」，写工具永不执行
+    # （test_request_confirm 两条用例当场红）。这层必须按链别分工。
+    if chain == "clarify":
+        payload: Any = _clarify_answer(answer)
+        hint = "信息已齐备，请**直接执行**用户最初的请求，不要再向用户重复确认同一件事。"
+    elif chain == "confirm":
+        payload = answer
+        hint = "用户已做出决策（decision 为 true 表示确认执行）。请据此继续，不要重复发起同一个确认。"
+    else:
+        payload = answer
+        hint = "表单已提交。请据此继续，不要重复发起同一张表单。"
     messages = list(state.get("messages") or [])   # assistant 消息已由 agent 节点并入
     messages.append({
         "role": "tool",
         "tool_call_id": ctrl_call.get("id") or "",
-        "content": json.dumps({"ok": True, "data": {"answer": answer}}, ensure_ascii=False),
+        "content": json.dumps({"ok": True, "data": {"answer": payload}, "next": hint},
+                              ensure_ascii=False),
     })
     clarifications = list(state.get("clarifications") or [])
     if chain == "form":
@@ -931,7 +973,7 @@ async def clarify(state: dict) -> dict:
         # 一律按「未确认」处理）。记下 title 便于事后追溯用户到底确认了什么。
         clarifications.append({"confirm": spec.get("title"), "answer": answer})
     else:
-        clarifications.append({"question": spec.get("question"), "answer": answer})
+        clarifications.append({"question": spec.get("question"), "answer": payload})
 
     # —— 澄清轮「只澄清」的确定性闸（2026-11-02，模糊实体澄清口径）——
     # 模型有时会在同一轮里**既**问「是哪位同事」、**又**先把业务查询用猜的人跑掉。

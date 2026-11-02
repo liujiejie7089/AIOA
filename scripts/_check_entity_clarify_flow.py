@@ -264,6 +264,61 @@ def main() -> int:
         "E10 注入块直接给可照抄的 options JSON（只给姓名时模型会退回正文列名单）")
     chk("不要把名单写进正文" in block, "E10 注入块明令不许把名单写进正文")
 
+    # ------------------------------------------------------------------ E11
+    head("E11 一次交互交齐：选完不终止 + 动态文本框 + 单次提交")
+    # 2026-11-02 现场：点「小亮」后卡片落款「已选择：小亮」，气泡再无下文。
+    # 根因是回填只给标量 —— 模型拿不到「要发什么」，只能再问一轮，任务被拆成三轮。
+    html_now = _read(INDEX)
+    chk("function clarAnswerPayload(" in html_now,
+        "E11 H5 有统一回填载荷 clarAnswerPayload（两形态共用一份形状）")
+    # 只数「调用处」，别把 `function clarAnswerPayload(pick)` 的定义本身也算进去
+    n_use = len(re.findall(r"resumeStream\(\s*(?:state\.)?runId\s*,\s*clarAnswerPayload\(pick\)",
+                           html_now))
+    chk(n_use == 2,
+        "E11 经典 send 与 OA oaSend 都改走对象载荷", f"实际 {n_use} 处（应为 2）")
+    chk("resumeStream(runId, pick.value, h)" not in html_now and
+        "resumeStream(state.runId, pick.value, h)" not in html_now,
+        "E11 不再有「只回标量」的旧调用（标量是上下文断裂的根因）")
+    chk("text:(pick.text || '')" in html_now,
+        "E11 载荷里始终带 text（空也要带，形状统一，agent 侧不用猜）")
+    chk("clar-text-wrap" in html_now and "clar-text" in html_now,
+        "E11 H5 渲染补充输入框容器")
+    chk("needs_text === true" in html_now,
+        "E11 只有声明了 needs_text 的选项才要求填内容（不是整卡强制）")
+    chk("function syncText(" in html_now and "function syncOk(" in html_now,
+        "E11 选中/取消选中会同步输入框显隐与提交按钮可用性")
+    chk("textBox.value = ''" in html_now,
+        "E11 切到不需要内容的选项时清空输入框（避免把上一项内容带过去）")
+    chk("(e.ctrlKey || e.metaKey)" in html_now,
+        "E11 输入框里 Ctrl/Cmd+Enter 提交（普通 Enter 留给换行）")
+    # 只数**调用**（行首缩进 + 分号），别把 `function liftTextBelowCard(bubble){` 算进去
+    n_lift = len(re.findall(r"^\s*liftTextBelowCard\(bubble\);", html_now, re.M))
+    chk("function liftTextBelowCard(" in html_now and n_lift == 2,
+        "E11 落定后把正文容器挪到卡片之下（两形态各一处）", f"{n_lift} 处调用")
+
+    nodes_now = _read(os.path.join(REPO, "agent", "aios_ai", "graph", "nodes.py"))
+    chk("def _clarify_answer(" in nodes_now,
+        "E11 agent 侧把回填归一成 {value,label,text}")
+    chk('if chain == "clarify":\n        payload' in nodes_now,
+        "E11 归一化只作用于 clarify 链（套到 confirm 上会把 decision 吃掉）")
+    chk('"next": hint' in nodes_now,
+        "E11 tool 消息带下一步指令（「直接执行，别再确认一次」），减少重复追问")
+
+    members2 = [{"name": "刘洋", "userid": "u1"}, {"name": "小亮", "userid": "u2"}]
+    call2 = ec.build_clarify_call(members2, "帮我给同事发条消息说下午三点开会")
+    opts2 = call2["arguments"]["options"]
+    chk(all(o.get("needs_text") is True for o in opts2),
+        "E11 「发消息」缺内容 ⇒ 选项带 needs_text（界面会弹输入框）")
+    chk(opts2[0].get("text_label") == "要发送的内容",
+        "E11 输入框标题点明缺什么", opts2[0].get("text_label", ""))
+    call3 = ec.build_clarify_call(members2, "我同事叫什么名字")
+    chk(all("needs_text" not in o for o in call3["arguments"]["options"]),
+        "E11 不缺内容 ⇒ 不出现 needs_text（老载荷形状不变）")
+    chk(ec.content_hint("帮我约同事开个会")[0] == "时间与主题",
+        "E11 会议类动作要「时间与主题」")
+    chk(ec.content_hint("帮我给同事发条消息说下午三点开会")[0] == "要发送的内容",
+        "E11 一句话里同时有「消息」「开会」⇒ 按先出现的动作判（消息）")
+
     print("\n" + "=" * 60)
     if fails:
         print(f"FAILED  {len(fails)} 项 —— " + "；".join(fails))

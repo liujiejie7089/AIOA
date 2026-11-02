@@ -27,6 +27,12 @@ MAX_OPTIONS = 10
 
 # 给模型的 function-calling schema。描述里强调「只在一个问题、确实无法继续时才用」，
 # 避免模型拿它当万能追问、把简单请求也拆成多轮。
+#
+# 2026-11-02（第二轮）：把「补充说明」并进同一张卡。
+# 现场问题：用户选完「小亮」后，模型还要再问一句「请告诉我您要发送的内容」——
+# 一次任务被拆成三次往返（选人 → 填内容 → 再说一次），而且中途上下文就断了。
+# 现在选项可以声明 `needs_text`：**选中它就当场出现输入框**，选项与补充内容
+# 在**同一个确认动作**里一起提交（`{value,label,text}` 一次 resume 回填）。
 ASK_USER_TOOL: dict[str, Any] = {
     "type": "function",
     "function": {
@@ -36,6 +42,9 @@ ASK_USER_TOOL: dict[str, Any] = {
             "调用本工具向用户提出**一个**单选题，然后停下等待用户选择。"
             "仅在确实无法继续时使用；不要用它追问次要细节，更不要凭猜测编造默认值继续执行。"
             "一次只问一个问题。"
+            "**如果选定某项之后还需要用户补一句内容才能继续**（例如选完收件人还要知道发什么），"
+            "把该项标成 `needs_text: true` 并给出文案 —— 用户会在同一次交互里把内容一起填完，"
+            "不要选完再追问一轮。"
         ),
         "parameters": {
             "type": "object",
@@ -53,8 +62,35 @@ ASK_USER_TOOL: dict[str, Any] = {
                         "properties": {
                             "value": {"type": "string", "description": "选项取值（回传给系统的机器值）。"},
                             "label": {"type": "string", "description": "选项展示文案（给人看）。"},
+                            "needs_text": {
+                                "type": "boolean",
+                                "description": (
+                                    "选中本项后是否还需要用户补一段文字才能继续。"
+                                    "为 true 时界面上会**动态出现**输入框，且必须填写才能确认。"
+                                ),
+                            },
+                            "text_label": {
+                                "type": "string",
+                                "description": "needs_text 时输入框的标题，例如「要发送的内容」。",
+                            },
+                            "text_placeholder": {
+                                "type": "string",
+                                "description": "needs_text 时输入框的提示语，给一个具体例子最好。",
+                            },
                         },
                         "required": ["value", "label"],
+                    },
+                },
+                "text_input": {
+                    "type": "object",
+                    "description": (
+                        "卡级补充输入：不针对某个选项、而是这一问本身就需要一段文字时用"
+                        "（例如「请描述一下具体需求」）。与选项可同时存在，一次提交。"
+                    ),
+                    "properties": {
+                        "label": {"type": "string", "description": "输入框标题。"},
+                        "placeholder": {"type": "string", "description": "提示语/例子。"},
+                        "required": {"type": "boolean", "description": "是否必须填写才能确认，默认 false。"},
                     },
                 },
             },
@@ -73,34 +109,67 @@ def is_ask_user(name: str | None) -> bool:
     return (name or "") == ASK_USER_TOOL_NAME
 
 
-def _as_options(raw: Any) -> list[dict[str, str]]:
-    """把模型给的 options 归一成 ``[{value, label}]``。
+def _as_options(raw: Any) -> list[dict[str, Any]]:
+    """把模型给的 options 归一成 ``[{value, label, needs_text?, text_label?, text_placeholder?}]``。
 
     容错：选项可能是 ``{"value","label"}``，也可能只给了字符串；缺失/非法一律丢弃。
     少于 2 个有效选项时仍返回（图会以「仅有一个继续选项」的方式兜底），
     但绝不编造选项 —— 追问内容的真伪必须来自模型，不能由代码臆造。
+
+    ``needs_text`` 一族字段**只在显式给出时**才带上：老前端/老断言看到的形状与改造前
+    逐字节一致（多出来的键只在用到时才出现，不会把既有载荷撑大）。
     """
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     if not isinstance(raw, list):
         return out
-    for i, item in enumerate(raw):
+    for item in raw:
         if isinstance(item, str):
             out.append({"value": item, "label": item})
         elif isinstance(item, dict):
             label = str(item.get("label") or item.get("value") or "").strip()
             value = str(item.get("value") or label).strip()
-            if label or value:
-                out.append({"value": value or label, "label": label or value})
+            if not (label or value):
+                continue
+            opt: dict[str, Any] = {"value": value or label, "label": label or value}
+            if item.get("needs_text") is True:
+                opt["needs_text"] = True
+                tl = str(item.get("text_label") or "").strip()
+                tp = str(item.get("text_placeholder") or "").strip()
+                if tl:
+                    opt["text_label"] = tl
+                if tp:
+                    opt["text_placeholder"] = tp
+            out.append(opt)
         if len(out) >= MAX_OPTIONS:  # 与 H5 clarCardHtml 的 slice 上限必须一致
             break
     return out
 
 
+def _as_text_input(raw: Any) -> dict[str, Any] | None:
+    """卡级补充输入归一。没有就返回 None（保持旧载荷形状完全不变）。"""
+    if not isinstance(raw, dict):
+        return None
+    label = str(raw.get("label") or "").strip() or "补充说明"
+    placeholder = str(raw.get("placeholder") or "").strip()
+    spec: dict[str, Any] = {"label": label, "required": raw.get("required") is True}
+    if placeholder:
+        spec["placeholder"] = placeholder
+    return spec
+
+
 def build_clarification(arguments: dict[str, Any] | None) -> dict[str, Any]:
     """把 ``ask_user`` 的入参归一成 ``need_clarification`` 事件载荷。
 
-    返回 ``{"question": str, "suggested_options": [{"value","label"}]}``。
+    返回 ``{"question", "suggested_options", "text_input"?}``。
+    ``text_input`` 只在模型真的给了时才出现 —— 老载荷形状不变。
     """
     args = arguments or {}
     question = str(args.get("question") or "").strip() or "请补充必要信息后继续。"
-    return {"question": question, "suggested_options": _as_options(args.get("options"))}
+    spec: dict[str, Any] = {
+        "question": question,
+        "suggested_options": _as_options(args.get("options")),
+    }
+    ti = _as_text_input(args.get("text_input"))
+    if ti:
+        spec["text_input"] = ti
+    return spec

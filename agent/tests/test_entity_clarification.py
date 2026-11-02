@@ -59,7 +59,12 @@ def test_ask_user_drops_business_calls_in_same_turn(monkeypatch) -> None:
     st = _state("ask_user", "mcp__wecom_cli__attendance_list")
     out = _run(st, monkeypatch=monkeypatch)
     assert out["pending_calls"] == [], "ask_user 轮不允许再把业务调用交给 tools 执行"
-    assert out["clarifications"][0]["answer"].startswith("wob"), "用户的选择要落进 clarifications"
+    # 回填已归一成 {value,label,text}（2026-11-02 一次交互交齐）：标量时代只存过一个裸值，
+    # 模型因此拿不到「用户还补了什么」，只能再问一句 ⇒ 多轮往返。断言按新契约收严。
+    ans = out["clarifications"][0]["answer"]
+    assert ans["value"].startswith("wob"), "用户的选择要落进 clarifications"
+    assert set(ans) >= {"value", "text"}, "回填形状必须是归一后的对象"
+    assert isinstance(ans["text"], str)
 
 
 def test_dropped_call_gets_a_tool_message(monkeypatch) -> None:
@@ -550,6 +555,121 @@ def test_agent_does_not_synth_when_hitl_off(monkeypatch) -> None:
     monkeypatch.setattr(nodes.settings, "agent_hitl", False, raising=False)
     out = asyncio.run(nodes.agent(_agent_state(members=_MEMBERS, rounds=1)))
     assert out["pending_calls"] == []
+
+
+# ============================================================ E11 一次交互交齐
+# 2026-11-02 现场：用户点「小亮」后卡片落款「已选择：小亮」，气泡再无下文。
+# 根因不是前端不渲染，而是**回填只给了标量**：tool 消息里只有一个 userid，
+# 模型不知道「要发什么」，只能再问一句 ⇒ 任务被拆成三轮，上下文断裂。
+# 修法：选项可声明 needs_text（选中当场弹输入框、必填），回填 {value,label,text}
+# 一次交齐；适配层 `_clarify_answer` 兼容标量/对象两种历史形状。
+
+def test_content_hint_names_the_missing_piece() -> None:
+    """按动作词判「还缺什么内容」，且不猜内容本身。"""
+    ec = _ec()
+    assert ec.content_hint("帮我给同事发条消息")[0] == "要发送的内容"
+    assert ec.content_hint("给同事发封邮件")[0] == "邮件内容"
+    assert ec.content_hint("帮我约同事开个会")[0] == "时间与主题"
+    assert ec.content_hint("提醒一下同事交周报")[0] == "待办标题"
+    # 没有动作词 ⇒ 不缺内容（只查人、只看通讯录就不该弹输入框）
+    assert ec.content_hint("我同事叫什么名字") is None
+    assert ec.content_hint("") is None
+    assert ec.content_hint(None) is None
+
+
+def test_build_clarify_call_marks_needs_text() -> None:
+    """合成卡：缺内容时每个选项都带 needs_text + 文案（两形态同一份形状）。"""
+    ec = _ec()
+    call = ec.build_clarify_call(_MEMBERS, "帮我给同事发条消息说下午三点开会")
+    assert call is not None
+    opts = call["arguments"]["options"]
+    assert all(o["needs_text"] is True for o in opts)
+    assert opts[0]["text_label"] == "要发送的内容"
+    assert opts[0]["text_placeholder"]
+    # value/label 不受影响：机器值仍是 userid
+    assert [o["value"] for o in opts] == ["wob1", "wob2"]
+
+
+def test_build_clarify_call_plain_when_no_gap() -> None:
+    """不缺内容 ⇒ **不出现** needs_text 键（老载荷形状逐字节不变）。"""
+    ec = _ec()
+    call = ec.build_clarify_call(_MEMBERS, "我同事叫什么名字")
+    for o in call["arguments"]["options"]:
+        assert "needs_text" not in o and "text_label" not in o
+
+
+def test_build_block_tells_model_about_needs_text() -> None:
+    """注入块里的 options JSON 必须是「可照抄且已标好」的那一份。
+
+    模型自己调 ask_user 时不标 needs_text ⇒ 用户选完人仍会被追问内容，
+    与代码合成路径走形。所以两条路共用 `with_content_hint`。
+    """
+    ec = _ec()
+    block = ec.build_block(_MEMBERS, "contact", "帮我给同事发条消息")
+    assert '"needs_text": true' in block
+    assert "要发送的内容" in block
+    assert "不要" in block and "追问" in block
+    # 只有人、没有内容缺口时不出现这些叮嘱
+    plain = ec.build_block(_MEMBERS, "contact", "我同事叫什么名字")
+    assert "needs_text" not in plain
+
+
+def test_build_clarification_keeps_needs_text_and_drops_absent_keys() -> None:
+    """ask_user 归一：needs_text 一族**只在显式给出时**才带（老断言形状不变）。"""
+    spec = ask_user_tool.build_clarification({
+        "question": "发给哪位？",
+        "options": [
+            {"value": "u1", "label": "刘洋", "needs_text": True,
+             "text_label": "要发送的内容", "text_placeholder": "例如：下午三点开会"},
+            {"value": "u2", "label": "小亮"},
+        ],
+    })
+    a, b = spec["suggested_options"]
+    assert a["needs_text"] is True and a["text_label"] == "要发送的内容"
+    assert "needs_text" not in b, "没声明的选项不该被补键（否则全卡都被要求填内容）"
+    assert "text_input" not in spec, "没有卡级输入时不许凭空多出键"
+
+
+def test_build_clarification_card_level_text_input() -> None:
+    """卡级输入框：不针对某个选项，而是这一问本身就要一段文字。"""
+    spec = ask_user_tool.build_clarification({
+        "question": "描述一下你的需求",
+        "options": [],
+        "text_input": {"placeholder": "例如：报销 3 月差旅"},
+    })
+    assert spec["text_input"] == {"label": "补充说明", "required": False,
+                                  "placeholder": "例如：报销 3 月差旅"}
+    assert ask_user_tool.build_clarification(
+        {"question": "q", "text_input": {"label": "内容", "required": True}}
+    )["text_input"] == {"label": "内容", "required": True}
+
+
+def test_clarify_answer_normalizes_all_shapes() -> None:
+    """回填归一：标量 / {value,label,text} / None 三种历史形状都要认。"""
+    assert nodes._clarify_answer("wob1") == {"value": "wob1", "text": ""}
+    assert nodes._clarify_answer({"value": "wob1", "label": "刘洋", "text": "下午三点开会"}) \
+        == {"value": "wob1", "label": "刘洋", "text": "下午三点开会"}
+    # 只给了 text（卡级输入框场景）：value 退化成 text，别把答案丢了
+    assert nodes._clarify_answer({"text": "报销 3 月差旅"})["value"] == "报销 3 月差旅"
+    assert nodes._clarify_answer(None) == {"value": None, "text": ""}
+
+
+def test_short_circuit_card_asks_for_content_in_one_shot(monkeypatch) -> None:
+    """**核心用例**：一次交互交齐 —— 短路出的卡本身就带 needs_text。
+
+    这条把用户诉求钉死在确定性路径上：不依赖模型「记得」标 needs_text。
+    """
+    async def _boom(*a, **kw):
+        raise AssertionError("短路路径下不该调用模型")
+
+    monkeypatch.setattr(nodes, "_post_non_stream", _boom)
+    monkeypatch.setattr(nodes.settings, "agent_stream", False, raising=False)
+    monkeypatch.setattr(nodes.settings, "agent_hitl", True, raising=False)
+
+    out = asyncio.run(nodes.agent(_agent_state(members=_MEMBERS)))
+    opts = out["pending_calls"][0]["arguments"]["options"]
+    assert all(o.get("needs_text") is True for o in opts)
+    assert opts[0].get("text_label") == "要发送的内容"
 
 
 if __name__ == "__main__":   # pragma: no cover

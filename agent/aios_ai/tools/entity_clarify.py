@@ -249,34 +249,98 @@ def build_question() -> str:
     return "要发给哪一位同事？"
 
 
-def build_clarify_call(members: list[dict] | None) -> dict[str, Any] | None:
+# 「选完人之后还差一段内容」——按动作词判，缺什么就在同一张卡上要什么。
+# 这是把「选人 → 再问一句内容」的两轮压成一轮的关键：文本框跟着选项一起出现，
+# 用户在**同一个确认动作**里把人和内容交齐（见 ask_user 的 needs_text）。
+_CONTENT_HINTS: tuple[tuple[re.Pattern, tuple[str, str]], ...] = (
+    (re.compile(r"(邮件|mail)", re.I), ("邮件内容", "例如：附件已更新，请查收")),
+    (re.compile(r"(日程|会议|开会|约个|约一下|约.{0,6}(?:会|时间|见面)|安排|碰头|排期)"),
+     ("时间与主题", "例如：明天下午三点，项目评审")),
+    (re.compile(r"(待办|提醒|催一下|催催|跟进)"), ("待办标题", "例如：周五前提交周报")),
+    (re.compile(r"(消息|私信|转告|告诉|通知|回复|回个)"), ("要发送的内容", "例如：下午三点开会")),
+)
+
+
+def content_hint(text: str | None) -> tuple[str, str] | None:
+    """这句话对应的动作还需要用户补什么内容；不需要补就返回 None。
+
+    只认「动作类型」，不猜内容本身 —— 猜内容就是替用户编消息，比多问一句更糟。
+
+    **按最先出现的动作词判定**（不是按表里顺序）：一句话常同时提到两件事，
+    例如「发条消息说下午三点开会」—— 消息在前、开会只是内容的一部分，
+    要的是「要发送的内容」；固定顺序会让它被后半句误判成「约会议」。
+    """
+    t = text or ""
+    best: tuple[int, tuple[str, str]] | None = None
+    for pat, hint in _CONTENT_HINTS:
+        m = pat.search(t)
+        if m and (best is None or m.start() < best[0]):
+            best = (m.start(), hint)
+    return best[1] if best else None
+
+
+def with_content_hint(options: list[dict], text: str | None) -> list[dict]:
+    """给选项挂上「选中后还要补一段内容」的声明（有内容缺口时）。
+
+    `build_clarify_call`（代码合成）与 `build_block`（模型照抄）都走这里，
+    保证两条路径给出的 options 是**同一份形状** —— 否则模型自己调 ask_user 时
+    不会标 needs_text，用户选完人又被追问一轮内容（正是本次要修的多轮往返）。
+    """
+    hint = content_hint(text)
+    if not hint:
+        return options
+    label, placeholder = hint
+    return [dict(o, needs_text=True, text_label=label, text_placeholder=placeholder)
+            for o in options]
+
+
+def build_clarify_call(members: list[dict] | None,
+                       text: str | None = None) -> dict[str, Any] | None:
     """合成一条 ``ask_user`` 调用（状态里的**归一化**形状：arguments 是 dict）。
 
     候选为空或全都缺可用标识（userid/邮箱）时返回 None —— 宁可不弹卡，也不弹空卡。
+
+    ``text`` 是用户原话：如果这次动作还缺一段内容（发消息要内容、约会议要时间…），
+    就把每个选项标成 ``needs_text``，输入框**跟着选项动态出现**、且必须填写才能确认 ——
+    用户在这一次交互里把「选谁 + 说什么」一起交掉，不会选完再被问一轮。
     """
     options = build_options(members)
     if not options:
         return None
+    options = with_content_hint(options, text)
     return {"id": SYNTH_CALL_ID, "name": "ask_user",
             "arguments": {"question": build_question(), "options": options}}
 
 
-def build_block(members: list[dict] | None, source: str = "contact") -> str:
+def build_block(members: list[dict] | None, source: str = "contact",
+                text: str | None = None) -> str:
     """把预取到的候选写进系统提示，让模型知道「已经查过了、照抄就能调」。
 
     这里**必须把 `value` 一起给出**（不是只给姓名）。2026-11-02 真机实测：只给姓名时，
     模型不知道 options 里该传什么值，于是退回「正文编号列表让用户选」——
     正文里还把 userid 渲染成 `[阿修bot.](wobVcoRg…)` 这种链接，既重复又泄露机器值。
     给成可直接照抄的 JSON 之后，它调 ask_user 就没有任何犹豫的理由。
+
+    ``text`` 是用户原话：这次动作若还缺一段内容（发消息要内容、约会议要时间…），
+    照抄的 JSON 里就已经带好 ``needs_text``，并额外叮嘱「不要再追问内容」——
+    用户会在同一次交互里把「选谁 + 说什么」一起交掉。
     """
-    options = build_options(members)
+    options = with_content_hint(build_options(members), text)
     if not options:
         return ""
     lines = "\n".join(f"- {o['label']}" for o in options)
     payload = json.dumps(options, ensure_ascii=False)
+    gaps = content_hint(text)
     origin = ("「最近 7 天群里说过话的人」，不等于全公司通讯录"
               if source == "contact"
               else "「最近的邮件收发件人」，不等于全公司通讯录")
+    extra = ""
+    if gaps:
+        extra = (
+            "\n注意：这次动作还缺一段内容（" + gaps[0] + "）。上面 JSON 里每项都带了 "
+            "`needs_text: true` —— **照抄**，界面上会跟着选项弹出输入框，"
+            "用户填完一次提交。**不要**在用户选完后再追问「要发送什么内容」。"
+        )
     return (
         "\n\n【已为你查好候选】用户说的是「同事」这类没有唯一标识的指向，"
         f"系统已经查过一次，得到以下候选（真实数据，来自{origin}）：\n"
@@ -285,7 +349,8 @@ def build_block(members: list[dict] | None, source: str = "contact") -> str:
         "「要发给哪一位同事？」，`options` **逐字照抄**下面这段 JSON：\n"
         f"{payload}\n"
         "铁律：**不要把名单写进正文、也不要把这些 value（userid/邮箱）显示给用户** —— "
-        "用户只需要点按钮；等用户选完，再用他选中的 value 执行原任务。"
+        "用户只需要点按钮；等用户选完（回填里已含他补的内容），直接用选中的 value 执行原任务。"
+        f"{extra}"
     )
 
 

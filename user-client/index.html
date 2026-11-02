@@ -531,6 +531,19 @@
     padding:0 10px; margin-bottom:6px;
   }
   .clar-free:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  /* 选项级「补充内容」输入：选中某项后动态展开，与选项在**同一次确认**里提交。
+     用 textarea 而不是 input —— 消息/邮件内容常常要换行。 */
+  .clar-text-wrap{ margin:2px 0 8px; }
+  .clar-text-wrap[hidden]{ display:none; }
+  .clar-text-label{ font-size:11.5px; color:var(--text-2); margin-bottom:4px; }
+  .clar-text{
+    width:100%; min-height:54px; resize:vertical; box-sizing:border-box;
+    border:1px solid var(--border); border-radius:var(--r-sm);
+    background:var(--surface); font-family:inherit; font-size:12.5px; line-height:1.55;
+    color:var(--text); padding:7px 10px;
+  }
+  .clar-text:focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  .clar-text:disabled{ opacity:.7; }
   .clar-ok{
     background:var(--blue); color:#fff; border:0; border-radius:var(--r-sm);
     min-height:36px; padding:0 14px; font-family:inherit; font-size:12.5px; cursor:pointer;
@@ -6676,13 +6689,17 @@ async function send(){
         // 收口时若还停在等待提示（续跑没来过正文），清掉它，给 delta 让位
         const wait = bubble.querySelector('.typing');
         if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        liftTextBelowCard(bubble);   // 回答要落在卡片之下（见函数注释）
         const beforeClar = text.length;
-        await API.resumeStream(state.runId, pick.value, h);   // 标量走原路
+        // 选项 + 补充内容一次提交（不再是裸标量）
+        await API.resumeStream(state.runId, clarAnswerPayload(pick), h);
         // 续跑完全可能「没有新增正文」（模型没再产出、或又停在不产生文本的分支）。
         // 静默收口的观感就是「点了确认什么都没发生」—— 2026-10-31 用户现场截图即此：
         // 卡片显示「已选择：…」之后整条气泡再无下文。必须显式说明已提交 + 无新内容。
         if(text.length === beforeClar){
-          appendSysNote(bubble, '已提交你的选择「' + (pick.label || pick.value) + '」，本轮没有新的内容返回。');
+          appendSysNote(bubble, '已提交你的选择「' + (pick.label || pick.value) + '」'
+            + (pick.text ? '（含补充内容 ' + pick.text.length + ' 字）' : '')
+            + '，本轮没有新的内容返回。');
         }
       } else if(form){
         const fc = form.form_code;                 // 先记下 code，随后把 form 置空
@@ -6952,10 +6969,15 @@ function formatAnswer(raw){
    改这里是「少渲染」而不是「渲染不下」—— 曾经是 6，第 7~10 个候选被静默丢弃，
    用户就选不到人（2026-11-02 同事澄清需求）。 */
 var CLAR_MAX_OPTS = 10;
+/* 卡级补充输入（`text_input`）与选项级 `needs_text` 的渲染约定：
+   - 有选项时，输入框默认**收起**；选中带 needs_text 的选项才展开（且变必填）；
+   - 卡级 text_input 则从一开始就展开（required 决定确认按钮是否可点）；
+   - 一个选项都没有时仍走老的 `.clar-free`（那个输入框本身就是答案）。 */
 function clarCardHtml(p, opts){
   opts = opts || {};
   const q = (p && p.question != null) ? String(p.question) : '需要你补充一点信息';
   const optsL = (p && Array.isArray(p.suggested_options)) ? p.suggested_options : [];
+  const ti = (p && p.text_input && typeof p.text_input === 'object') ? p.text_input : null;
   let html = '<div class="clar-card" data-clar="1">' +
     '<div class="clar-q">' + esc(q) + '</div>';
   if(optsL.length){
@@ -6971,6 +6993,19 @@ function clarCardHtml(p, opts){
     html += '</div>';
   } else {
     html += '<input class="clar-free" placeholder="请输入…">';
+  }
+  // 补充输入框：先渲染、默认隐藏，由 mountClarCard 按选择动态展开
+  if(optsL.length){
+    const hasNeeds = optsL.some(function(o){ return o && o.needs_text === true; });
+    if(ti || hasNeeds){
+      const lab = (ti && ti.label) ? ti.label : '补充说明';
+      const ph  = (ti && ti.placeholder) ? ti.placeholder : '';
+      const open = !!ti;                        // 卡级：立刻显示；选项级：等选中
+      html += '<div class="clar-text-wrap"' + (open ? '' : ' hidden') + '>' +
+        '<div class="clar-text-label">' + esc(lab) + (ti && ti.required ? '（必填）' : '') + '</div>' +
+        '<textarea class="clar-text" rows="2" placeholder="' + esc(ph) + '"></textarea>' +
+        '</div>';
+    }
   }
   html += '<button type="button" class="clar-ok" data-clar-ok="1" disabled>确认</button>';
   html += '</div>';
@@ -6994,6 +7029,12 @@ function mountClarCard(host, p){
     const optsWrap = card.querySelector('.clar-opts');
     const free = card.querySelector('.clar-free');
     const ok = card.querySelector('.clar-ok');
+    const textWrap = card.querySelector('.clar-text-wrap');
+    const textBox = card.querySelector('.clar-text');
+    const textLab = card.querySelector('.clar-text-label');
+    // 选项级文案（选中某一项时才覆盖卡级文案）——下标与 .clar-opt 一一对应
+    const optSpecs = (p && Array.isArray(p.suggested_options)) ? p.suggested_options : [];
+    const cardText = (p && p.text_input && typeof p.text_input === 'object') ? p.text_input : null;
 
     // 选项超过可视高度时打 .many：底部渐隐 + 按钮间距（见样式区）。
     // 必须**挂载后**量，否则 scrollHeight 恒为 0（元素还没进文档）。
@@ -7001,19 +7042,72 @@ function mountClarCard(host, p){
       card.classList.add('many');
     }
 
+    /* 当前选中的选项下标（-1 = 还没选） */
+    let selIdx = -1;
+
+    /* 这次提交是否需要一段补充文字：卡级 required，或「选中项声明了 needs_text」。
+       needs_text 一经选中即视为必填 —— 既然这一步缺内容，就不该允许空着交上去。 */
+    function textGate(){
+      if(!textWrap) return {need:false, required:false};
+      const o = selIdx >= 0 ? optSpecs[selIdx] : null;
+      const byOpt = !!(o && o.needs_text === true);
+      const need = byOpt || !!cardText;
+      const required = byOpt || !!(cardText && cardText.required === true);
+      return {need:need, required:required};
+    }
+
+    /* 选择变化 → 展开/收起输入框、换文案，并重算确认按钮可用性 */
+    function syncText(){
+      const gate = textGate();
+      if(textWrap){
+        const show = gate.need;
+        textWrap.hidden = !show;
+        if(show && textLab){
+          const o = selIdx >= 0 ? optSpecs[selIdx] : null;
+          const lab = (o && o.text_label) || (cardText && cardText.label) || '补充说明';
+          textLab.textContent = lab + (gate.required ? '（必填）' : '');
+        }
+        if(show && textBox){
+          const o = selIdx >= 0 ? optSpecs[selIdx] : null;
+          const ph = (o && o.text_placeholder) || (cardText && cardText.placeholder) || '';
+          textBox.setAttribute('placeholder', ph);
+        }
+        if(!show && textBox) textBox.value = '';   // 收起即清空：避免把上一项的内容带过去
+      }
+      syncOk();
+    }
+
+    /* 确认按钮：选项场景要求「选了人 + 该填的填了」；无选项场景要求自由输入非空 */
+    function syncOk(){
+      if(!ok) return;
+      if(optsWrap){
+        if(selIdx < 0){ ok.disabled = true; return; }
+        const gate = textGate();
+        const t = textBox ? String(textBox.value || '').trim() : '';
+        ok.disabled = gate.required ? !t : false;
+      } else {
+        const t = free ? String(free.value || '').trim() : '';
+        ok.disabled = !t;
+      }
+    }
+
     function freeze(extra){
       card.classList.add('done');
-      Array.prototype.forEach.call(card.querySelectorAll('.clar-opt, .clar-ok, .clar-free'), function(el){ el.disabled = true; });
+      Array.prototype.forEach.call(
+        card.querySelectorAll('.clar-opt, .clar-ok, .clar-free, .clar-text'),
+        function(el){ el.disabled = true; });
       const note = document.createElement('div');
       note.className = 'clar-picked';
       note.innerHTML = extra;
       card.appendChild(note);
     }
-    function settle(val, lab){
+    function settle(val, lab, txt){
       const shown = (lab != null && lab !== '') ? lab : val;
-      freeze('已选择：<label>' + esc(shown) + '</label>');
+      const extra = (txt != null && txt !== '') ? '；已填写：<label>' + esc(txt) + '</label>' : '';
+      freeze('已选择：<label>' + esc(shown) + '</label>' + extra);
       clarPendingResolve = null;
-      resolve({value:val, label:shown});
+      // 回填形状：有补充内容时一起带上（**一次提交**，不再多轮往返）
+      resolve({value:val, label:shown, text:(txt != null ? txt : '')});
     }
     function abandon(){
       freeze('已放弃');
@@ -7021,15 +7115,16 @@ function mountClarCard(host, p){
       resolve(null);
     }
 
-    // 单选：点 .clar-opt = 只选中不提交（单选语义）
+    // 单选：点 .clar-opt = 只选中不提交（单选语义）；选中后按 needs_text 动态展开输入框
     if(optsWrap){
-      Array.prototype.forEach.call(optsWrap.querySelectorAll('.clar-opt'), function(btn){
+      Array.prototype.forEach.call(optsWrap.querySelectorAll('.clar-opt'), function(btn, idx){
         btn.addEventListener('click', function(){
           Array.prototype.forEach.call(optsWrap.querySelectorAll('.clar-opt'), function(b){
             b.classList.remove('sel'); b.setAttribute('aria-checked', 'false');
           });
           btn.classList.add('sel'); btn.setAttribute('aria-checked', 'true');
-          ok.disabled = false;
+          selIdx = idx;
+          syncText();
         });
         btn.addEventListener('keydown', function(e){
           if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); btn.click(); }
@@ -7037,8 +7132,16 @@ function mountClarCard(host, p){
       });
     }
     if(free){
+      free.addEventListener('input', syncOk);
       free.addEventListener('keydown', function(e){
         if(e.key === 'Enter'){ e.preventDefault(); ok.click(); }
+      });
+    }
+    if(textBox){
+      // Ctrl/Cmd+Enter 提交（普通 Enter 保留换行，内容可能是多行）
+      textBox.addEventListener('input', syncOk);
+      textBox.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); ok.click(); }
       });
     }
     ok.addEventListener('click', function(){
@@ -7047,13 +7150,19 @@ function mountClarCard(host, p){
         if(!sel) return;                       // 没选中不许提交
         const v = sel.getAttribute('data-value');
         const lab = sel.querySelector('.co-label') ? sel.querySelector('.co-label').textContent : v;
-        settle(v, lab);
+        const gate = textGate();
+        const t = (textWrap && !textWrap.hidden && textBox) ? String(textBox.value || '').trim() : '';
+        if(gate.required && !t) return;        // 必填未填不许提交
+        settle(v, lab, t);
       } else {
         const val = free.value.trim();
         if(!val) return;                        // 空输入不提交
-        settle(val, val);
+        settle(val, val, '');
       }
     });
+
+    // 挂载即对齐一次：卡级 text_input.required 时确认按钮先禁用，等用户填写
+    syncText();
 
     clarPendingResolve = function(){ abandon(); };
   });
@@ -7062,6 +7171,33 @@ function mountClarCard(host, p){
 /* 全局：停止生成 / 切走形态时，把悬着的未决澄清卡以 null 收掉（幂等）。 */
 function cancelClarCard(){
   if(typeof clarPendingResolve === 'function'){ const fn = clarPendingResolve; clarPendingResolve = null; fn(); }
+}
+
+/* 澄清卡回填载荷：**始终**是 {value,label,text} 对象。
+   以前只回传标量 value —— 于是「选完人」和「要发什么」被拆成两轮：
+   模型拿到一个 userid，不知道内容，只能再问一句（2026-11-02 现场）。
+   text 为空时也带上：形状统一，agent 侧的 _clarify_answer 不用再猜。
+   两形态（经典 / OA）共用这一个函数，避免各写一份走形。 */
+function clarAnswerPayload(pick){
+  if(!pick) return null;
+  return {value:pick.value, label:pick.label, text:(pick.text || '')};
+}
+
+/* 卡片落定后，把**空的**正文容器挪到卡片之后。
+   为什么：`.tx` 是气泡里第一个子节点，卡片是**追加**在末尾的兄弟节点 ⇒ 续跑产生的
+   回答会被写进 `.tx`，视觉上飘在问句**上方**（用户先读到「已发给刘洋…」再读到
+   「要发给哪一位同事？」，顺序是反的）。把空的 `.tx` 挪到卡片后面，回答就落在
+   「你的选择」之下 —— 读起来才是「选完 → 于是有了这个结果」。
+   只在正文为空时挪：模型先说一段再提问时，那段话本来就该在上面。 */
+function liftTextBelowCard(bubble){
+  if(!bubble) return;
+  const card = bubble.querySelector('.clar-card');
+  const tx = bubble.querySelector('.tx');
+  if(!card || !tx) return;
+  if(String(tx.textContent || '').trim()) return;
+  // 卡片在 tx 之后（tx 在前）才需要挪；已经在下边就别动
+  if(!(tx.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
+  bubble.appendChild(tx);
 }
 
 /* ============================================================================
@@ -10855,11 +10991,16 @@ async function oaSend(){
         if(!pick) break;                            // 用户放弃：就地收口
         var wait = bubble.querySelector('.typing');
         if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        liftTextBelowCard(bubble);   // 与经典形态同口径：回答落在卡片之下
         var beforeClar = text.length;
-        await API.resumeStream(runId, pick.value, h);   // 标量走原路
+        // 与经典形态共用一份载荷：{value,label,text} —— 只说 value 会让模型丢掉
+        // 「用户在这一次交互里补的内容」，于是又追问一轮（上下文断裂的根因）。
+        await API.resumeStream(runId, clarAnswerPayload(pick), h);
         // 与经典形态同口径：没有新增正文时必须说话，不能静默（否则用户以为按钮失灵）。
         if(text.length === beforeClar){
-          appendSysNote(bubble, '已提交你的选择「' + (pick.label || pick.value) + '」，本轮没有新的内容返回。');
+          appendSysNote(bubble, '已提交你的选择「' + (pick.label || pick.value) + '」' +
+            ((pick.text || '') ? '（含补充内容 ' + pick.text.length + ' 字）' : '') +
+            '，本轮没有新的内容返回。');
         }
       } else if(form){
         var fc = form.form_code;                     // 先记下 code，随后把 form 置空

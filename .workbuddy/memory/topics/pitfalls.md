@@ -1598,3 +1598,37 @@ H5（`slice(0,6)`），结果第 7~10 个候选被两级静默丢弃，用户选
 真正管用的是**确定性截胡**：候选已就绪、用户没点名、非群发时，
 `agent` 第一轮**根本不调模型**，直接合成 `ask_user` 走 `clarify` 的 `interrupt()`。
 判据要分层收紧（人称+动作词 / 已点名 / 群发 / 候选为空），否则会变成「见谁都弹卡」。
+
+## 56. 回填只给标量 ⇒ 澄清链必然断裂（选完就终止）
+
+`interrupt()` 恢复后的 tool 消息是**模型唯一的输入**。只回 `{"answer": "wob…"}` 时，
+模型不知道这串值是谁、更不知道「要发什么」，唯一能做的是**把问题再问一遍** ——
+用户看到的就是「点完人，气泡没下文了」（2026-11-02 现场截图）。
+修法：回填 `{value,label,text}`（空 text 也要带，形状统一）+ tool 消息里加
+`next: "信息已齐备，请直接执行…不要再重复确认"`；选项级 `needs_text` 让文本框
+**选中即展开且必填**，一次交互把「选谁 + 说什么」交齐。
+**判据：一次暂停必须能把这一步缺的全部信息收齐**，否则必然退化成多轮往返。
+
+## 57. 多链共用的位置，别做「统一归一」（confirm 的 decision 会被吃掉）
+
+`clarify` 节点里三条链（ask_user / request_form / request_confirm）共用
+`interrupt()` 之后那段代码。无差别套 `payload = _clarify_answer(answer)` 的后果：
+confirm 的 `{"decision": true}` 被压成 `{"value": null}` ⇒ 模型看不见「用户点了确认」
+⇒ 写工具永不执行（`test_request_confirm` 两条用例当场红，而 run 本身不报错）。
+**只能在 `chain == "clarify"` 分支里归一**，form/confirm 原样透传。
+推广：看到「三条链共用一处」就先问「它们的形状真的一样吗」。
+
+## 58. 手工起 agent 漏 `AIOS_MCP_HUB=true` ⇒ 现象像「澄清链坏了」
+
+`start-all.sh` 里是 `export AIOS_MCP_HUB="${AIOS_MCP_HUB:-true}"`，手工 `uvicorn` 容易漏。
+漏了**不报错**，表现为三连：
+`capabilities degraded=[('mcp','UNRESOLVED')]` + `模糊实体预取 0 个候选（source=-）`
++ 模型自己弹一张**空选项**卡（「要发给哪位同事？请输入姓名或工号」）。
+看到这三个就要先查开关，别去改澄清代码。
+
+## 59. Playwright 验「回填后是否继续」：拦截必须活到 run 收口
+
+`send()` 是在用户点「确认」**之后**才发 resume 的。脚本若在卡片挂载后就
+`page.unroute("**/v1/**")`，那一刻请求会打到假域 → 气泡里出现 fetch 报错 →
+`resume_body` 恒为 None，「循环有没有继续」永远验不到（曾误判成代码没生效）。
+把「装拦截 + 起 send」与「等收口 + 卸拦截」拆成 `start_session` / `finish_session`。
