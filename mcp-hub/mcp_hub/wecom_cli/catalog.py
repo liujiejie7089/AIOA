@@ -84,14 +84,15 @@ TOOLS: list[dict] = [
         "description": ("读取某个会话最近 N 天的消息（谁说的、什么时间、内容）。"
                         "chat_id **可以传两种值**：① recent_group_sessions 返回的 chat_id；"
                         "② 直接传群名（如「成都易构」）—— 传群名时本工具会自己去匹配，"
-                        "匹配不到或重名会返回候选列表让你选。"
+                        "匹配不到或重名会返回候选列表让你选。**默认查 7 天**，不要假设只有今天的消息。"
                         "**不要把 chat_id 原样念给用户听**，用群名/人名指代即可。"),
         "input_schema": {
             "type": "object",
             "properties": {
                 "chat_id": {"type": "string",
                             "description": "会话标识：recent_group_sessions 返回的 chat_id，或群名"},
-                "days": {"type": "integer", "description": "回看天数，默认 1，最大 7"},
+                "days": {"type": "integer", "description": "回看天数，默认 7（官方上限 7）。"
+                             "用户说『过去 N 天』就传 N；返回为空时本工具会自动放宽到 7 天再查一次"},
                 "limit": {"type": "integer", "description": "最多返回多少条，默认 20"},
             },
             "required": ["chat_id"],
@@ -326,6 +327,35 @@ TOOLS: list[dict] = [
                             "description": "初始内容（doc 为纯文本、smartpage 为 markdown），可留空"},
             },
             "required": ["docName"],
+        },
+        "read_only": False,
+    },
+    {
+        "name": "doc_content",
+        "description": ("读 Word 在线文档的正文（默认 markdown）。docId 可传 doc_create 返回的 docid 或文档链接。"
+                        "用户说『这份文档写了什么』时用它。"),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "docId": {"type": "string", "description": "文档 ID 或文档链接"},
+                "contentType": {"type": "string",
+                                "description": "返回格式：markdown（默认）/ text / ooxml，可留空"},
+            },
+            "required": ["docId"],
+        },
+        "read_only": True,
+    },
+    {
+        "name": "doc_append",
+        "description": ("在已有 Word 在线文档**末尾追加**文本（不覆盖原内容）。"
+                        "这是四类允许跨身份的品类之一，但仍要先跟用户确认追加内容。"),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "docId": {"type": "string", "description": "文档 ID 或文档链接"},
+                "content": {"type": "string", "description": "要追加的纯文本"},
+            },
+            "required": ["docId", "content"],
         },
         "read_only": False,
     },

@@ -100,6 +100,25 @@ def _json_obj(value) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _attendees(values) -> str:
+    """`--attendees` 要的是 `[{"userid": ...}]`，不是 `["userid"]`。
+
+    2026-11-02 实测：只传字符串数组时 `--dry-run` 能过（它只校验 JSON 解析），
+    真调用才报 640027。所以这里统一补成对象；已经给了 dict 的原样透传，
+    这样调用方要传更多字段（如 name）也不用改这里。
+    """
+    out = []
+    for v in values or []:
+        if isinstance(v, dict):
+            if v:
+                out.append(v)
+            continue
+        s = str(v).strip()
+        if s:
+            out.append({"userid": s})
+    return json.dumps(out, ensure_ascii=False)
+
+
 def todo_list(limit: int = 10, status: str = "", keywords: str = "") -> list[str]:
     """`wecom-cli todo list` —— 机器人视角（**只包含机器人创建的待办**）。"""
     args = ["todo", "list", "--limit", str(max(1, min(int(limit or 10), 20)))]
@@ -122,6 +141,30 @@ def todo_create(item: dict) -> list[str]:
     return ["todo", "create", "--items", _json_obj([item])]
 
 
+def todo_item(title: str, description: str = "", follower_ids=None,
+              deadline: str = "") -> dict:
+    """构造一条待办的 `--items` 元素。
+
+    ⚠️ `deadline` 的 schema 是 `{type, value}`，**不是** `{type, date}`。
+    2026-11-02 实测写成 `{"type":"date","date":"2026-11-05"}` 会被服务端判
+    「存在未知字段 'items.deadline.date'」。注意 `--dry-run` **不校验字段名**
+    （它只把请求体打出来），所以这条只能靠 `_check_wecom_cli_argv.py` 的 R6c
+    拿 CLI 自己的 `--schema` 比对兜住。
+    """
+    item: dict = {"title": str(title).strip()}
+    desc = (description or "").strip()
+    if desc:
+        item["description"] = desc
+    fids = [str(x).strip() for x in (follower_ids or []) if str(x).strip()]
+    if fids:
+        item["follower_ids"] = fids
+    dl = (deadline or "").strip()
+    if dl:
+        # 带时分秒的按 datetime，纯日期按 date
+        item["deadline"] = {"type": "datetime" if len(dl) > 10 else "date", "value": dl}
+    return item
+
+
 def calendar_list(begin: str, end: str) -> list[str]:
     """`wecom-cli calendar schedules list`。"""
     return ["calendar", "schedules", "list", "--begin-time", begin, "--end-time", end]
@@ -133,7 +176,7 @@ def calendar_create(subject: str, begin: str, end: str, attendees: list[str] | N
     args = ["calendar", "schedules", "create",
             "--subject", subject, "--begin-time", begin, "--end-time", end]
     if attendees:
-        args += ["--attendees", _json_array(attendees)]
+        args += ["--attendees", _attendees(attendees)]
     if location:
         args += ["--location", location]
     if description:
@@ -158,7 +201,7 @@ def meeting_create(subject: str, begin: str, end: str, attendees: list[str] | No
     args = ["meeting", "create",
             "--subject", subject, "--begin-time", begin, "--end-time", end]
     if attendees:
-        args += ["--attendees", _json_array(attendees)]
+        args += ["--attendees", _attendees(attendees)]
     if location:
         args += ["--location", location]
     if description:
@@ -179,10 +222,23 @@ def mail_get(mail_ids: list[str]) -> list[str]:
     return ["mail", "get", "--mail-ids", *[str(x) for x in mail_ids[:10] if str(x).strip()]]
 
 
-def mail_send(to_emails: list[str], subject: str, content: str) -> list[str]:
-    """`wecom-cli mail send`（写）。`--to` 是对象：`{emails:[...]}`。"""
+def mail_send(to: list[str], subject: str, content: str) -> list[str]:
+    """`wecom-cli mail send`（写）。`--to` 是对象：`{emails:[...], userids:[...]}`。
+
+    含 `@` 的按邮箱地址走 `emails`，其余按企微 userid 走 `userids` ——
+    因为 `contact users search` 只返回 userid，不返回邮箱（2026-11-02 实测
+    通讯录里的 `email` 字段一律为 null），只支持 emails 等于发不出信。
+    """
+    tos = [str(x).strip() for x in to if str(x).strip()]
+    payload: dict[str, list[str]] = {}
+    emails = [x for x in tos if "@" in x]
+    uids = [x for x in tos if "@" not in x]
+    if emails:
+        payload["emails"] = emails
+    if uids:
+        payload["userids"] = uids
     return ["mail", "send",
-            "--to", _json_obj({"emails": [str(x) for x in to_emails if str(x).strip()]}),
+            "--to", _json_obj(payload),
             "--subject", subject,
             "--content", content]
 
@@ -204,6 +260,19 @@ def doc_create(doc_name: str, doc_type: str = "doc", content: str = "") -> list[
         args += ["--content", content, "--content-type",
                  "markdown" if doc_type == "smartpage" else "text"]
     return args
+
+
+def doc_content(docid: str, content_type: str = "") -> list[str]:
+    """`wecom-cli doc contents get` —— 读 Word 文档正文（默认 markdown）。"""
+    args = ["doc", "contents", "get", "--docid", docid]
+    if content_type:
+        args += ["--content-type", content_type]
+    return args
+
+
+def doc_append(docid: str, content: str) -> list[str]:
+    """`wecom-cli doc contents append`（写）—— 在 Word 文档末尾追加纯文本。"""
+    return ["doc", "contents", "append", "--docid", docid, "--content", content]
 
 
 def sheet_info(docid: str) -> list[str]:

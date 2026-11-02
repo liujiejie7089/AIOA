@@ -64,7 +64,7 @@ EXPECT_REQUIRED = {
 FORBIDDEN_KEY_SUBSTR = ("credential", "authcode", "corpsecret", "secret", "password", "enc")
 # 内置服务器 → 期望工具数。**不是**写死的历史值，而是「hub 实装数」的镜像；
 # M13 会拿它跟 hub 现报的数字逐个比对，两边不一致就红（防止只改一处）。
-EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 0, "wecom_group": 0, "wecom_cli": 23}
+EXPECT_TOOL_COUNT = {"qq_mail": 6, "wechat_work": 0, "wecom_group": 0, "wecom_cli": 25}
 # 已下线（V103 停用 + V104 清工具快照 + 代码物理删除，2026-10-30；docs/64 §9.7）。
 # 企业微信统一改用「企业微信（扫码）」连接器。
 # 它们的 mcp_server 行**故意保留**（留痕），但必须 trusted=0 且工具目录为空：

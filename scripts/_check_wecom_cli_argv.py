@@ -26,10 +26,14 @@
   R3  其余三个构造函数（session_messages / recent_sessions / contact_search）同样校验
   R4  `--keywords` 变参：多关键词展开正确、中文逗号认
   R5  端到端：真 CLI 跑 `--dry-run`，输出里**不得**出现 `unexpected argument`
+  R6  二/三梯队 20 个构造函数的 flag 与 CLI help 一致
+  R6b 写命令 `--dry-run` 参数被接受（**注意：dry-run 不校验 JSON 字段名**）
+  R6c JSON 载荷的字段名对齐 CLI `--schema`（deadline 写错只有这里能抓）
   C1  负向自检：把 `--only-unread` 改回带 "true"，R2 + R5 必须转红
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -200,7 +204,7 @@ def main() -> int:
             ok("R5 dry-run 真的构造出请求（说明参数组合完全合法）")
 
     # ------------------------------------------------------------------ R6
-    head("R6 二/三梯队：18 个新构造函数的 flag 与 CLI help 一致")
+    head("R6 二/三梯队：20 个新构造函数的 flag 与 CLI help 一致")
     # (名字, 构造出的 argv, 对应的 help 命令路径)
     NEW_VECTORS = [
         ("todo list", argv.todo_list(limit=5, status="proceed", keywords="报销,审批"), ["todo", "list"]),
@@ -222,6 +226,8 @@ def main() -> int:
         ("mail send", argv.mail_send(["a@b.com"], "主题", "正文"), ["mail", "send"]),
         ("doc search", argv.doc_search("预算", limit=5, doc_types="sheet"), ["doc", "search"]),
         ("doc create", argv.doc_create("测试文档", "doc", "正文"), ["doc", "create"]),
+        ("doc contents get", argv.doc_content("DOCID"), ["doc", "contents", "get"]),
+        ("doc contents append", argv.doc_append("DOCID", "正文"), ["doc", "contents", "append"]),
         ("sheet get", argv.sheet_info("DOCID"), ["sheet", "get"]),
         ("smartsheet get", argv.smartsheet_info("DOCID"), ["smartsheet", "get"]),
         ("smartsheet records list", argv.smartsheet_records("DOCID", "SID", limit=10),
@@ -230,7 +236,7 @@ def main() -> int:
         ("disk files search", argv.disk_search("预算,报表", limit=5), ["disk", "files", "search"]),
     ]
     if not cli:
-        skip("R6 全部 18 条", "本机没有 wecom-cli（静态构造已完成，见上面的 import 成功）")
+        skip("R6 全部 20 条", "本机没有 wecom-cli（静态构造已完成，见上面的 import 成功）")
     else:
         for label, nvec, path in NEW_VECTORS:
             table = flags_of(help_text(cli, path))
@@ -242,10 +248,18 @@ def main() -> int:
         head("R6b 写命令端到端 dry-run（不实际发送）")
         for label, wvec in [
             ("message send", argv.message_send("CHATID123", "你好")),
-            ("todo create", argv.todo_create({"title": "写周报"})),
-            ("calendar create", argv.calendar_create("周会", BEGIN, END)),
-            ("meeting create", argv.meeting_create("评审会", BEGIN, END)),
+            # 带 deadline/follower_ids 的真实形态：2026-11-02 deadline 写成
+            # {"type":"date","date":...} 时**只有这里能拦住**（CLI 报「存在未知字段」）
+            ("todo create 带 deadline/follower",
+             argv.todo_create(argv.todo_item("写周报", "本周汇总",
+                                             ["wobVcoXXXX"], "2026-11-07"))),
+            ("todo create 带 datetime deadline",
+             argv.todo_create(argv.todo_item("交报表", deadline="2026-11-07 18:00:00"))),
+            ("calendar create", argv.calendar_create("周会", BEGIN, END, attendees=["wobVcoXXXX"])),
+            ("meeting create", argv.meeting_create("评审会", BEGIN, END, attendees=["wobVcoXXXX"])),
             ("doc create", argv.doc_create("测试文档", "doc", "正文")),
+            ("mail send 按 userid", argv.mail_send(["wobVcoXXXX"], "主题", "正文")),
+            ("doc append", argv.doc_append("DOCID", "追加正文")),
         ]:
             p = subprocess.run([cli, *wvec, "--dry-run"], capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=60)
@@ -253,6 +267,48 @@ def main() -> int:
             chk("unexpected argument" not in out and "error" not in out.lower()[:200],
                 f"R6b {label} 参数被 CLI 接受",
                 [ln for ln in out.splitlines() if "unexpected" in ln][:1] or "无 unexpected argument")
+
+    # ------------------------------------------------------------------ R6c
+    head("R6c JSON 载荷字段名对齐 CLI --schema")
+    if not cli:
+        skip("R6c 全部", "本机没有 wecom-cli")
+    else:
+        def _schema(path):
+            p = subprocess.run([cli, *path, "--schema"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=60)
+            return json.loads(p.stdout)
+
+        def _ref(sch, node):
+            return (sch.get("schemas") or {}).get(node.get("$ref") or "", {})
+
+        # 待办：items 元素允许哪些字段，以 TodoCreateItem 为准
+        sch = _schema(["todo", "create"])
+        req = _ref(sch, sch["request"])
+        item_node = ((req.get("properties") or {}).get("items") or {}).get("items") or {}
+        allowed = set((_ref(sch, item_node).get("properties") or {}))
+        made = argv.todo_item("写周报", "本周汇总", ["wobVcoXXXX"], "2026-11-07")
+        extra = sorted(set(made) - allowed)
+        chk(allowed and not extra,
+            "R6c 待办 item 字段名全在 schema 内",
+            f"多余字段={extra}（允许={sorted(allowed)}）")
+        dl = made.get("deadline") or {}
+        dl_allowed = set((_ref(sch, (_ref(sch, item_node).get("properties") or {})
+                               .get("deadline") or {}).get("properties") or {}))
+        chk(dl_allowed and not (set(dl) - dl_allowed),
+            "R6c 待办 deadline 用的是 {type,value}",
+            f"实际={sorted(dl)} / 允许={sorted(dl_allowed)}")
+
+        # 日程 / 会议：attendees 元素只允许 userid
+        for label, path, ref_name in (
+            ("日程", ["calendar", "schedules", "create"], "ScheduleAttendee"),
+            ("会议", ["meeting", "create"], "AttendUserId"),
+        ):
+            sch = _schema(path)
+            props = set((_ref(sch, {"$ref": ref_name}).get("properties") or {}))
+            sent = json.loads(argv._attendees(["wobVcoXXXX"]))
+            ok_keys = bool(props) and all(set(x) <= props for x in sent)
+            chk(ok_keys, f"R6c {label} attendees 是 [{{userid}}] 形态",
+                f"发送={sent} / 允许字段={sorted(props)}")
 
     # ------------------------------------------------------------------ C1
     head("C1 负向自检：改回带值必须转红")

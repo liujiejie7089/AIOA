@@ -173,6 +173,34 @@ def _pick(d: dict, *names: str, default: Any = "") -> Any:
     return default
 
 
+def _deadline_text(v: Any) -> str:
+    """待办 deadline 是 `{"type","value"}` 对象；直接 str() 会把 dict repr 丢给模型。"""
+    if isinstance(v, dict):
+        return _clip(v.get("value") or v.get("datetime") or v.get("date") or "", 40)
+    return _clip(v, 40)
+
+
+def _names(v: Any) -> str:
+    """把 `[{"userid","user_name"}]` 归一成「刘洋、张三」。
+
+    2026-11-02 实测：待办/日程的参与人是对象数组，`_clip` 出来的
+    `"{'userid': ...}"` 既难读又会把 userid 混进正文，模型复述时容易张冠李戴。
+    """
+    if isinstance(v, str):
+        return _clip(v, 200)
+    if not isinstance(v, list):
+        return ""
+    out = []
+    for x in v[:10]:
+        if isinstance(x, dict):
+            n = x.get("user_name") or x.get("name") or x.get("userid") or ""
+            st = x.get("user_status") or ""
+            out.append(f"{n}({st})" if st and st != "accept" else str(n))
+        else:
+            out.append(str(x))
+    return _clip("、".join(x for x in out if x), 200)
+
+
 async def _profile(ctx) -> tuple[identity.Identity, Any]:
     ident = await identity.resolve(ctx)
     d, shared = profiles.resolve(ident.tenant_id, ident.user_id)
@@ -211,6 +239,9 @@ async def _exec_contact_search(ctx: Context, keywords: str = "", **kw) -> CallTo
             deps = [deps]
         out.append({
             "name": u.get("name") or u.get("user_name"),
+            # userid 必须回给模型：发邮件 / 拉日程参与人 / 建待办跟进人都要用它，
+            # 而通讯录里的 email 字段实测恒为 null（2026-11-02）。
+            "userid": u.get("userid") or u.get("user_id") or u.get("id"),
             "alias": u.get("alias"),
             "position": u.get("position") or u.get("title"),
             "departments": " / ".join(str(x) for x in deps if x),
@@ -279,16 +310,18 @@ async def _resolve_session(raw: str, d) -> tuple[str, list[str]]:
     return "", [name for name, _ in part]
 
 
-async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 1, limit: int = 20,
+async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 7, limit: int = 20,
                                  **kw) -> CallToolResult:
     raw = (chat_id or "").strip()
     if not raw:
         return _err("chat_id 不能为空：请先调用 recent_group_sessions 取得 chat_id，或直接传群名")
-    b, e = _since(days)
+    used_days = max(1, min(int(days or 7), 7))
+    b, e = _since(used_days)
     try:
         _, d = await _profile(ctx)
+        target = raw
         try:
-            data = await _call(argv.session_messages(raw, b, e), d)
+            data = await _call(argv.session_messages(target, b, e), d)
         except runner.CliError as first:
             # 句柄不合法（40073）或用户直接给了群名 ⇒ 按名字在最近 7 天会话里找一次
             resolved, cands = await _resolve_session(raw, d)
@@ -298,10 +331,21 @@ async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 1,
                                 + "。请让用户确认是哪一个，再用完整群名重试。")
                 return _err(f"没找到会话「{raw}」（官方只能查最近 7 天）。"
                             f"可先调用 recent_group_sessions 看有哪些群。原始错误：{first}")
-            data = await _call(argv.session_messages(resolved, b, e), d)
+            target = resolved
+            data = await _call(argv.session_messages(target, b, e), d)
+        rows = _rows(data, "messages", "msg_list", "list")
+        # ★ 空窗口自动放宽到 7 天。
+        #   模型经常**不传 days**（旧默认是 1 天），于是查了个空窗口，再对用户说
+        #   「过去 7 天内没有新的消息」—— 2026-11-02 用户实测就是这个：
+        #   群最后一条在 10-31 12:45，1 天窗口必然空，而它嘴上说的是「7 天」。
+        #   不跟模型的参数较劲：直接放宽再查一次，并在回包里如实标注实际用了几天。
+        if not rows and used_days < 7:
+            used_days = 7
+            b, e = _since(used_days)
+            data = await _call(argv.session_messages(target, b, e), d)
+            rows = _rows(data, "messages", "msg_list", "list")
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as exc:
         return _err(str(exc))
-    rows = _rows(data, "messages", "msg_list", "list")
     out = []
     for m in rows[-max(1, min(int(limit or 20), 50)):]:
         # 实测字段：{"userid","user_name","send_time","msg_type","text":{"content":…}}
@@ -318,7 +362,8 @@ async def _exec_session_messages(ctx: Context, chat_id: str = "", days: int = 1,
             "type": _pick(m, "msg_type", "type", default="text"),
             "text": _clip(body, 400),
         })
-    return _ok({"range": {"begin": b, "end": e}, "count": len(out), "messages": out})
+    return _ok({"range": {"begin": b, "end": e}, "days": used_days,
+                "count": len(out), "messages": out})
 
 
 async def _exec_mail_search(ctx: Context, keywords: str = "", days: int = 7, limit: int = 10,
@@ -406,17 +451,17 @@ async def _exec_mail_get(ctx: Context, mailIds: str = "", **kw) -> CallToolResul
 
 async def _exec_mail_send(ctx: Context, to: str = "", subject: str = "", content: str = "",
                           **kw) -> CallToolResult:
-    emails = _kw_list(to)
-    if not emails:
-        return _err("to 不能为空：请给出收件人邮箱")
+    tos = _kw_list(to)
+    if not tos:
+        return _err("to 不能为空：请给出收件人邮箱，或通讯录里的 userid（contact_search 可获得）")
     if not (subject or "").strip():
         return _err("subject 不能为空：邮件主题是必填项")
     try:
         _, d = await _profile(ctx)
-        data = await _call(argv.mail_send(emails, subject, content or ""), d, timeout=60)
+        data = await _call(argv.mail_send(tos, subject, content or ""), d, timeout=60)
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as exc:
         return _err(str(exc))
-    return _ok({"sent": True, "to": emails, "subject": subject, "result": data,
+    return _ok({"sent": True, "to": tos, "subject": subject, "result": data,
                 "note": "发件人是机器人绑定的邮箱身份"})
 
 
@@ -433,8 +478,8 @@ async def _exec_todo_list(ctx: Context, limit: int = 10, status: str = "", keywo
         "title": _pick(t, "title", "subject"),
         "description": _clip(_pick(t, "description"), 300),
         "status": _pick(t, "status", "state"),
-        "deadline": _clip(_pick(t, "deadline"), 60),
-        "followers": _clip(_pick(t, "follower_ids", "followers"), 120),
+        "deadline": _deadline_text(_pick(t, "deadline")),
+        "followers": _names(_pick(t, "follower_ids", "followers")),
     } for t in rows]
     return _ok({"count": len(out), "todos": out,
                 "scope_note": "机器人视角：只含机器人创建/参与的待办，看不到用户在企微 App 自建的待办"})
@@ -455,8 +500,8 @@ async def _exec_todo_get(ctx: Context, items: str = "", **kw) -> CallToolResult:
         "title": _pick(t, "title", "subject"),
         "description": _clip(_pick(t, "description"), 600),
         "status": _pick(t, "status", "state"),
-        "deadline": _clip(_pick(t, "deadline"), 60),
-        "followers": _clip(_pick(t, "follower_ids", "followers"), 120),
+        "deadline": _deadline_text(_pick(t, "deadline")),
+        "followers": _names(_pick(t, "follower_ids", "followers")),
     } for t in rows]
     return _ok({"count": len(out), "todos": out})
 
@@ -465,17 +510,7 @@ async def _exec_todo_create(ctx: Context, title: str = "", description: str = ""
                             followerIds: str = "", deadline: str = "", **kw) -> CallToolResult:
     if not (title or "").strip():
         return _err("title 不能为空：请给出待办标题")
-    item: dict[str, Any] = {"title": title.strip()}
-    if (description or "").strip():
-        item["description"] = description.strip()
-    followers = _kw_list(followerIds)
-    if followers:
-        item["follower_ids"] = followers
-    if (deadline or "").strip():
-        # Deadline 是个对象，type 决定按日期还是按时刻：带时分秒的当 datetime
-        d = deadline.strip()
-        item["deadline"] = ({"type": "datetime", "datetime": d} if len(d) > 10
-                            else {"type": "date", "date": d})
+    item = argv.todo_item(title, description, _kw_list(followerIds), deadline)
     try:
         _, d = await _profile(ctx)
         data = await _call(argv.todo_create(item), d, timeout=30)
@@ -503,7 +538,7 @@ async def _exec_calendar_list(ctx: Context, beginTime: str = "", endTime: str = 
         "begin": _pick(s, "begin_time", "start_time"),
         "end": _pick(s, "end_time"),
         "location": _clip(_pick(s, "location"), 100),
-        "attendees": _clip(_pick(s, "attendees"), 200),
+        "attendees": _names(_pick(s, "attendees")),
         "description": _clip(_pick(s, "description"), 200),
     } for s in rows]
     return _ok({"range": {"begin": b, "end": e}, "count": len(out), "schedules": out})
@@ -565,7 +600,7 @@ async def _exec_meeting_get(ctx: Context, meetingIds: str = "", **kw) -> CallToo
         "begin": _pick(m, "begin_time", "start_time"),
         "end": _pick(m, "end_time"),
         "location": _clip(_pick(m, "location"), 100),
-        "attendees": _clip(_pick(m, "attendees"), 300),
+        "attendees": _names(_pick(m, "attendees")),
         "minutesUrl": _pick(m, "minutes_url", "smart_minutes_url"),
         "recordUrl": _pick(m, "record_url", "recording_url"),
     } for m in rows]
@@ -625,6 +660,33 @@ async def _exec_doc_create(ctx: Context, docName: str = "", docType: str = "doc"
     except (profiles.NotBound, runner.CliError, identity.IdentityError) as exc:
         return _err(str(exc))
     return _ok({"created": True, "docName": docName, "docType": dtype, "result": data})
+
+
+async def _exec_doc_content(ctx: Context, docId: str = "", contentType: str = "",
+                            **kw) -> CallToolResult:
+    if not (docId or "").strip():
+        return _err("docId 不能为空：请给出文档 ID 或链接")
+    try:
+        _, d = await _profile(ctx)
+        data = await _call(argv.doc_content(docId.strip(), (contentType or "").strip()), d, timeout=30)
+    except (profiles.NotBound, runner.CliError, identity.IdentityError) as exc:
+        return _err(str(exc))
+    # 正文可能上万字：截断但保留足够上下文（模型还要据此回答问题）
+    text = _pick(data, "content", "text", "data") if isinstance(data, dict) else data
+    return _ok({"docId": docId, "content": _clip(text, 4000), "raw": None if text else data})
+
+
+async def _exec_doc_append(ctx: Context, docId: str = "", content: str = "", **kw) -> CallToolResult:
+    if not (docId or "").strip():
+        return _err("docId 不能为空：请给出文档 ID 或链接")
+    if not (content or "").strip():
+        return _err("content 不能为空：请给出要追加的文本")
+    try:
+        _, d = await _profile(ctx)
+        data = await _call(argv.doc_append(docId.strip(), content), d, timeout=30)
+    except (profiles.NotBound, runner.CliError, identity.IdentityError) as exc:
+        return _err(str(exc))
+    return _ok({"appended": True, "docId": docId, "chars": len(content), "result": data})
 
 
 async def _exec_sheet_info(ctx: Context, docId: str = "", **kw) -> CallToolResult:
@@ -717,6 +779,8 @@ _EXEC = {
     # 三梯队（文档 / 表格 / 微盘）
     "doc_search": _exec_doc_search,
     "doc_create": _exec_doc_create,
+    "doc_content": _exec_doc_content,
+    "doc_append": _exec_doc_append,
     "sheet_info": _exec_sheet_info,
     "smartsheet_info": _exec_smartsheet_info,
     "smartsheet_records": _exec_smartsheet_records,
@@ -729,7 +793,7 @@ _PARAMS: dict[str, list[tuple[str, type, Any]]] = {
     "whoami": [],
     "contact_search": [("keywords", str, None)],
     "recent_group_sessions": [("days", int, 7)],
-    "session_messages": [("chat_id", str, None), ("days", int, 1), ("limit", int, 20)],
+    "session_messages": [("chat_id", str, None), ("days", int, 7), ("limit", int, 20)],
     "mail_search": [("keywords", str, ""), ("days", int, 7), ("limit", int, 10),
                     ("onlyUnread", bool, False)],
     "message_send": [("chat_id", str, None), ("text", str, None)],
@@ -748,6 +812,8 @@ _PARAMS: dict[str, list[tuple[str, type, Any]]] = {
                        ("attendees", str, ""), ("location", str, ""), ("description", str, "")],
     "doc_search": [("keywords", str, None), ("limit", int, 10), ("docTypes", str, "")],
     "doc_create": [("docName", str, None), ("docType", str, "doc"), ("content", str, "")],
+    "doc_content": [("docId", str, None), ("contentType", str, "")],
+    "doc_append": [("docId", str, None), ("content", str, None)],
     "sheet_info": [("docId", str, None)],
     "smartsheet_info": [("docId", str, None)],
     "smartsheet_records": [("docId", str, None), ("sheetId", str, ""), ("limit", int, 20)],
