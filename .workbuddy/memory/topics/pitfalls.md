@@ -1524,3 +1524,17 @@ docker compose exec agent python -c "import langgraph, redis, aiosqlite; print('
       application.yml 里被引用但 compose 从未透传 ⇒ 生产一直用 dev 占位默认值
       （= 凭据明文）。`_check_compose_env_wiring.py` 就是干这个的，别把它当噪声。
       它与 hub 的 `WECOM_CONNECTOR_KEY` 是**两把不同的钥匙**，不要设成同一个值。
+
+49. **`-DskipTests` 不等于「不编译测试」——构造参数一变，生产构建就炸在 test-compile**
+    （2026-11-02，用户 `docker compose up -d --build` 现场）：
+    ```
+    [ERROR] ChatAttachmentRunTest.java:[48,16] constructor RunService ... cannot be applied
+    required: ...(多了一个 cn.aios.chat.mapper.AgentRunStepMapper)...
+    ```
+    `Dockerfile.server` 跑的是 `mvn -q -B -DskipTests package -pl aios-boot -am`：
+    `-DskipTests` 只跳过**执行**，测试源码照编。本地用 `mvn compile` 验 ⇒ 永远发现不了。
+    **判据**：改过 service 构造参数 / 实体 / DTO 后，本地必须
+    `cd server && mvn -q -o -pl <module> -am test-compile`（或直接 `-DskipTests package`），
+    `compile` 绿不算数。
+    **本仓有三处手工 `new RunService(...)`**（不走 Spring）：`ChatAttachmentRunTest`、
+    `RunServiceFormFrameTest`、`RunServiceHitlTest` —— 以后加构造参数要一次改这三个。
