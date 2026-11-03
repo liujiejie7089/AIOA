@@ -124,7 +124,27 @@ public class ApprovalFlowService {
                             Long institutionId, Long departmentId, Double days,
                             Long applicantUserId, String applicantName, Long specificApproverId,
                             // ↓ 二期新增（追加在末尾；缺省 null = 一期行为）
-                            String applicantType, Long applicantDepartmentId) {
+                            String applicantType, Long applicantDepartmentId,
+                            // ↓ 六期新增：发起人**亲手指定**的处理人（对话里选的那位）。
+                            //   与 specificApproverId 的区别见 expandNodes 里的注释：
+                            //   后者只在 step 声明 SPECIFIC 时生效，前者则会被插入为首节点。
+                            Long assigneeUserId) {
+
+        /**
+         * 十二参兼容构造器：既有 12 个调用点（请假 / 权限申请 / 额度 / 报销 / 表单 / 删除类）
+         * 一律按「没有指定处理人」处理，行为与改造前**逐字一致**。
+         *
+         * <p>不逐个改调用点的理由：新增一个可选语义却要动 12 个文件，回归面远大于收益，
+         * 且其中 10 处本就不该支持「指定人」（删除租户、开通资源这类流程由配置决定审批人）。</p>
+         */
+        public SubmitReq(String bizType, String title, String content, String formData,
+                         Long institutionId, Long departmentId, Double days,
+                         Long applicantUserId, String applicantName, Long specificApproverId,
+                         String applicantType, Long applicantDepartmentId) {
+            this(bizType, title, content, formData, institutionId, departmentId, days,
+                    applicantUserId, applicantName, specificApproverId,
+                    applicantType, applicantDepartmentId, null);
+        }
     }
 
     // ================================================================== 提交
@@ -156,7 +176,7 @@ public class ApprovalFlowService {
         statMapper.insertApprovalOrder(order);
         Long orderId = ((Number) order.get("id")).longValue();
 
-        ExpandResult expand = expandNodes(tenantId, institutionId, req);
+        ExpandResult expand = expandNodes(tenantId, institutionId, req, userId);
         List<Node> nodes = expand.approve();
         if (nodes.isEmpty()) {
             throw BizException.badRequest("无法解析审批节点，请检查审批流定义（approval_flow_def）");
@@ -298,7 +318,8 @@ public class ApprovalFlowService {
      * 条件路由（{@code when}）与处理模式（{@code mode}）。本方法只做两件事：
      * <b>决定哪些节点生效</b>、<b>把每个节点展开成 1..K 条同组任务</b>。</p>
      */
-    private ExpandResult expandNodes(Long tenantId, Long institutionId, SubmitReq req) {
+    private ExpandResult expandNodes(Long tenantId, Long institutionId, SubmitReq req,
+                                     Long applicantId) {
         ApprovalFlowDef def = defMapper.selectOne(new LambdaQueryWrapper<ApprovalFlowDef>()
                 .eq(ApprovalFlowDef::getTenantId, tenantId)
                 .eq(ApprovalFlowDef::getInstitutionId, institutionId)
@@ -314,6 +335,10 @@ public class ApprovalFlowService {
                     .last("limit 1"));
         }
         List<Map<String, Object>> steps = def == null ? List.of() : parseSteps(def.getStepsJson());
+        // 「后台是否真的配了审批流」必须在内置兜底**之前**判定：
+        // 配了流 ⇒ 指定处理人只是首节点，后面继续按规则走；
+        // 没配流 ⇒ 指定处理人就是唯一节点（处理完即终态），不该再追一个企业管理员兜底节点。
+        boolean flowConfigured = !steps.isEmpty();
         if (steps.isEmpty()) {
             steps = List.of(Map.of("seq", 1, "approver_type", DEFAULT_APPROVER_TYPE));
         }
@@ -437,9 +462,59 @@ public class ApprovalFlowService {
                     h.fallbackNote() == null ? plan.note() : plan.note() + h.fallbackNote()));
         }
 
+        // ── 六期：发起人指定处理人（2026-11-03）──
+        // 语义来自对话侧：用户在字段卡里亲手选了「这单交给谁」。
+        //   · 后台**没有**审批流 ⇒ 指定人就是唯一节点，处理完直接终态；
+        //   · 后台**配置了**审批流 ⇒ 指定人成为第 1 级，其后按流定义自动流转。
+        // ★ 为什么不复用 req.specificApproverId：那个字段只有在 step 自己声明
+        //   approver_type=SPECIFIC 时才会被策略读到（见 ApproverStrategyConfig），
+        //   而请假等默认流是 APPLICANT_SUPERIOR / DEPT_LEADER，没有这个 step ⇒
+        //   传了也会被**静默忽略**，表现正是「用户选了人，却没人收到审批」。
+        if (req.assigneeUserId() != null) {
+            nodes = applyAssignee(nodes, req.assigneeUserId(), flowConfigured, applicantId);
+        }
+
         List<Node> ccs = expandCcNodes(steps, req, deptLeaderId, orgAdminId, tenantAdminId, platformAdminId,
                 nodes.stream().map(Node::approverId).filter(Objects::nonNull).toList());
         return new ExpandResult(nodes, ccs);
+    }
+
+    /**
+     * 把「发起人指定的处理人」落到节点序列上。
+     *
+     * <p>三条口径（都有回归用例盯着）：</p>
+     * <ol>
+     *   <li><b>自审拦截</b>：指定人 = 申请人 ⇒ 400。技术上能建出任务，但语义上是自己批自己，
+     *       且会占住唯一节点导致流程永远等他自己 —— 与其静默生成一个假审批，不如当场说清。</li>
+     *   <li><b>无配置流 ⇒ 单节点</b>：用户明确点名了人，就不该再追加企业管理员兜底节点，
+     *       否则他要等两轮，而第二轮的审批人他从没同意过。</li>
+     *   <li><b>有配置流 ⇒ 插为首节点</b>：原节点整体后移一位（seq+1），保证「先指定人、再按规则」。
+     *       若原首节点本来就是同一个人，则<b>不重复插入</b>（否则同一个人要批两次）。</li>
+     * </ol>
+     */
+    private List<Node> applyAssignee(List<Node> nodes, Long assigneeId, boolean flowConfigured,
+                                     Long applicantId) {
+        if (assigneeId == null || assigneeId <= 0L) {
+            return nodes;
+        }
+        if (assigneeId.equals(applicantId)) {
+            throw BizException.badRequest("处理人不能是申请人本人（自己批自己没有意义），请改选其他人");
+        }
+        String name = nameOf(assigneeId);
+        Node first = new Node(1, ApprovalTask.TYPE_SPECIFIC, assigneeId, name,
+                null, null, ApprovalTask.MODE_SINGLE, null);
+        if (!flowConfigured) {
+            return new ArrayList<>(List.of(first));
+        }
+        if (!nodes.isEmpty() && assigneeId.equals(nodes.get(0).approverId())) {
+            return nodes;
+        }
+        List<Node> out = new ArrayList<>(nodes.size() + 1);
+        out.add(first);
+        for (Node n : nodes) {
+            out.add(withSeq(n, n.seq() + 1, n.fallbackNote()));
+        }
+        return out;
     }
 
     /** 复制一个节点并换掉 seq / 提示（展开阶段用它给节点组编号、给首节点挂提示）。 */

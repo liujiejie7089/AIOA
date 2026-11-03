@@ -331,9 +331,13 @@ def test_agent_runtime_kb_citations():
         events = asyncio.run(_drain(_make_req(user_token="tok")))
 
     completed = next(e for e in events if e.type == "message.completed")
+    # 形状在 2026-11-03 有意扩展：新增 label（中文来源名）与 action（动作名），
+    # 供跨源聚合后按来源分组展示（docs/70）。docId/title/source 三个老键保持原义。
     assert completed.data["citations"] == [
-        {"docId": 7, "title": "差旅费管理办法", "source": "knowledge_base"},
-        {"docId": 3, "title": "发文审批流程", "source": "knowledge_base"},
+        {"docId": 7, "title": "差旅费管理办法", "source": "knowledge_base",
+         "label": "知识库", "action": "知识库检索"},
+        {"docId": 3, "title": "发文审批流程", "source": "knowledge_base",
+         "label": "知识库", "action": "知识库检索"},
     ], completed.data["citations"]
     assert completed.data["tool_calls"][0]["name"] == "search_kb_documents"
 

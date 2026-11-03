@@ -133,6 +133,7 @@ def test_echo_run_kb_citations():
     assert "tool.call" in types and "tool.result" in types
     completed = next(e for e in events if e["type"] == "message.completed")["data"]
     assert completed["citations"] == [
-        {"docId": 17, "title": "差旅费管理办法（2026版）", "source": "knowledge_base"}]
+        {"docId": 17, "title": "差旅费管理办法（2026版）", "source": "knowledge_base",
+         "label": "知识库", "action": "知识库检索"}]
     assert completed["tool_calls"][0]["name"] == "search_kb_documents"
     assert "差旅费管理办法" in completed["content"]

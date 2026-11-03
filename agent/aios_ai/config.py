@@ -89,6 +89,12 @@ class Settings(BaseModel):
     # 不抛异常、不拖垮整轮。
     web_search_timeout: float = Field(default=12.0, alias="AIOS_WEB_TIMEOUT")
 
+    # 跨源数据聚合（2026-11-03）：用户说「总结周报/汇总本周进展」时，
+    # 由代码**确定性**扇出企微会话 / 待办 / 日历 / 邮箱 / 审批，拼成素材包并标注来源。
+    # **默认开** —— 这是「智能数据聚合」能力本身；关掉只是回到「模型自己想到才查」。
+    # 触发面很窄（见 aios_ai/aggregate/plan.py 的 AGGREGATE_RE），不会影响普通问答。
+    aggregate_enabled: bool = Field(default=True, alias="AIOS_AGGREGATE")
+
     # 挂起态存储连接串（仅 agent_hitl=true 时使用）；**留空 = 内存（本地默认）**：
     #    （空）/ memory        —— InMemorySaver，本地零依赖；进程重启即丢
     #    redis://host:port/db  —— 生产用（本项目生产环境的 Redis）；**必须是 Redis Stack**

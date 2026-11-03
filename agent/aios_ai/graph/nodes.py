@@ -21,10 +21,12 @@ from langgraph.config import get_stream_writer
 from langgraph.types import interrupt
 
 from aios_ai import capabilities
+from aios_ai import aggregate as aggregate_tool
 from aios_ai.config import settings
 from aios_ai.contracts import RunRequest
 from aios_ai.guard import WallClock, check_text_len
 from aios_ai.intent import intake as worker_intake
+from aios_ai.intent import leave_apply as leave_apply_tool
 from aios_ai.knowledge import retrieval
 from aios_ai.knowledge.kb import _citations_from_tool
 from aios_ai.llm import gateway
@@ -162,6 +164,20 @@ def filter_expert_tools(tools: list[dict], expert: dict | None, scope: dict | No
     """
     if not expert or scope:
         return tools
+    return [t for t in tools if _tool_name(t) != request_form_tool.REQUEST_FORM_TOOL_NAME]
+
+
+def strip_form_for_aggregate(tools: list[dict]) -> list[dict]:
+    """跨源汇总轮次不向模型暴露 request_form。
+
+    实测（2026-11-03）：用户说「总结一下我这周的工作，写个周报」，`intake` 判成公文起草意图，
+    模型于是调 request_form 弹了一张「工作报告」表单 —— 用户要的是**已经发生的事的汇总**，
+    不是要填一张空表。表现是：跑了 5 个源的数据一条没用上，界面只出现一张表。
+
+    与 filter_expert_tools 同口径：不确定的行为就用**不给工具**来保证，
+    而不是在提示词里写「不要弹表单」（那是软约束，实测挡不住）。
+    仅当本轮**确实完成了聚合**时才剥离（由调用方判断），普通办理类会话零影响。
+    """
     return [t for t in tools if _tool_name(t) != request_form_tool.REQUEST_FORM_TOOL_NAME]
 
 
@@ -474,6 +490,9 @@ async def prepare(state: dict) -> dict:
                      req.run_id, tool_client.list_error)
 
     citations: list[dict] = []
+    # 知识库是否参与本轮、命中几条：跨源聚合要把**内部知识库**也计入「来源覆盖面」，
+    # 否则周报的来源清单里只有聊天记录与邮件，用户会以为 AI 没看公司文档。
+    kb_state: dict | None = None
     if not kb_on:
         tools = retrieval.strip_kb_tool(tools)
     elif retrieval.is_chitchat(req.text):
@@ -487,6 +506,29 @@ async def prepare(state: dict) -> dict:
         if kb_block and messages:
             messages[0]["content"] = (messages[0].get("content") or "") + "\n\n" + kb_block
         citations.extend(kb_citations)
+        kb_state = {"ok": bool(kb_citations), "count": len(kb_citations)}
+
+    # —— 跨源数据聚合（2026-11-03）——
+    # 「总结本周工作」不是语义检索能解决的事：它要的是**多个结构化源都查过**。
+    # 交给模型自觉的后果是「只查了企微就开始写」，用户拿到半份周报却看不出来。
+    # 这里由代码扇出（企微会话/待办/日历 + 邮箱 + 审批），并把「哪些源没查成」也写进提示，
+    # 逼模型如实交代缺口。非汇总诉求时 collect 直接返回空串，下列分支全部不执行。
+    if settings.aggregate_enabled and tool_client.enabled:
+        agg_block, agg_citations, agg_sources = await aggregate_tool.collect(
+            tool_client, tools, req.text, kb=kb_state)
+        if agg_block and messages:
+            messages[0]["content"] = (messages[0].get("content") or "") + agg_block
+        if agg_citations:
+            seen_doc = {c.get("docId") for c in citations}
+            citations.extend(c for c in agg_citations if c.get("docId") not in seen_doc)
+        if agg_sources:
+            effective["aggregate"] = agg_sources
+            # 真聚合到了数据 ⇒ 本轮是「汇总并回答」，不是「填表」：
+            # 收起 request_form，逼模型用素材组织答案（实测它会去弹「工作报告」空表）。
+            tools = strip_form_for_aggregate(tools)
+            logger.info("run %s: 跨源聚合 %d 个源（成功 %d），已收起表单工具",
+                        req.run_id, len(agg_sources),
+                        sum(1 for s in agg_sources if s.get("ok")))
 
     # 铁律 1（docs/51 §1.4 / §1.7）：有动作意图的轮次，确认入口在**界面** —— 用户点了才算数。
     # 提示词只是**软**约束（模型可以不遵守），而同一类缺陷已实测复现两次
@@ -523,6 +565,26 @@ async def prepare(state: dict) -> dict:
         logger.info("run %s: 模糊实体预取 %d 个候选（source=%s）",
                     req.run_id, len(entity_candidates), entity_source or "-")
 
+    # —— 请假发起 + 指定处理人（2026-11-03）——
+    # 只在「请假类词 + 指派语义」时触发（见 intent/leave_apply.py 的收窄口径）。
+    # 为什么要抢在模型之前：请假要 4~5 项信息，靠模型正文追问会变成五六轮往返；
+    # 而假种码与可审批人本来就在库里，代码先查好再合成一张卡，用户一次填完。
+    # 未命中时 leave_card 为 None，此段对既有链路零影响（既有表单入口照常工作）。
+    leave_card = None
+    if _hitl_enabled() and leave_apply_tool.needs_handler_pick(req.text):
+        _types, _handlers = await leave_apply_tool.prefetch(tool_client)
+        leave_card = leave_apply_tool.build_card(_types, _handlers, req.text)
+        _blk = leave_apply_tool.build_block(_types, _handlers)
+        if _blk and messages:
+            messages[0]["content"] = (messages[0].get("content") or "") + _blk
+        if leave_card:
+            effective["leaveHandlerCandidates"] = len(_handlers)
+            effective["leaveTypes"] = len(_types)
+            logger.info("run %s: 请假发起 ⇒ 合成字段卡（%d 假种 / %d 处理人）",
+                        req.run_id, len(_types), len(_handlers))
+        elif _handlers == []:
+            logger.info("run %s: 请假发起但查不到可审批人 ⇒ 不合成卡，交回模型", req.run_id)
+
     # 观测（docs/60 P2-12）：附件注入量与检索参数进同一条 run 日志，线上排查
     # 「模型为什么看不见附件」不再靠猜。
     _att_count = len(req.attachment_docs or [])
@@ -549,6 +611,7 @@ async def prepare(state: dict) -> dict:
         "fatal": None,
         "entity_candidates": entity_candidates,
         "entity_source": entity_source,
+        "leave_card": leave_card,
     }
 
 
@@ -569,6 +632,33 @@ async def agent(state: dict) -> dict:
     stream = bool(settings.agent_stream)
     content_parts = list(state.get("content_parts") or [])
     usage = dict(state.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0})
+
+    # —— 确定性短路①：请假发起（2026-11-03）——
+    # 卡已在 prepare 阶段用真实候选合成好，这里直接把它作为本轮的 tool_call 抛出。
+    # 抢在模型前面的理由与下面「模糊实体」一致：真机实测模型会用自己的话再问一遍
+    # （而且问得不全、假种码靠猜），用户拿到的是一张残缺的追问，而不是能一次填完的表单。
+    if (rounds == 0 and _hitl_enabled() and not (state.get("clarifications") or [])
+            and state.get("leave_card")):
+        early = state.get("leave_card")
+        args = early["arguments"]
+        logger.info("run %s: 请假发起 ⇒ 跳过模型，直接弹字段卡（%d 个字段）",
+                    req.run_id, len(args.get("fields") or []))
+        return {
+            "agent_rounds": rounds,
+            "allow_tools": allow_tools,
+            "pending_calls": [early],
+            "content_parts": content_parts,
+            "usage": usage,
+            "messages": messages + [{
+                "role": "assistant", "content": None,
+                "tool_calls": [{
+                    "id": early["id"], "type": "function",
+                    "function": {"name": early["name"],
+                                 "arguments": json.dumps(early["arguments"], ensure_ascii=False)},
+                }],
+            }],
+            "_assistant_message": {"role": "assistant", "content": None},
+        }
 
     # —— 确定性短路：这一轮本来就不该让模型开口（2026-11-02，模糊实体澄清）——
     # 前置条件：prepare 已经查到候选（`entity_candidates`）、HITL 开着、还没澄清过、

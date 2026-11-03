@@ -454,6 +454,24 @@
     display:block;margin-top:6px;font-size:10.5px;color:var(--blue);background:var(--blue-soft);
     border:1px solid var(--blue-line);border-radius:6px;padding:4px 8px;
   }
+  /* ---------- 引用来源分组（跨源聚合：一个来源一行，行内是具体条目） ----------
+     取代原来的「来源：xxx」平铺：聚合回答可能同时命中企微/邮箱/知识库/审批，
+     平铺会让用户分不清哪几条同源。max-width 与气泡同宽，长标题靠 ellipsis 收口。 */
+  .cite-wrap{
+    margin-top:7px;max-width:82%;background:var(--surface);border:1px solid var(--border);
+    border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;gap:5px;
+  }
+  .cite-head{font-size:9.5px;color:var(--text-3);letter-spacing:.02em}
+  .cite-grp{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .cite-src{
+    flex:0 0 auto;font-size:9.5px;font-weight:600;color:var(--blue);background:var(--blue-soft);
+    border:1px solid var(--blue-line);border-radius:4px;padding:1px 5px;white-space:nowrap;
+  }
+  .cite-item{
+    font-size:10px;color:var(--text-2);background:var(--surface-3);border-radius:4px;
+    padding:1px 6px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .cite-more{font-size:9.5px;color:var(--text-3)}
   /* ---------- 默认 AI 的业务引导块（确定性渲染，不依赖模型输出） ---------- */
   .guide-block{
     margin-top:8px; max-width:82%; background:var(--surface);
@@ -1662,6 +1680,23 @@
   display:inline-block;margin-top:6px;margin-right:5px;font-size:10.5px;
   color:var(--brand-ink);background:var(--brand-soft);border-radius:var(--r-full);padding:2px 8px;
 }
+/* 引用来源分组：OA 形态用品牌色而非蓝色，圆角与气泡一致 */
+.oa .bub .cite-wrap{
+  margin-top:8px; background:var(--brand-soft); border:1px solid var(--brand-line, var(--border));
+  border-radius:var(--r-md, 10px); padding:7px 9px; display:flex; flex-direction:column; gap:5px;
+}
+.oa .bub .cite-head{font-size:9.5px; color:var(--brand-ink); opacity:.75}
+.oa .bub .cite-grp{display:flex; align-items:center; gap:5px; flex-wrap:wrap}
+.oa .bub .cite-src{
+  flex:0 0 auto; font-size:9.5px; font-weight:600; color:var(--brand-ink);
+  background:var(--surface, #fff); border-radius:var(--r-full); padding:1px 7px; white-space:nowrap;
+}
+.oa .bub .cite-item{
+  font-size:10px; color:var(--brand-ink); background:var(--surface, #fff); opacity:.9;
+  border-radius:var(--r-full); padding:1px 7px; max-width:150px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.oa .bub .cite-more{font-size:9.5px; color:var(--brand-ink); opacity:.7}
 .oa .bub.ans p{margin:0 0 6px}
 .oa .bub.ans p:last-child{margin-bottom:0}
 .oa .bub.ans ul{margin:4px 0 6px;padding-left:18px}
@@ -3516,6 +3551,49 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':
 const fmt = n => Number(n||0).toLocaleString('en-US');
 const icon = (k, cls) => '<svg class="ic '+(cls||'')+'"><use href="#i-'+k+'"/></svg>';
 const emptyBox = t => '<div class="empty">'+icon('inbox')+'<div>'+esc(t)+'</div></div>';
+
+/* ---- 引用来源分组渲染（跨源聚合的落地表现）----------------------------------
+   一份「周报总结」可能同时用到企微会话、邮箱、审批、知识库。若只按条目平铺成
+   「来源：xxx」一串，用户看不出「哪几条同属一个系统」，也无法判断覆盖面。
+   这里按 source 分组：一个来源一行，行内是该来源下的具体条目（最多 3 条/源）。
+
+   · 后端给的是 [{docId,title,source,label,action}]；早期记录只有 source、没有 label，
+     故 label 缺失时回退成 source 原文（老数据不至于显示空白）。
+   · 同一 (来源,标题) 去重：多个工具命中同一份文档时不该重复计数。
+   · 传空数组返回空串，调用方据此决定是否插入节点（形状与改造前一致）。 */
+function citeHtml(cites){
+  const list = asArray(cites);
+  if(!list.length) return '';
+  const groups = new Map();
+  for(const c of list){
+    if(!c) continue;
+    const label = String(c.label || c.source || '来源');
+    let title = String(c.title || c.doc || c.docId || '');
+    /* 调用级引用的标题是「来源 · 动作」（如「企业微信 · 会话消息」），
+       分组标题已经写了来源，这里剥掉前缀只留动作，避免一行里出现两遍。 */
+    const prefix = label + ' · ';
+    if(title.indexOf(prefix) === 0) title = title.slice(prefix.length);
+    if(!title) continue;
+    if(!groups.has(label)) groups.set(label, {items:[], seen:new Set()});
+    const g = groups.get(label);
+    if(g.seen.has(title)) continue;
+    g.seen.add(title);
+    g.items.push(title);
+  }
+  if(!groups.size) return '';
+  let html = '<div class="cite-wrap"><div class="cite-head">数据来源 · '+groups.size+' 个</div>';
+  for(const [label, g] of groups){
+    html += '<div class="cite-grp"><span class="cite-src">'+esc(label)+'</span>';
+    g.items.slice(0,3).forEach(t=>{
+      html += '<span class="cite-item">'+esc(t)+'</span>';
+    });
+    if(g.items.length > 3){
+      html += '<span class="cite-more">+'+(g.items.length-3)+'</span>';
+    }
+    html += '</div>';
+  }
+  return html + '</div>';
+}
 
 /* 后端分页/信封结构不一致（数组 / {list} / {items} / {records}），统一解包为数组。
    注意：早期版本直接对结果调用 .slice() 会在拿到对象时抛 TypeError，
@@ -6704,12 +6782,9 @@ async function send(){
       }
       const cites = (p && (p.citations || (p.data && p.data.citations))) || [];
       if(cites && cites.length){
-        cites.slice(0,3).forEach(c=>{
-          const s = document.createElement('span');
-          s.className = 'cite';
-          s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
-          bubble.parentNode.appendChild(s);
-        });
+        const holder = document.createElement('div');
+        holder.innerHTML = citeHtml(cites);
+        if(holder.firstChild) bubble.parentNode.appendChild(holder.firstChild);
       }
     },
     onError: err => {
@@ -11381,12 +11456,11 @@ async function oaSend(){
         if(c){ text = c; }
       }
       var cites = (p && (p.citations || (p.data && p.data.citations))) || [];
-      cites.slice(0, 3).forEach(function(c){
-        var s = document.createElement('span');
-        s.className = 'cite';
-        s.textContent = '来源：' + (c.title || c.doc || c.source || '知识库');
-        bubble.appendChild(s);
-      });
+      if(cites && cites.length){
+        var holder = document.createElement('div');
+        holder.innerHTML = citeHtml(cites);
+        if(holder.firstChild){ bubble.appendChild(holder.firstChild); }
+      }
     },
     onError: function(err){
       errored = true;           // 与经典形态同口径：只记账，位置由收口处决定

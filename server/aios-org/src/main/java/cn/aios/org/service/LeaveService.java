@@ -288,6 +288,35 @@ public class LeaveService implements ApprovalCallback {
             throw BizException.badRequest("「" + type.getName() + "」必须上传证明材料");
         }
 
+        // ── 指定处理人（2026-11-03）──
+        // 对话里用户亲手选了「这单交给谁」。此处只做**能不能交给这个人**的校验，
+        // 「他怎么参与流转」由审批引擎决定（无流=唯一节点；有流=首节点，其后按规则续接）。
+        // 校验口径与组织口径一致：必须是本机构在职成员 —— 允许跨部门（用户可能就是要找
+        // 别的部门主管批），但不允许跨机构/已离职/不存在，否则会生成一条永远没人处理的待办。
+        Long assigneeUserId = Vals.lngObj(body, "assigneeUserId");
+        // ★ 传了「非空但解析不出」的处理人时必须报错，不能当成「没指定」继续走默认流：
+        //   否则用户明明选了人，单据却按默认规则派给了别人，且**没有任何提示** ——
+        //   属于最难排查的一类静默失败（看起来一切正常，只是收件人不对）。
+        Object rawAssignee = body.get("assigneeUserId");
+        if (assigneeUserId == null && rawAssignee != null
+                && !String.valueOf(rawAssignee).isBlank()) {
+            throw BizException.badRequest("assigneeUserId 非法：" + rawAssignee
+                    + "（应为 list_approval_handlers 返回的 userId）");
+        }
+        if (assigneeUserId != null && assigneeUserId > 0) {
+            OrgMember handler = memberMapper.selectOne(new LambdaQueryWrapper<OrgMember>()
+                    .eq(OrgMember::getUserId, assigneeUserId)
+                    .eq(OrgMember::getInstitutionId, institutionId)
+                    .eq(OrgMember::getStatus, OrgMember.STATUS_ACTIVE)
+                    .last("limit 1"));
+            if (handler == null) {
+                throw BizException.badRequest("指定的处理人不在本机构在职成员中（userId="
+                        + assigneeUserId + "），请重新选择");
+            }
+        } else {
+            assigneeUserId = null;
+        }
+
         int year = start.getYear();
         LeaveBalance balance = findBalance(tenantId, userId, code, year);
         if (balance == null) {
@@ -354,7 +383,7 @@ public class LeaveService implements ApprovalCallback {
                         req.getApplicantName() + " 的" + type.getName() + "申请（" + days + " 天）",
                         "起止：" + start + " ~ " + end + "；事由：" + (req.getReason() == null ? "未填写" : req.getReason()),
                         formData, institutionId, req.getDepartmentId(), days.doubleValue(),
-                        userId, req.getApplicantName(), null, null, null));
+                        userId, req.getApplicantName(), null, null, null, assigneeUserId));
         Long orderId = ((Number) flow.get("orderId")).longValue();
         req.setOrderId(orderId);
         req.setUpdatedAt(LocalDateTime.now());
@@ -381,6 +410,9 @@ public class LeaveService implements ApprovalCallback {
         // 「当前流转到谁」：请假回执要能直接告诉申请人下一步找谁
         out.put("currentApproverId", flow.get("currentApproverId"));
         out.put("currentApproverName", flow.get("currentApproverName"));
+        // 回显「这单是我指定给谁的」：AI 据此在回执里说「已交给张三审批」，
+        // 而不是笼统地说「已提交」。指定人批完若还有后续节点，timeline 会显示完整链路。
+        out.put("assigneeUserId", assigneeUserId);
         return out;
     }
 
