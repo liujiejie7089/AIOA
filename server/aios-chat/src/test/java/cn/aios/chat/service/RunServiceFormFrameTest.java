@@ -14,6 +14,7 @@ import cn.aios.resource.service.BillingService;
 import cn.aios.resource.service.ExpertConfigService;
 import cn.aios.resource.service.FormTemplateService;
 import cn.aios.resource.service.KbFileParser;
+import cn.aios.resource.service.ModelCredentialService;
 import cn.aios.resource.service.WorkerCapabilityService;
 import cn.aios.security.ServiceTokenProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -76,6 +77,8 @@ class RunServiceFormFrameTest {
                 mock(ExpertConfigService.class), mock(AiExpertMapper.class), formTemplateService,
                 workerCapabilityService,
                 mock(PmAiScopePort.class), mock(SysFileMapper.class), mock(KbFileParser.class),
+                // 模型账号（2026-11-03，docs/71）：本测试不触达账号逻辑，给 mock 即可
+                mock(ModelCredentialService.class),
                 mock(ConversationService.class));
     }
 

@@ -17,6 +17,16 @@ public class CreateRunRequest {
     private String modelRef;
 
     /**
+     * 本轮使用的模型账号（2026-11-03，docs/71）：用户自己注册的 / 被邀请共享的 / 公司账号。
+     * 不传（null）= 按「自己 → 公司 → 平台默认」的顺序自动解析。
+     *
+     * <p>写进会话 context 快照，使同一会话后续每一轮（含 HITL 续跑）都用同一个账号 ——
+     * 否则首帧用 A 的 Key、续跑换成平台 Key，账本上会挂到两个人头上。</p>
+     */
+    @JsonProperty("credential_id")
+    private Long credentialId;
+
+    /**
      * 对话级知识库开关（顶层字段）：下发 Agent 侧控制本轮是否启用知识库检索。
      * 缺失时回落到 {@code context.kb_on}（历史写法），二者皆无则保持 null（Agent 侧缺省当「开」）。
      */

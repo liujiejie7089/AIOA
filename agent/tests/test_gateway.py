@@ -66,3 +66,70 @@ def test_explicit_with_key_used(monkeypatch):
     assert p.key == "deepseek"
     assert p.model == os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
     assert p.api_key() == "test-key"
+
+
+# ---------- 运行期凭证（2026-11-03，docs/71 §6） ----------
+
+def test_credential_overrides_base_url_model_and_key(monkeypatch):
+    """用户自带账号：base_url / model / api_key 三项全部以凭证为准。"""
+    _no_keys(monkeypatch)
+    monkeypatch.setattr(settings, "model_default", "echo")
+    p = resolve("deepseek", credential={
+        "credentialId": 7, "providerKey": "deepseek",
+        "baseUrl": "https://api.deepseek.com/v2", "model": "deepseek-reasoner",
+        "apiKey": "sk-mine", "ownerType": "PERSONAL",
+    })
+    assert p.key == "deepseek"
+    assert p.base_url == "https://api.deepseek.com/v2"
+    assert p.model == "deepseek-reasoner"
+    assert p.api_key() == "sk-mine"
+
+
+def test_credential_falls_back_to_registry_for_missing_fields(monkeypatch):
+    """凭证只填 Key：base_url / model 回落注册表，不能因为少填就打成空。"""
+    _no_keys(monkeypatch)
+    monkeypatch.setattr(settings, "model_default", "echo")
+    p = resolve("deepseek", credential={"apiKey": "sk-mine"})
+    assert p.base_url == os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    assert p.model == "deepseek-chat"
+
+
+def test_credential_without_api_key_is_ignored(monkeypatch):
+    """凭证没配 Key（只选了口径）：忽略它，按注册表解析，行为与改动前一致。"""
+    _no_keys(monkeypatch)
+    monkeypatch.setattr(settings, "model_default", "echo")
+    p = resolve("deepseek", credential={"credentialId": 7, "providerKey": "deepseek"})
+    assert p.api_key() == ""
+    assert p.base_url == os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+
+def test_credential_beats_admin_pushed_key(monkeypatch):
+    """凭证优先于管理端推送的平台 Key：用户自己配的账号被平台 Key 顶掉等于白配。"""
+    from aios_ai import llm as llm_pkg
+    llm_pkg._API_KEY_OVERRIDES["deepseek"] = "sk-platform"
+    try:
+        monkeypatch.setattr(settings, "model_default", "echo")
+        p = resolve("deepseek", credential={"apiKey": "sk-mine"})
+        assert p.api_key() == "sk-mine"
+    finally:
+        llm_pkg._API_KEY_OVERRIDES.pop("deepseek", None)
+
+
+def test_credential_does_not_leak_into_registry(monkeypatch):
+    """凭证只作用于本次 Provider 对象：下一个用户不能捡到上一个用户的 Key。"""
+    _no_keys(monkeypatch)
+    monkeypatch.setattr(settings, "model_default", "echo")
+    resolve("deepseek", credential={"apiKey": "sk-mine", "baseUrl": "https://x.example"})
+    p2 = resolve("deepseek")
+    assert p2.api_key() == ""
+    assert p2.base_url == os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+
+def test_credential_switches_provider_when_key_differs(monkeypatch):
+    """凭证指向另一个 provider（ref=dashscope、凭证是 deepseek）：跟着凭证走，
+    否则会把 A 供应商的 Key 打到 B 供应商的 base_url 上。"""
+    _no_keys(monkeypatch)
+    monkeypatch.setattr(settings, "model_default", "echo")
+    p = resolve("dashscope", credential={"providerKey": "deepseek", "apiKey": "sk-mine"})
+    assert p.key == "deepseek"
+    assert p.base_url == os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")

@@ -32,7 +32,7 @@ FIRST_SEQ = 1
 
 async def run(req: RunRequest, seq_start: int = FIRST_SEQ) -> AsyncIterator[SseEvent]:
     """执行一次 agent 运行，返回事件流（回声 / 图运行时按 provider 自动分派）。"""
-    provider = resolve(req.model_ref)
+    provider = resolve(req.model_ref, credential=req.model_credential)
     if provider.driver == "echo":
         async for event in echo.run(req, seq_start=seq_start):
             yield event

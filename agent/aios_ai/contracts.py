@@ -41,6 +41,29 @@ class AttachmentDoc(BaseModel):
     truncated: bool = False
 
 
+class ModelCredential(BaseModel):
+    """本次运行使用的**模型账号**（2026-11-03，docs/71）。
+
+    与 ``model_ref`` 的分工：``model_ref`` 选「用哪个 provider」，
+    本结构决定「用谁的凭证」——同一个 deepseek，A 用自己注册的、B 用公司的，
+    provider 相同而 Key 不同。
+
+    ``api_key`` 由 Java 侧从 ``model_credential`` 解密后随本次请求下发，
+    **只驻留本进程内存、不落盘、不写日志**（与连接器凭据同口径）。
+    缺省（None）= 走平台默认通道（环境变量 / 管理端推送），行为与改动前逐字一致。
+    """
+
+    credentialId: int | None = None
+    providerKey: str | None = None
+    baseUrl: str | None = None
+    model: str | None = None
+    apiKey: str | None = None
+    # 归属：谁在付钱。agent 侧只透传记录，不参与决策。
+    ownerType: str | None = None
+    chargeUserId: int | None = None
+    companyCharged: bool | None = None
+
+
 class RunRequest(BaseModel):
     """POST /internal/v1/runs 请求体。"""
 
@@ -53,6 +76,9 @@ class RunRequest(BaseModel):
     context: PageContext | None = None
     agent_code: str | None = None
     model_ref: str | None = None
+    # 本次运行使用的模型账号（谁注册的 Key）。缺省 = 走平台默认通道。
+    # 必须与 model_ref 分开：模型选型与凭证归属是两个正交维度（docs/71 §2）。
+    model_credential: ModelCredential | None = None
     user_context: UserContext
     history: list[dict[str, Any]] | None = None
     # 发起方用户 accessToken（M2 工具回调）：调用业务工具网关时透传，工具权限 = 用户权限

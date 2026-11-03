@@ -39,6 +39,21 @@ public class AgentRunRequest {
     private String modelRef;
 
     /**
+     * 本次运行使用的模型账号（2026-11-03，docs/71）。
+     *
+     * <p>与 {@code model_ref} 分工：ref 选「用哪个 provider」，本字段决定「用谁的凭证」——
+     * 同一个 deepseek，A 用自己注册的、B 用公司的，provider 相同而 Key 不同。</p>
+     *
+     * <p><b>明文 Key 只在这一条链路上存在</b>：Java 从 {@code model_credential} 解密后
+     * 放进本字段下发，agent 侧只驻留内存、不落盘不写日志。</p>
+     *
+     * <p>键名 {@code model_credential} 与 agent 侧 {@code RunRequest.model_credential} 契约一致。
+     * 缺省（null）= 走平台默认通道，agent 行为与改动前逐字一致。</p>
+     */
+    @JsonProperty("model_credential")
+    private Map<String, Object> modelCredential;
+
+    /**
      * 对话级知识库开关：顶层下发 Agent 侧，控制本轮是否启用知识库检索。
      * 键名 {@code kb_on} 必须与此处 @JsonProperty 一致（agent 侧 RunRequest.kb_on 契约）。
      * 缺省（null）由 Agent 侧当作「开」，后端不补默认值。

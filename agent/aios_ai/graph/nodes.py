@@ -371,7 +371,7 @@ async def prepare(state: dict) -> dict:
     check_text_len(req.text)
     started_at = time.monotonic()
 
-    provider = gateway.resolve(req.model_ref)
+    provider = gateway.resolve(req.model_ref, credential=req.model_credential)
     api_key = provider.api_key()
     if not api_key:
         _emit("error", {
@@ -623,7 +623,7 @@ async def agent(state: dict) -> dict:
     clock = _clock(state)
     rounds = int(state.get("agent_rounds") or 0)
     allow_tools = rounds < MAX_TOOL_ROUNDS
-    provider = gateway.resolve(req.model_ref)
+    provider = gateway.resolve(req.model_ref, credential=req.model_credential)
     api_key = provider.api_key()
     temperature = float(state.get("temperature") or 0.3)
     messages = list(state.get("messages") or [])

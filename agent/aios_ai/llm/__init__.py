@@ -15,6 +15,10 @@ provider 注册表内置，全部参数可经环境变量覆盖（{KEY}_API_KEY 
      自动降级 echo（服务可用性优先，日志可见）
   4. 显式指定 openai_compatible 但缺 api_key -> 原样返回，
      由 agent_runtime 产出 MODEL_PROVIDER_NOT_CONFIGURED 干净错误事件
+
+ 运行期凭证（2026-11-03，docs/71）：resolve(credential=...) 可把**用户自己注册的账号**
+ 覆盖到本次调用上（base_url / model / api_key 三项）。它只作用于返回的 Provider 对象，
+ 不写全局注册表、不落盘 —— 否则下一个用户的 run 会被上一个用户的 Key 污染。
 """
 from __future__ import annotations
 
@@ -38,12 +42,24 @@ class Provider:
     api_key_env: str    # api_key 所在环境变量名
     temperature: float = 0.3   # 采样温度（管理端可配；专家配置优先级更高）
     max_context: int = 0       # 最大上下文（token）；0=不限制
+    # 运行期凭证（2026-11-03，docs/71）：用户自己注册的模型账号，随本次请求下发。
+    # 只存在于本对象里（内存），不写任何全局状态、不落盘 —— 否则会污染后续别人的 run。
+    api_key_value: str = ""
 
     def api_key(self) -> str:
-        """运行期覆盖（管理端填写并推送下来的）优先，其次环境变量。
+        """本次运行用的 Key。
 
-        两条来源都必须只读不落盘：管理端推送的 Key 仅存在于本进程内存。
+        优先级：**本对象的运行期凭证**（用户自己注册的账号）> 管理端推送的平台 Key
+        > 环境变量。
+
+        凭证排在管理端 Key 之前：平台 Key 是「默认通道」，用户显式配了自己的账号
+        是更明确的意图，被平台 Key 顶掉等于用户白配一次（docs/71 §6）。
+
+        三条来源都必须只读不落盘：管理端推送的 Key 仅存在于本进程内存，
+        用户凭证只存在于本次请求的 Provider 对象里。
         """
+        if self.api_key_value:
+            return self.api_key_value
         override = _API_KEY_OVERRIDES.get(self.key, "").strip()
         if override:
             return override
@@ -194,8 +210,20 @@ def current_default_key() -> str:
     return (_DEFAULT_OVERRIDE or settings.model_default or "echo").strip().lower()
 
 
-def resolve(model_ref: str | None = None) -> Provider:
-    """按 model_ref 解析 provider；未指定时走默认，必要时降级 echo。"""
+def resolve(model_ref: str | None = None,
+            credential: "object | None" = None) -> Provider:
+    """按 model_ref 解析 provider；未指定时走默认，必要时降级 echo。
+
+    credential（可选，ModelCredential 或 dict）：本次运行要用**谁的凭证**。
+    非空且带 api_key 时，返回一个带运行期凭证的 Provider：
+    base_url / model 取凭证里填的（缺项回落注册表），api_key 取凭证里的那把。
+
+    **为什么凭证优先于 _API_KEY_OVERRIDES**：管理端推送的是「平台默认 Key」，
+    用户自己注册的账号是更明确的意图，被平台 Key 顶掉就等于用户白配了一次。
+
+    credential 里没有 api_key（例如只选了口径没配 Key）时忽略它、按注册表解析，
+    行为与改动前逐字一致。
+    """
     default_key = (_DEFAULT_OVERRIDE or settings.model_default or "echo").strip().lower()
     ref = (model_ref or "").strip().lower()
     explicit = bool(ref)
@@ -211,6 +239,8 @@ def resolve(model_ref: str | None = None) -> Provider:
         ref = "echo"
 
     provider = _build_provider(ref)
+    overridden = _apply_credential(provider, credential)
+    provider = overridden or provider
     if provider.driver != "echo" and not provider.api_key():
         if explicit:
             # 显式点名却缺 key：交由 agent_runtime 产出干净的未配置错误
@@ -222,6 +252,38 @@ def resolve(model_ref: str | None = None) -> Provider:
         )
         return _build_provider("echo")
     return provider
+
+
+def _apply_credential(provider: Provider, credential: object | None) -> Provider | None:
+    """把账号凭证覆盖到 provider 上（返回新对象，不改原注册表）。
+
+    返回 None = 凭证不可用（没填 Key / 类型不对），调用方按原样走注册表。
+    """
+    if credential is None:
+        return None
+    data = credential if isinstance(credential, dict) else getattr(credential, "__dict__", None)
+    if not isinstance(data, dict):
+        return None
+    api_key = str(data.get("apiKey") or data.get("api_key") or "").strip()
+    if not api_key:
+        return None
+    base_url = str(data.get("baseUrl") or data.get("base_url") or "").strip()
+    model = str(data.get("model") or data.get("modelName") or data.get("model_name") or "").strip()
+    # provider 不同（用户换了供应商）时不能用原注册表的 base_url/model，
+    # 否则「选了 deepseek 的凭证、ref 却是 dashscope」会打到别的供应商上去。
+    key = str(data.get("providerKey") or data.get("provider_key") or "").strip().lower()
+    if key and key in _REGISTRY_SPEC:
+        provider = _build_provider(key)
+    return Provider(
+        key=provider.key,
+        driver=provider.driver,
+        base_url=base_url or provider.base_url,
+        model=model or provider.model,
+        api_key_env=provider.api_key_env,
+        temperature=provider.temperature,
+        max_context=provider.max_context,
+        api_key_value=api_key,
+    )
 
 
 def configured_providers() -> list[dict[str, str]]:

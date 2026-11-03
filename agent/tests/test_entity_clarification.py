@@ -422,7 +422,9 @@ class _Prov:
 
 
 def _patch_model(monkeypatch, content: str) -> None:
-    monkeypatch.setattr(nodes.gateway, "resolve", lambda ref: _Prov())
+    # 2026-11-03：nodes 两处都改成 resolve(model_ref, credential=...)（docs/71），
+    # 打桩必须接住 credential 关键字，否则 TypeError 会把「模型回问」误判成测试失败。
+    monkeypatch.setattr(nodes.gateway, "resolve", lambda ref, credential=None: _Prov())
     monkeypatch.setattr(nodes.settings, "agent_stream", False, raising=False)
     monkeypatch.setattr(nodes.settings, "agent_hitl", True, raising=False)
 

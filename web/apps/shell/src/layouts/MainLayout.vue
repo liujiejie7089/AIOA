@@ -150,6 +150,11 @@
             <el-icon><Collection /></el-icon>
             <template #title>知识库</template>
           </el-menu-item>
+          <!-- 主动缓存：三方应用接入后由平台主动拉取、增量同步进知识库（任务与落地状态可查）。 -->
+          <el-menu-item index="/kb/sync">
+            <el-icon><Refresh /></el-icon>
+            <template #title>主动缓存</template>
+          </el-menu-item>
           <!--
             消息中心（V5x）：对所有已登录角色可见（人人都要看自己的通知），
             故不加 v-if 守卫。通道配置 / 投递记录两个页签由页内 isTenantAdmin 收起，
@@ -186,6 +191,8 @@
             </template>
             <!-- 创建/管理归属：系统管理员 / 租户管理员 / 企业管理员 / 部门负责人 -->
             <el-menu-item v-if="showWorkerMenu" index="/workers">数字员工</el-menu-item>
+            <!-- 数字人授权：按部门开席位、按岗位授权（席位吃资源池专家座席） -->
+            <el-menu-item v-if="showWorkerMenu" index="/workers/grants">数字人授权</el-menu-item>
             <!-- 专家创建/配置：系统管理员 / 租户管理员 / 企业管理员（不含部门负责人） -->
             <el-menu-item v-if="showExpertMenu" index="/experts">专家配置</el-menu-item>
             <el-menu-item v-if="showTenantMenu" index="/tools">业务工具</el-menu-item>
@@ -216,6 +223,8 @@
               「代码仓库」页签提供入口，既有的深链与两个 V48/V50 哨兵继续可用。
             -->
             <el-menu-item v-if="showPmMenu" index="/pm/projects">项目管理</el-menu-item>
+            <!-- 代码自动入库：webhook 入库任务统计 + 提交级入库记录（只对开发项目有意义） -->
+            <el-menu-item v-if="showPmMenu" index="/pm/code-sync">代码入库</el-menu-item>
           </el-sub-menu>
 
           <!-- 运营管理：经营数据 / 配额管理 -->
@@ -226,6 +235,11 @@
             </template>
             <el-menu-item index="/kpi">经营数据</el-menu-item>
             <el-menu-item index="/quotas">配额管理</el-menu-item>
+            <!-- 计费与用量：计量明细 / 四维统计 / 配额与预警 -->
+            <el-menu-item index="/billing">计费与用量</el-menu-item>
+            <!-- 模型账号：自己注册的 / 共享给我的 / 公司提供的，含「是否公司收费」标注（docs/71）。
+                 不加 v-if：人人都要管自己的账号；公司账号部分由页内按管理员身份收口。 -->
+            <el-menu-item index="/model-accounts">模型账号</el-menu-item>
             <el-menu-item index="/connector-configs">连接器配置</el-menu-item>
           </el-sub-menu>
 
@@ -303,6 +317,8 @@
             -->
             <el-menu-item v-if="showTenantMenu" index="/approval-flows">审批流配置</el-menu-item>
             <el-menu-item v-if="showTenantMenu" index="/audit">操作审计</el-menu-item>
+            <!-- 账号管理：自有 / 共享 / 公司三类账号分开管，可见范围与人员管理同源 -->
+            <el-menu-item v-if="showOrgMenu" index="/accounts">账号管理</el-menu-item>
             <!-- 审核记录（V36 需求④）：平台管理员看全量，租户管理员看本租户 -->
             <el-menu-item v-if="showReviewRecordMenu" index="/review-records">审核记录</el-menu-item>
           </el-sub-menu>

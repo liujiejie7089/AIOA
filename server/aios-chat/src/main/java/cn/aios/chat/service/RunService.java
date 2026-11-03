@@ -29,6 +29,7 @@ import cn.aios.resource.service.BillingService;
 import cn.aios.resource.service.ExpertConfigService;
 import cn.aios.resource.service.FormTemplateService;
 import cn.aios.resource.service.KbFileParser;
+import cn.aios.resource.service.ModelCredentialService;
 import cn.aios.resource.service.WorkerCapabilityService;
 import cn.aios.resource.support.WorkerProfile;
 import cn.aios.resource.support.WorkerRole;
@@ -143,6 +144,9 @@ public class RunService {
     /** 纯解析、零持久化（与知识库共用，但不进知识库）。 */
     private final KbFileParser kbFileParser;
 
+    /** 模型账号与共享（2026-11-03，docs/71）：决定这一轮用谁的 Key、扣谁的额度。 */
+    private final cn.aios.resource.service.ModelCredentialService modelCredentialService;
+
     /** 会话服务：转交时复用其 bindWorker 校验与改绑逻辑（同包，无循环依赖）。 */
     private final ConversationService conversationService;
 
@@ -163,15 +167,39 @@ public class RunService {
     public String start(Long conversationId, String text, Map<String, Object> context,
                         List<Long> attachments, String modelRef, Boolean kbOn,
                         String expertKey, String expert, List<String> disabledConnectorCodes) {
+        return start(conversationId, text, context, attachments, modelRef, kbOn,
+                expertKey, expert, disabledConnectorCodes, null);
+    }
+
+    /**
+     * 发起一轮对话（带模型账号，2026-11-03，docs/71）。
+     *
+     * <p>与 {@link #start} 九参版的唯一差异是多一个 {@code credentialId}：
+     * 「用谁的 Key」解析结果连同归属（谁付钱）一起写进 context 快照，
+     * 于是<b>同一会话后续每一轮、以及 HITL 续跑，都用同一个账号、记在同一人名下</b>
+     * —— 否则首帧用 A 的 Key、续跑换成平台 Key，账本上会挂出两个人。</p>
+     */
+    public String start(Long conversationId, String text, Map<String, Object> context,
+                        List<Long> attachments, String modelRef, Boolean kbOn,
+                        String expertKey, String expert, List<String> disabledConnectorCodes,
+                        Long credentialId) {
         AuthUser user = AuthUserContext.require();
         if (text == null || text.isBlank()) {
             throw BizException.badRequest("text 不能为空");
         }
-        // FR-B2 额度准入前置：余额耗尽则拒绝发起（前端引导购买/次日再试）
+        // ① 解析本轮用哪个模型账号（docs/71 §6）。必须在额度准入**之前** ——
+        //    准入查的是「计费主体」的额度，用别人账号的人自己不扣额度，
+        //    先查本人会把「邀请者还有额度、被邀请人自己用完了」误判成没额度。
+        ModelCredentialService.Resolved resolved = resolveCredential(user, credentialId);
+
+        // ② FR-B2 额度准入：按计费主体查（个人账号 → 持有人；公司账号 → 公司池）
         BillingService.QuotaView quota = billingService.current(
-                user.getTenantId() == null ? 0L : user.getTenantId(), user.getUserId());
+                user.getTenantId() == null ? 0L : user.getTenantId(),
+                resolved == null ? user.getUserId() : resolved.chargeUserId());
         if (quota.exhausted()) {
-            throw BizException.forbidden("今日免费额度已用完，请购买词元套餐或明日再试");
+            throw BizException.forbidden(resolved != null && resolved.companyCharged()
+                    ? "公司词元额度已用完，请联系管理员分配额度"
+                    : "今日免费额度已用完，请购买词元套餐或明日再试");
         }
         // FR-H3 输入侧内容审核：命中即中止
         String inputHit = contentGuard.findHit(text);
@@ -236,6 +264,29 @@ public class RunService {
                 context = new java.util.LinkedHashMap<>();
             }
             context.put("kb_on", kbOn);
+        }
+
+        // 模型账号快照（2026-11-03，docs/71）：与 kb_on 同构 —— 合并进 context 快照，
+        // 使同一会话后续每一轮、以及 HITL 续跑都能回读**同一个账号**。
+        //
+        //   · credential_id：本轮用的账号（空 = 走平台默认通道）；
+        //   · charge_ctx：记账归属（bearer / charge / ownerType / provider / model）。
+        //
+        // 为什么必须进快照而不是每轮重新解析：用户在会话中途切换账号，
+        // 只应影响之后的轮次；已发生的轮次要按当时的账号归属记账，否则账单会漂。
+        if (resolved != null) {
+            if (context == null) {
+                context = new java.util.LinkedHashMap<>();
+            }
+            context.put("credential_id", resolved.credentialId());
+            Map<String, Object> charge = new java.util.LinkedHashMap<>();
+            charge.put("credentialId", resolved.credentialId());
+            charge.put("bearerUserId", user.getUserId());
+            charge.put("chargeUserId", resolved.chargeUserId());
+            charge.put("ownerType", resolved.ownerType());
+            charge.put("providerKey", resolved.providerKey());
+            charge.put("model", resolved.model());
+            context.put("charge_ctx", charge);
         }
 
         // 对话级连接器开关 disabled_connectors：本次对话**不调用**哪些连接器（code 列表）。
@@ -423,6 +474,9 @@ public class RunService {
         if (conversation != null && conversation.getModelRef() != null && !conversation.getModelRef().isBlank()) {
             request.setModelRef(conversation.getModelRef());
         }
+        // 模型账号（docs/71）：把「用谁的 Key」连同归属一起下发 Agent。
+        // 明文 Key 只在这一条链路上出现（Java 解密 → 内存下发 → agent 用完即弃）。
+        applyModelCredential(request, run, user, context);
         // V21 会话绑定数字员工：下发职责范围，Agent 侧据此限定回答边界（越界拒答）
         // V79 项目会话：scope 里并入该项目的生效上下文（项目隔离的「下行」一半；
         //              准入的「上行」硬校验已在 ConversationService.bindWorker 完成）
@@ -2002,12 +2056,147 @@ public class RunService {
         agentRunMapper.updateById(patch);
 
         // 词元计费：一次 run 只记一笔（run_id 唯一），失败不影响会话结果
+        //
+        // 归属取<b>run 启动时快照</b>的 charge_ctx（见 start）：
+        //   · 被邀请同事用别人的账号 ⇒ bearer = 被邀请人、charge = 邀请者；
+        //   · 公司账号 ⇒ charge = 0（公司池），并标注 company_charged = 1。
+        // 取不到快照（历史 run / 未绑定账号）时按老口径记账：使用者即承担者、未标注。
         try {
+            BillingService.ChargeContext charge = chargeContextOf(run);
             billingService.recordUsage(run.getRunId(), run.getTenantId(), run.getUserId(),
                     TokenLedger.BIZ_CHAT, conversationTitle(run.getConversationId()),
-                    u.prompt(), u.completion());
+                    u.prompt(), u.completion(), charge);
         } catch (Exception e) {
             log.warn("record token usage failed for run {}: {}", run.getRunId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 从 user 消息的 context 快照里读回记账归属（2026-11-03，docs/71）。
+     *
+     * <p>为什么不把归属放在 {@link AgentRun} 上：那张表是「运行态」，
+     * 而归属是<b>会话级</b>事实（同一会话每一轮都用同一个账号），
+     * 放在消息快照里天然覆盖首发与续跑两条路径，不必给 agent_run 加列再迁移历史数据。</p>
+     *
+     * <p>返回 null = 未标注（历史 run / 未绑定账号），记账按老口径走，
+     * {@code company_charged} 留 NULL —— 不编一个「个人自付」的假值。</p>
+     */
+    /**
+     * 下发本轮使用的模型账号（2026-11-03，docs/71）。
+     *
+     * <p>账号 id 从 context 快照读（首发时由 start 写入，续跑沿用同一份），
+     * 保证「首帧与续跑用同一个 Key」。</p>
+     *
+     * <p>解析失败时<b>不下发</b>该字段：agent 回落平台默认通道，对话仍能继续 ——
+     * 账号问题由账号页暴露，不该由一条回答的失败来暴露。</p>
+     */
+    private void applyModelCredential(AgentRunRequest request, AgentRun run, AuthUser user,
+                                      Map<String, Object> context) {
+        Long credentialId = null;
+        if (context != null) {
+            credentialId = longOf(context.get("credential_id"));
+        }
+        if (credentialId == null || credentialId <= 0) {
+            return;
+        }
+        try {
+            ModelCredentialService.Resolved resolved = modelCredentialService.resolve(user, credentialId);
+            if (resolved == null || resolved.apiKey() == null || resolved.apiKey().isBlank()) {
+                log.warn("run {} credential {} has no usable api_key, fallback to platform default",
+                        run.getRunId(), credentialId);
+                return;
+            }
+            Map<String, Object> cred = new java.util.LinkedHashMap<>();
+            cred.put("credentialId", resolved.credentialId());
+            cred.put("providerKey", resolved.providerKey());
+            cred.put("baseUrl", resolved.baseUrl());
+            cred.put("model", resolved.model());
+            cred.put("apiKey", resolved.apiKey());
+            cred.put("ownerType", resolved.ownerType());
+            cred.put("chargeUserId", resolved.chargeUserId());
+            cred.put("companyCharged", resolved.companyCharged());
+            request.setModelCredential(cred);
+        } catch (BizException e) {
+            // 订阅时账号已被撤销：不回放失败帧（回答已经产生了），只记日志，回落平台默认
+            log.warn("run {} credential {} unavailable on subscribe: {}",
+                    run.getRunId(), credentialId, e.getMessage());
+        } catch (Exception e) {
+            log.warn("apply model credential failed for run {}: {}", run.getRunId(), e.getMessage());
+        }
+    }
+
+    private BillingService.ChargeContext chargeContextOf(AgentRun run) {
+        try {
+            ChatMessage userMessage = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                    .eq(ChatMessage::getRunId, run.getRunId())
+                    .eq(ChatMessage::getRole, ChatMessage.ROLE_USER)
+                    .last("limit 1"));
+            if (userMessage == null || userMessage.getContextSnapshot() == null) {
+                return null;
+            }
+            Object raw = userMessage.getContextSnapshot().get("charge_ctx");
+            if (!(raw instanceof Map<?, ?> m)) {
+                return null;
+            }
+            Long credentialId = longOf(m.get("credentialId"));
+            Long bearer = longOf(m.get("bearerUserId"));
+            Long charge = longOf(m.get("chargeUserId"));
+            if (bearer == null && charge == null) {
+                return null;
+            }
+            String ownerType = strOf(m.get("ownerType"));
+            return new BillingService.ChargeContext(
+                    credentialId,
+                    bearer != null ? bearer : run.getUserId(),
+                    charge != null ? charge : (bearer != null ? bearer : run.getUserId()),
+                    ownerType,
+                    strOf(m.get("providerKey")),
+                    strOf(m.get("model")));
+        } catch (Exception e) {
+            // 记账归属读不到绝不能把计费整个跳掉（那会丢账），退化成未标注
+            log.warn("read charge context failed for run {}: {}", run.getRunId(), e.getMessage());
+            return null;
+        }
+    }
+
+    private static Long longOf(Object o) {
+        if (o == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(String.valueOf(o).trim());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static String strOf(Object o) {
+        if (o == null) {
+            return null;
+        }
+        String v = String.valueOf(o).trim();
+        return v.isEmpty() ? null : v;
+    }
+
+    /**
+     * 解析本轮使用的模型账号（2026-11-03，docs/71 §6）。
+     *
+     * <p>显式指定却不可用 ⇒ <b>抛错，不静默降级</b>：悄悄换成平台 Key 跑，
+     * 账单会挂到公司头上，而用户以为自己用的是自己的账号，这比报错更糟。
+     * 只有「没指定」才走自动顺序（自己 → 公司 → 平台默认）。</p>
+     */
+    private ModelCredentialService.Resolved resolveCredential(AuthUser user, Long credentialId) {
+        try {
+            if (credentialId != null && credentialId > 0) {
+                return modelCredentialService.resolve(user, credentialId);
+            }
+            return modelCredentialService.autoResolve(user);
+        } catch (BizException e) {
+            throw e;   // 明确的「无权限 / 已撤销 / 已停用」，原样抛给用户看
+        } catch (Exception e) {
+            // 账号表不存在 / 解密失败等环境问题：绝不让它把对话打死
+            log.warn("解析模型账号失败，回落平台默认通道：{}", e.getMessage());
+            return null;
         }
     }
 

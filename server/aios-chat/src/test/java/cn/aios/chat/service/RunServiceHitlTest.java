@@ -155,6 +155,8 @@ class RunServiceHitlTest {
                 // 不触达该逻辑；mock 默认返回 null ⇒ narrowFormsByWorker 走「未配置能力」分支，保持原行为。
                 mock(cn.aios.resource.service.WorkerCapabilityService.class),
                 pmAiScopePort, fileMapper, kbFileParser,
+                // 模型账号（2026-11-03，docs/71）：本测试不触达账号逻辑，给 mock 即可
+                mock(cn.aios.resource.service.ModelCredentialService.class),
                 mock(cn.aios.chat.service.ConversationService.class));
 
         // AuthUserContext 是 ThreadLocal；@BeforeEach 注入，@AfterEach 清掉，避免污染别的测试。
@@ -288,8 +290,10 @@ class RunServiceHitlTest {
                 "竟然有 updateById 把 status 置成 SUCCEEDED（暂停被当完成）：" + patches);
         // 3) 不落 assistant 消息
         verify(messageMapper, never()).insert(any(ChatMessage.class));
-        // 4) 不计费（记录口径：recordUsage(String,Long,Long,String,String,int,int)）
+        // 4) 不计费（两个重载都要验：7 参老口径 + 8 参带归属的新口径，见 docs/71）
         verify(billingService, never()).recordUsage(anyString(), any(), any(), anyString(), anyString(), anyInt(), anyInt());
+        verify(billingService, never()).recordUsage(anyString(), any(), any(), anyString(), anyString(),
+                anyInt(), anyInt(), any(BillingService.ChargeContext.class));
     }
 
     // ================================================================ T2

@@ -69,6 +69,8 @@ class ChatAttachmentRunTest {
                 mock(cn.aios.project.port.PmAiScopePort.class),
                 mock(cn.aios.resource.mapper.SysFileMapper.class),
                 mock(cn.aios.resource.service.KbFileParser.class),
+                // 模型账号（2026-11-03，docs/71）：本测试不触达账号逻辑，给 mock 即可
+                mock(cn.aios.resource.service.ModelCredentialService.class),
                 mock(cn.aios.chat.service.ConversationService.class));
     }
 
@@ -99,6 +101,8 @@ class ChatAttachmentRunTest {
                 mock(cn.aios.project.port.PmAiScopePort.class),
                 fileMapper,
                 parser,
+                // 模型账号（2026-11-03，docs/71）：本测试不触达账号逻辑，给 mock 即可
+                mock(cn.aios.resource.service.ModelCredentialService.class),
                 mock(cn.aios.chat.service.ConversationService.class));
         Field f = RunService.class.getDeclaredField("uploadDir");
         f.setAccessible(true);

@@ -96,7 +96,8 @@ public class ConversationController {
                 request == null ? null : request.getKbOn(),
                 request == null ? null : request.getExpertKey(),
                 request == null ? null : request.getExpert(),
-                request == null ? null : request.getDisabledConnectors());
+                request == null ? null : request.getDisabledConnectors(),
+                request == null ? null : request.getCredentialId());
         return ApiResponse.ok(new RunCreatedResponse(runId));
     }
 }

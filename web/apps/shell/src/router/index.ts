@@ -56,6 +56,46 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/QuotaAdminView.vue'),
         meta: { title: '配额管理', minTier: 'tenant'  }
       },
+      // 计费与用量：计量明细 / 四维统计 / 配额与预警 三个页签共用一条路由。
+      // 数据一律回账本（/ledger）与配额接口，页面不产生新口径。
+      {
+        path: 'billing',
+        name: 'billing',
+        component: () => import('@/views/BillingView.vue'),
+        meta: { title: '计费与用量', minTier: 'tenant' }
+      },
+      // 账号管理：自有账号 / 共享账号 / 公司账号三类分开管。
+      {
+        path: 'accounts',
+        name: 'accounts',
+        component: () => import('@/views/AccountCenterView.vue'),
+        meta: { title: '账号管理', allowRoles: PERSONNEL_VIEW_ROLES }
+      },
+      // 模型账号：自己注册的 / 共享给我的 / 公司提供的三类分开管，
+      // 并按「账号 / 使用者 / 付费人」三个维度统计词元、标注是否公司收费（docs/71）。
+      // 不加 allowRoles：人人都要管自己的账号；公司账号页签由页内 isAdmin 收口。
+      {
+        path: 'model-accounts',
+        name: 'model-accounts',
+        component: () => import('@/views/ModelAccountView.vue'),
+        meta: { title: '模型账号' }
+      },
+      // 数字人授权：先给部门开席位（占资源池专家座席），再按岗位授权具体数字人。
+      {
+        path: 'workers/grants',
+        name: 'worker-grants',
+        component: () => import('@/views/WorkerGrantView.vue'),
+        meta: { title: '数字人授权', allowRoles: WORKER_MANAGER_ROLES }
+      },
+      // 主动缓存：三方应用接入后同步进知识库的任务与落地文档。
+      { path: 'kb/sync', name: 'kb-sync', component: () => import('@/views/KbSyncView.vue'), meta: { title: '主动缓存' } },
+      // 代码自动入库：webhook 触发的入库任务统计 + 提交级入库记录。
+      {
+        path: 'pm/code-sync',
+        name: 'pm-code-sync',
+        component: () => import('@/views/CodeSyncView.vue'),
+        meta: { title: '代码入库', allowRoles: PM_VIEW_ROLES }
+      },
       {
         path: 'audit',
         name: 'audit',
