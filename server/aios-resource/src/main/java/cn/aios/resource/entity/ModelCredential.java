@@ -57,6 +57,33 @@ public class ModelCredential {
     /** 空 = 回退 provider 注册表 */
     private String modelName;
 
+    // ---- 采样 / 传输参数（2026-11-04，docs/72）：与平台 model_config 同名同义 ----
+    // 未填 = 继承平台该 provider 的配置（agent 侧 _apply_credential 按缺省回落）
+
+    private java.math.BigDecimal temperature;
+
+    /** 核采样；null = 不下发，沿用供应商默认 */
+    private java.math.BigDecimal topP;
+
+    /** 单次回复上限；0 = 不下发 */
+    private Integer maxTokens;
+
+    /** 上下文窗口；0 = 不限制 */
+    private Integer maxContext;
+
+    private java.math.BigDecimal presencePenalty;
+
+    private java.math.BigDecimal frequencyPenalty;
+
+    /** 单次上游请求超时（秒） */
+    private Integer timeoutSeconds;
+
+    /** 总尝试次数（含首次） */
+    private Integer retryAttempts;
+
+    /** 是否流式输出 */
+    private Boolean streamEnabled;
+
     /** SecretCodec 密文（enc: 前缀）；任何接口都不回传明文 */
     private String apiKeyCipher;
 

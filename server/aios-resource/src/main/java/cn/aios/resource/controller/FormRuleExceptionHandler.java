@@ -1,5 +1,6 @@
 package cn.aios.resource.controller;
 
+import cn.aios.common.error.ErrorCode;
 import cn.aios.common.resp.ApiResponse;
 import cn.aios.resource.service.FormRuleException;
 import cn.aios.resource.service.FormSchemaValidator;
@@ -46,8 +47,16 @@ public class FormRuleExceptionHandler {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("rule_violation", ruleViolation);
 
-        // 与 BizException(400) 惯例一致：HTTP 200，成败只看 body.code
-        return ResponseEntity.status(HttpStatus.OK)
-                .body(ApiResponse.fail(40090, msg, data));
+        // 与 BizException(400) 惯例一致：HTTP 200，成败只看 body.code。
+        // 同时补统一错误字段（errorCode/category/suggestion）——契约码 40090 保持不变，
+        // 它是 H5 渲染「规则未通过 + 可选项」卡片的开关，不能动（docs/73 §3.2）。
+        ApiResponse<Map<String, Object>> body = ApiResponse.fail(
+                ErrorCode.VALIDATION_FAILED, msg,
+                "按提示调整后再提交；若提示的选项不合适，请选择「其他」并说明原因",
+                List.of(new ApiResponse.FieldErrorItem(
+                        ruleViolation.get("target_field").toString(), msg)));
+        body.setCode(40090);
+        body.setData(data);
+        return ResponseEntity.status(HttpStatus.OK).body(body);
     }
 }

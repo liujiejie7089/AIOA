@@ -57,9 +57,18 @@ public class ModelCredentialService {
     private final SecretCodec secretCodec;
     private final JdbcTemplate jdbc;
 
-    /** 一次账号在调用方的形态：**明文 Key 只在这里出现，绝不出现在任何接口回执里**。 */
+    /**
+     * 一次账号在调用方的形态：**明文 Key 只在这里出现，绝不出现在任何接口回执里**。
+     *
+     * <p>2026-11-04：额外携带 9 个采样/传输参数（与平台 model_config 同名同义），
+     * 未填的项为 null，agent 侧按「用户配置 &gt; 平台配置 &gt; 内置默认」回落。</p>
+     */
     public record Resolved(Long credentialId, String providerKey, String baseUrl, String model,
-                           String apiKey, Long chargeUserId, String ownerType) {
+                           String apiKey, Long chargeUserId, String ownerType,
+                           java.math.BigDecimal temperature, java.math.BigDecimal topP,
+                           Integer maxTokens, Integer maxContext,
+                           java.math.BigDecimal presencePenalty, java.math.BigDecimal frequencyPenalty,
+                           Integer timeoutSeconds, Integer retryAttempts, Boolean streamEnabled) {
 
         public boolean companyCharged() {
             return ModelCredential.OWNER_COMPANY.equalsIgnoreCase(ownerType);
@@ -70,12 +79,19 @@ public class ModelCredentialService {
     public record CredentialView(Long id, String ownerType, Long ownerUserId, String providerKey,
                                  String providerType, String name, String baseUrl, String modelName,
                                  String keyHint, boolean shareEnabled, boolean enabled, String remark,
-                                 int shareCount, LocalDateTime createdAt) {
+                                 int shareCount, LocalDateTime createdAt,
+                                 java.math.BigDecimal temperature, java.math.BigDecimal topP,
+                                 Integer maxTokens, Integer maxContext,
+                                 java.math.BigDecimal presencePenalty, java.math.BigDecimal frequencyPenalty,
+                                 Integer timeoutSeconds, Integer retryAttempts, Boolean streamEnabled) {
 
         static CredentialView from(ModelCredential c, int shareCount) {
             return new CredentialView(c.getId(), c.getOwnerType(), c.getOwnerUserId(), c.getProviderKey(),
                     c.getProviderType(), c.getName(), c.getBaseUrl(), c.getModelName(), c.getKeyHint(),
-                    c.shareAllowed(), c.isEnabled(), c.getRemark(), shareCount, c.getCreatedAt());
+                    c.shareAllowed(), c.isEnabled(), c.getRemark(), shareCount, c.getCreatedAt(),
+                    c.getTemperature(), c.getTopP(), c.getMaxTokens(), c.getMaxContext(),
+                    c.getPresencePenalty(), c.getFrequencyPenalty(),
+                    c.getTimeoutSeconds(), c.getRetryAttempts(), c.getStreamEnabled());
         }
     }
 
@@ -152,11 +168,21 @@ public class ModelCredentialService {
         String name = require(req.get("name"), "name");
         String apiKey = require(req.get("apiKey"), "apiKey");
 
-        long dup = credentialMapper.selectCount(Wrappers.<ModelCredential>lambdaQuery()
+        // 同名检查按「同租户 + 同属主 + 同供应商 + 同名」判。
+        // 公司账号的 owner_user_id 是 NULL：既不能用 eq(col, null)（恒假，检查被静默跳过），
+        // 也不能指望唯一键——MySQL 唯一索引不约束 NULL，同名的公司账号会被放进去。
+        // 软删行由逻辑删除自动排除（唯一键带 deleted_at 本就是为「删后重建同名」留的口）。
+        LambdaQueryWrapper<ModelCredential> dupQ = Wrappers.<ModelCredential>lambdaQuery()
                 .eq(ModelCredential::getTenantId, tenantOf(user))
-                .eq(ModelCredential::getOwnerUserId, ownerUserIdOf(user, ownerType))
                 .eq(ModelCredential::getProviderKey, providerKey)
-                .eq(ModelCredential::getName, name));
+                .eq(ModelCredential::getName, name);
+        Long ownerId = ownerUserIdOf(user, ownerType);
+        if (ownerId == null) {
+            dupQ.isNull(ModelCredential::getOwnerUserId);
+        } else {
+            dupQ.eq(ModelCredential::getOwnerUserId, ownerId);
+        }
+        long dup = credentialMapper.selectCount(dupQ);
         if (dup > 0) {
             throw BizException.badRequest("同名账号已存在：" + name);
         }
@@ -175,6 +201,7 @@ public class ModelCredentialService {
         c.setShareEnabled(bool(req.get("shareEnabled")) ? 1 : 0);
         c.setStatus(ModelCredential.STATUS_ENABLED);
         c.setRemark(blankToNull(str(req.get("remark"), null)));
+        applyParams(c, req, false);
         c.setCreatedAt(LocalDateTime.now());
         c.setCreatedBy(user.getUserId());
         credentialMapper.insert(c);
@@ -199,10 +226,13 @@ public class ModelCredentialService {
         if (req.containsKey("remark")) {
             c.setRemark(blankToNull(str(req.get("remark"), null)));
         }
+        applyParams(c, req, true);
         if (req.containsKey("apiKey")) {
             String apiKey = str(req.get("apiKey"), "").trim();
             if (apiKey.isEmpty()) {
-                throw BizException.badRequest("apiKey 不能为空（不换 Key 时请不要传该字段）");
+                throw BizException.badRequest("apiKey 不能为空（不换 Key 时请不要传该字段）")
+                        .withDetails(java.util.List.of(
+                                new cn.aios.common.error.ErrorText.FieldError("apiKey", "不能为空")));
             }
             c.setApiKeyCipher(secretCodec.encrypt(apiKey));
             c.setKeyHint(mask(apiKey));
@@ -492,7 +522,10 @@ public class ModelCredentialService {
 
     private Resolved fromEntity(ModelCredential c) {
         return new Resolved(c.getId(), c.getProviderKey(), c.getBaseUrl(), c.getModelName(),
-                plainKey(c), c.chargeUserId(), c.getOwnerType());
+                plainKey(c), c.chargeUserId(), c.getOwnerType(),
+                c.getTemperature(), c.getTopP(), c.getMaxTokens(), c.getMaxContext(),
+                c.getPresencePenalty(), c.getFrequencyPenalty(),
+                c.getTimeoutSeconds(), c.getRetryAttempts(), c.getStreamEnabled());
     }
 
     /** 本人 / 公司管理员 才能操作；他人账号一律 404（不泄露存在性）。 */
@@ -511,8 +544,83 @@ public class ModelCredentialService {
         return c;
     }
 
-    private int countShares(Long credentialId) {
-        Long n = shareMapper.selectCount(Wrappers.<CredentialShare>lambdaQuery()
+    /**
+     * 采样/传输参数（2026-11-04，docs/72 §2）。
+     *
+     * <p>范围与平台侧 {@code ModelConfigController.validate}、agent 侧 {@code PARAM_RANGES}
+     * 三处同源；partial=true 时只更新请求里出现的键（PUT 语义）。</p>
+     */
+    private void applyParams(ModelCredential c, Map<String, Object> req, boolean partial) {
+        if (!partial || req.containsKey("temperature")) {
+            c.setTemperature(decParam(req.get("temperature"), "温度", 0, 2, new java.math.BigDecimal("0.30")));
+        }
+        if (!partial || req.containsKey("topP")) {
+            c.setTopP(decParam(req.get("topP"), "top_p", 0, 1, null));
+        }
+        if (!partial || req.containsKey("maxTokens")) {
+            c.setMaxTokens(intParam(req.get("maxTokens"), "单次输出上限", 0, 65536, 0));
+        }
+        if (!partial || req.containsKey("maxContext")) {
+            c.setMaxContext(intParam(req.get("maxContext"), "上下文长度", 0, 1048576, 0));
+        }
+        if (!partial || req.containsKey("presencePenalty")) {
+            c.setPresencePenalty(decParam(req.get("presencePenalty"), "话题新颖度惩罚",
+                    -2, 2, java.math.BigDecimal.ZERO));
+        }
+        if (!partial || req.containsKey("frequencyPenalty")) {
+            c.setFrequencyPenalty(decParam(req.get("frequencyPenalty"), "词频惩罚",
+                    -2, 2, java.math.BigDecimal.ZERO));
+        }
+        if (!partial || req.containsKey("timeoutSeconds")) {
+            c.setTimeoutSeconds(intParam(req.get("timeoutSeconds"), "请求超时", 5, 600, 120));
+        }
+        if (!partial || req.containsKey("retryAttempts")) {
+            c.setRetryAttempts(intParam(req.get("retryAttempts"), "重试次数", 1, 5, 3));
+        }
+        if (!partial || req.containsKey("streamEnabled")) {
+            c.setStreamEnabled(req.containsKey("streamEnabled") ? bool(req.get("streamEnabled")) : Boolean.TRUE);
+        }
+    }
+
+    private static java.math.BigDecimal decParam(Object raw, String label, double lo, double hi,
+                                                 java.math.BigDecimal dft) {
+        if (raw == null || String.valueOf(raw).isBlank()) {
+            return dft;
+        }
+        java.math.BigDecimal v;
+        try {
+            v = new java.math.BigDecimal(String.valueOf(raw).trim());
+        } catch (NumberFormatException e) {
+            throw BizException.badRequest(label + " 不是有效数字");
+        }
+        if (v.compareTo(java.math.BigDecimal.valueOf(lo)) < 0
+                || v.compareTo(java.math.BigDecimal.valueOf(hi)) > 0) {
+            throw BizException.badRequest(label + " 需介于 " + (int) lo + " 与 " + (int) hi + " 之间");
+        }
+        // top_p = 0 与「不填」同义：不下发，避免网关把 0 当非法参数
+        if ("top_p".equals(label) && v.compareTo(java.math.BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return v;
+    }
+
+    private static Integer intParam(Object raw, String label, int lo, int hi, int dft) {
+        if (raw == null || String.valueOf(raw).isBlank()) {
+            return dft;
+        }
+        int v;
+        try {
+            v = (int) Double.parseDouble(String.valueOf(raw).trim());
+        } catch (NumberFormatException e) {
+            throw BizException.badRequest(label + " 不是有效数字");
+        }
+        if (v < lo || v > hi) {
+            throw BizException.badRequest(label + " 需介于 " + lo + " 与 " + hi + " 之间");
+        }
+        return v;
+    }
+
+    private int countShares(Long credentialId) {        Long n = shareMapper.selectCount(Wrappers.<CredentialShare>lambdaQuery()
                 .eq(CredentialShare::getCredentialId, credentialId)
                 .eq(CredentialShare::getStatus, CredentialShare.STATUS_ACTIVE));
         return n == null ? 0 : n.intValue();
@@ -566,6 +674,21 @@ public class ModelCredentialService {
                 "SELECT id, username, nickname FROM sys_user WHERE username = ? AND tenant_id = ? "
                         + "AND status = 'ENABLED' AND deleted_at IS NULL", username, tenantId);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /**
+     * 可邀请的同事（邀请表单下拉用）：同租户、启用、未删除，排除自己。
+     *
+     * <p>只回 {@code id / username / nickname} 三个字段 —— 邀请只需要能唯一定位到人，
+     * 手机号、邮箱这类信息不带到这个接口上（它与邀请无关，多带就是多一个泄露面）。
+     * 上限 200 条：这是「选一个同事」，不是通讯录分页浏览。</p>
+     */
+    public List<Map<String, Object>> invitable(AuthUser user) {
+        return jdbc.queryForList(
+                "SELECT id, username, nickname FROM sys_user "
+                        + "WHERE tenant_id = ? AND id <> ? AND status = 'ENABLED' AND deleted_at IS NULL "
+                        + "ORDER BY nickname, id LIMIT 200",
+                tenantOf(user), user.getUserId());
     }
 
     private String userName(Long userId) {
@@ -630,7 +753,10 @@ public class ModelCredentialService {
     private static String require(Object o, String field) {
         String v = o == null ? null : String.valueOf(o).trim();
         if (v == null || v.isEmpty()) {
-            throw BizException.badRequest(field + " 不能为空");
+            // 附上字段级错误：前端据此把对应输入框标红（docs/73 §2.2）。
+            // 只给一句「xxx 不能为空」时，用户知道错了但不知道是哪个框。
+            throw BizException.badRequest(field + " 不能为空")
+                    .withDetails(java.util.List.of(new cn.aios.common.error.ErrorText.FieldError(field, "不能为空")));
         }
         return v;
     }

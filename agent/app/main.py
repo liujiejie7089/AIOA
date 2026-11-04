@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 # AI 能力统一由 aios_ai 提供（依赖方向：app -> aios_ai，单向）。
 # 本文件只承担 HTTP 接入职责：路由挂载、SSE 帧化、异常信封。
 from aios_ai import entry as runtime
+from aios_ai import errors
 from aios_ai.config import settings
 from aios_ai.contracts import CompleteRequest, ResumeRequest, RunRequest, SseEvent, TaskPlanRequest
 from aios_ai.events import to_frame
@@ -145,17 +146,21 @@ async def create_run(req: RunRequest, request: Request) -> StreamingResponse:
 
     async def event_stream():
         seq = 1
+        trace_id = req.user_context.trace_id
         try:
             async for event in runtime.run(req):
                 seq = event.seq + 1
                 yield to_frame(event)
         except GuardError as exc:
-            yield to_frame(SseEvent(seq=seq, type="error", data={"code": exc.code, "message": exc.message, "retryable": exc.retryable}))
-            yield to_frame(SseEvent(seq=seq + 1, type="run.failed", data={"reason": exc.message, "error_code": exc.code}))
+            yield to_frame(SseEvent(seq=seq, type="error", data=errors.error_payload(
+                exc.code, exc.message, retryable=exc.retryable)))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
+                                    data={"reason": "guard rejected", "error_code": exc.code}))
         except Exception as exc:  # 兜底：流内异常按 error + run.failed 上报
             logger.exception("run %s failed", req.run_id)
-            yield to_frame(SseEvent(seq=seq, type="error", data={"code": "INTERNAL_ERROR", "message": str(exc), "retryable": True}))
-            yield to_frame(SseEvent(seq=seq + 1, type="run.failed", data={"reason": str(exc), "error_code": "INTERNAL_ERROR"}))
+            yield to_frame(SseEvent(seq=seq, type="error", data=errors.internal_payload(trace_id)))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
+                                    data={"reason": "internal error", "error_code": "INTERNAL_ERROR"}))
         finally:
             logger.info("run %s finished", req.run_id)
 
@@ -179,21 +184,22 @@ async def create_task_plan(req: TaskPlanRequest, request: Request) -> StreamingR
 
     async def event_stream():
         seq = 1
+        trace_id = req.user_context.trace_id
         try:
             async for event in multi_task.run(req):
                 seq = event.seq + 1
                 yield to_frame(event)
         except GuardError as exc:
-            yield to_frame(SseEvent(seq=seq, type="error",
-                                    data={"code": exc.code, "message": exc.message, "retryable": exc.retryable}))
+            yield to_frame(SseEvent(seq=seq, type="error", data=errors.error_payload(
+                exc.code, exc.message, retryable=exc.retryable)))
             yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
-                                    data={"reason": exc.message, "error_code": exc.code}))
+                                    data={"reason": "guard rejected", "error_code": exc.code}))
         except Exception as exc:
             logger.exception("task plan %s failed", req.run_id)
             yield to_frame(SseEvent(seq=seq, type="error",
-                                    data={"code": "INTERNAL_ERROR", "message": str(exc), "retryable": True}))
+                                    data=errors.internal_payload(trace_id)))
             yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
-                                    data={"reason": str(exc), "error_code": "INTERNAL_ERROR"}))
+                                    data={"reason": "internal error", "error_code": "INTERNAL_ERROR"}))
         finally:
             logger.info("task plan %s finished", req.run_id)
 
@@ -217,17 +223,21 @@ async def resume_run(run_id: str, body: ResumeRequest, request: Request) -> Stre
 
     async def event_stream():
         seq = 1
+        trace_id = req.user_context.trace_id
         try:
             async for event in runtime.resume(run_id, answer):
                 seq = event.seq + 1
                 yield to_frame(event)
         except GuardError as exc:
-            yield to_frame(SseEvent(seq=seq, type="error", data={"code": exc.code, "message": exc.message, "retryable": exc.retryable}))
-            yield to_frame(SseEvent(seq=seq + 1, type="run.failed", data={"reason": exc.message, "error_code": exc.code}))
+            yield to_frame(SseEvent(seq=seq, type="error", data=errors.error_payload(
+                exc.code, exc.message, retryable=exc.retryable)))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
+                                    data={"reason": "guard rejected", "error_code": exc.code}))
         except Exception as exc:
             logger.exception("run %s resume failed", run_id)
-            yield to_frame(SseEvent(seq=seq, type="error", data={"code": "INTERNAL_ERROR", "message": str(exc), "retryable": True}))
-            yield to_frame(SseEvent(seq=seq + 1, type="run.failed", data={"reason": str(exc), "error_code": "INTERNAL_ERROR"}))
+            yield to_frame(SseEvent(seq=seq, type="error", data=errors.internal_payload(trace_id)))
+            yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
+                                    data={"reason": "internal error", "error_code": "INTERNAL_ERROR"}))
         finally:
             logger.info("run %s resume finished", run_id)
 
@@ -310,9 +320,11 @@ async def apply_models(payload: dict, request: Request) -> dict:
     """
     from aios_ai.llm import apply_overrides, configured_providers
 
-    applied = apply_overrides(payload.get("models") or [], payload.get("default"))
-    logger.info("model config applied via admin push (%d entries)", applied)
-    return {"applied": applied, "providers": configured_providers()}
+    report = apply_overrides(payload.get("models") or [], payload.get("default"))
+    logger.info("model config applied via admin push (%d entries, %d rejected)",
+                report.get("applied", 0), len(report.get("rejected") or []))
+    return {"applied": report.get("applied", 0), "rejected": report.get("rejected") or [],
+            "default": report.get("default"), "providers": configured_providers()}
 
 
 @app.post("/internal/v1/complete")
@@ -345,8 +357,16 @@ async def complete(req: CompleteRequest) -> dict:
                 client_http, provider, api_key, messages, None,
                 getattr(provider, "temperature", 0.3) or 0.3, req.max_tokens)
         except UpstreamError as exc:
-            return {"content": "", "model": provider.model, "usage": {"prompt_tokens": 0, "completion_tokens": 0},
-                    "error": f"模型上游错误：{exc}"}
+            # 这是内部端点（Java 调用），但仍遵守同一口径：原始上游 body 只进日志，
+            # 对外给 code/message/suggestion/errorId，便于上层原样转成统一错误体。
+            logger.warning("complete 上游失败：status=%s model=%s body=%s",
+                           exc.status, provider.model, exc.text[:500])
+            return {"content": "", "model": provider.model,
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                    "error": exc.user_message,
+                    "errorCode": exc.error_code,
+                    "suggestion": exc.payload.get("suggestion"),
+                    "errorId": exc.payload.get("errorId")}
     return {
         "content": str(message.get("content") or ""),
         "model": provider.model,
@@ -404,8 +424,43 @@ async def answer_shape(payload: dict) -> dict:
 
 @app.exception_handler(RequestValidationError)
 async def on_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-    logger.warning("bad request %s: %s", request.url.path, json.dumps(exc.errors(), ensure_ascii=False, default=str))
-    return JSONResponse(status_code=422, content={"code": "BAD_REQUEST", "message": "invalid request body", "errors": exc.errors()})
+    """入参校验失败：**对外只给字段 + 一句人话**，pydantic 的 loc/type/input 只进日志。
+
+    原先直接把 `exc.errors()` 原样外发，里面有内部字段路径、类型名、甚至用户原文回显，
+    既看不懂也可能带出敏感内容（docs/73 §6）。
+    """
+    logger.warning("bad request %s: %s", request.url.path,
+                   json.dumps(exc.errors(), ensure_ascii=False, default=str))
+    details = []
+    for e in exc.errors()[:10]:
+        loc = [str(x) for x in (e.get("loc") or []) if x not in ("body", "query", "header", "path")]
+        field = ".".join(loc) or "请求体"
+        details.append({"field": field, "message": _human_pydantic(e)})
+    payload = errors.error_payload("BAD_REQUEST",
+                                   "请求内容不合法：" + (details[0]["message"] if details else ""),
+                                   None, retryable=False)
+    payload["details"] = details
+    return JSONResponse(status_code=422, content=payload)
+
+
+def _human_pydantic(e: dict) -> str:
+    """pydantic 的 type → 中文；未知类型一律「填写不正确」，不泄漏内部类型名。"""
+    t = str(e.get("type") or "")
+    if "missing" in t:
+        return "不能为空"
+    if "int" in t or "float" in t or "decimal" in t:
+        return "应为数字"
+    if "bool" in t:
+        return "应为 true/false"
+    if "datetime" in t or "date" in t:
+        return "应为日期时间"
+    if "string" in t or "str" in t:
+        return "应为文本"
+    if "list" in t or "tuple" in t:
+        return "应为列表"
+    if "dict" in t or "model" in t:
+        return "应为对象"
+    return "填写不正确"
 
 
 @app.exception_handler(GuardError)
@@ -419,11 +474,13 @@ async def on_guard_error(request: Request, exc: GuardError) -> JSONResponse:
     """
     status = 400 if exc.code == "BAD_REQUEST" else 429
     logger.warning("guard rejected %s: %s (%s)", request.url.path, exc.message, exc.code)
-    return JSONResponse(status_code=status,
-                        content={"code": exc.code, "message": exc.message, "retryable": exc.retryable})
+    return JSONResponse(status_code=status, content=errors.error_payload(
+        exc.code, exc.message, retryable=exc.retryable))
 
 
 @app.exception_handler(Exception)
 async def on_unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    """兜底 5xx：堆栈只进日志，对外零信息 + 错误编号。"""
     logger.exception("unhandled error on %s", request.url.path)
-    return JSONResponse(status_code=500, content={"code": "INTERNAL_ERROR", "message": str(exc)})
+    rid = request.headers.get("X-Trace-Id") or request.headers.get("X-Request-Id")
+    return JSONResponse(status_code=500, content=errors.internal_payload(rid))

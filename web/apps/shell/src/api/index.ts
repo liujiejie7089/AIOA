@@ -44,11 +44,26 @@ http.interceptors.request.use((config) => {
 http.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      localStorage.removeItem(TOKEN_KEY)
-      localStorage.removeItem(REFRESH_TOKEN_KEY)
-      localStorage.removeItem(USER_KEY)
-      unauthorizedHandler()
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status
+      if (status === 401) {
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(REFRESH_TOKEN_KEY)
+        localStorage.removeItem(USER_KEY)
+        unauthorizedHandler()
+      }
+      // 4xx/5xx 也带统一错误信封（message/suggestion/errorCode/traceId）：
+      // 不转换的话，视图里拿到的是 "Request failed with status code 400" ——
+      // 既不是人话，也没有「怎么办」。转成 ApiError 后所有视图共用一套文案（docs/73）。
+      const body = error.response?.data
+      if (body && typeof body === 'object' && typeof (body as ErrorEnvelope).code === 'number') {
+        return Promise.reject(toApiError((body as ErrorEnvelope).code as number, body as ErrorEnvelope, '请求失败'))
+      }
+      if (status && status >= 500) {
+        return Promise.reject(
+          new ApiError(status, '服务暂时不可用，请稍后重试', { category: 'INTERNAL' })
+        )
+      }
     }
     return Promise.reject(error)
   }
@@ -57,11 +72,59 @@ http.interceptors.response.use(
 /** 业务错误（HTTP 200 + code≠0）抛出的异常，携带后端业务码，便于调用方按码分支。 */
 export class ApiError extends Error {
   readonly code: number
-  constructor(code: number, message: string) {
+  /** 机器码（VALIDATION_FAILED / PERMISSION_DENIED / …），前端按它分支，不匹配中文文案。 */
+  readonly errorCode?: string | null
+  /** 错误分类（VALIDATION / AUTHENTICATION / PERMISSION / NOT_FOUND / CONFLICT / …）。 */
+  readonly category?: string | null
+  /** 可操作建议：告诉用户「下一步做什么」。 */
+  readonly suggestion?: string | null
+  /** 错误编号：与日志同号，用户报障时凭它定位。 */
+  readonly traceId?: string | null
+  /** 字段级错误（仅校验类）。 */
+  readonly details?: Array<{ field: string; message: string }> | null
+  /** 后端原始 message（不含拼进去的「建议」），需要分开展示时用。 */
+  readonly rawMessage?: string | null
+
+  constructor(code: number, message: string, extra: Partial<ApiError> = {}) {
     super(message)
     this.name = 'ApiError'
     this.code = code
+    this.rawMessage = extra.rawMessage ?? message
+    this.errorCode = extra.errorCode ?? null
+    this.category = extra.category ?? null
+    this.suggestion = extra.suggestion ?? null
+    this.traceId = extra.traceId ?? null
+    this.details = extra.details ?? null
   }
+}
+
+/** 后端统一错误信封（docs/73）。 */
+interface ErrorEnvelope {
+  code?: number
+  message?: string
+  errorCode?: string
+  category?: string
+  suggestion?: string
+  traceId?: string
+  details?: Array<{ field: string; message: string }>
+}
+
+/** 把信封字段搬到 ApiError 上（两处入口共用：业务失败 + HTTP 4xx/5xx）。 */
+function toApiError(code: number, env: ErrorEnvelope | undefined, fallbackMsg: string): ApiError {
+  const base = env?.message || fallbackMsg
+  const suggestion = env?.suggestion ?? null
+  // ★ 把「建议」直接并进 message：管理端 60 处 catch 都是 `(e as Error)?.message`，
+  //   在这里拼一次，等于**所有页面同时**获得了「怎么做」的提示，不必逐页改造
+  //   （改 20 个文件 60 处才是真正的漂移源）。需要分开展示时读 rawMessage / suggestion。
+  const withHint = suggestion && !base.includes(suggestion) ? `${base}（建议：${suggestion}）` : base
+  return new ApiError(code, withHint, {
+    rawMessage: base,
+    errorCode: env?.errorCode ?? null,
+    category: env?.category ?? null,
+    suggestion,
+    traceId: env?.traceId ?? null,
+    details: env?.details ?? null
+  })
 }
 
 /**
@@ -83,7 +146,7 @@ export function unwrap<T>(res: { data: unknown }): T {
     // （如机构编码 ORG-FAGAI），那种响应不是信封，必须原样返回。
     if (typeof envelope.code === 'number') {
       if (envelope.code !== 0) {
-        throw new ApiError(envelope.code, envelope.message || '请求失败')
+        throw toApiError(envelope.code, body as ErrorEnvelope, '请求失败')
       }
       return envelope.data as T
     }

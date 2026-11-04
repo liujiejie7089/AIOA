@@ -13,7 +13,7 @@
       <!-- ============================== 我的账号 ============================== -->
       <el-tab-pane label="我的账号" name="mine">
         <div class="toolbar">
-          <el-button type="primary" size="small" @click="openCreate">新增账号</el-button>
+          <el-button type="primary" size="small" @click="openCreate()">新增账号</el-button>
           <el-button text type="primary" size="small" :loading="loading" @click="load">刷新</el-button>
           <span class="hint">自己注册的账号：使用量由供应商按各自账号计费，平台只做统计，不向你收费</span>
         </div>
@@ -80,12 +80,13 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="160">
+          <el-table-column label="操作" width="220">
             <template #default="{ row }">
               <el-button v-if="isAdmin" text type="primary" size="small" @click="openInvite(row)">邀请同事</el-button>
               <el-button v-if="isAdmin" text type="primary" size="small" @click="toggleShare(row)">
                 {{ row.shareEnabled ? '关闭共享' : '开启共享' }}
               </el-button>
+              <el-button v-if="isAdmin" text type="danger" size="small" @click="remove(row)">删除</el-button>
               <span v-if="!isAdmin" class="muted">由管理员维护</span>
             </template>
           </el-table-column>
@@ -270,7 +271,23 @@
       />
       <el-form :model="inviteForm" label-width="90px">
         <el-form-item label="同事账号" required>
-          <el-input v-model="inviteForm.granteeUsername" placeholder="用户名，如 fagai_liu" />
+          <el-select
+            v-model="inviteForm.granteeUsername"
+            filterable
+            clearable
+            :loading="invitableLoading"
+            :no-data-text="invitableLoading ? '加载中…' : '本单位暂无可邀请的同事'"
+            placeholder="选择同事（可输入姓名或用户名筛选）"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="u in invitable"
+              :key="u.id"
+              :label="colleagueLabel(u)"
+              :value="u.username"
+            />
+          </el-select>
+          <div class="field-hint">只列出本单位启用中的其他成员；被邀请人凭用户名即可使用这个账号</div>
         </el-form-item>
         <el-form-item label="共享额度">
           <el-input v-model="inviteForm.quotaTokens" placeholder="0 = 不限">
@@ -302,6 +319,7 @@ import {
   deleteCredential,
   inviteShare,
   revokeShare,
+  invitableColleagues,
   billingStats,
   type MyAccounts,
   type ModelCredentialView,
@@ -351,6 +369,32 @@ const form = reactive({
 
 const inviteVisible = ref(false)
 const inviteForm = reactive({ credentialId: 0, granteeUsername: '', quotaTokens: '', expiresAt: '' })
+
+/** 可邀请的同事（来源 GET /model-credentials/invitable，与用户端 H5 同一个接口）。 */
+type Colleague = { id: number; username: string; nickname: string }
+const invitable = ref<Colleague[]>([])
+const invitableLoading = ref(false)
+
+/** 下拉文案「姓名（用户名）」：重名时靠用户名区分；提交的仍是用户名。 */
+function colleagueLabel(u: Colleague): string {
+  const uname = String(u.username || '').trim()
+  const nick = String(u.nickname || '').trim() || uname
+  return uname && uname !== nick ? `${nick}（${uname}）` : nick
+}
+
+async function loadInvitable(force = false): Promise<Colleague[]> {
+  if (!force && invitable.value.length) return invitable.value
+  invitableLoading.value = true
+  try {
+    invitable.value = await invitableColleagues()
+  } catch (e: unknown) {
+    invitable.value = []
+    ElMessage.error('同事名单加载失败：' + ((e as Error)?.message || '后端异常'))
+  } finally {
+    invitableLoading.value = false
+  }
+  return invitable.value
+}
 
 const dim = ref<'credential' | 'bearer' | 'charge'>('credential')
 const period = ref(new Date().toISOString().slice(0, 7))
@@ -515,11 +559,13 @@ function openInvite(row: ModelCredentialView) {
   inviteForm.quotaTokens = ''
   inviteForm.expiresAt = ''
   inviteVisible.value = true
+  /* 每次打开都刷新：刚加的同事要能立刻选到（候选最多 200 条，代价可忽略）。 */
+  loadInvitable(true)
 }
 
 async function submitInvite() {
   if (!inviteForm.granteeUsername.trim()) {
-    ElMessage.warning('请填写同事账号')
+    ElMessage.warning('请选择要邀请的同事')
     return
   }
   saving.value = true

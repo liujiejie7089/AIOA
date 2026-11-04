@@ -1,7 +1,11 @@
 package cn.aios.security;
 
+import cn.aios.common.error.ErrorCode;
 import cn.aios.common.resp.ApiResponse;
+import cn.aios.common.trace.TraceId;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,6 +37,8 @@ import java.nio.charset.StandardCharsets;
 @EnableMethodSecurity
 @EnableConfigurationProperties({JwtProperties.class, ServiceJwtProperties.class})
 public class SecurityConfig {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SecurityConfig.class);
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/v1/auth/**",
@@ -120,16 +126,32 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * 401 出口：**与业务异常共用同一套错误码与字段**（docs/73）。
+     *
+     * <p>踩过的坑：这里原先只回 {@code {code:401,message:"未认证或令牌无效"}}，
+     * 前端拿不到 {@code errorCode} 就没法区分「没登录」和「令牌过期」，
+     * 只能靠匹配中文文案 —— 文案一改，自动跳登录就失效了。</p>
+     */
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint(ObjectMapper objectMapper) {
-        return (request, response, ex) -> writeJson(response, objectMapper, HttpStatus.UNAUTHORIZED,
-                ApiResponse.fail(401, "未认证或令牌无效"));
+        return (request, response, ex) -> {
+            LOG.warn("[{}] 未认证 {} {} -> UNAUTHENTICATED | 原始: {}", TraceId.get(),
+                    request.getMethod(), request.getRequestURI(), ex == null ? "-" : ex.getMessage());
+            writeJson(response, objectMapper, HttpStatus.UNAUTHORIZED,
+                    ApiResponse.fail(ErrorCode.UNAUTHENTICATED, null, null, null));
+        };
     }
 
+    /** 403 出口：已登录但没权限 —— 文案要说清「找谁开权限」，而不是只说「无权限」。 */
     @Bean
     public AccessDeniedHandler accessDeniedHandler(ObjectMapper objectMapper) {
-        return (request, response, ex) -> writeJson(response, objectMapper, HttpStatus.FORBIDDEN,
-                ApiResponse.fail(403, "无权限访问该资源"));
+        return (request, response, ex) -> {
+            LOG.warn("[{}] 拒绝访问 {} {} -> PERMISSION_DENIED | 原始: {}", TraceId.get(),
+                    request.getMethod(), request.getRequestURI(), ex == null ? "-" : ex.getMessage());
+            writeJson(response, objectMapper, HttpStatus.FORBIDDEN,
+                    ApiResponse.fail(ErrorCode.PERMISSION_DENIED, null, null, null));
+        };
     }
 
     private static void writeJson(jakarta.servlet.http.HttpServletResponse response,

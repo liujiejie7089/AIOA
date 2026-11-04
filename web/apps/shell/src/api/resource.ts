@@ -471,7 +471,23 @@ export interface ModelItem {
   isDefault: boolean
   sort: number
   temperature: number
+  /** 核采样 0~1；null/0 = 不下发 */
+  topP?: number | null
+  /** 单次回复上限；0 = 不下发 */
+  maxTokens?: number
+  /** 话题新颖度惩罚 -2~2 */
+  presencePenalty?: number
+  /** 词频惩罚 -2~2 */
+  frequencyPenalty?: number
   maxContext: number
+  /** 单次上游请求超时（秒） */
+  timeoutSeconds?: number
+  /** 总尝试次数（含首次） */
+  retryAttempts?: number
+  /** 是否流式输出 */
+  streamEnabled?: boolean
+  /** SYNCED=已热更新到 agent；PENDING=已落库但 agent 未确认 */
+  syncState?: string
   /** 提交专用：留空或原样回传掩码 = 不修改密钥 */
   apiKey?: string
   [key: string]: unknown
@@ -486,6 +502,24 @@ export interface ModelPreset {
   apiKeyEnv: string
   temperature: number
   maxContext: number
+  /** 该厂商的常用模型名候选（厂家发新模型时改名字即可调用） */
+  models?: string[]
+}
+
+/** 配置历史条目（回滚用）：只含元信息，不含快照正文 */
+export interface ModelConfigHistoryItem {
+  id: number
+  reason: string
+  total: number
+  operatorId: number | null
+  createdAt: string
+}
+
+export interface ModelRollbackResult {
+  snapshotId: number
+  restored: number
+  synced: boolean
+  total: number
 }
 
 /** 连通性校验结果：ok=false 时 message 是可直接展示给用户的失败原因 */
@@ -529,6 +563,23 @@ export function setModelStatus(key: string, enabled: boolean): Promise<ModelChec
 /** 只做连通性校验，不改启用状态 */
 export function testModel(key: string): Promise<ModelCheckResult> {
   return http.post(`/admin/models/${key}/test`, {}).then((r) => unwrap<ModelCheckResult>(r))
+}
+
+/** 配置历史（最近 20 次写操作），回滚入口用 */
+export function listModelHistory(): Promise<ModelConfigHistoryItem[]> {
+  return http.get('/admin/models/history').then((r) => unwrap<ModelConfigHistoryItem[]>(r))
+}
+
+/** 一键回滚到指定快照：整表替换并立即热更新 */
+export function rollbackModel(snapshotId: number): Promise<ModelRollbackResult> {
+  return http
+    .post(`/admin/models/rollback/${snapshotId}`, {})
+    .then((r) => unwrap<ModelRollbackResult>(r))
+}
+
+/** 补推：agent 重启后把库里当前配置重新推过去，不用重新保存 */
+export function syncModels(): Promise<{ synced: boolean; total: number }> {
+  return http.post('/admin/models/sync', {}).then((r) => unwrap<{ synced: boolean; total: number }>(r))
 }
 
 export interface QuotaView {

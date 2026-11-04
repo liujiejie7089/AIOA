@@ -68,6 +68,17 @@ public class ModelCredentialController {
         return ApiResponse.ok(credentialService.myInvites(AuthUserContext.require()));
     }
 
+    /**
+     * 可邀请的同事（邀请表单下拉用）：同租户、启用、未删除，排除自己。
+     *
+     * <p>放在 {@code /invites} 之后、{@code /{id}} 之前的语义位置：它是只读的候选名单，
+     * 不含任何账号数据，权限只要求「已登录」。</p>
+     */
+    @GetMapping("/invitable")
+    public ApiResponse<java.util.List<java.util.Map<String, Object>>> invitable() {
+        return ApiResponse.ok(credentialService.invitable(AuthUserContext.require()));
+    }
+
     /** 邀请给我的（含已撤销 / 已过期的历史，前端据此区分状态）。 */
     @GetMapping("/invites/incoming")
     public ApiResponse<java.util.List<ModelCredentialService.ShareView>> incomingInvites() {

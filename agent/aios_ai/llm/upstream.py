@@ -31,13 +31,57 @@ _DONE_MARK = "[DONE]"
 _RETRYABLE_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 
 
-def _max_attempts() -> int:
-    """总尝试次数（含首次）。默认 3 = 首次 + 2 次重试；AIOS_MODEL_RETRY_ATTEMPTS 可调。"""
+def _max_attempts(provider=None) -> int:
+    """总尝试次数（含首次）。优先级：模型配置 > 环境变量 AIOS_MODEL_RETRY_ATTEMPTS > 3。"""
+    if provider is not None:
+        try:
+            n = int(getattr(provider, "retry_attempts", 0) or 0)
+            if n > 0:
+                return max(1, min(n, 5))
+        except (TypeError, ValueError):
+            pass
     try:
         n = int(os.environ.get("AIOS_MODEL_RETRY_ATTEMPTS", "3"))
     except ValueError:
         n = 3
     return max(1, min(n, 5))
+
+
+def _request_timeout(provider) -> float:
+    """单次上游请求超时（秒）：模型配置优先，缺省 120。"""
+    try:
+        t = float(getattr(provider, "timeout_seconds", 0) or 0)
+    except (TypeError, ValueError):
+        t = 0
+    return t if t > 0 else 120.0
+
+
+def _sampling_params(provider, temperature: float, max_tokens: int | None = None) -> dict:
+    """组装采样参数：**只在配了值时才下发**。
+
+    为什么「0 不下发」而不是「下发 0」：多数 OpenAI 兼容网关把 top_p=0 当非法参数
+    直接 400，把 max_tokens=0 当「不要输出」。所以 0/NULL 一律视为「沿用供应商默认」，
+    这也是两端表单里 0 的含义（docs/72 §2）。
+    """
+    body: dict = {"temperature": float(temperature)}
+    top_p = getattr(provider, "top_p", None)
+    if top_p not in (None, ""):
+        try:
+            v = float(top_p)
+            if 0 < v <= 1:
+                body["top_p"] = v
+        except (TypeError, ValueError):
+            pass
+    tokens = max_tokens if max_tokens not in (None, 0) else int(getattr(provider, "max_tokens", 0) or 0)
+    if tokens and int(tokens) > 0:
+        body["max_tokens"] = int(tokens)
+    pp = float(getattr(provider, "presence_penalty", 0) or 0)
+    if pp:
+        body["presence_penalty"] = pp
+    fp = float(getattr(provider, "frequency_penalty", 0) or 0)
+    if fp:
+        body["frequency_penalty"] = fp
+    return body
 
 
 def _backoff_seconds(attempt_index: int) -> float:
@@ -46,34 +90,37 @@ def _backoff_seconds(attempt_index: int) -> float:
 
 
 class UpstreamError(RuntimeError):
-    """上游模型非 200：转 MODEL_UPSTREAM_ERROR（其余异常仍归 MODEL_STREAM_ERROR）。"""
+    """上游模型非 200：转 MODEL_* 系列（其余异常仍归 MODEL_STREAM_ERROR）。
 
-    def __init__(self, status: int, text: str):
+    2026-11-04 起不再自带「用户文案」，改为交给 `aios_ai.errors.upstream_payload()`
+    统一映射 —— 文案与错误码只在一处维护，避免「Java 说 A、agent 说 B」。
+    """
+
+    def __init__(self, status: int, text: str, model: str | None = None):
         super().__init__(f"status={status} {text[:200]}")
         self.status = status
         self.text = text
+        self.model = model
 
     @property
     def retryable(self) -> bool:
         return self.status in _RETRYABLE_STATUS
 
     @property
-    def user_message(self) -> str:
-        """给人看的一句话。原始 JSON 留在日志里，不要甩到界面上。
+    def payload(self) -> dict:
+        """统一错误载荷（可外发）：只含 code/category/message/suggestion/retryable/errorId。"""
+        from aios_ai import errors as err
 
-        原先 facade 直接 `str(exc)[:200]`，用户看到的是
-        `生成失败：status=500 {"code":"MODEL_UPSTREAM_ERROR",...request_id...}` ——
-        既看不懂也不知道该怎么办（2026-10-31 用户现场截图）。
-        """
-        if self.status in (401, 403):
-            return "模型密钥无效或无权限（HTTP %d），请联系管理员检查模型配置。" % self.status
-        if self.status == 429:
-            return "模型调用过于频繁（HTTP 429），请稍后重试。"
-        if self.status in (408, 504):
-            return "模型服务响应超时（HTTP %d），请稍后重试或把问题拆小一点。" % self.status
-        if self.status >= 500:
-            return "模型服务暂时不可用（HTTP %d），已自动重试仍失败，请稍后重试。" % self.status
-        return "上游模型拒绝了本次请求（HTTP %d）。" % self.status
+        return err.upstream_payload(self.status, self.text, self.model)
+
+    @property
+    def error_code(self) -> str:
+        return str(self.payload["code"])
+
+    @property
+    def user_message(self) -> str:
+        """给人看的一句话（向后兼容旧调用点）。原始 JSON 只进日志。"""
+        return str(self.payload["message"])
 
 
 def _accumulate_tool_call(acc: dict[int, dict], delta_call: dict) -> None:
@@ -106,7 +153,7 @@ async def _post_stream(client_http: httpx.AsyncClient, provider, api_key: str,
     抛的（`resp.status_code != 200` 的检查在循环之前），所以天然安全；
     但**中途断流**（已经 yield 过 delta 再抛 UpstreamError/网络错）必须原样抛出。
     """
-    attempts = _max_attempts()
+    attempts = _max_attempts(provider)
     for attempt in range(attempts):
         emitted = False
         try:
@@ -136,7 +183,8 @@ async def _post_stream_once(client_http: httpx.AsyncClient, provider, api_key: s
                             temperature: float) -> AsyncIterator[tuple]:
     """单次流式请求（不含重试）。"""
     body: dict = {"model": provider.model, "messages": messages, "stream": True,
-                  "temperature": temperature, "stream_options": {"include_usage": True}}
+                  "stream_options": {"include_usage": True}}
+    body.update(_sampling_params(provider, temperature))
     if tools:
         body["tools"] = tools
     url = provider.base_url.rstrip("/") + "/chat/completions"
@@ -146,14 +194,15 @@ async def _post_stream_once(client_http: httpx.AsyncClient, provider, api_key: s
     content_parts: list[str] = []
     acc: dict[int, dict] = {}
     usage: dict = {}
-    async with client_http.stream("POST", url, json=body, headers=headers) as resp:
+    async with client_http.stream("POST", url, json=body, headers=headers,
+                                  timeout=_request_timeout(provider)) as resp:
         if resp.status_code != 200:
             try:
                 raw = await resp.aread()
                 text = raw.decode("utf-8", "ignore") if isinstance(raw, (bytes, bytearray)) else str(raw)
             except Exception:  # 读不出 body 也要带上状态码，便于定位
                 text = ""
-            raise UpstreamError(resp.status_code, text)
+            raise UpstreamError(resp.status_code, text, getattr(provider, "model", None))
         async for line in resp.aiter_lines():
             if not line or not line.startswith(_DATA_PREFIX):
                 continue
@@ -170,7 +219,8 @@ async def _post_stream_once(client_http: httpx.AsyncClient, provider, api_key: s
             if base.get("status_code") not in (None, 0):
                 raise UpstreamError(int(base.get("status_code") or 500),
                                     f"base_resp={base.get('status_code')} "
-                                    f"{base.get('status_msg') or ''}")
+                                    f"{base.get('status_msg') or ''}",
+                                    getattr(provider, "model", None))
             if isinstance(chunk.get("usage"), dict) and chunk["usage"]:
                 usage = chunk["usage"]
             for choice in chunk.get("choices") or []:
@@ -195,7 +245,7 @@ async def _post_non_stream(client_http: httpx.AsyncClient, provider, api_key: st
 
     与流式同口径做瞬时重试（非流式天然幂等，重试没有重复输出的风险）。
     """
-    attempts = _max_attempts()
+    attempts = _max_attempts(provider)
     for attempt in range(attempts):
         try:
             return await _post_non_stream_once(client_http, provider, api_key,
@@ -218,22 +268,24 @@ async def _post_non_stream(client_http: httpx.AsyncClient, provider, api_key: st
 async def _post_non_stream_once(client_http: httpx.AsyncClient, provider, api_key: str,
                                 messages: list[dict], tools: list[dict] | None,
                                 temperature: float, max_tokens: int | None) -> tuple[dict, dict]:
-    body: dict = {"model": provider.model, "messages": messages, "stream": False, "temperature": temperature}
+    body: dict = {"model": provider.model, "messages": messages, "stream": False}
+    # 采样参数统一由 _sampling_params 组装（配了才下发）；显式 max_tokens 优先于模型配置
+    body.update(_sampling_params(provider, temperature, max_tokens))
     if tools:
         body["tools"] = tools
-    if max_tokens:
-        body["max_tokens"] = max_tokens
     resp = await client_http.post(
         provider.base_url.rstrip("/") + "/chat/completions",
         json=body,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        timeout=_request_timeout(provider),
     )
     if resp.status_code != 200:
-        raise UpstreamError(resp.status_code, resp.text or "")
+        raise UpstreamError(resp.status_code, resp.text or "", getattr(provider, "model", None))
     try:
         data = resp.json()
     except Exception as exc:  # 200 但 body 不是 JSON（网关插页/被劫持）：按上游故障上报
-        raise UpstreamError(502, f"非 JSON 响应：{exc}｜{resp.text[:120]}") from exc
+        raise UpstreamError(502, f"非 JSON 响应：{exc}｜{resp.text[:120]}",
+                                getattr(provider, "model", None)) from exc
     # ⚠️ MiniMax 的 OpenAI 兼容接口即使 HTTP 200，也可能在 base_resp.status_code 里报错
     # （实测 `1000 = unknown error`）。只看 HTTP 码会把这种失败当成成功，
     # 结果是一轮「成功」的空回答 —— 用户看到「本次未返回内容」却查不到原因。
@@ -241,7 +293,8 @@ async def _post_non_stream_once(client_http: httpx.AsyncClient, provider, api_ke
     code = base.get("status_code")
     if code not in (None, 0):
         raise UpstreamError(int(base.get("status_code") or 500),
-                            f"base_resp={code} {base.get('status_msg') or ''}")
+                            f"base_resp={code} {base.get('status_msg') or ''}",
+                            getattr(provider, "model", None))
     message = (data.get("choices") or [{}])[0].get("message") or {}
     usage = data.get("usage") or {}
     return message, usage

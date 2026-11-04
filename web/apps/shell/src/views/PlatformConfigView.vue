@@ -110,6 +110,8 @@
           <span>模型管理</span>
           <div>
             <el-button text type="primary" size="small" :loading="loading" @click="loadModels">刷新</el-button>
+            <el-button text type="primary" size="small" :loading="syncing" @click="doSync">同步到模型服务</el-button>
+            <el-button text type="primary" size="small" @click="openHistory">配置历史 / 回滚</el-button>
             <el-button type="primary" size="small" @click="openModelDialog()">新增模型</el-button>
           </div>
         </div>
@@ -144,6 +146,13 @@
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain" size="small">
               {{ row.enabled ? '已启用' : '已停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="热更新" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.syncState === 'PENDING' ? 'warning' : 'success'" effect="plain" size="small">
+              {{ row.syncState === 'PENDING' ? '待同步' : '已生效' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -213,7 +222,19 @@
           <el-input v-model="modelDialog.form.baseUrl" placeholder="https://api.minimax.chat/v1" />
         </el-form-item>
         <el-form-item label="模型标识名（请求体 model）">
-          <el-input v-model="modelDialog.form.modelName" placeholder="MiniMax-Text-01" />
+          <el-select
+            v-model="modelDialog.form.modelName"
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+            placeholder="MiniMax-M3.1-Flash"
+          >
+            <el-option v-for="m in presetModels" :key="m" :value="m" :label="m" />
+          </el-select>
+          <div style="color: var(--el-text-color-secondary); font-size: 12px">
+            厂家发布新模型时，这里直接改成新名字即可调用（可手输任意模型名），无需改代码或重启。
+          </div>
         </el-form-item>
         <el-form-item label="API Key">
           <el-input
@@ -229,7 +250,7 @@
         <el-form-item label="密钥环境变量名">
           <el-input v-model="modelDialog.form.apiKeyEnv" placeholder="MINIMAX_API_KEY" />
         </el-form-item>
-        <el-form-item label="温度">
+        <el-form-item label="温度 temperature（0~2，越低越确定）">
           <el-slider
             v-model="modelDialog.form.temperature"
             :min="0"
@@ -239,8 +260,52 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="核采样 top_p（0~1，留空 = 不下发，沿用供应商默认）">
+          <el-input-number
+            v-model="modelDialog.form.topP"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            :precision="2"
+            placeholder="不下发"
+            style="width: 200px"
+          />
+        </el-form-item>
+        <el-form-item label="单次输出上限 max_tokens（0 = 不下发）">
+          <el-input-number v-model="modelDialog.form.maxTokens" :min="0" :max="65536" :step="256" />
+        </el-form-item>
+        <el-form-item label="话题新颖度惩罚 presence_penalty（-2~2）">
+          <el-input-number
+            v-model="modelDialog.form.presencePenalty"
+            :min="-2"
+            :max="2"
+            :step="0.1"
+            :precision="2"
+          />
+        </el-form-item>
+        <el-form-item label="词频惩罚 frequency_penalty（-2~2，抑制复读）">
+          <el-input-number
+            v-model="modelDialog.form.frequencyPenalty"
+            :min="-2"
+            :max="2"
+            :step="0.1"
+            :precision="2"
+          />
+        </el-form-item>
         <el-form-item label="最大上下文长度（token，0 表示不限制）">
-          <el-input-number v-model="modelDialog.form.maxContext" :min="0" :step="1024" />
+          <el-input-number v-model="modelDialog.form.maxContext" :min="0" :max="1048576" :step="1024" />
+        </el-form-item>
+        <el-form-item label="请求超时（秒，5~600）">
+          <el-input-number v-model="modelDialog.form.timeoutSeconds" :min="5" :max="600" :step="5" />
+        </el-form-item>
+        <el-form-item label="重试次数（含首次，1~5；仅对可重试错误生效）">
+          <el-input-number v-model="modelDialog.form.retryAttempts" :min="1" :max="5" :step="1" />
+        </el-form-item>
+        <el-form-item label="流式输出">
+          <el-switch v-model="modelDialog.form.streamEnabled" />
+          <span style="margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px">
+            关掉后走非流式补全（兼容不支持 SSE 的网关），首字延迟会变高
+          </span>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="modelDialog.form.enabled" />
@@ -250,6 +315,37 @@
         <el-button @click="modelDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="modelDialog.saving" @click="saveModelForm">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 配置历史 / 回滚：每次写操作前留快照，整表替换后立即热更新 -->
+    <el-dialog v-model="historyDialog.visible" title="配置历史 / 一键回滚" width="600px">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="每次保存 / 启停 / 删除前都会留一份全量快照。回滚会用所选快照整体替换当前配置，并立即推送给模型服务；回滚前也会为当前状态留一份快照，本身可再撤回。"
+      />
+      <el-table
+        v-loading="historyDialog.loading"
+        :data="historyDialog.rows"
+        size="small"
+        style="margin-top: 10px"
+      >
+        <el-table-column prop="id" label="#" width="70" />
+        <el-table-column label="动作" width="110">
+          <template #default="{ row }">{{ reasonText(row.reason) }}</template>
+        </el-table-column>
+        <el-table-column prop="total" label="模型数" width="90" />
+        <el-table-column prop="createdAt" label="时间" min-width="170" />
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="doRollback(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无历史版本" :image-size="60" />
+        </template>
+      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -274,17 +370,21 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteModel,
   listAllApps,
+  listModelHistory,
   listModelPresets,
   listModels,
   listPermissions,
   listRoles,
+  rollbackModel,
   saveModel,
   setDefaultModel,
   setModelStatus,
+  syncModels,
   testModel,
   updateApp,
   type AppItem,
   type ModelCheckResult,
+  type ModelConfigHistoryItem,
   type ModelItem,
   type ModelPreset,
   type SysPermission,
@@ -372,6 +472,7 @@ const models = ref<ModelItem[]>([])
 const modelPresets = ref<ModelPreset[]>([])
 const keyEncryptionWeak = ref(false)
 const modelChecking = ref('')
+const syncing = ref(false)
 const modelDialog = reactive({
   visible: false,
   saving: false,
@@ -385,10 +486,39 @@ const modelDialog = reactive({
     apiKeyEnv: '',
     apiKey: '',
     temperature: 0.3 as number,
+    topP: null as number | null,
+    maxTokens: 0 as number,
+    presencePenalty: 0 as number,
+    frequencyPenalty: 0 as number,
     maxContext: 0 as number,
+    timeoutSeconds: 120 as number,
+    retryAttempts: 3 as number,
+    streamEnabled: true,
     enabled: true,
   },
 })
+
+const historyDialog = reactive({
+  visible: false,
+  loading: false,
+  rows: [] as ModelConfigHistoryItem[],
+})
+
+/** 当前所选厂商的常用模型名候选（厂家发新模型时改名字即可调用） */
+const presetModels = computed(
+  () => modelPresets.value.find((p) => p.type === modelDialog.form.providerType)?.models || [],
+)
+
+function reasonText(reason: string): string {
+  const map: Record<string, string> = {
+    SAVE: '保存',
+    DELETE: '删除',
+    STATUS: '启停',
+    DEFAULT: '设默认',
+    ROLLBACK: '回滚',
+  }
+  return map[reason] || reason
+}
 
 async function loadModels() {
   loading.value = true
@@ -434,7 +564,14 @@ function openModelDialog(row?: ModelItem) {
       // 库里的明文永远不下发到前端：这里回显的是掩码，原样保存即表示「不修改密钥」
       apiKey: row.apiKeyMasked || '',
       temperature: row.temperature ?? 0.3,
+      topP: row.topP ?? null,
+      maxTokens: row.maxTokens ?? 0,
+      presencePenalty: row.presencePenalty ?? 0,
+      frequencyPenalty: row.frequencyPenalty ?? 0,
       maxContext: row.maxContext ?? 0,
+      timeoutSeconds: row.timeoutSeconds ?? 120,
+      retryAttempts: row.retryAttempts ?? 3,
+      streamEnabled: row.streamEnabled ?? true,
       enabled: !!row.enabled,
     }
   } else {
@@ -448,7 +585,14 @@ function openModelDialog(row?: ModelItem) {
       apiKeyEnv: '',
       apiKey: '',
       temperature: 0.3,
+      topP: null,
+      maxTokens: 0,
+      presencePenalty: 0,
+      frequencyPenalty: 0,
       maxContext: 0,
+      timeoutSeconds: 120,
+      retryAttempts: 3,
+      streamEnabled: true,
       enabled: true,
     }
     applyPreset()
@@ -456,11 +600,68 @@ function openModelDialog(row?: ModelItem) {
   modelDialog.visible = true
 }
 
+/** 配置历史：每次写操作前的全量快照，用于一键回滚 */
+async function openHistory() {
+  historyDialog.visible = true
+  historyDialog.loading = true
+  try {
+    historyDialog.rows = (await listModelHistory()) || []
+  } catch (e) {
+    historyDialog.rows = []
+    ElMessage.error(apiError(e, '历史版本加载失败'))
+  } finally {
+    historyDialog.loading = false
+  }
+}
+
+async function doRollback(row: ModelConfigHistoryItem) {
+  try {
+    await ElMessageBox.confirm(
+      `将把当前模型配置整体替换为「#${row.id} · ${reasonText(row.reason)} · ${row.total} 个模型」这一版，并立即生效。是否继续？`,
+      '回滚确认',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await rollbackModel(row.id)
+    ElMessage.success(
+      res?.synced
+        ? `已回滚到 #${row.id}（${res.restored} 个模型），已热更新生效`
+        : `已回滚到 #${row.id}（${res?.restored ?? 0} 个模型），但未同步到模型服务，请点「同步到模型服务」重试`,
+    )
+    historyDialog.visible = false
+    await loadModels()
+  } catch (e) {
+    ElMessage.error(apiError(e, '回滚失败'))
+  }
+}
+
+async function doSync() {
+  syncing.value = true
+  try {
+    const res = await syncModels()
+    if (res?.synced) ElMessage.success(`已同步 ${res.total} 个模型到模型服务，立即生效`)
+    else ElMessage.warning('同步未确认成功：模型服务可能不可达，请检查后重试')
+    await loadModels()
+  } catch (e) {
+    ElMessage.error(apiError(e, '同步失败'))
+  } finally {
+    syncing.value = false
+  }
+}
+
 async function saveModelForm() {
   modelDialog.saving = true
   try {
-    await saveModel({ ...modelDialog.form })
-    ElMessage.success('模型配置已保存并推送 agent 热加载')
+    const saved = await saveModel({ ...modelDialog.form })
+    // 后端会回执是否真的热更新到 agent：落库成功但推送失败时不能报「已生效」
+    if (saved?.syncState === 'PENDING') {
+      ElMessage.warning('配置已保存，但未同步到模型服务（agent 可能离线）。请稍后点「同步到模型服务」。')
+    } else {
+      ElMessage.success('模型配置已保存并推送 agent 热加载，立即生效')
+    }
     modelDialog.visible = false
     await loadModels()
   } catch (e) {

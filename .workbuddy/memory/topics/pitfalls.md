@@ -1632,3 +1632,75 @@ confirm 的 `{"decision": true}` 被压成 `{"value": null}` ⇒ 模型看不见
 `page.unroute("**/v1/**")`，那一刻请求会打到假域 → 气泡里出现 fetch 报错 →
 `resume_body` 恒为 None，「循环有没有继续」永远验不到（曾误判成代码没生效）。
 把「装拦截 + 起 send」与「等收口 + 卸拦截」拆成 `start_session` / `finish_session`。
+
+## 60. `overflow:hidden` **挡不住** `scrollIntoView` —— 藏在下方的浮层会被"滚出来"
+
+H5 的 `.phone` 是 `height:100dvh; overflow:hidden`，底部浮层（`#oaSheet` / `.mod-sheet`）
+关闭态用 `transform:translateY(102%)` 藏在屏幕下方。看着安全，**其实不安全**：
+`overflow:hidden` 只挡用户手势，容器**仍是可编程滚动容器**，`scrollIntoView()`、
+以及移动端浏览器为露出聚焦输入框做的"聚焦补偿滚动"，都能把它的 `scrollTop` 顶上去，
+于是那张藏着的浮层从底部升起来 —— 用户的描述是「点一下输入框就跳出别的模块组件」。
+
+关键鉴别点：**`#oaRoot` 的类名里没有对应的 open 类**（`sheet-open`/`mod-open` 都不对），
+说明那张浮层根本没被打开，只是被滚进了视口。只查 JS 状态会一路绿灯、永远复现不出来。
+
+两道修法都要上：
+1. 别用 `scrollIntoView`。聚焦时只改浮层自己的滚动容器：`sc.scrollTop += 中心差`。
+2. 关闭态除了 `translateY(102%)` 再加 `visibility:hidden`
+   （`transition: transform var(--dur), visibility 0s linear var(--dur)`）
+   —— 滚进来也看不见；打开态再把 `visibility:visible` 与 `0s` 立即恢复。
+   另在每次开浮层时 `oaResetHostScroll()` 把 `.phone/.oa/body` 的 `scrollTop` 归零。
+
+## 61. Element Plus `el-select` 的已选文案：`.el-select__selected-item` 有**两个**，`.first` 是空的
+
+2.9.x 的结构是 `.el-select__selection` 里先放一个**只读 input 的包裹节点**，再放文案 span：
+
+```html
+<div class="el-select__selected-item"><input class="el-select__input" ...></div>   <!-- inner_text = '' -->
+<div class="el-select__selected-item"><span>张三（zhangsan）</span></div>          <!-- 真正的文案 -->
+```
+
+所以验收脚本里 `locator('.el-select__selected-item').first.inner_text()` 恒为空串，
+断言「选中后回填正确」会**假失败**（而同一脚本后面「邀请成功 / 接口 ACTIVE / 被邀请人视角能看到」
+全绿，说明功能没问题、只是取错了节点）。
+
+正确取法：`.el-select` 整体的 `inner_text()`（outerText 会拼上可见文案），
+或 `.el-select__selected-item span`；`input_value()` 恒为 `''`，别拿它判断。
+同理展开下拉的可点区域是新版 `.el-select__wrapper`（老版 `.el-select .el-input`），
+两代类名都要兜一下。
+
+## 62. `iter_lines(decode_unicode=True)` 会把跨 chunk 的中文解坏 —— SSE 帧必须整段解码再切
+
+验 SSE 错误帧时用 `for line in resp.iter_lines(decode_unicode=True)`，一条 JSON 被拆成多行
+（中文多字节恰好跨 chunk，各自成了 `\ufffd`），`json.loads` 全集失败 ⇒ 断言「没收到错误帧」。
+实际帧是好的，只是读法错。
+
+正确做法：`raw = resp.content.decode("utf-8", "replace")` 然后用 `raw.split("\n\n")` 切帧、
+每帧剥 `data:` 前缀再 `json.loads`。少一层 runtime 解码，跨 chunk 问题就不存在了。
+
+## 63. 在 `'use strict'` **之前**插语句会静默关掉严格模式；插错 IIFE 层则 `xxx is not defined`
+
+`user-client/index.html` 有两个 `<script>`，OA 相关实现全在第二个块的 `(function(){ 'use strict'; … })()` 里。
+- 把 `var errText = window.AIOS_ERR.text;` 插在第二个块的**顶层** ⇒ 在 IIFE 外，块内仍是 `errText is not defined`；
+- 插在 `'use strict';` **之前** ⇒ 该 Directive Prologue 失效，整个 IIFE 退回宽松模式（不报错，问题留到以后）；
+正确位置是 `(function(){ 'use strict';` 之后的第一行。验收前先 `node --check` 两段脚本。
+
+## 64. 「自动选择（默认）」行**也带** `data-cname` —— 用 `[data-cname]` 选账号行会误命中它
+
+H5 模型选择浮层里，账号行（`modelRowHtml`）与「自动选择」都用同一个模板：
+`data-cid`（空串表示自动）+ `data-cname`；平台模型行才是 `data-mkey/data-mname`。
+所以 `page.locator('.mod-row[data-cname]').first` 命中的是「自动选择（默认）」，
+点它等于取消选择 ⇒ 断言「chip 变账号名」必然假失败。
+判账号行要 `[data-cid]:not([data-cid=''])`；同理「本环境是否真有可用账号」不能假设，
+脚本要能两条路径都跑（有账号验 `aios_cred`，没账号验 `aios_model`）。
+
+## 65. 在 agent 会话里跑 `bash start-all.sh` = 8080/8000 立刻消失（脚本用 `&` 起后台）
+
+`start-all.sh` 里后端是 `"$JAVA" … &`、agent 是 `( cd agent && … uvicorn … ) &`。
+脚本自身退出后，这两个子进程随宿主 shell 一起被回收 —— 日志照写、exit code 0，但端口立刻 DOWN。
+现象：脚本打印了 `[start] backend :8080`，45 秒后 netstat 全空，`logs/boot.log` 里只有启动几行。
+
+agent 侧要验服务，得**直接**用后台任务分别起 `java -jar …` 与 `uvicorn …`（各自重定向到 logs/），
+把 `unset SERVER__PORT`、`AIOS_MCP_HUB=true`、`WECOM_*`、`AIOS_SERVICE_JWT_SECRET` 显式带上；
+要长期运行仍应由用户在自己的终端跑 `start-all.sh`。
+

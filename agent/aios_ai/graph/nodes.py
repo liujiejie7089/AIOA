@@ -629,7 +629,8 @@ async def agent(state: dict) -> dict:
     messages = list(state.get("messages") or [])
     use_tools = (state.get("tools") or None) if allow_tools else None
 
-    stream = bool(settings.agent_stream)
+    # 流式开关：全局设置打开，且**该模型配置允许流式**（管理端/用户端可关，兼容不支持 SSE 的网关）
+    stream = bool(settings.agent_stream) and bool(getattr(provider, "stream_enabled", True))
     content_parts = list(state.get("content_parts") or [])
     usage = dict(state.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0})
 

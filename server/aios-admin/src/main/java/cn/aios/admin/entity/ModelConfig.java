@@ -41,8 +41,29 @@ public class ModelConfig {
     /** 采样温度；null 时回落 agent 侧默认。 */
     private BigDecimal temperature;
 
+    /** 核采样 top_p（0~1）；null = 不下发，沿用供应商默认。 */
+    private BigDecimal topP;
+
+    /** 单次回复 token 上限；0 = 不下发（供应商默认）。 */
+    private Integer maxTokens;
+
+    /** 话题新颖度惩罚（-2~2）。 */
+    private BigDecimal presencePenalty;
+
+    /** 词频惩罚（-2~2），抑制复读。 */
+    private BigDecimal frequencyPenalty;
+
     /** 最大上下文长度（token）；0/null 表示不限制。 */
     private Integer maxContext;
+
+    /** 单次上游请求超时（秒，5~600）。 */
+    private Integer timeoutSeconds;
+
+    /** 总尝试次数（含首次，1~5）。 */
+    private Integer retryAttempts;
+
+    /** 是否流式输出；关掉走非流式（兼容不支持 SSE 的网关）。 */
+    private Boolean streamEnabled;
 
     private Boolean enabled;
 
@@ -74,7 +95,21 @@ public class ModelConfig {
 
     public BigDecimal getTemperature() { return temperature; }
 
+    public BigDecimal getTopP() { return topP; }
+
+    public Integer getMaxTokens() { return maxTokens; }
+
+    public BigDecimal getPresencePenalty() { return presencePenalty; }
+
+    public BigDecimal getFrequencyPenalty() { return frequencyPenalty; }
+
     public Integer getMaxContext() { return maxContext; }
+
+    public Integer getTimeoutSeconds() { return timeoutSeconds; }
+
+    public Integer getRetryAttempts() { return retryAttempts; }
+
+    public Boolean getStreamEnabled() { return streamEnabled; }
 
     public Boolean getEnabled() { return enabled; }
 
@@ -106,7 +141,21 @@ public class ModelConfig {
 
     public void setTemperature(BigDecimal temperature) { this.temperature = temperature; }
 
+    public void setTopP(BigDecimal topP) { this.topP = topP; }
+
+    public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
+
+    public void setPresencePenalty(BigDecimal presencePenalty) { this.presencePenalty = presencePenalty; }
+
+    public void setFrequencyPenalty(BigDecimal frequencyPenalty) { this.frequencyPenalty = frequencyPenalty; }
+
     public void setMaxContext(Integer maxContext) { this.maxContext = maxContext; }
+
+    public void setTimeoutSeconds(Integer timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+
+    public void setRetryAttempts(Integer retryAttempts) { this.retryAttempts = retryAttempts; }
+
+    public void setStreamEnabled(Boolean streamEnabled) { this.streamEnabled = streamEnabled; }
 
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
 

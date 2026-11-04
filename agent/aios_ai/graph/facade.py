@@ -27,6 +27,7 @@ from typing import Any
 
 from langgraph.types import Command
 
+from aios_ai import errors
 from aios_ai.contracts import RunRequest, SseEvent
 from aios_ai.guard import GuardError
 from aios_ai.graph.builder import graph
@@ -97,29 +98,27 @@ async def _stream(compiled, stream_input, config: dict | None, seq_start: int,
             seq = event.seq + 1
     except GuardError:
         raise  # 交由 app/main.py 的 event_stream 统一转成 error + run.failed
-    except UpstreamError as exc:  # 上游非 200：可重试的上游错误
-        # 原始 JSON（含 request_id）只进日志：它是给运维查单号用的，
-        # 甩到界面上用户既看不懂也不知道怎么办（2026-10-31 用户现场截图：
-        # 「生成失败：{"code":"MODEL_UPSTREAM_ERROR"...request_id...}」）。
-        logger.warning("run %s 上游模型失败（重试已耗尽）：%s", run_id, exc, exc_info=False)
-        yield SseEvent(seq=seq, type="error",
-                       data={"code": "MODEL_UPSTREAM_ERROR", "message": exc.user_message,
-                             "detail": str(exc)[:200], "retryable": exc.retryable})
+    except UpstreamError as exc:  # 上游非 200：统一映射成 MODEL_* 载荷
+        # 原始 JSON（含 request_id、密钥片段、供应商内部措辞）**只进日志**；
+        # 对外只给「一句人话 + 一句建议 + 错误编号」（docs/73 §5）。
+        # 2026-10-31 与 2026-11-04 两次用户截图都是这条泄漏：
+        # 「生成失败：{"code":"MODEL_UPSTREAM_ERROR",...,"detail":"status=404 {...}"}」。
+        logger.warning("run %s 上游模型失败（重试已耗尽）：status=%s model=%s body=%s",
+                       run_id, exc.status, exc.model, exc.text[:500])
+        payload = exc.payload
+        yield SseEvent(seq=seq, type="error", data=payload)
         seq += 1
         yield SseEvent(seq=seq, type="run.failed",
-                       data={"reason": "upstream error", "error_code": "MODEL_UPSTREAM_ERROR"})
+                       data={"reason": "upstream error", "error_code": payload["code"]})
     except Exception as exc:  # 网络/解析等：流内异常按 error + run.failed 上报，不中断服务
+        # 完整堆栈进日志；对外只用统一载荷（不含异常类名/路径/原始 message）。
         logger.exception("graph run %s failed", run_id)
-        # 与 UpstreamError 同口径：界面只给一句话 + 异常类型（够定位、不吓人），
-        # 完整信息进日志与 detail 字段。
-        yield SseEvent(seq=seq, type="error",
-                       data={"code": "MODEL_STREAM_ERROR",
-                             "message": "生成过程中出现异常（%s），可重试一次或稍后再试。"
-                                        % type(exc).__name__,
-                             "detail": str(exc)[:200], "retryable": True})
+        payload = errors.error_payload("MODEL_STREAM_ERROR", None, None, retryable=True,
+                                       error_id=getattr(exc, "trace_id", None))
+        yield SseEvent(seq=seq, type="error", data=payload)
         seq += 1
         yield SseEvent(seq=seq, type="run.failed",
-                       data={"reason": str(exc)[:200], "error_code": "MODEL_STREAM_ERROR"})
+                       data={"reason": "stream error", "error_code": payload["code"]})
 
 
 def _frame_type(payload: dict) -> str:

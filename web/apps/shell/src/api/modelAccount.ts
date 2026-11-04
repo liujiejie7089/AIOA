@@ -125,6 +125,16 @@ export function incomingInvites(): Promise<ShareView[]> {
   return http.get('/model-credentials/invites/incoming').then((r) => unwrap<ShareView[]>(r))
 }
 
+/**
+ * 可邀请的同事（同租户、启用、排除自己，最多 200 条）。
+ *
+ * <p>2026-11-04：邀请表单从「手输用户名」改成下拉选择——手输拼错时会撞后端的「用户不存在」，
+ * 而用户端 H5 早已是下拉；两端同口径，候选来源也必须同一个接口，否则会出现「一边能选、一边选不到」。</p>
+ */
+export function invitableColleagues(): Promise<Array<{ id: number; username: string; nickname: string }>> {
+  return http.get('/model-credentials/invitable').then((r) => unwrap<Array<{ id: number; username: string; nickname: string }>>(r))
+}
+
 /** 邀请同事共用：token 由邀请者承担（后端记账时 charge_user_id = 邀请者）。 */
 export function inviteShare(
   credentialId: number,

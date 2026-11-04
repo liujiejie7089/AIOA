@@ -190,7 +190,7 @@ public class RunService {
         // ① 解析本轮用哪个模型账号（docs/71 §6）。必须在额度准入**之前** ——
         //    准入查的是「计费主体」的额度，用别人账号的人自己不扣额度，
         //    先查本人会把「邀请者还有额度、被邀请人自己用完了」误判成没额度。
-        ModelCredentialService.Resolved resolved = resolveCredential(user, credentialId);
+        ModelCredentialService.Resolved resolved = resolveCredential(user, credentialId, modelRef);
 
         // ② FR-B2 额度准入：按计费主体查（个人账号 → 持有人；公司账号 → 公司池）
         BillingService.QuotaView quota = billingService.current(
@@ -286,6 +286,18 @@ public class RunService {
             charge.put("ownerType", resolved.ownerType());
             charge.put("providerKey", resolved.providerKey());
             charge.put("model", resolved.model());
+            context.put("charge_ctx", charge);
+        } else if (modelRef != null && !modelRef.isBlank() && !"default".equalsIgnoreCase(modelRef.trim())) {
+            // 用户端顶部选了「平台模型」（2026-11-04）：这一轮走平台通道，没有账号。
+            // 仍要写一份归属快照，否则账本里这一轮会是「未标注」，按模型统计就断了。
+            if (context == null) {
+                context = new java.util.LinkedHashMap<>();
+            }
+            Map<String, Object> charge = new java.util.LinkedHashMap<>();
+            charge.put("bearerUserId", user.getUserId());
+            charge.put("chargeUserId", user.getUserId());
+            charge.put("ownerType", "PLATFORM");
+            charge.put("providerKey", modelRef.trim());
             context.put("charge_ctx", charge);
         }
 
@@ -2115,6 +2127,17 @@ public class RunService {
             cred.put("ownerType", resolved.ownerType());
             cred.put("chargeUserId", resolved.chargeUserId());
             cred.put("companyCharged", resolved.companyCharged());
+            // 采样/传输参数（2026-11-04，docs/72）：随凭证一起下发，agent 侧按
+            // 「用户配置 > 平台配置 > 内置默认」回落；空值不发，避免把平台配置覆盖成 null
+            putIfNotNull(cred, "temperature", resolved.temperature());
+            putIfNotNull(cred, "topP", resolved.topP());
+            putIfNotNull(cred, "maxTokens", resolved.maxTokens());
+            putIfNotNull(cred, "maxContext", resolved.maxContext());
+            putIfNotNull(cred, "presencePenalty", resolved.presencePenalty());
+            putIfNotNull(cred, "frequencyPenalty", resolved.frequencyPenalty());
+            putIfNotNull(cred, "timeoutSeconds", resolved.timeoutSeconds());
+            putIfNotNull(cred, "retryAttempts", resolved.retryAttempts());
+            putIfNotNull(cred, "streamEnabled", resolved.streamEnabled());
             request.setModelCredential(cred);
         } catch (BizException e) {
             // 订阅时账号已被撤销：不回放失败帧（回答已经产生了），只记日志，回落平台默认
@@ -2159,8 +2182,14 @@ public class RunService {
         }
     }
 
-    private static Long longOf(Object o) {
-        if (o == null) {
+    /** 只把有值的参数放进下发体：空值代表「这一层没配」，交给下一层回落。 */
+    private static void putIfNotNull(Map<String, Object> target, String key, Object value) {
+        if (value != null) {
+            target.put(key, value);
+        }
+    }
+
+    private static Long longOf(Object o) {        if (o == null) {
             return null;
         }
         try {
@@ -2186,9 +2215,28 @@ public class RunService {
      * 只有「没指定」才走自动顺序（自己 → 公司 → 平台默认）。</p>
      */
     private ModelCredentialService.Resolved resolveCredential(AuthUser user, Long credentialId) {
+        return resolveCredential(user, credentialId, null);
+    }
+
+    /**
+     * 解析本轮使用的模型账号（2026-11-03，docs/71 §6；2026-11-04 补 modelRef 语义）。
+     *
+     * <p>显式指定却不可用 ⇒ <b>抛错，不静默降级</b>：悄悄换成平台 Key 跑，
+     * 账单会挂到公司头上，而用户以为自己用的是自己的账号，这比报错更糟。
+     * 只有「没指定」才走自动顺序（自己 → 公司 → 平台默认）。</p>
+     *
+     * <p><b>modelRef 优先级</b>：用户端顶部选了「平台模型」（如 deepseek/reasoner），
+     * 说明这一轮就是要用平台配的那条通道，此时不能再 autoResolve 到本人账号 ——
+     * 否则账号里填的 base_url/model 会把用户刚选的模型覆盖掉（界面上选了 A 实际跑 B）。</p>
+     */
+    private ModelCredentialService.Resolved resolveCredential(AuthUser user, Long credentialId, String modelRef) {
         try {
             if (credentialId != null && credentialId > 0) {
                 return modelCredentialService.resolve(user, credentialId);
+            }
+            if (modelRef != null && !modelRef.isBlank() && !"default".equalsIgnoreCase(modelRef.trim())) {
+                // 显式选了平台模型：不使用个人/公司账号，直接走平台通道
+                return null;
             }
             return modelCredentialService.autoResolve(user);
         } catch (BizException e) {

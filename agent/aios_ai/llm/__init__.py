@@ -33,7 +33,11 @@ logger = logging.getLogger("aios.agent.gateway")
 
 @dataclass(frozen=True)
 class Provider:
-    """一个可调用模型的接入描述。"""
+    """一个可调用模型的接入描述。
+
+    2026-11-04（docs/72）：采样与传输参数从「两个」扩到「九个」，
+    两端（平台模型 / 用户模型账号）字段同名同义，换厂家新模型只改 model 名即可。
+    """
 
     key: str            # 注册名：deepseek / dashscope / vllm / ollama / echo / minimax
     driver: str         # echo | openai_compatible
@@ -42,6 +46,15 @@ class Provider:
     api_key_env: str    # api_key 所在环境变量名
     temperature: float = 0.3   # 采样温度（管理端可配；专家配置优先级更高）
     max_context: int = 0       # 最大上下文（token）；0=不限制
+    # ---- 采样参数（None / 0 = 不下发，沿用供应商默认） ----
+    top_p: float | None = None
+    max_tokens: int = 0
+    presence_penalty: float = 0.0
+    frequency_penalty: float = 0.0
+    # ---- 传输参数 ----
+    timeout_seconds: int = 120  # 单次上游请求超时
+    retry_attempts: int = 3     # 总尝试次数（含首次）；仅对可重试错误生效
+    stream_enabled: bool = True # 关掉后走非流式（兼容不支持 SSE 的网关）
     # 运行期凭证（2026-11-03，docs/71）：用户自己注册的模型账号，随本次请求下发。
     # 只存在于本对象里（内存），不写任何全局状态、不落盘 —— 否则会污染后续别人的 run。
     api_key_value: str = ""
@@ -90,7 +103,9 @@ _REGISTRY_SPEC: dict[str, dict[str, object]] = {
     },
     "minimax": {
         "base_url": "https://api.minimax.chat/v1",
-        "model": "MiniMax-Text-01",
+        # 2026-11-04：MiniMax-Text-01 已被厂商下线（/models 返回 404），这里只作为
+        # 「库里没配模型名」时的最后默认值，必须与 PlatformConfig/ModelConfigService 的预设同源。
+        "model": "MiniMax-M3.1-Flash",
         "api_key_env": "MINIMAX_API_KEY",
     },
     "echo": {
@@ -101,16 +116,74 @@ _REGISTRY_SPEC: dict[str, dict[str, object]] = {
 }
 
 
+# ---------- 参数规范化（两端同一套范围，非法值一律不落进注册表） ----------
+
+#: 采集参数范围：(最小, 最大, 默认)。与 Java 侧 ModelConfigController / ModelCredentialService 同源。
+PARAM_RANGES: dict[str, tuple[float, float, float]] = {
+    "temperature": (0.0, 2.0, 0.3),
+    "topP": (0.0, 1.0, 0.0),          # 0 视为「未设置」⇒ 不下发
+    "maxTokens": (0, 65536, 0),
+    "maxContext": (0, 1048576, 0),
+    "presencePenalty": (-2.0, 2.0, 0.0),
+    "frequencyPenalty": (-2.0, 2.0, 0.0),
+    "timeoutSeconds": (5, 600, 120),
+    "retryAttempts": (1, 5, 3),
+}
+
+
+def _clamp_num(raw: object, name: str) -> float | None:
+    """把下发值转成范围内的数字；None/空串返回 None（表示「未设置」）。
+
+    越界不抛错而是**拒绝整条配置**（见 apply_overrides）：静默截断会让
+    「管理端填 5.0 的温度」变成悄悄用 2.0 跑，运维以为配上了。
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    lo, hi, _ = PARAM_RANGES[name]
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}={raw!r} 不是数字")
+    if v < lo or v > hi:
+        raise ValueError(f"{name}={v} 超出范围 {lo:g}~{hi:g}")
+    return v
+
+
 def _build_provider(key: str) -> Provider:
     spec = _REGISTRY_SPEC[key]
+    # 优先级（2026-11-04 修正）：**管理端下发的配置 > 环境变量 > 内置默认**。
+    #
+    # 旧实现无条件读 {KEY}_MODEL 环境变量，导致「管理端把模型名改成 deepseek-reasoner
+    # 保存后仍然跑 deepseek-chat」（.env 里有同名变量），用户看到的配置与生效值不一致。
+    # 现在给下发过的 spec 打 _from_admin 标记：管理员显式保存的就是最终值，
+    # 只有从未被管理端配置过的 provider 才继续吃环境变量（纯 env 部署仍然可用）。
+    from_admin = bool(spec.get("_from_admin"))
+    temp = spec.get("temperature")
+    max_ctx = spec.get("max_context")
+    top_p = spec.get("top_p")
+    max_tokens = spec.get("max_tokens")
+
+    def _env_or_spec(field: str, env_name: str, fallback):
+        if from_admin and spec.get(field) not in (None, ""):
+            return spec.get(field)
+        return os.getenv(env_name, spec.get(field, fallback))
+
     return Provider(
         key=key,
         driver="echo" if key == "echo" else "openai_compatible",
-        base_url=str(os.getenv(f"{key.upper()}_BASE_URL", spec.get("base_url", "internal://echo"))),
-        model=str(os.getenv(f"{key.upper()}_MODEL", spec.get("model", key))),
+        base_url=str(_env_or_spec("base_url", f"{key.upper()}_BASE_URL", "internal://echo")),
+        model=str(_env_or_spec("model", f"{key.upper()}_MODEL", key)),
         api_key_env=str(spec.get("api_key_env", f"{key.upper()}_API_KEY")),
-        temperature=float(spec.get("temperature", 0.3) or 0.3),
-        max_context=int(spec.get("max_context", 0) or 0),
+        # 注意：不能用 `or 0.3`——温度 0 是合法配置（完全确定输出），会被误吞成默认值
+        temperature=float(0.3 if temp is None else temp),
+        max_context=int(0 if max_ctx is None else max_ctx),
+        top_p=(None if top_p in (None, "") else float(top_p)),
+        max_tokens=int(0 if max_tokens is None else max_tokens),
+        presence_penalty=float(spec.get("presence_penalty") or 0.0),
+        frequency_penalty=float(spec.get("frequency_penalty") or 0.0),
+        timeout_seconds=int(spec.get("timeout_seconds") or 120),
+        retry_attempts=int(spec.get("retry_attempts") or 3),
+        stream_enabled=bool(spec.get("stream_enabled", True)),
     )
 
 
@@ -128,69 +201,119 @@ _DEFAULT_OVERRIDE: str | None = None
 _API_KEY_OVERRIDES: dict[str, str] = {}
 
 
-def apply_overrides(entries: list[dict], default_key: str | None = None) -> int:
+def _spec_of(key: str, entry: dict) -> dict:
+    """由一条下发配置算出它的注册表规格；非法值抛 ValueError（调用方整条拒绝）。"""
+    base_url = str(entry.get("baseUrl") or "").strip()
+    old = _REGISTRY_SPEC.get(key, {})
+    spec: dict[str, object] = {
+        "base_url": base_url or old.get("base_url", "internal://echo"),
+        "model": str(entry.get("model") or old.get("model", key)),
+        "api_key_env": str(entry.get("apiKeyEnv") or old.get("api_key_env", f"{key.upper()}_API_KEY")),
+    }
+    # 采样 / 传输参数：**未传就沿用旧值**，传了才覆盖 ——
+    # 否则「只改模型名」的一次推送会把已配好的温度、超时全部打回默认。
+    for field, json_key in (("temperature", "temperature"), ("max_context", "maxContext"),
+                            ("top_p", "topP"), ("max_tokens", "maxTokens"),
+                            ("presence_penalty", "presencePenalty"),
+                            ("frequency_penalty", "frequencyPenalty"),
+                            ("timeout_seconds", "timeoutSeconds"),
+                            ("retry_attempts", "retryAttempts")):
+        raw = entry.get(json_key)
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            if field in old:
+                spec[field] = old[field]
+            continue
+        val = _clamp_num(raw, json_key)
+        if val is None:
+            continue
+        spec[field] = int(val) if json_key in ("maxTokens", "maxContext",
+                                               "timeoutSeconds", "retryAttempts") else val
+    if "streamEnabled" in entry and entry.get("streamEnabled") is not None:
+        spec["stream_enabled"] = bool(entry.get("streamEnabled"))
+    elif "stream_enabled" in old:
+        spec["stream_enabled"] = old["stream_enabled"]
+    if key == "echo":
+        spec["base_url"] = "internal://echo"
+    # 标记「这条规格来自管理端显式下发」：_build_provider 据此决定让 env 让位，
+    # 否则管理员在界面上改的模型名会被 {KEY}_MODEL 环境变量悄悄盖掉。
+    spec["_from_admin"] = True
+    return spec
+
+
+def apply_overrides(entries: list[dict], default_key: str | None = None) -> dict:
     """应用管理端「模型管理」下发的配置：更新/新增/禁用 provider，调整默认模型。
 
     entries: [{key, providerType, baseUrl, model, apiKeyEnv, apiKey, temperature, maxContext,
-               enabled, isDefault}]
-    返回应用的条数。管理端保存后调用，变更即时生效（无需重启 agent）。
+               topP, maxTokens, presencePenalty, frequencyPenalty, timeoutSeconds,
+               retryAttempts, streamEnabled, enabled, isDefault}]
+    返回 {applied, rejected:[{key,reason}], default}。
+
+    **两阶段提交（2026-11-04，docs/72 §4）**：先把整批配置算进一份「暂存态」，
+    任一条非法只把该条记进 rejected（保留它上一次生效的规格），
+    全部处理完再一次性替换全局注册表 —— 因此一次错误的推送不可能把 agent
+    留在「一半新一半旧」的状态，也不需要重启回滚。
     """
     global _DEFAULT_OVERRIDE
-    applied = 0
+    rejected: list[dict] = []
+    staged_spec: dict[str, dict] = dict(_REGISTRY_SPEC)
+    staged_disabled: set[str] = set(_DISABLED_KEYS)
+    staged_keys: dict[str, str] = dict(_API_KEY_OVERRIDES)
+    staged_default = _DEFAULT_OVERRIDE
     seen: set[str] = set()
+    applied = 0
+
     for entry in entries or []:
         key = str(entry.get("key") or "").strip().lower()
         if not key:
+            rejected.append({"key": "", "reason": "key 为空"})
+            continue
+        try:
+            spec = _spec_of(key, entry)
+        except ValueError as exc:
+            logger.warning("模型配置 %s 被拒绝，保留上一次生效值：%s", key, exc)
+            rejected.append({"key": key, "reason": str(exc)})
             continue
         seen.add(key)
-        base_url = str(entry.get("baseUrl") or "").strip()
-        if base_url and base_url != "internal://echo" or key == "echo":
-            spec: dict[str, object] = {
-                "base_url": base_url or _REGISTRY_SPEC.get(key, {}).get("base_url", "internal://echo"),
-                "model": str(entry.get("model") or _REGISTRY_SPEC.get(key, {}).get("model", key)),
-                "api_key_env": str(entry.get("apiKeyEnv") or _REGISTRY_SPEC.get(key, {}).get("api_key_env", f"{key.upper()}_API_KEY")),
-            }
-            # 温度 / 最大上下文：管理端配置了才覆盖，否则沿用注册表缺省（0.3 / 0=不限制）
-            temp = entry.get("temperature")
-            if temp not in (None, ""):
-                try:
-                    spec["temperature"] = float(temp)
-                except (TypeError, ValueError):
-                    logger.warning("provider '%s' temperature=%r 非法，忽略", key, temp)
-            max_ctx = entry.get("maxContext")
-            if max_ctx not in (None, ""):
-                try:
-                    spec["max_context"] = int(max_ctx)
-                except (TypeError, ValueError):
-                    logger.warning("provider '%s' maxContext=%r 非法，忽略", key, max_ctx)
-            _REGISTRY_SPEC[key] = spec
+        staged_spec[key] = spec
         # 禁用集合与规格注册**解耦**：停用的模型也要先注册，
         # 否则「先保存（停用）→ 再点启动」这条主流程会因为模型未注册而永远校验失败。
         if entry.get("enabled") is False:
-            _DISABLED_KEYS.add(key)
+            staged_disabled.add(key)
         else:
-            _DISABLED_KEYS.discard(key)
+            staged_disabled.discard(key)
         # 管理端填写的 Key 只进内存；传空串表示「清掉覆盖，回到环境变量」
         pushed_key = str(entry.get("apiKey") or "").strip()
         if pushed_key:
-            _API_KEY_OVERRIDES[key] = pushed_key
+            staged_keys[key] = pushed_key
         else:
-            _API_KEY_OVERRIDES.pop(key, None)
+            staged_keys.pop(key, None)
         if entry.get("isDefault"):
-            _DEFAULT_OVERRIDE = key
+            staged_default = key
         applied += 1
+
     # 下发是全量的：不在本次列表里、又不是内置键的，就是管理端已删除的模型，
     # 必须一并清掉规格与内存 Key —— 否则删掉的模型还会被显式 model_ref 命中。
-    for stale in list(_REGISTRY_SPEC):
+    for stale in list(staged_spec):
         if stale not in seen and stale not in _BUILTIN_KEYS:
-            _REGISTRY_SPEC.pop(stale, None)
-            _API_KEY_OVERRIDES.pop(stale, None)
-            _DISABLED_KEYS.discard(stale)
+            staged_spec.pop(stale, None)
+            staged_keys.pop(stale, None)
+            staged_disabled.discard(stale)
             logger.info("model '%s' removed from registry (deleted in admin)", stale)
     if default_key:
-        _DEFAULT_OVERRIDE = str(default_key).strip().lower()
-    logger.info("model overrides applied: %d entries, default=%s", applied, _DEFAULT_OVERRIDE or "unset")
-    return applied
+        staged_default = str(default_key).strip().lower()
+
+    # —— 提交（就地修改，别处持有的是同一个对象引用）——
+    _REGISTRY_SPEC.clear()
+    _REGISTRY_SPEC.update(staged_spec)
+    _DISABLED_KEYS.clear()
+    _DISABLED_KEYS.update(staged_disabled)
+    _API_KEY_OVERRIDES.clear()
+    _API_KEY_OVERRIDES.update(staged_keys)
+    _DEFAULT_OVERRIDE = staged_default
+
+    logger.info("model overrides applied: %d entries (%d rejected), default=%s",
+                applied, len(rejected), _DEFAULT_OVERRIDE or "unset")
+    return {"applied": applied, "rejected": rejected, "default": current_default_key()}
 
 
 def get_provider(key: str) -> Provider | None:
@@ -274,29 +397,61 @@ def _apply_credential(provider: Provider, credential: object | None) -> Provider
     key = str(data.get("providerKey") or data.get("provider_key") or "").strip().lower()
     if key and key in _REGISTRY_SPEC:
         provider = _build_provider(key)
+
+    def _num(name: str, fallback):
+        """凭证里带了才覆盖，没带沿用平台注册表的值（两端结构一致，缺省即继承）。"""
+        raw = data.get(name)
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return fallback
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return fallback
+
+    top_p_raw = data.get("topP")
     return Provider(
         key=provider.key,
         driver=provider.driver,
         base_url=base_url or provider.base_url,
         model=model or provider.model,
         api_key_env=provider.api_key_env,
-        temperature=provider.temperature,
-        max_context=provider.max_context,
+        temperature=_num("temperature", provider.temperature),
+        max_context=int(_num("maxContext", provider.max_context)),
+        top_p=(None if top_p_raw in (None, "") else _num("topP", provider.top_p or 0.0)),
+        max_tokens=int(_num("maxTokens", provider.max_tokens)),
+        presence_penalty=_num("presencePenalty", provider.presence_penalty),
+        frequency_penalty=_num("frequencyPenalty", provider.frequency_penalty),
+        timeout_seconds=int(_num("timeoutSeconds", provider.timeout_seconds)),
+        retry_attempts=int(_num("retryAttempts", provider.retry_attempts)),
+        stream_enabled=bool(data.get("streamEnabled", provider.stream_enabled)),
         api_key_value=api_key,
     )
 
 
-def configured_providers() -> list[dict[str, str]]:
-    """运维观测：当前注册表与各 provider 配置状态（key 只暴露「是否已配置」）。"""
-    out: list[dict[str, str]] = []
+def configured_providers() -> list[dict[str, object]]:
+    """运维观测：当前注册表与各 provider 配置状态（key 只暴露「是否已配置」）。
+
+    2026-11-04 起把生效中的采样/传输参数一并回显：管理端保存后靠它确认
+    「热更新真的进了内存」，而不是只看推送接口返回 200。
+    """
+    out: list[dict[str, object]] = []
     for key in _REGISTRY_SPEC:
         p = _build_provider(key)
         out.append({
             "key": p.key,
             "driver": p.driver,
             "model": p.model,
+            "base_url": p.base_url,
             "api_key_configured": "yes" if p.api_key() else "no",
             "temperature": p.temperature,
             "max_context": p.max_context,
+            "top_p": p.top_p,
+            "max_tokens": p.max_tokens,
+            "presence_penalty": p.presence_penalty,
+            "frequency_penalty": p.frequency_penalty,
+            "timeout_seconds": p.timeout_seconds,
+            "retry_attempts": p.retry_attempts,
+            "stream_enabled": p.stream_enabled,
+            "enabled": key not in _DISABLED_KEYS,
         })
     return out

@@ -1,5 +1,6 @@
 package cn.aios.gitee.controller;
 
+import cn.aios.common.error.ErrorCode;
 import cn.aios.common.exception.BizException;
 import cn.aios.common.resp.ApiResponse;
 import cn.aios.gitee.client.GiteeApiException;
@@ -41,7 +42,7 @@ public class GiteeExceptionAdvice {
     public ResponseEntity<ApiResponse<Void>> handleGitee(GiteeApiException e) {
         log.warn("Gitee 调用失败：status={} code={} retryable={} msg={}",
                 e.getStatus(), e.getGiteeCode(), e.isRetryable(), e.getMessage());
-        return ResponseEntity.ok(ApiResponse.fail(codeOf(e), messageOf(e)));
+        return ResponseEntity.ok(body(e));
     }
 
     /**
@@ -54,7 +55,28 @@ public class GiteeExceptionAdvice {
     public ResponseEntity<ApiResponse<Void>> handleProvider(RepoProviderException e) {
         log.warn("仓库托管方调用失败：provider={} status={} retryable={} msg={}",
                 e.providerName(), e.getStatus(), e.isRetryable(), e.getMessage());
-        return ResponseEntity.ok(ApiResponse.fail(codeOf(e), messageOf(e)));
+        return ResponseEntity.ok(body(e));
+    }
+
+    /**
+     * 统一错误体：数字码沿用既有 503/429/424/400（前端与 e2e 有按码分支），
+     * 但补上 {@code errorCode=CONNECTOR_ERROR} / {@code category=UPSTREAM} / {@code suggestion}，
+     * 让「第三方失败」在统一错误体系里有明确归宿（docs/73 §3.3）。
+     */
+    private static ApiResponse<Void> body(RepoProviderException e) {
+        String suggestion;
+        if (e.getStatus() == 0) {
+            suggestion = "检查本机网络/代理，或让运维确认能访问该托管方";
+        } else if (isRateLimited(e)) {
+            suggestion = "等一两分钟再试；批量操作请减小并发";
+        } else if (e.isTokenInvalid()) {
+            suggestion = "到「账号绑定」重新授权；授权过期不会影响平台登录态";
+        } else {
+            suggestion = "确认仓库地址与权限；仍失败请附错误编号联系管理员";
+        }
+        ApiResponse<Void> r = ApiResponse.fail(ErrorCode.CONNECTOR_ERROR, messageOf(e), suggestion, null);
+        r.setCode(codeOf(e));   // 保留既有业务码语义
+        return r;
     }
 
     /** 业务错误码：用 4xx 表达「调用方/依赖方可修复」，与平台既有口径一致。 */

@@ -117,6 +117,28 @@ public class ModelConfigController {
         return ApiResponse.ok(Map.of("providerKey", key, "deleted", true));
     }
 
+    /** 配置历史（最近 20 次写操作的快照元信息），回滚入口用。 */
+    @GetMapping("/history")
+    public ApiResponse<List<Map<String, Object>>> history() {
+        requireAdmin();
+        return ApiResponse.ok(service.history());
+    }
+
+    /** 一键回滚到指定快照：整表替换 + 立即热更新。 */
+    @PostMapping("/rollback/{snapshotId}")
+    public ApiResponse<Map<String, Object>> rollback(@PathVariable Long snapshotId) {
+        AuthUser user = requireAdmin();
+        return ApiResponse.ok(service.rollback(snapshotId, user.getUserId()));
+    }
+
+    /** 补推：把库里当前配置重新推给 agent（agent 重启后用它恢复，不用重新保存）。 */
+    @PostMapping("/sync")
+    public ApiResponse<Map<String, Object>> sync() {
+        requireAdmin();
+        boolean ok = service.push();
+        return ApiResponse.ok(Map.of("synced", ok, "total", service.list().size()));
+    }
+
     private void validate(ModelConfig body) {
         if (isBlank(body.getProviderKey())) {
             throw BizException.badRequest("模型标识不能为空");
@@ -138,9 +160,34 @@ public class ModelConfigController {
         if (temp != null && (temp.compareTo(TEMP_MIN) < 0 || temp.compareTo(TEMP_MAX) > 0)) {
             throw BizException.badRequest("温度需介于 0 与 2 之间");
         }
+        // 以下范围与 agent 侧 PARAM_RANGES、用户端账号校验**三处同源**（docs/72 §2）
+        BigDecimal topP = body.getTopP();
+        if (topP != null && (topP.compareTo(BigDecimal.ZERO) < 0 || topP.compareTo(BigDecimal.ONE) > 0)) {
+            throw BizException.badRequest("top_p 需介于 0 与 1 之间（0 表示不下发，沿用供应商默认）");
+        }
+        Integer maxTokens = body.getMaxTokens();
+        if (maxTokens != null && (maxTokens < 0 || maxTokens > 65536)) {
+            throw BizException.badRequest("单次输出上限需介于 0 与 65536 之间（0 表示不下发）");
+        }
+        BigDecimal pp = body.getPresencePenalty();
+        if (pp != null && (pp.compareTo(new BigDecimal("-2")) < 0 || pp.compareTo(new BigDecimal("2")) > 0)) {
+            throw BizException.badRequest("话题新颖度惩罚需介于 -2 与 2 之间");
+        }
+        BigDecimal fp = body.getFrequencyPenalty();
+        if (fp != null && (fp.compareTo(new BigDecimal("-2")) < 0 || fp.compareTo(new BigDecimal("2")) > 0)) {
+            throw BizException.badRequest("词频惩罚需介于 -2 与 2 之间");
+        }
         Integer maxContext = body.getMaxContext();
-        if (maxContext != null && maxContext < 0) {
-            throw BizException.badRequest("最大上下文长度不能为负数");
+        if (maxContext != null && (maxContext < 0 || maxContext > 1048576)) {
+            throw BizException.badRequest("最大上下文长度需介于 0 与 1048576 之间（0 表示不限制）");
+        }
+        Integer timeout = body.getTimeoutSeconds();
+        if (timeout != null && (timeout < 5 || timeout > 600)) {
+            throw BizException.badRequest("请求超时需介于 5 与 600 秒之间");
+        }
+        Integer retry = body.getRetryAttempts();
+        if (retry != null && (retry < 1 || retry > 5)) {
+            throw BizException.badRequest("重试次数需介于 1 与 5 之间（含首次尝试）");
         }
     }
 

@@ -1399,7 +1399,18 @@ public class ApprovalFlowService {
             throw new BizException(409, "该审批节点已被他人处理（并发冲突），请刷新后重试");
         }
 
-        String approverName = AuditRecorder.displayName(actor);
+        // 终态回写的「审批人」必须与流转路径里的节点审批人**同源同形**。
+        //   task.approver_name 是节点派单时按组织成员解析出的显示名（刘敏）；
+        //   AuditRecorder.displayName(actor) 只有 JWT 里的 username（fagai_liu）
+        //   —— AuthUser 不携带 nickname，必退化成账号名。
+        // 用后者会把「处理结果 · 审批人」写成账号名，与同一张详情弹窗里流转路径的
+        // 「第 2 级 · 刘敏」对不上（2026-11-03 截图验收实证：单号 1066 终审后
+        // 处理结果写 fagai_liu）。单级老路 ApprovalService 用的正是 nickname，
+        // 多级引擎没理由不一致。
+        String approverName = displayApprover(task.getApproverName(), task.getApproverId());
+        if (approverName == null || approverName.isBlank()) {
+            approverName = AuditRecorder.displayName(actor);   // 极端兜底：无快照且查不到人
+        }
         Long institutionId = task.getInstitutionId();
         boolean finalDone = false;
         // 会签未齐时的进度文案（其余场景为 null，走既有文案，保证既有断言不变）

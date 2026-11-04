@@ -624,6 +624,38 @@
   .clar-ok:disabled{ opacity:.45; cursor:not-allowed; }
   .clar-card.done{ opacity:.92; }
   .clar-card .clar-picked{ color:var(--text-2); font-size:11.5px; margin-top:6px; }
+  /* ---------- 指定负责人（#90）：对话内按钮 + 候选人浮层 + 已选 chip ---------- */
+  .assign-bar{
+    display:flex; align-items:center; gap:6px; padding:5px 10px; margin:0 10px 6px;
+    background:var(--brand-soft); border:1px solid var(--brand-line); border-radius:var(--r-sm);
+    font-size:12px; color:var(--text-2);
+  }
+  .assign-bar[hidden]{ display:none; }
+  .assign-bar .ab-tag{ color:var(--brand); font-weight:600; }
+  .assign-bar .ab-name{ color:var(--text); font-weight:600; }
+  .assign-bar .ab-x{
+    margin-left:auto; border:0; background:transparent; color:var(--text-3);
+    cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; border-radius:4px;
+  }
+  .assign-bar .ab-x:hover{ background:rgba(0,0,0,.06); color:var(--red); }
+  .assign-pop{
+    position:fixed; z-index:1200; width:264px; max-height:340px; display:flex; flex-direction:column;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+    box-shadow:var(--sh-1); padding:10px; box-sizing:border-box;
+  }
+  .assign-pop .ap-head{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:13px; font-weight:600; color:var(--text); margin-bottom:8px;
+  }
+  .assign-pop .ap-x{ border:0; background:transparent; color:var(--text-3); cursor:pointer; font-size:14px; }
+  .assign-pop .ap-x:hover{ color:var(--red); }
+  .assign-pop .clar-search{ margin-bottom:8px; }
+  .assign-pop .clar-cands{ flex:1 1 auto; }
+  .assign-pop .ap-empty{ color:var(--text-3); font-size:12px; text-align:center; padding:14px 0; }
+  .assign-pop .clar-cand{ display:flex; flex-direction:column; justify-content:center; }
+  .assign-pop .clar-cand .ac-name{ color:var(--text); }
+  .assign-pop .clar-cand .ac-sub{ font-size:11px; color:var(--text-3); margin-top:1px; }
+  .assign-pop .clar-cand.sel .ac-name{ color:var(--blue); }
   @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
 
   /* ---------- HITL 确认卡（need_confirm）：气泡下方的「确认 / 取消」双按钮 ----------
@@ -1456,14 +1488,16 @@
   position:absolute; inset:0; background:rgba(16,22,32,.45); z-index:40;
   opacity:0; visibility:hidden; transition:opacity var(--dur) var(--ease),visibility var(--dur);
 }
-.oa.sheet-open .sheet-mask{opacity:1;visibility:visible}
-.oa .sheet{
+.oa.sheet-open .sheet-mask{opacity:1;visibility:visible}.oa .sheet{
   position:absolute; left:0; right:0; bottom:0; z-index:41; background:var(--surface);
   border-radius:22px 22px 0 0; padding:8px 16px calc(18px + env(safe-area-inset-bottom));
-  transform:translateY(102%); transition:transform var(--dur) var(--ease);
+  /* 关闭态除了移出视口还要 visibility:hidden —— .phone 的 overflow:hidden 挡不住
+     程序化滚动/聚焦补偿滚动，一旦它被滚起来，藏在底下的这张浮层就会露出来。 */
+  transform:translateY(102%); visibility:hidden;
+  transition:transform var(--dur) var(--ease), visibility 0s linear var(--dur);
   box-shadow:0 -12px 40px rgba(20,26,38,.22);
 }
-.oa.sheet-open .sheet{transform:none}
+.oa.sheet-open .sheet{transform:none; visibility:visible; transition:transform var(--dur) var(--ease), visibility 0s}
 .oa .sheet-grip{width:38px;height:4px;border-radius:2px;background:var(--border-strong);margin:4px auto 12px}
 .oa .sheet h3{font-family:var(--font-display);font-size:15.5px;font-weight:700;text-align:center;letter-spacing:-.01em}
 .oa .sheet .sheet-sub{text-align:center;font-size:11.5px;color:var(--text-3);margin-top:4px}
@@ -2276,6 +2310,116 @@
   .oa *{scroll-behavior:auto}
 }
 
+/* ============================================================================
+   模型账号（2026-11-04）：顶栏选择器 chip + 选择/配置浮层 + 「我的·账号模型」五 tab
+   复用既有令牌与 .sheet 同形，不新造视觉体系。
+   ============================================================================ */
+.oa .ab-model{
+  display:inline-flex; align-items:center; gap:5px; max-width:140px; height:30px;
+  padding:0 10px; border-radius:var(--r-full); border:1px solid var(--border-strong);
+  background:var(--surface-2); color:var(--text-2); font:inherit; font-size:12px; font-weight:600;
+  cursor:pointer; flex-shrink:0; transition:background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.oa .ab-model .mm-txt{max-width:92px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.oa .ab-model.on{border-color:var(--brand-line); background:var(--brand-soft); color:var(--brand-ink)}
+.oa .ab-model:hover{background:var(--surface-3)}
+
+/* 底部浮层（独立类名，与 #oaSheet 互不干扰） */
+.oa .mod-mask{position:absolute; inset:0; background:rgba(16,22,32,.45); z-index:60;
+  opacity:0; visibility:hidden; transition:opacity var(--dur) var(--ease), visibility var(--dur)}
+.oa.mod-open .mod-mask{opacity:1; visibility:visible}
+/* --kb = 软键盘实测高度（visualViewport 差值，JS 写）：浮层整体抬到键盘之上，
+   输入框不会被键盘盖住 —— 「打了字看不见」和「打不进字」在用户眼里是同一件事。
+   键盘收起时 --kb 归零，与改动前完全一致。 */
+.oa .mod-sheet{position:absolute; left:0; right:0; bottom:var(--kb, 0px); z-index:61; background:var(--surface);
+  border-radius:var(--r-xl) var(--r-xl) 0 0; padding:8px 16px calc(18px + env(safe-area-inset-bottom));
+  transform:translateY(102%); visibility:hidden;
+  transition:transform var(--dur) var(--ease), visibility 0s linear var(--dur);
+  box-shadow:var(--sh-4t);
+  max-height:calc(84% - var(--kb, 0px)); display:flex; flex-direction:column}
+.oa.mod-open .mod-sheet{transform:none; visibility:visible;
+  transition:transform var(--dur) var(--ease), visibility 0s}
+/* 互斥兜底（CSS 层，2026-11-04）：JS 侧 oaClosePanels() 已保证「谁打开谁关掉别的」，
+   但残留状态/未知路径仍可能把 sheet-open 与 mod-open 同时挂上（实测用户看到
+   「模型浮层上、选择对话对象下」两张同时露出来）。这一条与 .sheet-open 的规则同特异性、
+   但声明在后 ⇒ 两者同时存在时模型浮层胜出，「选择对话对象」强制滑出视口。
+   正常单开时不受影响（不会命中 .mod-open）。 */
+.oa.mod-open .sheet{transform:translateY(102%); visibility:hidden}
+.oa.mod-open .sheet-mask{opacity:0; visibility:hidden}
+.oa .mod-sheet .mod-head{display:flex; align-items:center; justify-content:space-between; padding:2px 2px 8px; flex-shrink:0}
+.oa .mod-sheet .mod-head b{font-family:var(--font-display); font-size:15px; font-weight:700}
+.oa .mod-sheet .mod-x{border:0; background:transparent; color:var(--text-3); font-size:16px; cursor:pointer; padding:4px 6px}
+.oa .mod-body{flex:1 1 auto; overflow:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px}
+.oa .mod-grp{font-size:11.5px; font-weight:700; color:var(--text-3); letter-spacing:.04em; margin:12px 2px 6px}
+.oa .mod-row{display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:11px 12px; box-sizing:border-box;
+  border:1px solid var(--border); border-radius:var(--r); background:var(--surface); color:var(--text); font:inherit; cursor:pointer; margin-bottom:8px}
+.oa .mod-row:hover{border-color:var(--brand-line); background:var(--brand-soft)}
+.oa .mod-row.on{border-color:var(--brand); background:var(--brand-soft)}
+.oa .mod-row .mr-main{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px}
+.oa .mod-row .mr-name{font-size:13.5px; font-weight:600; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.oa .mod-row .mr-sub{font-size:11.5px; color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.oa .mod-row .mr-check{color:var(--brand); flex-shrink:0}
+.oa .mod-acts{display:flex; gap:8px; padding-top:10px; flex-shrink:0}
+.oa .mod-act{flex:1; min-height:40px; border-radius:var(--r-full); border:1px solid var(--border); background:var(--surface);
+  color:var(--text-2); font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px}
+.oa .mod-act.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+.oa .mod-act:active{transform:scale(.98)}
+
+/* 表单 */
+.oa .mod-form{display:flex; flex-direction:column; gap:10px; padding:2px}
+.oa .mod-form label{display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--text-2)}
+/* font-size 必须 ≥16px：iOS Safari 在 <16px 的输入框聚焦时会自动放大整页（zoom×1.2），
+   放大后浮层被顶出可视区、光标落到键盘下面 ⇒ 用户看到的现象就是「点了打不进字」。
+   同时 -webkit-appearance:none 去掉 iOS 的输入框内阴影，避免 40px 高度里文字被压扁。 */
+.oa .mod-form input, .oa .mod-form select{
+  height:40px; padding:0 10px; border-radius:var(--r-sm); border:1px solid var(--border-strong);
+  background:var(--surface); color:var(--text); font-family:inherit; font-size:16px; box-sizing:border-box;
+  -webkit-appearance:none; appearance:none}
+/* 密钥行：输入框 + 「粘贴」+「显示/隐藏」。
+   两个问题都在这行收口：
+   · 某些 WebView/输入法长按不弹粘贴菜单，或对 type=password 不做剪贴板处理
+     ⇒ 给一个直接读剪贴板的按钮，绕开系统菜单；
+   · 输入法按密码框处理会吞键 ⇒ 给一个切明文的出口。 */
+.oa .mod-form .mf-keyrow{display:flex; gap:6px; align-items:stretch}
+.oa .mod-form .mf-keyrow input{flex:1; min-width:0}
+.oa .mod-form .mf-mini{
+  flex:0 0 auto; height:40px; padding:0 11px; border-radius:var(--r-sm); border:1px solid var(--border-strong);
+  background:var(--surface-2); color:var(--text-2); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer}
+.oa .mod-form .mf-mini.on{background:var(--brand-soft); border-color:var(--brand-line); color:var(--brand-ink)}
+/* 「高级参数」折叠块：默认收起，避免把温度/top_p 这类调优项摆到普通用户面前 */
+.oa .mod-form .mod-adv{border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface-2); padding:0 11px}
+.oa .mod-form .mod-adv summary{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:11px 0; font-size:12px; font-weight:600; color:var(--text-2); cursor:pointer; list-style:none}
+.oa .mod-form .mod-adv summary::-webkit-details-marker{display:none}
+.oa .mod-form .mod-adv summary::after{content:'展开'; font-weight:400; color:var(--text-3); font-size:11.5px}
+.oa .mod-form .mod-adv[open] summary::after{content:'收起'}
+.oa .mod-form .mod-adv-body{display:flex; flex-direction:column; gap:10px; padding:2px 0 12px}
+.oa .mod-form .mod-switch{flex-direction:row; align-items:center; gap:8px}
+/* 复选框默认尺寸在深色背景上像一条短横线（看着像坏控件），统一成 16px 并跟随品牌色 */
+.oa .mod-form .mod-switch input{
+  width:16px; height:16px; min-width:16px; flex:0 0 auto; margin:0; padding:0;
+  border-radius:4px; accent-color:var(--brand); -webkit-appearance:auto; appearance:auto}
+.oa .mod-hint{font-size:11px; color:var(--text-3); line-height:1.5}
+
+/* 账号模型视图 */
+.oa .oa-seg.mod-seg{overflow-x:auto; scrollbar-width:none}
+.oa .oa-seg.mod-seg::-webkit-scrollbar{display:none}
+.oa .oa-seg.mod-seg button{flex:0 0 auto; min-width:64px; padding:0 6px; font-size:12.5px}
+.oa .mod-stat-row{display:flex; gap:8px; margin:2px 2px 12px}
+.oa .mod-stat{flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:9px 10px}
+.oa .mod-stat.hi{background:var(--brand-soft); border-color:var(--brand-line)}
+.oa .mod-stat .ms-label{font-size:11px; color:var(--text-3)}
+.oa .mod-stat .ms-val{font-size:18px; font-weight:700; line-height:1.25; margin-top:2px}
+.oa .mod-stat .ms-sub{font-size:10.5px; color:var(--text-3); margin-top:2px}
+.oa .mod-dim{display:flex; gap:6px; margin:2px 2px 10px}
+.oa .mod-dim button{flex:1; height:32px; border-radius:var(--r-full); border:1px solid var(--border); background:var(--surface); color:var(--text-2); font:inherit; font-size:12px; font-weight:600; cursor:pointer}
+.oa .mod-dim button.on{background:var(--brand-soft); border-color:var(--brand-line); color:var(--brand-ink)}
+.oa .mod-account-acts{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
+.oa .mod-account-acts .mini{height:28px; padding:0 10px; border-radius:var(--r-full); border:1px solid var(--border);
+  background:var(--surface); color:var(--text-2); font:inherit; font-size:11.5px; font-weight:600; cursor:pointer}
+.oa .mod-account-acts .mini.danger{color:var(--red); border-color:var(--red)}
+
 </style>
 
 </head>
@@ -2823,6 +2967,10 @@
   <header class="appbar">
     <button class="ab-btn" id="oaLeft" aria-label="打开目录"></button>
     <div class="ab-title" id="oaTitle">工作助手</div>
+    <button type="button" class="ab-model" id="oaModelChip" aria-label="选择模型账号" title="选择模型账号">
+      <svg class="ic" style="width:14px;height:14px"><use href="#i-db"/></svg>
+      <span class="mm-txt" id="oaModelChipText">自动模型</span>
+    </button>
     <div class="ab-right" id="oaRight"></div>
   </header>
 
@@ -2858,6 +3006,7 @@
 
       <div class="attach-strip" id="oaAttachStrip"></div>
       <input type="file" id="oaAttachFile" multiple hidden accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.log">
+      <div class="assign-bar" id="oaAssignBar" hidden></div>
       <div class="composer">
         <div class="box">
           <button class="cbtn" id="oaMicBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:17px;height:17px"><use href="#i-mic"/></svg></button>
@@ -2865,6 +3014,7 @@
           <span class="kb-chip" id="oaKbChip" onclick="oaToggleKB()"><svg class="ic"><use href="#i-db"/></svg><span id="oaKbChipText">知识库 开</span></span>
           <div class="input-action">
             <button class="cbtn" id="oaAttachBtn" aria-label="更多" title="更多：上传文档、开关连接器"><svg class="ic" style="width:17px;height:17px"><use href="#i-plus"/></svg></button>
+            <button class="cbtn" id="oaAssignBtn" aria-label="指定负责人" title="指定负责人：指定本次审批交给谁" style="display:none"><svg class="ic" style="width:17px;height:17px"><use href="#i-user"/></svg></button>
             <button class="cbtn send" id="oaSendBtn" aria-label="发送" style="display:none"><svg class="ic" style="width:19px;height:19px"><use href="#i-send"/></svg></button>
           </div>
         </div>
@@ -2947,6 +3097,19 @@
 
       <div class="sec-title" style="margin-left:2px">账户</div>
       <div class="card" id="oaMeActions"></div>
+    </section>
+
+    <!-- ⑤b 账号模型（2026-11-04）：管理端「账号管理」的移动端镜像。
+         我的账号 / 公司账号 / 共享给我 / 邀请记录(人员明细) / 用量归属(统计) -->
+    <section class="view" id="v-model">
+      <div class="oa-seg mod-seg" id="oaModelSeg" role="tablist">
+        <button type="button" data-mtab="mine" role="tab" class="on">我的账号</button>
+        <button type="button" data-mtab="company" role="tab">公司账号</button>
+        <button type="button" data-mtab="shared" role="tab">共享给我</button>
+        <button type="button" data-mtab="invites" role="tab">邀请记录</button>
+        <button type="button" data-mtab="stats" role="tab">用量归属</button>
+      </div>
+      <div id="oaModelBody"></div>
     </section>
 
     <!-- ⑥ 数字员工清单（首页数字人 → 选择「数字员工」后进入） -->
@@ -3080,6 +3243,7 @@
       <div class="dnav-item" id="odNewTask"><svg class="ic"><use href="#i-square-plus"/></svg>新工作任务</div>
       <div class="dnav-item" id="odNewChat"><svg class="ic"><use href="#i-chat"/></svg>新对话</div>
       <div class="dnav-item" id="odModules"><svg class="ic"><use href="#i-grid"/></svg>OA 模块<span class="n" id="odModulesN"></span></div>
+      <div class="dnav-item" id="odApply"><svg class="ic"><use href="#i-send"/></svg>发起审批</div>
       <div class="dnav-item" id="odTimers"><svg class="ic"><use href="#i-clock"/></svg>定时任务<span class="n" id="odTimersN"></span></div>
       <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能-连接器<span class="n" id="odSkillsN"></span></div>
       <div class="dnav-sep"></div>
@@ -3108,17 +3272,93 @@
     </div>
     <button class="sheet-cancel" id="oaSheetCancel">取消</button>
   </section>
+
+  <!-- 模型账号选择 / 配置（顶栏 chip 打开）：与「我的·账号模型」共用同一套渲染 -->
+  <div class="mod-mask" id="oaModelMask"></div>
+  <section class="mod-sheet" id="oaModelSheet" aria-label="模型账号">
+    <div class="mod-head"><b id="oaModelSheetTitle">模型账号</b><button type="button" class="mod-x" id="oaModelSheetX" aria-label="关闭">✕</button></div>
+    <div class="mod-body" id="oaModelSheetBody"></div>
+  </section>
 </div>
 
   <div class="toast" id="toast"></div>
 </div>
 
 <script>
+/* ---- 统一错误文案（docs/73）----
+   后端所有失败都回同一结构：{code, errorCode, category, message, suggestion, traceId, details}。
+   界面只负责把它拼成「一句人话 + 一句建议 + 错误编号」，**不显示**堆栈/原始 JSON/上游原文。
+   两处生成失败、所有 toast 都走这两个函数，避免各写一套口径。 */
+var ERR_FALLBACK = {
+  UNAUTHENTICATED:'登录状态已失效，请重新登录',
+  PERMISSION_DENIED:'当前账号没有这个操作的权限',
+  RESOURCE_NOT_FOUND:'要找的内容不存在或已被删除',
+  API_NOT_FOUND:'接口地址不存在',
+  VALIDATION_FAILED:'提交的内容有误，请按提示修改后重试',
+  RATE_LIMITED:'操作太频繁，已被限流',
+  STATE_CONFLICT:'数据状态已变化，本次操作没有生效',
+  MODEL_NOT_FOUND:'配置的模型已下线或不存在',
+  MODEL_AUTH_FAILED:'模型密钥无效或没有调用权限',
+  MODEL_RATE_LIMITED:'模型调用过于频繁',
+  MODEL_TIMEOUT:'模型响应超时',
+  MODEL_UPSTREAM_ERROR:'模型服务本次没有返回结果',
+  CONNECTOR_ERROR:'连接的外部应用调用失败',
+  INTERNAL_ERROR:'服务内部出错了，本次操作没有完成'
+};
+/* 把错误对象（Error / 后端信封 / SSE 载荷）拼成可展示文本。
+   opts.withId=true 时追加「错误编号」，仅在需要用户报障的场合显示。 */
+function errText(e, opts){
+  opts = opts || {};
+  if(!e) return '未知错误';
+  var msg = e.message ? String(e.message) : '';
+  var sug = e.suggestion ? String(e.suggestion) : '';
+  var eid = e.errorId || e.traceId || '';
+  if(!msg){
+    msg = (e.errorCode && ERR_FALLBACK[e.errorCode]) || '操作没有完成，请稍后重试';
+  }
+  /* 技术细节防漏：万一上游/框架文案漏网（含 JSON、类名、路径），这里再兜一层 */
+  if(/^\s*[{\[]/.test(msg) || /\b(java|javax|traceback|Exception)\b/i.test(msg)){
+    msg = '操作没有完成，请稍后重试';
+  }
+  var out = msg;
+  if(sug) out += '　建议：' + sug;
+  if(opts.withId && eid) out += '（错误编号 ' + eid + '）';
+  return out;
+}
+/* SSE 错误帧 → Error（带上 suggestion / errorCode / errorId，供上面拼文案） */
+function sseError(raw){
+  var p = raw;
+  if(typeof raw === 'string'){
+    try{ p = JSON.parse(raw); }catch(_){ p = null; }
+  }
+  if(!p || typeof p !== 'object'){
+    return new Error('生成失败，请稍后重试。');
+  }
+  var code = p.code || p.error_code || '';
+  var err = new Error(p.message || ERR_FALLBACK[code] || (p.reason ? '生成失败，请稍后重试。' : ''));
+  err.code = code; err.errorCode = code;
+  err.category = p.category || null;
+  err.suggestion = p.suggestion || null;
+  err.errorId = p.errorId || p.trace_id || null;
+  err.retryable = !!p.retryable;
+  return err;
+}
+/* 跨 <script> 共享：块 2（OA 形态）也用同一套文案，
+   两个 <script> 各自作用域不共享 —— 挂到 window 上由块 2 取引用。 */
+window.AIOS_ERR = { text: errText, parse: sseError, fallback: ERR_FALLBACK };
 /* ============================================================================
    1. 状态
    ============================================================================ */
 const state = {
   token:null, user:null, isAdmin:false, canManageWorker:false, model:'default',
+  /* 模型选择（2026-11-04）：二选一 ——
+     · modelKey   = 平台模型（后台「模型管理」里启用的那条，作为 model_ref 下发）
+     · credentialId = 自己的模型账号（下发 credential_id，由它的 Key 与模型覆盖）
+     两者互斥：选了平台模型就不再带账号，避免账号里的 base_url/model 把所选模型盖掉。 */
+  modelKey:null, modelLabel:'',
+  /* 模型账号（2026-11-04，docs/71）：当前对话用哪个账号；随 createRun 下发 credential_id，
+     空(null/0) = 交给后端按「本人 → 公司 → 平台默认」自动解析。 */
+  credentialId:null, credentialLabel:'',
   quota:0, used:0, free:0, left:null, quotaInfo:null,
   chatExpert:null, chatWorker:null, kbOn:true, busy:false,
   /* 对话级连接器开关（2026-10-31）：「本次对话不调用」的连接器 code 集合。
@@ -3201,6 +3441,10 @@ const API = {
       if(body.code !== 0){
         const err = new Error(body.message || ('业务错误 '+body.code));
         err.code = body.code; err.status = res.status; err.data = body.data;  // 把响应 data 挂到错误上（规则命中 40090 用），向后兼容
+        /* 统一错误信封（docs/73）：把「怎么处理」「错误编号」带出来，界面才能给可操作提示 */
+        err.errorCode = body.errorCode || null; err.category = body.category || null;
+        err.suggestion = body.suggestion || null; err.traceId = body.traceId || null;
+        err.details = body.details || null;
         throw err;
       }
       return body.data;
@@ -3214,12 +3458,16 @@ const API = {
   createConversation(title,appCode,workerId){ return this.req('/v1/conversations',{method:'POST',body:JSON.stringify({title,appCode,workerId:workerId||null})}); },
   createRun(convId,text,context,attachments){
     var ctx = Object.assign({}, context);   // 浅拷贝，避免改写调用方原对象（防副作用）
-    var body = {text, context: ctx, model_ref: state.model};
+    /* 选了平台模型就按它路由（model_ref）；否则沿用会话级 model（默认 default）。
+       账号选择走 credential_id，由后端解析出 base_url/model/Key，优先级高于 model_ref。 */
+    var body = {text, context: ctx, model_ref: (state.modelKey || state.model)};
     if('kb_on' in ctx){ body.kb_on = ctx.kb_on; delete ctx.kb_on; }  // kb_on 提升到 body 顶层（两种前端共用，改一处两形态受益）
     /* 对话级连接器开关：同样提升到 body 顶层（后端 CreateRunRequest.disabled_connectors）。
        语义 = 「本次对话不调用这些连接器」，**不解绑、不改授权状态**。 */
     if('disabled_connectors' in ctx){ body.disabled_connectors = ctx.disabled_connectors; delete ctx.disabled_connectors; }
     if(attachments && attachments.length) body.attachments = attachments;
+    /* 本轮模型账号（docs/71）：显式选号时覆盖后端 autoResolve；空 ⇒ 后端按本人→公司→平台默认自动解析。 */
+    if(state.credentialId != null && Number(state.credentialId) > 0) body.credential_id = Number(state.credentialId);
     return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify(body)});
   },
   listConversations(){ return this.req('/v1/conversations'); },
@@ -3268,6 +3516,28 @@ const API = {
   mcpTrust(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/trust',{method:'POST'}); },
   mcpUntrust(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/untrust',{method:'POST'}); },
   mcpTools(code){ return this.req('/v1/mcp/servers/'+encodeURIComponent(code)+'/tools'); },
+  /* 模型账号与共享（2026-11-04，docs/71）：与管理端 ModelAccountView 同一套接口，H5 不另开口径。
+     回执一律只含掩码 keyHint，无明文 Key。 */
+  modelAccounts(){ return this.req('/v1/model-credentials'); },
+  /* 平台模型目录（2026-11-04）：后台已启用的模型，供顶栏「自动模型」下拉列出。
+     只含可展示字段（无 baseUrl / 密钥），选中后作为 model_ref 随对话下发。 */
+  modelCatalog(){ return this.req('/v1/model-catalog'); },
+  modelCreate(body){ return this.req('/v1/model-credentials',{method:'POST',body:JSON.stringify(body||{})}); },
+  modelUpdate(id, body){ return this.req('/v1/model-credentials/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body||{})}); },
+  modelDelete(id){ return this.req('/v1/model-credentials/'+encodeURIComponent(id),{method:'DELETE'}); },
+  modelInvites(){ return this.req('/v1/model-credentials/invites'); },
+  modelInvitesIn(){ return this.req('/v1/model-credentials/invites/incoming'); },
+  /* 可邀请的同事（同租户、启用、排除自己）：邀请表单的下拉候选，只含 id/username/nickname */
+  modelInvitable(){ return this.req('/v1/model-credentials/invitable'); },
+  modelInvite(id, body){ return this.req('/v1/model-credentials/'+encodeURIComponent(id)+'/shares',{method:'POST',body:JSON.stringify(body||{})}); },
+  modelRevoke(shareId){ return this.req('/v1/model-credentials/shares/'+encodeURIComponent(shareId),{method:'DELETE'}); },
+  modelLeave(shareId){ return this.req('/v1/model-credentials/shares/'+encodeURIComponent(shareId)+'/leave',{method:'POST'}); },
+  /* 归属统计：dim=credential 按账号 / bearer 按使用者 / charge 按付费人（与后端 /billing/stats 同口径）。 */
+  billingStats(dim, period){
+    var q = '?dim='+encodeURIComponent(dim||'credential');
+    if(period) q += '&period='+encodeURIComponent(period);
+    return this.req('/v1/billing/stats'+q);
+  },
   kbDocs(){  return this.req('/v1/kb/documents'); },
   kbUpload(name, icon, size){ return this.req('/v1/kb/documents',{method:'POST',body:JSON.stringify({name,icon,sizeBytes:size})}); },
   /* 文件上传（FR-F1）：multipart 直传，由后端解析 PDF/Word/Excel/文本并切片入库 */
@@ -3408,6 +3678,7 @@ const API = {
     const reader = res.body.getReader();
     const dec = new TextDecoder('utf-8');
     let buf = '';
+    let _sseErr = null;   // 本轮第一个错误帧（error 优先，run.failed 不覆盖它）
     for(;;){
       const {done, value} = await reader.read();
       if(done) break;
@@ -3452,10 +3723,17 @@ const API = {
         }else if(ev.event === 'run.completed'){
           // usage 已在 message.completed 分支上报过，这里不再重复触发，避免消耗行输出两条
           return;
-        }else if(ev.event === 'run.failed'){
-          h.onError(new Error(ev.data || '运行失败')); return;
         }else if(ev.event === 'error'){
-          h.onError(new Error(ev.data || '运行出错')); return;
+          /* 统一错误帧（docs/73）：{code,category,message,suggestion,errorId,retryable}。
+             原先直接把 ev.data（原始 JSON 字符串）塞进 Error.message，界面就成了
+             「生成失败：{"code":"MODEL_UPSTREAM_ERROR",...,"detail":...}」——用户看不懂，
+             还把上游原文/request_id 泄漏到了界面上。 */
+          if(!_sseErr){ _sseErr = sseError(ev.data); h.onError(_sseErr); }
+          return;
+        }else if(ev.event === 'run.failed'){
+          /* 紧随 error 之后到达：已有具体原因时**不要覆盖**，否则人话会被兜底文案冲掉 */
+          if(!_sseErr){ _sseErr = sseError(ev.data); h.onError(_sseErr); }
+          return;
         }
       }
     }
@@ -3743,11 +4021,24 @@ function resetUserState(){
   // 历史会话弹层（.notif-mask）也是旧账号残留的一部分，一并移除
   document.querySelectorAll('.notif-mask').forEach(function(m){ m.remove(); });
   // —— OA 态 S（若 OA 层已注入）——
+  /* ⚠️ S 定义在 OA 那段独立的 <script> 的 IIFE 里，本函数（脚本1）拿不到它，
+     所以下面这个 if 恒为 false；OA 层的账号缓存必须走它自己暴露的钩子清（见下）。 */
   if(typeof S !== 'undefined' && S){
     S.convId = null; S.worker = null; S.expert = null; S.busy = false;
     S.lastQuery = ''; S.controller = null;
     S.projectConvId = {}; S.projectConvWorker = {};
   }
+  /* 换人登录必须清 OA 层的账号缓存与当前视图：
+     否则「我的账号 / 共享给我」还是上一个人的数据，顶栏 chip 还会带着上一个人的
+     credentialId 进下一轮对话（等于用别人的 Key、记别人的账）。 */
+  if(typeof window.__oaResetUserCache === 'function'){ try{ window.__oaResetUserCache(); }catch(e){} }
+  // 顶栏当前选择也属于「上一个人的上下文」，一并复位（含 localStorage 里的持久化副本）
+  state.modelKey = null; state.modelLabel = '';
+  state.credentialId = null; state.credentialLabel = '';
+  try{
+    localStorage.removeItem('aios_model');
+    localStorage.removeItem('aios_cred');
+  }catch(e){}
   if(typeof dockEl === 'function'){ const dock = dockEl(); if(dock) dock.innerHTML = ''; }
   const recent = document.getElementById('oaRecentList');
   if(recent) recent.innerHTML = '';
@@ -6789,7 +7080,7 @@ async function send(){
     },
     onError: err => {
       errored = true;                 // 见 errored 声明处：真实原因交给收口处统一呈现
-      errMsg = (err && err.message) || '未知错误';
+      errMsg = errText(err, {withId:true}) || '未知错误';
       bubble.style.color = 'var(--red)';
     },
     onClarification: p => { clar = p; },
@@ -7618,6 +7909,7 @@ function mountClarCard(host, p){
           resolve(pick);          // {value, label, text, values}
         });
       }
+      window.oaAutoAnswerAssignee(card, fieldSpecs);   // #90：预选负责人自动落定（桥接 IIFE 内函数，mountClarCard 在脚本1 全局作用域）
       clarPendingResolve = function(){ abandon(); };
       return;
     }
@@ -8778,6 +9070,13 @@ function tickClock(){
    ============================================================================ */
 (function(){
 'use strict';
+/* 统一错误文案：实现见脚本块 1（window.AIOS_ERR），这里只取引用。
+   ⚠️ 两条约束：
+   ① 必须在 IIFE **内部**——块 2 的实现都在这层 IIFE 里，写在外面等于没写
+      （`errText is not defined`，与「S 在另一个脚本块里」是同一个坑）；
+   ② 必须放在 `'use strict'` **之后**——指令前面插入语句会静默关掉整块的严格模式。 */
+var errText = window.AIOS_ERR.text;
+var sseError = window.AIOS_ERR.parse;
 
 /* ------------------------------------------------------------------ 0. 状态 */
 var S = {
@@ -8789,6 +9088,7 @@ var S = {
   convId:null,           // 对话坞会话（与经典 state.conversationId 分账）
   worker:null,           // 数字员工
   expert:null,           // 专家
+  oaAssignee:null,       // 指定负责人：{userId, name}（OA 模块对话内预选，落审批人选择卡）
   busy:false,
   pendingFiles:[],      // 会话内上传的参考文档（不进知识库），随 createRun 的 attachments 下发
   lastQuery:'',          // 上一轮问句（推荐相关职责同事、换人重答都以它为唯一依据）
@@ -8816,7 +9116,12 @@ var S = {
   mcpServers:null, mcpLoaded:false, mcpErr:null, mcpOpen:{}, mcpToolsCache:{}, mcpToolsErr:{},
   // 门户模块（2026-10-31 打通写链路）：日程与会议来自 /v1/portal 的真实业务数据，
   // agendaErr 记的是「拉不到」的原因 —— 空列表与拉不到必须可区分。
-  schedules:null, meetings:null, agendaErr:''
+  schedules:null, meetings:null, agendaErr:'',
+  /* 账号模型（2026-11-04，docs/71）：我的/公司/共享给我 + 邀请明细 + 归属统计；浮层模式 pick|create|invite */
+  modelAcc:null, modelTab:'mine', modelDim:'credential', modelPeriod:'',
+  modelStats:null, modelInvites:null, modelInvitesIn:null,
+  modelCatalog:null,          // 平台模型目录（后台已启用），顶栏下拉的第一组
+  modelSheetMode:'pick', modelSheetCtx:null
 };
 
 /* 对话级「知识库」开关（OA 形态自带，与经典态 state.kbOn 互不干扰）。
@@ -8914,6 +9219,7 @@ var META = {
   modules: {t:'OA 模块',       tab:null, sub:1},
   org:     {t:'部门',          tab:'org'},
   me:      {t:'我的',          tab:'me'},
+  model:   {t:'账号模型',      tab:null, sub:1},
   workers: {t:'数字员工',      tab:null, sub:1},
   experts: {t:'专家',          tab:null, sub:1},
   timers:  {t:'定时任务',      tab:null, sub:1},
@@ -8935,6 +9241,7 @@ function oaGo(view){
   S.view = view;
   oaCloseDrawer(); oaCloseSheet();
   oaRender();
+  oaSyncAssignUI();   // #90 / B4：任何换页/换人都重新同步「指定负责人」按钮与 chip 显隐
   var p = $o('v-' + view); if(p){ p.scrollTop = 0; var m = p.querySelector('.rail-main'); if(m) m.scrollTop = 0; }
   oaRefreshView(view);
   /* 换页后重算一次标题显隐：顶栏固定常显（第四轮口径），这里只同步 --hd 与 dock-scrolled */
@@ -8967,6 +9274,9 @@ function oaRender(){
     v.classList.toggle('on', v.id === 'v-' + S.view);
   });
   // 顶栏
+  oaSyncModelChip();          // 模型 chip：反映当前选择（平台模型 / 账号 / 自动）
+  ensureModelAccounts();      // 懒加载账号清单（已加载则直接返回；未登录 no-op）
+  ensureModelCatalog();       // 懒加载平台模型目录（顶栏下拉的数据源）
   var t = $o('oaTitle');
   if(t) t.textContent = meta.t;
   var left = $o('oaLeft');
@@ -9011,6 +9321,7 @@ function oaRender(){
   if(S.view === 'modules') renderModules();
   if(S.view === 'org')     renderOrg();
   if(S.view === 'me')      renderMe();
+  if(S.view === 'model')   renderOaModel();
   if(S.view === 'workers') renderWorkers();
   if(S.view === 'experts') renderExperts();
   if(S.view === 'timers')  renderTimers();
@@ -9775,6 +10086,7 @@ function renderKb(){
       覆盖后开的那份（否则详情与标题会错位）。 */
 function oaOpenDoc(id){
   if(!id) return;
+  oaClosePanels('doc');
   var root = document.querySelector('#oaRoot'); if(!root) return;
   S.docId = id;
   var t = $o('oaDocTitle'); if(t) t.textContent = '资料详情';
@@ -9931,6 +10243,7 @@ function renderMe(){
     /* 4 个入口一律 OA 内跳转。原来它们写的是「打开经典工作台页面」并真的切回老版 ——
        在新版里点任意一条就被弹出新版，与「所有页面跳转都在新版内」冲突。 */
     var links = [
+      ['db','账号模型','model','模型账号、共享给同事与用量归属'],
       ['wallet','额度与账单','bill','查看剩余额度与用量流水'],
       ['log','我的操作记录','log','查看账号操作留痕'],
       ['shield','权限申请','perm','申请与查看已持有的权限'],
@@ -9950,6 +10263,621 @@ function renderMe(){
     var lo = $o('oaMeLogout');
     if(lo){ lo.style.cursor = 'pointer'; lo.onclick = function(){ doLogout(); resetMode(); }; }
   }
+}
+
+/* ============================================================================
+   7.4b 账号模型（2026-11-04）：顶栏选择器 + 「我的·账号模型」五 tab
+   ----------------------------------------------------------------------------
+   与 docs/71 同一套接口（/v1/model-credentials、/v1/billing/stats），H5 不另开口径：
+   · 顶栏 chip：本轮对话用哪个账号（state.credentialId，随 createRun 下发 credential_id）；
+   · 「我的·账号模型」：管理端 ModelAccountView 的移动端镜像（我的/公司/共享/邀请/统计）。
+   权限与归属由后端裁决（公司账号仅管理员可建、被邀请人消耗记在邀请者名下），前端只展示。
+   ============================================================================ */
+var LS_CRED = 'aios_cred';
+var LS_MODEL = 'aios_model';
+var PROVIDER_LABELS = {deepseek:'DeepSeek', dashscope:'通义百炼', minimax:'MiniMax', vllm:'vLLM（私有化）', ollama:'Ollama（本地）'};
+function provLabel(k){ return PROVIDER_LABELS[k] || k || '未知供应商'; }
+function fmtNum(v){ return Number(v || 0).toLocaleString('zh-CN'); }
+function credName(c){ return (c && (c.name || c.providerKey)) ? String(c.name || provLabel(c.providerKey)) : '未命名账号'; }
+function credSub(c){ if(!c) return ''; var s = provLabel(c.providerKey); if(c.modelName) s += ' · ' + c.modelName; return s; }
+/* 可选性：停用（enabled=false）的账号不该出现在「本轮用哪个账号」的候选里。
+   选了必然 401（2026-11-04 实测：遗留的探针账号被选中后报「模型密钥无效」）。
+   账号管理页仍要显示它们并标「已停用」，所以只在选择器这一层过滤。 */
+function credUsable(c){ return !!c && c.enabled !== false; }
+
+/* ---- 选择状态：持久化在 localStorage，刷新后保留 ---- */
+function initModelSelection(){
+  try{
+    var raw = localStorage.getItem(LS_CRED);
+    if(raw){ var o = JSON.parse(raw); if(o && o.id){ state.credentialId = Number(o.id); state.credentialLabel = o.label || ''; } }
+    var rawM = localStorage.getItem(LS_MODEL);
+    if(rawM){ var m = JSON.parse(rawM); if(m && m.key){ state.modelKey = String(m.key); state.modelLabel = m.label || ''; } }
+  }catch(e){}
+  oaSyncModelChip();
+}
+function persistCred(){
+  try{
+    if(state.credentialId && Number(state.credentialId) > 0) localStorage.setItem(LS_CRED, JSON.stringify({id:Number(state.credentialId), label:state.credentialLabel || ''}));
+    else localStorage.removeItem(LS_CRED);
+  }catch(e){}
+  persistModel();
+}
+function persistModel(){
+  try{
+    if(state.modelKey) localStorage.setItem(LS_MODEL, JSON.stringify({key:String(state.modelKey), label:state.modelLabel || ''}));
+    else localStorage.removeItem(LS_MODEL);
+  }catch(e){}
+}
+function oaSyncModelChip(){
+  var chipEl = $o('oaModelChip'); if(!chipEl) return;
+  var hasModel = !!state.modelKey;
+  var hasCred = state.credentialId != null && Number(state.credentialId) > 0;
+  chipEl.classList.toggle('on', hasModel || hasCred);
+  var t = $o('oaModelChipText');
+  var label = hasModel ? (state.modelLabel || state.modelKey)
+            : (hasCred ? (state.credentialLabel || ('账号 #' + state.credentialId)) : '自动模型');
+  if(t) t.textContent = label;
+  chipEl.title = hasModel ? ('当前模型：' + label + '（后台配置的平台模型，点击切换）')
+                : (hasCred ? ('当前模型账号：' + label + '（点击切换）')
+                           : '当前自动选择模型（点击选择平台模型 / 配自定义模型）');
+}
+
+/* ---- 数据加载（缓存；未登录 no-op） ---- */
+function flattenCreds(acc){ acc = acc || {mine:[], company:[], shared:[]}; return arr(acc.mine).concat(arr(acc.company)).concat(arr(acc.shared)); }
+function credById(id){ var all = flattenCreds(S.modelAcc); for(var i=0;i<all.length;i++){ if(String(all[i].id) === String(id)) return all[i]; } return null; }
+function ensureModelAccounts(force){
+  if(S.modelAcc && !force) return Promise.resolve(S.modelAcc);
+  if(!state.token) return Promise.resolve(null);
+  return API.modelAccounts().then(function(d){
+    S.modelAcc = d || {mine:[], company:[], shared:[]};
+    if(state.credentialId){
+      var all = flattenCreds(S.modelAcc);
+      for(var i=0;i<all.length;i++){ if(String(all[i].id) === String(state.credentialId)){ state.credentialLabel = credName(all[i]); break; } }
+      oaSyncModelChip();
+    }
+    return S.modelAcc;
+  }).catch(function(){ return null; });
+}
+/* 平台模型目录：后台「模型管理」里启用的模型，用户端只读（无 baseUrl / 密钥）。
+   顺带做一次「失效即回落」：本地记着的模型被下架/停用后，自动切回自动选择，
+   否则顶栏会一直显示一个后端已经解析不到的名字。 */
+function ensureModelCatalog(force){
+  if(S.modelCatalog && !force) return Promise.resolve(S.modelCatalog);
+  if(!state.token) return Promise.resolve(null);
+  return API.modelCatalog().then(function(d){
+    S.modelCatalog = d || {models:[], default:''};
+    if(state.modelKey){
+      var hit = null, list = arr(S.modelCatalog.models);
+      for(var i=0;i<list.length;i++){ if(String(list[i].key) === String(state.modelKey)){ hit = list[i]; break; } }
+      if(!hit){ state.modelKey = null; state.modelLabel = ''; persistModel(); }
+      else { state.modelLabel = hit.name || hit.key; }
+      oaSyncModelChip();
+    }
+    return S.modelCatalog;
+  }).catch(function(){ return null; });
+}
+/* 可邀请的同事名单（下拉候选）。失败不抛：退回空列表并在表单里明说，
+   别让「拉名单失败」变成「点了发出邀请没反应」。 */
+function ensureInvitable(force){
+  if(S.invitable && !force) return Promise.resolve(S.invitable);
+  if(!state.token) return Promise.resolve([]);
+  return API.modelInvitable().then(function(d){ S.invitable = arr(d); return S.invitable; })
+    .catch(function(){ S.invitable = []; return S.invitable; });
+}
+function ensureModelInvites(force){  if(S.modelInvites && S.modelInvitesIn && !force) return Promise.resolve();  if(!state.token) return Promise.resolve();
+  return Promise.all([API.modelInvites().catch(function(){ return []; }), API.modelInvitesIn().catch(function(){ return []; })])
+    .then(function(r){ S.modelInvites = arr(r[0]); S.modelInvitesIn = arr(r[1]); });
+}
+function ensureModelStats(force){
+  if(S.modelStats && !force) return Promise.resolve(S.modelStats);
+  if(!state.token) return Promise.resolve(null);
+  return API.billingStats(S.modelDim, S.modelPeriod || '').then(function(d){ S.modelStats = d || null; return S.modelStats; }).catch(function(){ return null; });
+}
+
+/* ---- 顶部选择/配置浮层 ---- */
+function oaOpenModelSheet(opts){
+  opts = opts || {};
+  oaClosePanels('model');          /* 互斥：别让「选择对话对象」等浮层留在下面露一角 */
+  S.modelSheetMode = opts.mode || 'pick';
+  S.modelSheetCtx = opts;
+  var root = $o('oaRoot'); if(root) root.classList.add('mod-open');
+  oaRenderModelSheet();
+  if(S.modelSheetMode === 'pick'){
+    Promise.all([ensureModelAccounts(), ensureModelCatalog()]).then(function(){ if(S.modelSheetMode === 'pick') oaRenderModelSheet(); });
+  }
+}
+/* 关闭浮层：必须把 mode 复位。
+   #mfKey 在浮层关闭后仍在 DOM 里（.mod-sheet 只是被 transform 移出视口），
+   若 mode 停留在 'create'，document 上的粘贴兜底会把内容写进这个看不见的输入框，
+   还会把这次粘贴 preventDefault 掉 —— 表现为「在别处粘贴没反应」。 */
+function oaCloseModelSheet(){
+  var root = $o('oaRoot'); if(root) root.classList.remove('mod-open');
+  S.modelSheetMode = null;
+}
+function oaRenderModelSheet(){
+  var title = $o('oaModelSheetTitle'), body = $o('oaModelSheetBody'); if(!body) return;
+  if(S.modelSheetMode === 'create'){ if(title) title.textContent = (S.modelSheetCtx && S.modelSheetCtx.ownerType === 'COMPANY') ? '新增公司账号' : '配置自定义模型'; body.innerHTML = modelCreateHtml(); bindModelCreate(); return; }
+  if(S.modelSheetMode === 'invite'){
+    if(title) title.textContent = '邀请同事共用账号';
+    /* 先拉候选人再渲染：下拉里必须是真实可邀请的同事，不能让用户手打用户名去试错 */
+    if(!S.invitable){
+      body.innerHTML = '<div class="mod-hint" style="padding:20px 2px;text-align:center">加载同事名单…</div>';
+      ensureInvitable().then(function(){ if(S.modelSheetMode === 'invite') oaRenderModelSheet(); });
+      return;
+    }
+    body.innerHTML = modelInviteHtml(); bindModelInvite(); return;
+  }
+  if(title) title.textContent = '选择模型账号';
+  body.innerHTML = modelPickHtml(); bindModelPick();
+}
+function modelRowHtml(id, name, sub, on){
+  var cid = (id == null) ? '' : String(id);
+  return '<button type="button" class="mod-row'+(on?' on':'')+'" data-cid="'+esc(cid)+'" data-cname="'+esc(name)+'">' +
+    '<span class="mr-main"><span class="mr-name">'+txt(name)+'</span>'+(sub?('<span class="mr-sub">'+txt(sub)+'</span>'):'')+'</span>' +
+    (on ? '<span class="mr-check">'+ic('check',16)+'</span>' : '') +
+  '</button>';
+}
+function modelKeyRowHtml(key, name, sub, on){
+  return '<button type="button" class="mod-row'+(on?' on':'')+'" data-mkey="'+esc(String(key))+'" data-mname="'+esc(name)+'">' +
+    '<span class="mr-main"><span class="mr-name">'+txt(name)+'</span>'+(sub?('<span class="mr-sub">'+txt(sub)+'</span>'):'')+'</span>' +
+    (on ? '<span class="mr-check">'+ic('check',16)+'</span>' : '') +
+  '</button>';
+}
+function modelPickHtml(){
+  var acc = S.modelAcc || {mine:[], company:[], shared:[]};
+  var cat = arr((S.modelCatalog && S.modelCatalog.models) || []);
+  var selCred = (state.credentialId != null && Number(state.credentialId) > 0) ? String(state.credentialId) : null;
+  var selKey = state.modelKey ? String(state.modelKey) : null;
+  var html = '<div class="mod-hint" style="margin:0 2px 8px">选择本轮对话使用的模型：平台模型由管理员在后台统一配置，账号是你自己的 Key。</div>';
+  html += modelRowHtml(null, '自动选择（默认）', '本人账号 → 公司账号 → 平台默认', !selKey && !selCred);
+  if(cat.length){
+    html += '<div class="mod-grp">平台模型</div>' + cat.map(function(m){
+      var sub = (m.model || '') + (m.isDefault ? ' · 系统默认' : '');
+      return modelKeyRowHtml(m.key, m.name || m.key, sub, selKey === String(m.key));
+    }).join('');
+  } else if(S.modelCatalog){
+    html += '<div class="mod-grp">平台模型</div><div class="mod-hint" style="padding:0 2px 8px">后台暂未配置可用模型</div>';
+  }
+  var mineOk = arr(acc.mine).filter(credUsable), compOk = arr(acc.company).filter(credUsable);
+  if(mineOk.length){ html += '<div class="mod-grp">我的账号</div>' + mineOk.map(function(c){ return modelRowHtml(c.id, credName(c), credSub(c) + (c.keyHint?(' · '+c.keyHint):''), selCred === String(c.id)); }).join(''); }
+  if(compOk.length){ html += '<div class="mod-grp">公司账号</div>' + compOk.map(function(c){ return modelRowHtml(c.id, credName(c), credSub(c) + ' · 公司收费', selCred === String(c.id)); }).join(''); }
+  if(arr(acc.shared).length){ html += '<div class="mod-grp">共享给我</div>' + arr(acc.shared).map(function(c){ return modelRowHtml(c.id, credName(c), credSub(c) + ' · 同事共享', selCred === String(c.id)); }).join(''); }
+  html += '<div class="mod-acts">' +
+    '<button type="button" class="mod-act" id="oaModelMgr">'+ic('swap',15)+' 管理账号 / 共享</button>' +
+    '<button type="button" class="mod-act primary" id="oaModelNew">'+ic('plus',15)+' 配置自定义模型</button>' +
+  '</div>';
+  return html;
+}
+function bindModelPick(){
+  var body = $o('oaModelSheetBody'); if(!body) return;
+  body.querySelectorAll('.mod-row').forEach(function(b){
+    b.onclick = function(){
+      if(b.dataset.mkey){ oaPickModel(b.dataset.mkey, b.dataset.mname || ''); return; }
+      var cid = b.dataset.cid;
+      if(!cid) oaPickCredential(null, ''); else oaPickCredential(Number(cid), b.dataset.cname || '');
+    };
+  });
+  var mgr = body.querySelector('#oaModelMgr'); if(mgr) mgr.onclick = function(){ oaCloseModelSheet(); oaGo('model'); };
+  var nw = body.querySelector('#oaModelNew'); if(nw) nw.onclick = function(){ oaOpenModelSheet({mode:'create', ownerType:'PERSONAL'}); };
+}
+/* 平台模型与账号互斥：选了平台模型就清掉账号（否则账号里的 base_url/model 会把所选模型盖掉） */
+function oaPickModel(key, label){
+  state.modelKey = String(key);
+  state.modelLabel = label || key;
+  state.credentialId = null; state.credentialLabel = '';
+  persistCred(); oaSyncModelChip(); oaCloseModelSheet();
+  toast('已切换到「' + state.modelLabel + '」');
+}
+function oaPickCredential(id, label){
+  state.modelKey = null; state.modelLabel = '';
+  if(id == null || !(Number(id) > 0)){ state.credentialId = null; state.credentialLabel = ''; }
+  else { state.credentialId = Number(id); state.credentialLabel = label || (credById(id) ? credName(credById(id)) : ('账号 #'+id)); }
+  persistCred(); oaSyncModelChip(); oaCloseModelSheet();
+  toast(state.credentialId ? ('已切换到「' + state.credentialLabel + '」') : '已改为自动选择模型');
+}
+
+/* ---- 新增 / 邀请表单 ---- */
+/* 常用模型名候选（与后台 ModelConfigService.PRESETS 同源）：换厂家新模型时只要把名字
+   填进来即可调用，不用改代码；这里给候选是为了少打错字。 */
+var MODEL_NAMES = {
+  deepseek:['deepseek-chat','deepseek-reasoner'],
+  dashscope:['qwen-plus','qwen-max','qwen-turbo','qwen-long'],
+  /* 2026-11-04：MiniMax 已下线 Text-01 / M1 / abab6.5s-chat（实测 404），候选换成本账号
+     /models 当前真实返回的 9 个；留旧名在这里等于诱导用户填一个必然失败的模型名。 */
+  minimax:['MiniMax-M3.1-Flash','MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed',
+           'MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'],
+  vllm:['Qwen2.5-7B-Instruct','Qwen2.5-14B-Instruct'],
+  ollama:['qwen2.5:7b','qwen2.5:14b','llama3.1:8b']
+};
+function modelCreateHtml(){
+  var provs = Object.keys(PROVIDER_LABELS).map(function(k){ return '<option value="'+k+'">'+txt(PROVIDER_LABELS[k])+'</option>'; }).join('');
+  var allNames = [];
+  Object.keys(MODEL_NAMES).forEach(function(k){ allNames = allNames.concat(MODEL_NAMES[k]); });
+  var dl = '<datalist id="mfModelList">' + allNames.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join('') + '</datalist>';
+  return '<div class="mod-form">' + dl +
+    '<label>名称<input id="mfName" maxlength="64" placeholder="如：我的 DeepSeek"></label>' +
+    '<label>供应商<select id="mfProvider">'+provs+'</select></label>' +
+    '<label>API Key<div class="mf-keyrow">' +
+      '<input id="mfKey" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next" placeholder="sk-...">' +
+      '<button type="button" class="mf-mini" id="mfPaste" aria-label="粘贴剪贴板内容">粘贴</button>' +
+      '<button type="button" class="mf-mini mf-eye" id="mfEye" aria-label="显示/隐藏密钥">显示</button>' +
+    '</div></label>' +
+    '<label>接口地址（可选）<input id="mfBase" placeholder="留空 = 用该供应商默认地址"></label>' +
+    '<label>模型名（可选）<input id="mfModel" list="mfModelList" placeholder="留空 = 用该供应商默认模型"></label>' +
+    '<label class="mod-switch"><input id="mfShare" type="checkbox"> 允许共享给同事（被邀请人消耗记在你名下）</label>' +
+    '<label>备注（可选）<input id="mfRemark" maxlength="255" placeholder="如：团队报销用"></label>' +
+    /* 温度/top_p/输出上限/超时/重试/流式属于平台调优项，普通用户填不对反而会把模型调坏
+       （top_p=0、max_tokens=0 会被网关当非法参数）。默认收起：需要时点开仍可覆盖。 */
+    '<details class="mod-adv"><summary>高级参数（一般不用改，留空即继承平台默认）</summary>' +
+      '<div class="mod-adv-body">' +
+        '<label>温度 temperature<input id="mfTemp" type="number" step="0.05" min="0" max="2" placeholder="留空 = 跟随平台"></label>' +
+        '<label>核采样 top_p<input id="mfTopP" type="number" step="0.05" min="0" max="1" placeholder="留空 = 不下发"></label>' +
+        '<label>单次输出上限 max_tokens<input id="mfMaxTok" type="number" step="256" min="0" max="65536" placeholder="留空 = 不下发"></label>' +
+        '<label>请求超时（秒）<input id="mfTimeout" type="number" step="5" min="5" max="600" placeholder="留空 = 跟随平台"></label>' +
+        '<label>重试次数（含首次）<input id="mfRetry" type="number" step="1" min="1" max="5" placeholder="留空 = 跟随平台"></label>' +
+        '<label class="mod-switch"><input id="mfStream" type="checkbox" checked> 流式输出（关掉走非流式，兼容不支持的网关）</label>' +
+      '</div>' +
+    '</details>' +
+    '<div class="mod-hint">密钥加密后入库（AES-256-GCM），任何界面都不再显示明文，只保留前 3 后 4 掩码。</div>' +
+  '</div>' +
+  '<div class="mod-acts"><button type="button" class="mod-act" id="mfBack">返回</button><button type="button" class="mod-act primary" id="mfSave">保存</button></div>';
+}
+function bindModelCreate(){
+  var body = $o('oaModelSheetBody'); if(!body) return;
+  var back = body.querySelector('#mfBack'); if(back) back.onclick = function(){ oaOpenModelSheet({mode:'pick'}); };
+  var save = body.querySelector('#mfSave'); if(save) save.onclick = function(){ oaSubmitModelCreate(); };
+  /* 显示/隐藏密钥：切到 text 后输入法不再按密码框处理（某些 Android 输入法在
+     type=password 下会吞键，表现为「点进去打不了字」）。默认仍是 password。 */
+  var eye = body.querySelector('#mfEye'), key = body.querySelector('#mfKey');
+  if(eye && key) eye.onclick = function(){
+    var show = key.type === 'password';
+    key.type = show ? 'text' : 'password';
+    eye.textContent = show ? '隐藏' : '显示';
+    eye.classList.toggle('on', show);
+    try{ key.focus(); }catch(e){}
+  };
+  var pasteBtn = body.querySelector('#mfPaste');
+  if(pasteBtn && key) pasteBtn.onclick = function(){ oaPasteIntoKey(key); };
+}
+/* 把剪贴板内容写进密钥框（不经过系统长按菜单）。
+   navigator.clipboard.readText 只在安全上下文（https / localhost / 127.0.0.1）可用；
+   局域网 http 下接口不存在 ⇒ 切明文并聚焦，把系统「粘贴」菜单能用的概率拉到最高，同时给出明确提示。 */
+function oaCleanKey(s){
+  /* 复制来的密钥常带尾随换行/制表符（终端里 cat 出来的最常见），先清掉再落库 */
+  return String(s == null ? '' : s).replace(/[\r\n\t\u00a0]/g, '').trim();
+}
+function oaPasteIntoKey(key){
+  if(!key) return;
+  var done = function(s){
+    var v = oaCleanKey(s);
+    if(!v){ toast('剪贴板里没有文字'); return; }
+    key.value = v;
+    try{ key.dispatchEvent(new Event('input', {bubbles:true})); }catch(e){}
+    toast('已粘贴（' + v.length + ' 个字符）');
+  };
+  var fallback = function(){
+    if(key.type === 'password'){
+      var eye = document.querySelector('#mfEye');
+      if(eye) eye.click();           /* 明文态下长按/粘贴菜单一定可用 */
+    }
+    try{ key.focus(); }catch(e){}
+    toast('当前环境不允许直接读剪贴板，已切到明文，请长按输入框选「粘贴」');
+  };
+  if(navigator.clipboard && navigator.clipboard.readText){
+    navigator.clipboard.readText().then(done).catch(fallback);
+  } else { fallback(); }
+}
+/* 网络层失败（fetch 直接 reject，没拿到任何响应）与业务报错的文案要分开：
+   服务没起来 / 刚重启 / 手机切网时，浏览器只给一句「Failed to fetch」——
+   对用户零信息量，还会被误判成「表单有 bug」。 */
+function netErrText(e){
+  var m = (e && e.message) ? String(e.message) : '';
+  if(/failed to fetch|networkerror|load failed|network request failed|err_connection/i.test(m)){
+    return '连不上服务（后端未启动或正在重启），请稍后重试';
+  }
+  /* 有统一错误信封时（suggestion/errorCode），把「怎么办」一并带出来 */
+  return errText(e);
+}
+async function oaSubmitModelCreate(){
+  var body = $o('oaModelSheetBody'); if(!body) return;
+  var v = function(id){ var e = body.querySelector('#'+id); return e ? String(e.value || '').trim() : ''; };
+  var name = v('mfName'), key = v('mfKey'), provider = v('mfProvider') || 'deepseek';
+  if(!name){ toast('请填写名称'); return; }
+  if(!key){ toast('请填写 API Key'); return; }
+  var ownerType = (S.modelSheetCtx && S.modelSheetCtx.ownerType) || 'PERSONAL';
+  var saveBtn = body.querySelector('#mfSave'); if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = '保存中…'; }
+  // 参数按「填了才传」的语义组装：留空 = 继承平台该供应商的配置（后端不会写成 0/null）
+  var body2 = { ownerType: ownerType, providerKey: provider, name: name, apiKey: key,
+    baseUrl: v('mfBase') || undefined, modelName: v('mfModel') || undefined,
+    shareEnabled: !!(body.querySelector('#mfShare') && body.querySelector('#mfShare').checked),
+    streamEnabled: !!(body.querySelector('#mfStream') && body.querySelector('#mfStream').checked),
+    remark: v('mfRemark') || undefined };
+  if(v('mfTemp')) body2.temperature = Number(v('mfTemp'));
+  if(v('mfTopP')) body2.topP = Number(v('mfTopP'));
+  if(v('mfMaxTok')) body2.maxTokens = Number(v('mfMaxTok'));
+  if(v('mfTimeout')) body2.timeoutSeconds = Number(v('mfTimeout'));
+  if(v('mfRetry')) body2.retryAttempts = Number(v('mfRetry'));
+  try{
+    await API.modelCreate(body2);
+    toast('账号已创建');
+    S.modelAcc = null; S.modelInvites = null; S.modelInvitesIn = null;
+    await ensureModelAccounts(true);
+    oaOpenModelSheet({mode:'pick'});
+    if(S.view === 'model') renderOaModel();
+  }catch(e){ toast('创建失败：' + netErrText(e)); }
+  finally{ if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = '保存'; } }
+}
+function modelInviteHtml(){
+  var c = credById(S.modelSheetCtx && S.modelSheetCtx.credentialId);
+  var list = arr(S.invitable);
+  /* 候选来自 GET /v1/model-credentials/invitable（同租户、启用、排除自己）。
+     文案显示「姓名（用户名）」：重名时靠用户名区分，提交的也是用户名。 */
+  var opts = '<option value="">请选择同事</option>' + list.map(function(u){
+    var uname = String(u.username || '').trim();
+    var nick = String(u.nickname || '').trim() || uname;
+    var label = (uname && uname !== nick) ? (nick + '（' + uname + '）') : nick;
+    return '<option value="'+esc(uname)+'">'+esc(label)+'</option>';
+  }).join('');
+  var emptyHint = list.length ? '' :
+    '<div class="mod-hint" style="color:var(--red);margin:2px 2px 8px">本单位暂无可邀请的同事（或名单加载失败），请刷新后重试。</div>';
+  return '<div class="mod-hint" style="margin:0 2px 8px">账号：'+txt(c ? credName(c) : '')+'。被邀请人消耗的词元由你承担（记在你名下，你自己的额度也会被扣减）。</div>' +
+    '<div class="mod-form">' +
+      '<label>同事账号<select id="miUser">'+opts+'</select></label>' +
+      emptyHint +
+      '<label>共享额度<input id="miQuota" inputmode="numeric" placeholder="0 = 不限"></label>' +
+      '<label>到期时间（可选）<input id="miExp" type="datetime-local"></label>' +
+    '</div>' +
+    '<div class="mod-acts"><button type="button" class="mod-act" id="miBack">返回</button><button type="button" class="mod-act primary" id="miSave">发出邀请</button></div>';
+}
+function bindModelInvite(){
+  var body = $o('oaModelSheetBody'); if(!body) return;
+  var back = body.querySelector('#miBack'); if(back) back.onclick = function(){ oaOpenModelSheet({mode:'pick'}); };
+  var save = body.querySelector('#miSave'); if(save) save.onclick = function(){ oaSubmitModelInvite(); };
+}
+async function oaSubmitModelInvite(){
+  var body = $o('oaModelSheetBody'); if(!body) return;
+  var cid = S.modelSheetCtx && S.modelSheetCtx.credentialId;
+  var user = body.querySelector('#miUser') ? String(body.querySelector('#miUser').value || '').trim() : '';
+  if(!cid){ toast('缺少账号'); return; }
+  if(!user){ toast('请选择要邀请的同事'); return; }
+  var quota = body.querySelector('#miQuota') ? String(body.querySelector('#miQuota').value || '').trim() : '';
+  var exp = body.querySelector('#miExp') ? String(body.querySelector('#miExp').value || '').trim() : '';
+  var save = body.querySelector('#miSave'); if(save){ save.disabled = true; save.textContent = '提交中…'; }
+  try{
+    await API.modelInvite(cid, { granteeUsername: user, quotaTokens: quota ? Number(quota) : 0, expiresAt: exp ? (exp.length === 16 ? exp + ':00' : exp) : undefined });
+    toast('已邀请，对方现在就能用这个账号');
+    S.modelAcc = null; S.modelInvites = null; S.modelInvitesIn = null; S.invitable = null;
+    await ensureModelAccounts(true);
+    oaCloseModelSheet();
+    if(S.view === 'model'){ S.modelTab = 'invites'; renderOaModel(); }
+  }catch(e){ toast('邀请失败：' + netErrText(e)); }
+  finally{ if(save){ save.disabled = false; save.textContent = '发出邀请'; } }
+}
+
+/* ---- 「我的·账号模型」视图 ---- */
+function renderOaModel(){
+  ensureModelAccounts().then(function(){ if(S.view === 'model') renderOaModelInner(); });
+  ensureModelInvites().then(function(){ if(S.view === 'model') renderOaModelInner(); });
+  renderOaModelInner();
+}
+function renderOaModelInner(){
+  var seg = $o('oaModelSeg');
+  if(seg){ seg.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.dataset.mtab === S.modelTab); }); }
+  var body = $o('oaModelBody'); if(!body) return;
+  if(S.modelTab === 'stats'){
+    if(!S.modelStats){
+      body.innerHTML = '<div class="muted" style="padding:20px;text-align:center">统计加载中…</div>';
+      ensureModelStats().then(function(){ if(S.view === 'model' && S.modelTab === 'stats'){ body.innerHTML = modelStatsHtml(); bindModelStats(); } });
+      return;
+    }
+    body.innerHTML = modelStatsHtml(); bindModelStats(); return;
+  }
+  if(S.modelTab === 'invites'){ body.innerHTML = modelInvitesHtml(); bindModelInviteRows(); return; }
+  if(S.modelTab === 'shared'){ body.innerHTML = modelSharedHtml(); return; }
+  if(!S.modelAcc){ body.innerHTML = '<div class="muted" style="padding:20px;text-align:center">账号加载中…</div>'; return; }
+  body.innerHTML = modelAccListHtml(S.modelTab); bindModelAccActions();
+}
+function modelAccListHtml(tab){
+  var acc = S.modelAcc || {mine:[], company:[], shared:[]};
+  var list = arr(acc[tab]);
+  var isMine = tab === 'mine', isCompany = tab === 'company';
+  var canEdit = isMine || (isCompany && state.isAdmin);
+  var title = isMine ? '我的账号' : '公司账号';
+  var hint = isMine ? '自己注册的账号：供应商按各自账号计费，平台只做统计'
+                    : ('公司统一提供：走公司额度，用量标注「公司收费」' + (state.isAdmin ? '' : '；由管理员维护'));
+  var html = '<div class="sec-title" style="margin-left:2px;margin-top:2px">'+title+' <span class="muted">'+txt(hint)+'</span></div>';
+  if(canEdit){ html += '<div style="margin:0 2px 10px"><button type="button" class="btn small" id="oaModelAdd" data-owner="'+((isCompany)?'COMPANY':'PERSONAL')+'">'+ic('plus',14)+' 新增'+(isCompany?'公司':'')+'账号</button></div>'; }
+  if(!list.length){ html += '<div class="card"><div class="muted" style="padding:10px 0">'+(isMine?'还没有账号，点上方「新增账号」或在顶部选择器里配置自定义模型':'暂无公司账号')+'</div></div>'; return html; }
+  return html + '<div class="card">' + list.map(function(c){ return modelAccRowHtml(c, tab, canEdit); }).join('') + '</div>';
+}
+function modelAccRowHtml(c, tab, editable){
+  var shareTag = c.shareEnabled ? chip('due','已共享 '+(c.shareCount||0)+' 人') : chip('done','未共享');
+  var statusTag = c.enabled ? chip('prog','启用') : chip('rej','停用');
+  var acts = '';
+  if(editable){
+    acts = '<div class="mod-account-acts">' +
+      (c.shareEnabled ? '<button type="button" class="mini" data-act="invite" data-cid="'+esc(c.id)+'">邀请同事</button>' : '') +
+      '<button type="button" class="mini" data-act="share" data-cid="'+esc(c.id)+'" data-on="'+(c.shareEnabled?'1':'0')+'">'+(c.shareEnabled?'关闭共享':'开启共享')+'</button>' +
+      '<button type="button" class="mini danger" data-act="del" data-cid="'+esc(c.id)+'">删除</button>' +
+    '</div>';
+  }
+  return '<div class="lrow" style="align-items:flex-start"><div class="txt" style="flex:1;min-width:0">' +
+    '<div class="t1 truncate">'+txt(credName(c))+' '+shareTag+' '+statusTag+'</div>' +
+    '<div class="t2">'+txt(credSub(c))+(c.keyHint?(' · '+txt(c.keyHint)):'')+'</div>' + acts +
+  '</div></div>';
+}
+function modelSharedHtml(){
+  var list = arr((S.modelAcc||{}).shared), ownerMap = {};
+  arr(S.modelInvitesIn).forEach(function(s){ if(s.credentialId) ownerMap[s.credentialId] = s.ownerName || '同事'; });
+  var html = '<div class="sec-title" style="margin-left:2px;margin-top:2px">共享给我 <span class="muted">用这些账号不消耗你自己的额度（记在邀请者头上）</span></div>';
+  if(!list.length){ return html + '<div class="card"><div class="muted" style="padding:10px 0">暂无同事共享给你的账号</div></div>'; }
+  return html + '<div class="card">' + list.map(function(c){
+    var owner = ownerMap[c.id] || '同事';
+    return '<div class="lrow"><div class="txt" style="flex:1;min-width:0"><div class="t1 truncate">'+txt(credName(c))+'</div><div class="t2">'+txt(credSub(c))+' · 来自 '+txt(owner)+' · '+(c.enabled?'可用':'已停用')+'</div></div></div>';
+  }).join('') + '</div>';
+}
+function modelInvitesHtml(){
+  var list = arr(S.modelInvites);
+  var html = '<div class="sec-title" style="margin-left:2px;margin-top:2px">邀请记录 <span class="muted">被邀请人消耗的词元由你承担（人员明细）</span></div>';
+  if(!list.length){ return html + '<div class="card"><div class="muted" style="padding:10px 0">还没有邀请记录；在「我的账号」里对已开启共享的账号点「邀请同事」</div></div>'; }
+  return html + '<div class="card">' + list.map(function(s){
+    var st = s.status === 'ACTIVE' ? chip('prog','生效中') : s.status === 'REVOKED' ? chip('rej','已撤销') : s.status === 'EXPIRED' ? chip('done','已过期') : chip('wait','待接受');
+    var quota = (s.quotaTokens ? fmtNum(s.quotaTokens) : '不限');
+    var exp = s.expiresAt ? String(s.expiresAt).replace('T',' ').slice(0,16) : '长期';
+    var acts = s.status === 'ACTIVE' ? '<div class="mod-account-acts"><button type="button" class="mini danger" data-act="revoke" data-sid="'+esc(s.id)+'">撤销</button></div>' : '';
+    return '<div class="lrow" style="align-items:flex-start"><div class="txt" style="flex:1;min-width:0">' +
+      '<div class="t1 truncate">'+txt(s.granteeName || ('用户#'+s.granteeUserId))+' '+st+'</div>' +
+      '<div class="t2">账号 '+txt(s.credentialName || '')+' · 额度 '+quota+' · 已用 '+fmtNum(s.usedTokens)+' · 到期 '+txt(exp)+'</div>' + acts +
+    '</div></div>';
+  }).join('') + '</div>';
+}
+function modelStatsHtml(){
+  var st = S.modelStats;
+  if(!st) return '<div class="card"><div class="muted" style="padding:10px 0">暂无统计数据</div></div>';
+  var sp = st.split || {}, dim = S.modelDim;
+  var html = '<div class="mod-dim">' +
+    '<button type="button" data-dim="credential" class="'+(dim==='credential'?'on':'')+'">按账号</button>' +
+    '<button type="button" data-dim="bearer" class="'+(dim==='bearer'?'on':'')+'">按使用者</button>' +
+    '<button type="button" data-dim="charge" class="'+(dim==='charge'?'on':'')+'">按付费人</button>' +
+  '</div>' +
+  '<div class="mod-stat-row">' +
+    '<div class="mod-stat"><div class="ms-label">公司收费</div><div class="ms-val">'+fmtNum(sp.companyCharged)+'</div><div class="ms-sub">走公司额度</div></div>' +
+    '<div class="mod-stat"><div class="ms-label">个人自付</div><div class="ms-val">'+fmtNum(sp.personalCharged)+'</div><div class="ms-sub">按各自账号</div></div>' +
+    '<div class="mod-stat hi"><div class="ms-label">合计词元</div><div class="ms-val">'+fmtNum(sp.total)+'</div><div class="ms-sub">'+fmtNum(sp.calls)+' 次调用</div></div>' +
+  '</div>' +
+  '<div class="mod-hint" style="margin:0 2px 8px">未标注 '+fmtNum(sp.unmarked)+'（历史账本，无归属记录）。「是否公司收费」只由账号来源推导。</div>';
+  var rows = arr(st.rows), dimLabel = dim === 'credential' ? '账号' : dim === 'bearer' ? '使用者' : '付费人';
+  if(!rows.length) return html + '<div class="card"><div class="muted" style="padding:10px 0">本月暂无用量</div></div>';
+  return html + '<div class="card">' + rows.map(function(r){
+    var ot = r.ownerType === 'COMPANY' ? '公司提供' : r.ownerType === 'PERSONAL' ? '个人注册' : '';
+    var ch = (r.companyCharged === 1) ? '公司收费' : (r.companyCharged === 0) ? '个人自付' : '未标注';
+    return '<div class="lrow" style="align-items:flex-start"><div class="txt" style="flex:1;min-width:0">' +
+      '<div class="t1 truncate">'+txt(r.name || ('#'+r.key))+'</div>' +
+      '<div class="t2">'+txt(dimLabel)+' · '+txt(ch)+(ot?(' · '+txt(ot)):'')+' · '+fmtNum(r.tokens)+' 词元 · '+fmtNum(r.calls)+' 次'+(dim!=='bearer'?(' · '+fmtNum(r.members)+' 人'):'')+'</div>' +
+    '</div></div>';
+  }).join('') + '</div>';
+}
+function bindModelStats(){
+  var body = $o('oaModelBody'); if(!body) return;
+  body.querySelectorAll('.mod-dim button').forEach(function(b){
+    b.onclick = function(){ if(S.modelDim === b.dataset.dim) return; S.modelDim = b.dataset.dim; S.modelStats = null; renderOaModelInner(); };
+  });
+}
+function bindModelAccActions(){
+  var body = $o('oaModelBody'); if(!body) return;
+  var add = body.querySelector('#oaModelAdd'); if(add) add.onclick = function(){ oaOpenModelSheet({mode:'create', ownerType: add.dataset.owner || 'PERSONAL'}); };
+  body.querySelectorAll('[data-act]').forEach(function(b){
+    var act = b.dataset.act;
+    if(act === 'share') b.onclick = function(){ oaToggleShare(Number(b.dataset.cid), b.dataset.on === '1'); };
+    else if(act === 'del') b.onclick = function(){ oaDeleteCred(Number(b.dataset.cid)); };
+    else if(act === 'invite') b.onclick = function(){ oaOpenModelSheet({mode:'invite', credentialId: Number(b.dataset.cid)}); };
+  });
+}
+function bindModelInviteRows(){
+  var body = $o('oaModelBody'); if(!body) return;
+  body.querySelectorAll('[data-act="revoke"]').forEach(function(b){ b.onclick = function(){ oaRevokeShare(Number(b.dataset.sid)); }; });
+}
+async function oaToggleShare(id, curOn){
+  try{ await API.modelUpdate(id, { shareEnabled: !curOn }); toast(curOn ? '已关闭共享' : '已开启共享'); S.modelAcc = null; await ensureModelAccounts(true); renderOaModelInner(); }
+  catch(e){ toast('操作失败：' + (e.message || '后端异常')); }
+}
+async function oaDeleteCred(id){
+  var c = credById(id);
+  try{ if(typeof window.confirm === 'function' && !window.confirm('删除「' + (c?credName(c):('#'+id)) + '」？已产生的用量记录保留，但该账号立即不可用。')) return; }catch(e){}
+  try{
+    await API.modelDelete(id); toast('已删除');
+    if(String(state.credentialId) === String(id)){ state.credentialId = null; state.credentialLabel = ''; persistCred(); oaSyncModelChip(); }
+    S.modelAcc = null; await ensureModelAccounts(true); renderOaModelInner();
+  }catch(e){ toast('删除失败：' + (e.message || '后端异常')); }
+}
+async function oaRevokeShare(sid){
+  try{ if(typeof window.confirm === 'function' && !window.confirm('撤销这条共享？撤销后对方下一轮对话就不能再用这个账号。')) return; }catch(e){}
+  try{ await API.modelRevoke(sid); toast('已撤销'); S.modelInvites = null; await ensureModelInvites(true); renderOaModelInner(); }
+  catch(e){ toast('撤销失败：' + (e.message || '后端异常')); }
+}
+/* 软键盘适配（2026-11-04）——「API Key 打不进字」的真正常见成因有两条，都在这里收口：
+   ① 键盘弹起后浮层没让位：iOS/Android 只缩 visual viewport，不缩 layout viewport，
+      所以 .mod-sheet（position:absolute; bottom:0）原地不动，输入框正好被键盘压住，
+      光标和刚敲的字符都看不见，用户就认为「打不进去」。→ 实测键盘高度写进 --kb，浮层整体上抬。
+   ② 聚焦后输入框落在浮层滚动区之外：.mod-body 是 overflow:auto，聚焦时浏览器不一定帮你滚
+      （尤其是 .mod-sheet 有 transform 时），→ focusin 时**只改 .mod-body 的 scrollTop**。
+      ⚠️ 绝不能用 scrollIntoView：它会滚祖先，.phone 虽是 overflow:hidden 却仍可编程滚动，
+      一滚就把藏在下面的 #oaSheet（选择对话对象）推进可视区（2026-11-04 踩过，见下方注释）。
+   只绑一次；--kb 在键盘收起时归零，桌面端恒为 0（visualViewport 高度 == innerHeight）。 */
+function oaBindKeyboardSafe(){
+  var root = $o('oaRoot'); if(!root || root.dataset.kbBound === '1') return;
+  root.dataset.kbBound = '1';
+  if(window.visualViewport){
+    var apply = function(){
+      var vv = window.visualViewport;
+      /* 与 innerHeight 的差值 = 键盘高度；offsetTop 是 iOS 键盘弹起后的可视化偏移。
+         <80px 视为噪声（地址栏收缩等），不动浮层，避免误让位。 */
+      var kb = Math.round(window.innerHeight - vv.height - (vv.offsetTop || 0));
+      root.style.setProperty('--kb', (kb > 80 ? kb : 0) + 'px');
+    };
+    window.visualViewport.addEventListener('resize', apply);
+    window.visualViewport.addEventListener('scroll', apply);
+    apply();
+  }
+  root.addEventListener('focusin', function(e){
+    var t = e.target;
+    if(!t || !t.tagName) return;
+    var tag = t.tagName;
+    if(tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') return;
+    var sc = t.closest ? t.closest('.mod-body') : null;
+    if(!sc) return;
+    /* ★ 只滚这个滚动容器自己，**绝不用 scrollIntoView**：
+       祖先 .phone 虽然是 overflow:hidden，但它依然是可编程滚动容器，
+       scrollIntoView 会把整块屏幕往上推，把藏在下面的 translateY(102%) 的
+       #oaSheet（选择对话对象）推进可视区 —— 用户看到的「点输入框就冒出别的模块组件」
+       就是这么来的（那张浮层其实没有打开，只是被滚出来了；越滚越明显）。 */
+    setTimeout(function(){
+      var tr = t.getBoundingClientRect(), cr = sc.getBoundingClientRect();
+      if(tr.top >= cr.top && tr.bottom <= cr.bottom && tr.height > 0) return;  /* 已在浮层可视区内 */
+      sc.scrollTop += (tr.top + tr.height / 2) - (cr.top + cr.height / 2);
+    }, 160);
+  });
+  /* 粘贴兜底：个别 WebView 会把 paste 投递到 document 而不是输入框（焦点不在文本框时）；
+     用户在新建账号浮层里直接粘贴时，把文本收进 API Key，不让内容白粘。
+     目标是输入框/可编辑区时一律不动（聊天框的粘贴上传图片等逻辑照旧）。 */
+  document.addEventListener('paste', function(e){
+    if(S.modelSheetMode !== 'create') return;
+    var rt = $o('oaRoot');
+    if(!rt || !rt.classList.contains('mod-open')) return;   /* 浮层没开就不接管，避免误吞别处的粘贴 */
+    var t = e.target;
+    if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    var dt = e.clipboardData || window.clipboardData;
+    var text = dt ? dt.getData('text/plain') : '';
+    var k = document.getElementById('mfKey');
+    if(!text || !k) return;
+    e.preventDefault();
+    k.value = oaCleanKey(text);
+    toast('已粘贴到 API Key');
+  });
+}
+/* 换人登录时由经典层（doLogout → resetUserState）调的钩子。
+   S 在本 IIFE 内，脚本1 够不着，只能这样暴露；只清「按账号取的缓存 + 当前视图」，
+   不动 token / 会话（那些由经典层负责）。 */
+window.__oaResetUserCache = function(){
+  try{
+    S.modelAcc = null; S.modelInvites = null; S.modelInvitesIn = null;
+    S.modelStats = null; S.invitable = null; S.modelCatalog = null;
+    S.modelTab = 'mine'; S.docId = null; S.modelSheetMode = null;
+    S.view = 'home'; S.from = 'home';
+    var body = document.getElementById('oaModelBody'); if(body) body.innerHTML = '';
+    oaCloseModelSheet();
+  }catch(e){}
+};
+
+/* 事件绑定：顶栏 chip / 浮层遮罩与关闭 / 五 tab 切换（静态控件只绑一次） */
+function oaBindModelEvents(){
+  oaBindKeyboardSafe();
+  initModelSelection();
+  var chipEl = $o('oaModelChip'); if(chipEl) chipEl.onclick = function(){ oaOpenModelSheet({mode:'pick'}); };
+  var mask = $o('oaModelMask'); if(mask) mask.onclick = oaCloseModelSheet;
+  var x = $o('oaModelSheetX'); if(x) x.onclick = oaCloseModelSheet;
+  var seg = $o('oaModelSeg');
+  if(seg) seg.querySelectorAll('button').forEach(function(b){ b.onclick = function(){ S.modelTab = b.dataset.mtab; renderOaModel(); }; });
 }
 
 /* ------------------------------- 7.5 我的 · 账户四个内页（全部在新版内完成）
@@ -11251,6 +12179,7 @@ window.addEventListener('resize', oaLayoutTails);
 
 /* 顶部标出当前对话对象：与 state.chatWorker 同形，但绑定在本层自己的会话上 */
 function oaBanner(){
+  oaSyncAssignUI();   // 同步指定负责人按钮/clear（任一对话对象变化都经过这里）
   var list = dockEl(); if(!list) return;
   var old = list.querySelector('.oa-who'); if(old) old.remove();
   if(!S.worker && !S.expert) return;
@@ -11261,15 +12190,187 @@ function oaBanner(){
   list.insertBefore(d, list.firstChild);
 }
 
+/* ---------------------------------------------------------------- 9.6 发起审批 / 指定负责人（请求 E）
+   · 发起审批：抽屉入口「发起审批」与对话里说「发起审批 / 我要申请…」都先跳到 OA 模块
+     数字人（相应的数字人），再让用户明确目标；命中具体 OA 模块意图时直接跳该数字人。
+   · 指定负责人：OA 模块数字人对话内提供「指定负责人」按钮，可随时指定 / 修改本次审批
+     交给谁；预选会在审批人选择卡出现时自动落定（复用 clarification → list_approval_handlers
+     → submit_leave_request 链路，后端能力已齐备，仅补用户端触发入口）。 */
+
+function isOaWorker(w){ return !!(w && String(w.workerType || '').indexOf('OA') === 0); }
+
+/* 抽屉「发起审批」入口：直接跳到 OA 模块 Gallery，让用户选「相应的数字人」 */
+function oaLaunchApproval(){
+  oaGo('modules');
+  toast('选择要办理的审批类型，对应数字人会接管对话');
+}
+
+/* 对话里说「发起审批 / 我要申请…」：返回命中的 OA 模块数字人，或 'modules'（去 Gallery 选），或 null（不路由） */
+async function oaApprovalLaunchTarget(q){
+  // 1) 精确意图：workerIntent 命中 OA 模块数字人 → 直接跳该数字人（相应的数字人）
+  try{
+    var intent = await API.workerIntent(q);
+    if(intent){
+      /* 意图侧是「角色码」（LEAVE_APPROVER / GENERAL …），OA 模块是「模块编码」（OA_LEAVE / OA_APPROVAL …），
+         两套编码直接相等会全部落空（2026-11-04 真机回归发现：请假意图永远跳不过去）。
+         这里按「角色码 / formCode → OA 模块编码」生成候选，命中任一即直跳；不改变原有精确匹配优先级。 */
+      var codes = [];
+      var role = intent.role || intent.workerType;
+      if(role) codes.push(String(role).toUpperCase());
+      if(intent.formCode){ codes.push('OA_' + String(intent.formCode).toUpperCase().replace(/_REQUEST$/, '')); }
+      if(role){ var r2 = String(role).toUpperCase(); if(/_APPROVER$/.test(r2)) codes.push('OA_' + r2.replace(/_APPROVER$/, '')); }
+      var workers = arr(state.workers);
+      for(var ci = 0; ci < codes.length; ci++){
+        for(var wi = 0; wi < workers.length; wi++){
+          var w = workers[wi];
+          if(w.on !== false && String(w.workerType || '').toUpperCase() === codes[ci] && isOaWorker(w)) return w;
+        }
+      }
+    }
+  }catch(e){ /* 意图接口失败不阻断正常发送 */ }
+  // 2) 兜底：明确「发起 / 申请审批」措辞但未命中具体模块 → 跳模块 Gallery
+  if(/发起\s*审批|我要\s*审批|申请\s*审批|发起\s*一个\s*审批|我要\s*申请|办\s*个\s*审批|提交\s*审批|我要\s*办\s*审批|发起\s*一个\s*申请/.test(q)) return 'modules';
+  return null;
+}
+
+/* 指定负责人 UI 同步：按钮仅对 OA 模块数字人可见；chip 随预选状态显隐 */
+function oaSyncAssignUI(){
+  var btn = $o('oaAssignBtn');
+  if(btn) btn.style.display = (S.worker && isOaWorker(S.worker)) ? '' : 'none';
+  var bar = $o('oaAssignBar');
+  if(bar){
+    if(S.oaAssignee){
+      bar.hidden = false;
+      bar.innerHTML = '<span class="ab-tag">审批负责人</span>' +
+        '<span class="ab-name">'+esc(S.oaAssignee.name || ('用户#'+S.oaAssignee.userId))+'</span>' +
+        '<button type="button" class="ab-x" aria-label="清除指定" title="清除指定">✕</button>';
+      var x = bar.querySelector('.ab-x');
+      if(x) x.onclick = function(e){ e.stopPropagation(); oaClearAssignee(); };
+    }else{
+      bar.hidden = true; bar.innerHTML = '';
+    }
+  }
+}
+function oaSetAssignee(userId, name){
+  S.oaAssignee = {userId:userId, name:name};
+  oaSyncAssignUI();
+  toast('已指定负责人「'+txt(name)+'」：后续审批人会据此提交（也可在审批人选择卡里改）');
+}
+function oaClearAssignee(){
+  S.oaAssignee = null;
+  oaSyncAssignUI();
+}
+
+/* 指定负责人选择器：复用通讯录名册（S.org.members，已排除本人）作为候选源，无需新增后端接口 */
+function oaOpenAssignPicker(){
+  if(!S.worker || !isOaWorker(S.worker)){ toast('请先进入某个 OA 审批数字人对话'); return; }
+  if(!S.org || !S.org.members || !S.org.members.length){
+    toast('正在加载通讯录…');
+    loadOrgAll().catch(function(){}).then(function(){
+      if(!S.org || !S.org.members || !S.org.members.length){ toast('通讯录为空，暂无法指定负责人'); return; }
+      oaOpenAssignPicker();
+    });
+    return;
+  }
+  oaCloseAssignPicker();
+  var meId = state.user && state.user.id;
+  var list = arr(S.org.members).filter(function(m){ return m.userId != null && m.userId !== meId; });
+  var pop = document.createElement('div');
+  pop.className = 'assign-pop';
+  pop.id = 'oaAssignPop';
+  pop.innerHTML =
+    '<div class="ap-head">指定负责人<button type="button" class="ap-x" aria-label="关闭">✕</button></div>' +
+    '<input class="clar-search" id="oaAssignSearch" placeholder="搜索姓名 / 职务 / 部门…" autocomplete="off">' +
+    '<div class="clar-cands" id="oaAssignCands"></div>';
+  document.body.appendChild(pop);
+  var search = pop.querySelector('#oaAssignSearch');
+  var cands = pop.querySelector('#oaAssignCands');
+  function render(kw){
+    kw = String(kw || '').trim().toLowerCase();
+    var rows = list.filter(function(m){
+      if(!kw) return true;
+      var hay = [m.name, m.jobTitle, m.departmentName, m.username].join(' ').toLowerCase();
+      return hay.indexOf(kw) >= 0;
+    }).slice(0, 60);
+    if(!rows.length){ cands.innerHTML = '<div class="ap-empty">没有匹配的同事</div>'; return; }
+    cands.innerHTML = rows.map(function(m){
+      var sel = (S.oaAssignee && String(S.oaAssignee.userId) === String(m.userId)) ? ' sel' : '';
+      var sub = [m.jobTitle, m.departmentName].filter(Boolean).join(' · ');
+      return '<button type="button" class="clar-cand'+sel+'" data-uid="'+esc(m.userId)+'" data-name="'+esc(m.name||('用户#'+m.userId))+'">' +
+        '<span class="ac-name">'+esc(m.name||('用户#'+m.userId))+'</span>' +
+        (sub ? '<span class="ac-sub">'+esc(sub)+'</span>' : '') + '</button>';
+    }).join('');
+    cands.querySelectorAll('.clar-cand').forEach(function(b){
+      b.onclick = function(){
+        oaSetAssignee(Number(b.dataset.uid), b.dataset.name);
+        oaCloseAssignPicker();
+      };
+    });
+  }
+  render('');
+  search.addEventListener('input', function(){ render(search.value); });
+  pop.querySelector('.ap-x').onclick = oaCloseAssignPicker;
+  document.addEventListener('click', oaAssignOutside, true);   // 点击浮层外关闭（下一帧注册，避免吞掉本次打开点击）
+  // 定位到按钮附近
+  var btn = $o('oaAssignBtn');
+  if(btn){
+    var r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(8, (r.left + r.width/2) - 132) + 'px';
+    var top = r.top - pop.offsetHeight - 8;
+    pop.style.top = (top < 8 ? (r.bottom + 8) : top) + 'px';
+  }
+  search.focus();
+}
+function oaAssignOutside(e){
+  var pop = $o('oaAssignPop');
+  if(pop && !pop.contains(e.target) && e.target.id !== 'oaAssignBtn') oaCloseAssignPicker();
+}
+function oaCloseAssignPicker(){
+  var pop = $o('oaAssignPop');
+  if(pop) pop.remove();
+  document.removeEventListener('click', oaAssignOutside, true);
+}
+
+/* 审批人选择卡出现时，若已预选负责人则自动落定（#90 两者都要：数字人问 + 用户主动指定） */
+function oaAutoAnswerAssignee(card, fields){
+  if(!S.oaAssignee || !S.worker || !isOaWorker(S.worker)) return;
+  for(var i=0;i<fields.length;i++){
+    var f = fields[i];
+    if(f.type !== 'select' || f.searchable !== true) continue;
+    var opts = Array.isArray(f.options) ? f.options : [];
+    var hit = null;
+    for(var j=0;j<opts.length;j++){
+      if(String(opts[j].value) === String(S.oaAssignee.userId)){ hit = opts[j]; break; }
+    }
+    if(!hit) continue;
+    var fid = String(f.id || ('f'+i));
+    var wrap = card.querySelector('.clar-field[data-fid="'+esc(fid)+'"]');
+    if(!wrap) continue;
+    var cand = wrap.querySelector('.clar-cand[data-value="'+esc(String(hit.value))+'"]');
+    if(!cand) continue;
+    cand.click();                         // 选中候选（触发既有选择监听）
+    var ok = card.querySelector('.clar-ok');
+    if(ok) ok.click();                    // 提交（走既有校验 + resolve）
+    toast('已按你指定的负责人「'+txt(S.oaAssignee.name)+'」提交');
+    oaClearAssignee();
+    return;
+  }
+}
+/* 暴露给全局 mountClarCard（脚本1，普通 <script>）在澄清卡挂载时调用：
+   该函数依赖 IIFE 内的 S/isOaWorker/oaClearAssignee，故定义在此处（IIFE 内），
+   而 mountClarCard 在脚本1 的全局作用域，跨脚本作用域无法直接引用，需经 window 桥接。 */
+window.oaAutoAnswerAssignee = oaAutoAnswerAssignee;
+
 function oaPickWorker(w){
   if(!w) return;
   // 换了对话对象就要换会话：后端在**创建会话时**把 workerId 绑上去（API.ensureConversation 同款），
   // 沿用旧会话会让「换人」只换了个称呼、回答仍出自原数字员工（老版 startChat 同样重置会话）。
   // 换了对话对象：作废在途收口（按旧对象给出的推荐已不成立）
-  if(!S.worker || w.id !== S.worker.id){ S.convId = null; oaAnswerSeq++; }
+  if(!S.worker || w.id !== S.worker.id){ S.convId = null; oaAnswerSeq++; S.oaAssignee = null; }
   S.worker = w; S.expert = null;
   oaGo('home');
   oaBanner();
+  oaSyncAssignUI();
   oaPushBub('ai', '已选择数字员工「'+txt(w.name || '数字员工')+'」'+
     (w.roleName ? '（职责：'+txt(w.roleName)+'）' : '')+'<div class="bub-meta">'+
     txt(w.scheduleTime ? '排班 ' + w.scheduleTime : '可随时对话')+'</div>');
@@ -11299,6 +12400,7 @@ function oaApplyHandoff(p){
   }
   // 顶部标出当前对话对象（.oa-who）刷新到新数字人
   oaBanner();
+  oaSyncAssignUI();
   // 对话坞落一条可见提示气泡：已自动转交、原问题已带过去、不用重述
   var text;
   if(p.from_worker_name){
@@ -11314,9 +12416,10 @@ function oaPickExpert(e){
   if(!e) return;
   // 同 oaPickWorker：换人即换会话，并作废在途收口
   if(!S.expert || e.key !== S.expert.key){ S.convId = null; oaAnswerSeq++; }
-  S.expert = e; S.worker = null;
+  S.expert = e; S.worker = null; S.oaAssignee = null;
   oaGo('home');
   oaBanner();
+  oaSyncAssignUI();
   oaPushBub('ai', '已选择专家「'+txt(e.name || e.key)+'」<div class="bub-meta">'+
     txt(e.description || '领域专家视角')+'</div>');
   var i = $o('oaInput'); if(i) i.focus();
@@ -11412,6 +12515,14 @@ async function oaSend(){
   oaResetInput();               // 清空 + 收回复用高度（否则下一条短消息顶着上一轮的高框）
   // 上一轮问句只在这一处落定：推荐相关职责同事、换人重答都以它为准，不会串到上一条
   S.lastQuery = effectiveQ;
+  // 发起审批意图路由（#89）：通用助手态下说「发起审批 / 我要申请…」先跳到相应的 OA 数字人
+  if(!S.worker && !S.expert && effectiveQ){
+    try{
+      var _route = await oaApprovalLaunchTarget(effectiveQ);
+      if(_route === 'modules'){ oaGo('modules'); toast('请选择要办理的审批类型，对应数字人会接管'); return; }
+      if(_route && _route !== 'modules'){ oaPickWorker(_route); /* 继续用 effectiveQ 发给该数字人 */ }
+    }catch(e){ /* 路由失败不阻断正常发送 */ }
+  }
   // 用户气泡：文本 + （若有附件）一行 📎 文件名回执；attachMetaLine 为两形态共用全局函数
   var userHtml = txt(effectiveQ);
   if(S.pendingFiles && S.pendingFiles.length) userHtml += attachMetaLine(S.pendingFiles);
@@ -11464,7 +12575,7 @@ async function oaSend(){
     },
     onError: function(err){
       errored = true;           // 与经典形态同口径：只记账，位置由收口处决定
-      errMsg = (err && err.message) || '未知错误';
+      errMsg = errText(err, {withId:true}) || '未知错误';
       tx.style.color = 'var(--red)';
     },
     onClarification: function(p){ clar = p; },
@@ -11664,6 +12775,7 @@ function oaClosePlusMenu(){
 
 function oaOpenPlusMenu(){
   if($o('oaPlusMenu')){ oaClosePlusMenu(); return; }   // 再点一次 = 收起
+  oaClosePanels('plus');
   var host = $o('oaRoot') && $o('oaRoot').querySelector('.composer');
   if(!host) return;
 
@@ -12404,13 +13516,39 @@ async function oaAfterOaAnswer(){
 
 /* ------------------------------------------------------------- 10. 抽屉 / 弹层 */
 function oaOpenDrawer(){
+  oaClosePanels('drawer');
   var r = $o('oaRoot'); if(!r) return;
   r.classList.add('drawer-open');
   renderDrawer();
 }
 function oaCloseDrawer(){ var r = $o('oaRoot'); if(r) r.classList.remove('drawer-open'); }
-function oaOpenSheet(){ var r = $o('oaRoot'); if(r) r.classList.add('sheet-open'); fillSheet(); }
+function oaOpenSheet(){ oaClosePanels('sheet'); var r = $o('oaRoot'); if(r) r.classList.add('sheet-open'); fillSheet(); }
 function oaCloseSheet(){ var r = $o('oaRoot'); if(r) r.classList.remove('sheet-open'); }
+
+/* 把宿主容器的滚动位置拉回原点。
+   .phone 是 overflow:hidden，但 hidden 只挡用户手势，**挡不住 scrollIntoView / 聚焦**
+   这类程序化滚动；一旦它被滚起来，translateY(102%) 藏在下面的 #oaSheet（选择对话对象）
+   就会从屏幕底部露出来，看起来像「另一个模块自己跳出来了」。
+   每次开浮层都归零一次，等于把这个坑堵死。 */
+function oaResetHostScroll(){
+  var p = document.querySelector('.phone'); if(p) p.scrollTop = 0;
+  var r = $o('oaRoot'); if(r) r.scrollTop = 0;
+  if(document.body) document.body.scrollTop = 0;
+  if(document.scrollingElement) document.scrollingElement.scrollTop = 0;
+}
+
+/* 浮层互斥：同一时刻只允许一个底部浮层 / 抽屉 / 详情页着地。
+   2026-11-04 实测复现：先开「选择对话对象」(#oaSheet)，再点顶栏模型 chip ⇒ 两个 sheet 同时展开；
+   模型浮层 z-index 61、max-height 84% 压在上面，下面正好露出「数字员工 / 专家」那张，
+   用户看到的现象就是「跳出了其他模块组件」。谁打开谁负责把别的先关掉。 */
+function oaClosePanels(except){
+  if(except !== 'model')  oaCloseModelSheet();
+  if(except !== 'sheet')  oaCloseSheet();
+  if(except !== 'drawer') oaCloseDrawer();
+  if(except !== 'doc')    oaCloseDoc();
+  if(except !== 'plus')   oaClosePlusMenu();
+  oaResetHostScroll();
+}
 
 function fillSheet(){
   var wn = $o('oaSheetWN'), en = $o('oaSheetEN');
@@ -12563,6 +13701,15 @@ function bind(){
   if(odS) odS.onclick = function(){ oaCloseDrawer(); oaGo('skills'); };
   var odL = $o('odLogout');
   if(odL) odL.onclick = function(){ oaCloseDrawer(); doLogout(); resetMode(); };
+  // 发起审批（#89）：抽屉入口 → 跳 OA 模块 Gallery（相应的数字人）
+  var odApply = $o('odApply');
+  if(odApply) odApply.onclick = function(){ oaCloseDrawer(); oaLaunchApproval(); };
+  // 指定负责人（#90）：对话内按钮 → 打开候选选择器
+  var assignBtn = $o('oaAssignBtn');
+  if(assignBtn) assignBtn.onclick = oaOpenAssignPicker;
+  oaSyncAssignUI();
+  /* 账号模型：顶栏选择 chip / 五 tab 浮层与视图（静态控件只绑一次） */
+  oaBindModelEvents();
 
   /* 布局切换按钮：两个形态各一个，类名统一，新增第三个也不会漏绑 */
   document.querySelectorAll('.js-layout-switch').forEach(function(b){
@@ -12631,7 +13778,7 @@ function bind(){
   });
 
   document.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){ oaCloseDoc(); oaCloseDrawer(); oaCloseSheet(); oaClosePlusMenu(); }
+    if(e.key === 'Escape'){ oaCloseDoc(); oaCloseDrawer(); oaCloseSheet(); oaClosePlusMenu(); oaCloseModelSheet(); }
   });
 }
 
@@ -12795,8 +13942,8 @@ try{
   S.mode = (saved === 'classic') ? 'classic' : MODE_DEFAULT;
 }catch(e){ S.mode = MODE_DEFAULT; }
 
-bind();
-applyMode();
+  bind();
+  applyMode();
 })();
 </script>
 </body>
