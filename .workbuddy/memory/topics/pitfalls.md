@@ -1704,3 +1704,23 @@ agent 侧要验服务，得**直接**用后台任务分别起 `java -jar …` �
 把 `unset SERVER__PORT`、`AIOS_MCP_HUB=true`、`WECOM_*`、`AIOS_SERVICE_JWT_SECRET` 显式带上；
 要长期运行仍应由用户在自己的终端跑 `start-all.sh`。
 
+## 66. 「默认模型」有两套口径：`agent/.env` 的 `MODEL_DEFAULT` 与库里 `model_config.is_default`
+
+管理端保存/设默认会**热推**给 agent，覆盖内存里的默认（`_DEFAULT_OVERRIDE`）；
+但只要 agent 重启（或推送失败、后端没起），默认又回到 `.env` 的 `MODEL_DEFAULT`。
+2026-11-04 用户现场「我配的是 deepseek，怎么跑了 minimax」就是这两套值不一致：
+`.env` 写死 `minimax`，库里早期调试又把 minimax 翻成了 `is_default=1`。
+
+判据与做法：
+
+- 启动日志必须有 `model default at boot: <key> (source=agent/.env|admin-push)` —— 没有这行，
+  「配 A 跑 B」只能靠抓包猜；
+- 改供应商时**四处一起改**：库里 `is_default`、`.env` 的 `MODEL_DEFAULT` 与该供应商的 `*_MODEL`、
+  代码里的预设候选（`ModelConfigService.PRESETS` / `MODEL_NAMES` / `llm/__init__.py` 注册表）、
+  部署文档（`deploy/ENV.md`）；
+- `.env` 被 gitignore ⇒ 只改代码不改 `.env` 等于没改（换台机器/重装就复发）；
+- 历史会话与老前端会存字符串 `"default"` 当 model_ref，透传给 agent 会打
+  `unknown model_ref 'default', fallback to …` 的 WARNING（行为没错、日志像报警）
+  ⇒ 两端都把 `default`/`auto` 归一成「未点名」。
+
+

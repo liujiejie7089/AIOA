@@ -82,6 +82,23 @@ def _log_service_jwt() -> None:
 
 
 @app.on_event("startup")
+def _log_boot_model() -> None:
+    """启动时打印「此刻生效的默认模型」及其来源。
+
+    为什么值得单独一行：管理端推送会覆盖默认模型，但**刚启动、还没推送**的那几秒用的是
+    `.env` 的 MODEL_DEFAULT。2026-11-04 用户现场「我配的是 deepseek，怎么跑了 minimax」
+    就是因为 `.env` 里写死了 `MODEL_DEFAULT=minimax`，而日志里没有任何一行能看出来。
+    """
+    from aios_ai.llm import current_default_key, default_key_source
+
+    logger.info(
+        "model default at boot: %s (source=%s)",
+        current_default_key(),
+        default_key_source(),
+    )
+
+
+@app.on_event("startup")
 def _warm_asr() -> None:
     """后台预热 ASR 模型：不阻塞启动；加载失败只记日志，真正不可用时接口回 503。"""
     threading.Thread(target=asr_engine.warmup, name="asr-warmup", daemon=True).start()

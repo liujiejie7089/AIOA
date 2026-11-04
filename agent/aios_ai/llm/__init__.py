@@ -333,6 +333,15 @@ def current_default_key() -> str:
     return (_DEFAULT_OVERRIDE or settings.model_default or "echo").strip().lower()
 
 
+def default_key_source() -> str:
+    """默认模型的值从哪来：admin-push（管理端热推）/ agent/.env（启动时的环境变量）。
+
+    两者不一致时的症状是「管理端配的是 A，刚重启的一段时间跑的是 B」——
+    2026-11-04 用户现场就是这个（.env 写死 minimax）。启动日志会把它打出来。
+    """
+    return "admin-push" if _DEFAULT_OVERRIDE else "agent/.env"
+
+
 def resolve(model_ref: str | None = None,
             credential: "object | None" = None) -> Provider:
     """按 model_ref 解析 provider；未指定时走默认，必要时降级 echo。
@@ -349,6 +358,11 @@ def resolve(model_ref: str | None = None,
     """
     default_key = (_DEFAULT_OVERRIDE or settings.model_default or "echo").strip().lower()
     ref = (model_ref or "").strip().lower()
+    # 「自动/默认」不是真实 provider key：老前端与历史会话里存过字符串 "default"，
+    # 原样当成未知 key 会打 WARNING「unknown model_ref 'default', fallback to …」——
+    # 行为没错，但日志看着像配置错了（2026-11-04 排查 minimax 时就误判过一次）。
+    if ref in ("default", "auto"):
+        ref = ""
     explicit = bool(ref)
 
     if ref and (ref not in _REGISTRY_SPEC or ref in _DISABLED_KEYS):

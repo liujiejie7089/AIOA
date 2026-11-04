@@ -216,7 +216,8 @@ public class RunService {
             throw BizException.forbidden("无权访问该会话");
         }
         // FR-C4 模型切换：run 级 modelRef 写回会话，subscribe 时透传给 Agent
-        if (modelRef != null && !modelRef.isBlank() && !modelRef.equals(conversation.getModelRef())) {
+        modelRef = normalizeModelRef(modelRef);
+        if (modelRef != null && !modelRef.equals(conversation.getModelRef())) {
             conversationMapper.update(null,
                     new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChatConversation>()
                             .eq(ChatConversation::getId, conversationId)
@@ -289,7 +290,7 @@ public class RunService {
             charge.put("providerKey", resolved.providerKey());
             charge.put("model", resolved.model());
             context.put("charge_ctx", charge);
-        } else if (modelRef != null && !modelRef.isBlank() && !"default".equalsIgnoreCase(modelRef.trim())) {
+        } else if (normalizeModelRef(modelRef) != null) {
             // 用户端顶部选了「平台模型」（2026-11-04）：这一轮走平台通道，没有账号。
             // 仍要写一份归属快照，否则账本里这一轮会是「未标注」，按模型统计就断了。
             if (context == null) {
@@ -484,9 +485,14 @@ public class RunService {
         if (attachmentDocs != null && !attachmentDocs.isEmpty()) {
             request.setAttachmentDocs(attachmentDocs);
         }
-        // 会话级模型路由：Agent 按 model_ref 选择 provider（默认走 MODEL_DEFAULT）
-        if (conversation != null && conversation.getModelRef() != null && !conversation.getModelRef().isBlank()) {
-            request.setModelRef(conversation.getModelRef());
+        // 会话级模型路由：Agent 按 model_ref 选择 provider（默认走 MODEL_DEFAULT）。
+        // 历史会话里存过字符串 "default"，归一成 null 再下发 —— 否则 agent 会打
+        // 「unknown model_ref 'default', fallback to …」的告警，排查时容易误判成配置错了。
+        if (conversation != null) {
+            String ref = normalizeModelRef(conversation.getModelRef());
+            if (ref != null) {
+                request.setModelRef(ref);
+            }
         }
         // 模型账号（docs/71）：把「用谁的 Key」连同归属一起下发 Agent。
         // 明文 Key 只在这一条链路上出现（Java 解密 → 内存下发 → agent 用完即弃）。
@@ -2221,6 +2227,25 @@ public class RunService {
     }
 
     /**
+     * 「自动/默认」不是真实的 provider key。
+     *
+     * <p>老前端与历史会话里存过字符串 {@code "default"}，若原样透传给 Agent，
+     * 它会打一条「unknown model_ref 'default', fallback to default 'xxx'」的 WARNING ——
+     * 行为没错但日志像在报警，排查时极易误判成「配置错了」。这里统一归一成 null
+     * （= 不点名，走平台默认），也让「是否显式选了模型」的判断只需判空。</p>
+     */
+    private static String normalizeModelRef(String modelRef) {
+        if (modelRef == null) {
+            return null;
+        }
+        String t = modelRef.trim();
+        if (t.isEmpty() || "default".equalsIgnoreCase(t) || "auto".equalsIgnoreCase(t)) {
+            return null;
+        }
+        return t;
+    }
+
+    /**
      * 解析本轮使用的模型账号（2026-11-03，docs/71 §6；2026-11-04 补 modelRef 语义）。
      *
      * <p>显式指定却不可用 ⇒ <b>抛错，不静默降级</b>：悄悄换成平台 Key 跑，
@@ -2236,7 +2261,7 @@ public class RunService {
             if (credentialId != null && credentialId > 0) {
                 return modelCredentialService.resolve(user, credentialId);
             }
-            if (modelRef != null && !modelRef.isBlank() && !"default".equalsIgnoreCase(modelRef.trim())) {
+            if (normalizeModelRef(modelRef) != null) {
                 // 显式选了平台模型：不使用个人/公司账号，直接走平台通道
                 return null;
             }

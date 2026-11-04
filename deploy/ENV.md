@@ -115,7 +115,7 @@ cp deploy/.env.development .env      # 在 .env 里填真实密钥；.env 已被
 
 | 变量 | 用途 | 本地开发 | 生产 | 敏感 |
 |---|---|---|---|---|
-| `MODEL_DEFAULT` | 默认模型（系统默认已改为 `minimax`） | `echo`（不配 Key 时自动降级回声） | `minimax` | — |
+| `MODEL_DEFAULT` | 默认模型。**必须与管理端「模型管理」里的默认项一致**，且**它的 Key 必须已配**（不配会静默降级成「回声」） | 与本机实际用的供应商同名（如 `deepseek`） | 与生产实际用的供应商同名 | — |
 | `MINIMAX_API_KEY` | MiniMax Key | 填真实值（`agent/.env`） | `CHANGE_ME__`（**只填进 `.env`**） | ★ |
 | `DEEPSEEK_API_KEY` | DeepSeek Key | 空 | `CHANGE_ME__` | ★ |
 | `DASHSCOPE_API_KEY` | 通义千问 Key | 空 | `CHANGE_ME__` | ★ |
