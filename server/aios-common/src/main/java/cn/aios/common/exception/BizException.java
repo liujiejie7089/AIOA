@@ -98,6 +98,11 @@ public class BizException extends RuntimeException {
         return new BizException(ErrorCode.STATE_CONFLICT, message);
     }
 
+    /** 额度用完：留在 403（兼容既有兜底），但分类归 RATE_LIMIT —— 别让用户以为是自己没权限。 */
+    public static BizException quotaExceeded(String message) {
+        return new BizException(ErrorCode.QUOTA_EXCEEDED, message);
+    }
+
     public static BizException notImplemented(String message) {
         return new BizException(ErrorCode.NOT_IMPLEMENTED, message);
     }

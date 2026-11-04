@@ -40,7 +40,10 @@ CATALOG: dict[str, tuple[str, str, str]] = {
     "MODEL_UPSTREAM_ERROR": (CATEGORY_UPSTREAM, "模型服务本次没有返回结果",
                              "稍后重试；连续失败请让管理员在「模型配置」里做连通性校验"),
     "MODEL_NOT_FOUND": (CATEGORY_UPSTREAM, "配置的模型已下线或不存在",
-                        "管理员在「模型配置」里把模型名换成供应商当前提供的名称（可用其 /models 列表确认）"),
+                        # 不给 `/models` 这类接口路径：用户看到的是「下一步做什么」，
+                        # 而不是去调哪个端点（接口细节只进日志）。
+                        "管理员在「模型配置」里把模型名换成供应商当前提供的名称"
+                        "（在供应商控制台的模型列表里能看到）"),
     "MODEL_AUTH_FAILED": (CATEGORY_UPSTREAM, "模型密钥无效或没有调用权限",
                           "到「我的 → 模型账号」检查这个账号的 API Key；或改用平台默认模型"),
     "MODEL_RATE_LIMITED": (CATEGORY_UPSTREAM, "模型调用过于频繁",
@@ -134,7 +137,7 @@ def upstream_payload(status: int, raw: str | None, model: str | None = None) -> 
             "MODEL_NOT_FOUND",
             f"配置的模型{name}已下线或不存在",
             f"请管理员在「模型配置」里把模型名{name}换成供应商当前提供的名称"
-            "（可用其 /models 列表确认），无需改代码即可生效",
+            "（在供应商控制台的模型列表里能看到），无需改代码即可生效",
             retryable=False, error_id=rid)
     if status >= 500:
         return error_payload("MODEL_UPSTREAM_ERROR", None, None, retryable=True, error_id=rid)

@@ -68,6 +68,13 @@ public enum ErrorCode {
     RATE_LIMITED(429, "RATE_LIMITED", ErrorCategory.RATE_LIMIT, HttpStatus.TOO_MANY_REQUESTS,
             "操作太频繁，已被限流",
             "等 1 分钟再试；批量操作请分批执行"),
+    /* 额度用完 ≠ 权限不足：用户听得懂「先充值/等额度」却听不懂「你没权限」——
+       两者归到同一分类会把「怎么解决」指错方向（2026-11-04 实测：耗尽时回的是 PERMISSION_DENIED）。
+       数字码仍取 403、HTTP 仍 403：既有前端与 e2e 按 403 兜底（H5 还有 /quota 预检），
+       不动状态码只把机器码与分类改准，避免为了语义正确去破坏兼容。 */
+    QUOTA_EXCEEDED(403, "QUOTA_EXCEEDED", ErrorCategory.RATE_LIMIT, HttpStatus.FORBIDDEN,
+            "本次可用额度已用完",
+            "购买词元套餐、等待额度发放，或联系管理员扩容"),
 
     // ---------------- 外部依赖 ----------------
     MODEL_UPSTREAM_ERROR(502, "MODEL_UPSTREAM_ERROR", ErrorCategory.UPSTREAM, HttpStatus.OK,
@@ -75,7 +82,8 @@ public enum ErrorCode {
             "稍后重试；连续失败请在「模型配置」里点「连通性校验」确认模型可用"),
     MODEL_NOT_FOUND(502, "MODEL_NOT_FOUND", ErrorCategory.UPSTREAM, HttpStatus.OK,
             "配置的模型已下线或不存在",
-            "管理员在「模型配置」里把模型名换成供应商当前提供的名称（可用其 /models 列表确认）"),
+            // 建议里不出现 `/models` 这类接口路径：用户要的是下一步做什么，接口细节只进日志。
+            "管理员在「模型配置」里把模型名换成供应商当前提供的名称（在供应商控制台的模型列表里能看到）"),
     MODEL_AUTH_FAILED(502, "MODEL_AUTH_FAILED", ErrorCategory.UPSTREAM, HttpStatus.OK,
             "模型密钥无效或没有调用权限",
             "到「我的 → 模型账号」检查这个账号的 API Key；或改用平台默认模型"),

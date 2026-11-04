@@ -590,11 +590,12 @@ public class QuotaService {
             return;
         }
         if (Boolean.TRUE.equals(q.getFrozen())) {
-            throw BizException.forbidden("机构配额已耗尽并被冻结，请向租户管理员提交扩容申请（FR-H3）");
+            // 文案里不带 "(FR-H3)" 这类内部需求编号：用户看不懂，也不该看到（docs/73 §6）。
+            throw BizException.quotaExceeded("机构配额已耗尽并被冻结，请向租户管理员提交扩容申请");
         }
         long cap = nz(q.getQuotaTokens()) + nz(q.getFreeTokens());
         if (cap > 0 && nz(q.getUsedTokens()) >= cap) {
-            throw BizException.forbidden("机构配额已用尽，请向租户管理员提交扩容申请（FR-H3）");
+            throw BizException.quotaExceeded("机构配额已用尽，请向租户管理员提交扩容申请");
         }
     }
 

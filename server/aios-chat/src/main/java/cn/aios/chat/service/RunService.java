@@ -197,7 +197,9 @@ public class RunService {
                 user.getTenantId() == null ? 0L : user.getTenantId(),
                 resolved == null ? user.getUserId() : resolved.chargeUserId());
         if (quota.exhausted()) {
-            throw BizException.forbidden(resolved != null && resolved.companyCharged()
+            // 额度用完走 QUOTA_EXCEEDED（分类 RATE_LIMIT）：回 PERMISSION_DENIED 会让用户
+            // 以为「自己没权限」，而实际要做的是充值/等发放/找管理员扩容。
+            throw BizException.quotaExceeded(resolved != null && resolved.companyCharged()
                     ? "公司词元额度已用完，请联系管理员分配额度"
                     : "今日免费额度已用完，请购买词元套餐或明日再试");
         }
