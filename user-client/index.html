@@ -2365,6 +2365,66 @@
 .oa .mod-act.primary{background:var(--brand); border-color:var(--brand); color:#fff}
 .oa .mod-act:active{transform:scale(.98)}
 
+/* 站内确认弹窗（2026-11-05）：替代 window.confirm。
+   原生 confirm 在手机上是浏览器自己的对话框：标题写着「localhost:5181 显示」、按钮是系统样式，
+   既不像产品也不受主题控制，截图里那一坨就是它。改为 .phone 内居中的卡片：
+   z-index 高于底部浮层（61），保证「在账号浮层里点删除」时不会又被浮层盖住。 */
+.oa .cf-mask{position:absolute; inset:0; background:rgba(16,22,32,.45); z-index:70;
+  opacity:0; visibility:hidden; transition:opacity var(--dur) var(--ease), visibility var(--dur)}
+.oa.cf-open .cf-mask{opacity:1; visibility:visible}
+.oa .cf-card{position:absolute; left:50%; top:50%; z-index:71; width:min(300px, 82%);
+  transform:translate(-50%,-50%) scale(.94); opacity:0; visibility:hidden;
+  background:var(--surface); border-radius:var(--r-lg); box-shadow:var(--sh-4t);
+  padding:18px 18px 12px; box-sizing:border-box;
+  transition:opacity var(--dur-fast) var(--ease), transform var(--dur) var(--ease), visibility var(--dur-fast)}
+.oa.cf-open .cf-card{opacity:1; visibility:visible; transform:translate(-50%,-50%) scale(1)}
+.oa .cf-title{font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--text);
+  margin:0 0 8px; text-align:center}
+.oa .cf-text{font-size:13px; line-height:1.6; color:var(--text-2); margin:0 0 16px; text-align:center}
+.oa .cf-text b{color:var(--text); font-weight:600}
+.oa .cf-acts{display:flex; gap:10px}
+.oa .cf-btn{flex:1; min-height:40px; border-radius:var(--r-full); border:1px solid var(--border-strong);
+  background:var(--surface); color:var(--text-2); font-family:inherit; font-size:13.5px; font-weight:600;
+  cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:transform var(--dur-fast) var(--ease)}
+.oa .cf-btn:active{transform:scale(.98)}
+.oa .cf-btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+.oa .cf-btn.danger{background:var(--red); border-color:var(--red); color:#fff}
+
+/* 定位调用申请卡（2026-11-05）：与确认弹窗同一套视觉，但**语义不同**，故不共用 DOM。
+   确认弹窗问「要不要做这件事」，定位卡问「要不要把当前位置交给系统」——
+   后者涉及隐私，必须把「仅本次 / 有效期 / 不授权也不影响其他功能」三句话写在卡片上，
+   而不是复用一个只有标题和描述的通用框。z-index 与确认卡同层：两者不会同时出现。 */
+.oa .loc-mask{position:absolute; inset:0; background:rgba(16,22,32,.5); z-index:70;
+  opacity:0; visibility:hidden; transition:opacity var(--dur) var(--ease), visibility var(--dur)}
+.oa.loc-open .loc-mask{opacity:1; visibility:visible}
+.oa .loc-card{position:absolute; left:50%; top:50%; z-index:71; width:min(312px, 86%);
+  transform:translate(-50%,-50%) scale(.94); opacity:0; visibility:hidden;
+  background:var(--surface); border-radius:var(--r-lg); box-shadow:var(--sh-4t);
+  padding:20px 18px 14px; box-sizing:border-box;
+  transition:opacity var(--dur-fast) var(--ease), transform var(--dur) var(--ease), visibility var(--dur-fast)}
+.oa.loc-open .loc-card{opacity:1; visibility:visible; transform:translate(-50%,-50%) scale(1)}
+.oa .loc-ic{width:44px; height:44px; margin:0 auto 10px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:color-mix(in srgb, var(--brand) 14%, transparent); color:var(--brand)}
+.oa .loc-ic svg{width:22px; height:22px}
+.oa .loc-title{font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--text);
+  margin:0 0 8px; text-align:center}
+.oa .loc-text{font-size:13px; line-height:1.62; color:var(--text-2); margin:0 0 10px; text-align:center}
+.oa .loc-hints{margin:0 0 14px; padding:10px 12px; border-radius:var(--r-sm);
+  background:var(--surface-2, rgba(127,127,127,.06)); display:flex; flex-direction:column; gap:6px}
+.oa .loc-hints span{font-size:12px; line-height:1.5; color:var(--text-3, var(--text-2));
+  display:flex; gap:6px; align-items:flex-start}
+.oa .loc-hints i{flex:0 0 auto; font-style:normal; color:var(--brand); font-weight:700}
+.oa .loc-acts{display:flex; gap:10px}
+.oa .loc-btn{flex:1; min-height:40px; border-radius:var(--r-full); border:1px solid var(--border-strong);
+  background:var(--surface); color:var(--text-2); font-family:inherit; font-size:13.5px; font-weight:600;
+  cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+  transition:transform var(--dur-fast) var(--ease)}
+.oa .loc-btn:active{transform:scale(.98)}
+.oa .loc-btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+.oa .loc-note{font-size:12px; line-height:1.5; margin:10px 2px 0; text-align:center; color:var(--text-2)}
+.oa .loc-note.err{color:var(--red)}
+
 /* 表单 */
 .oa .mod-form{display:flex; flex-direction:column; gap:10px; padding:2px}
 .oa .mod-form label{display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--text-2)}
@@ -3243,7 +3303,6 @@
       <div class="dnav-item" id="odNewTask"><svg class="ic"><use href="#i-square-plus"/></svg>新工作任务</div>
       <div class="dnav-item" id="odNewChat"><svg class="ic"><use href="#i-chat"/></svg>新对话</div>
       <div class="dnav-item" id="odModules"><svg class="ic"><use href="#i-grid"/></svg>OA 模块<span class="n" id="odModulesN"></span></div>
-      <div class="dnav-item" id="odApply"><svg class="ic"><use href="#i-send"/></svg>发起审批</div>
       <div class="dnav-item" id="odTimers"><svg class="ic"><use href="#i-clock"/></svg>定时任务<span class="n" id="odTimersN"></span></div>
       <div class="dnav-item" id="odSkills"><svg class="ic"><use href="#i-puzzle"/></svg>插件-技能-连接器<span class="n" id="odSkillsN"></span></div>
       <div class="dnav-sep"></div>
@@ -3254,6 +3313,36 @@
       <button class="sheet-cancel" id="odLogout">退出登录</button>
     </div>
   </aside>
+
+  <!-- 站内确认弹窗（居中卡片）。内容由 oaConfirm() 填，DOM 常驻以便复用与做过渡动画。 -->
+  <div class="cf-mask" id="oaCfMask"></div>
+  <div class="cf-card" id="oaCfCard" role="dialog" aria-modal="true" aria-labelledby="oaCfTitle">
+    <h4 class="cf-title" id="oaCfTitle">确认操作</h4>
+    <p class="cf-text" id="oaCfText"></p>
+    <div class="cf-acts">
+      <button type="button" class="cf-btn" id="oaCfCancel">取消</button>
+      <button type="button" class="cf-btn primary" id="oaCfOk">确定</button>
+    </div>
+  </div>
+
+  <!-- 定位调用申请卡（居中）。文案与时效全部来自服务端申请单（consent.prompt / ttlMinutes），
+       前端只负责「问一句、取一次坐标、把结果回给服务端」，不自己编隐私承诺。 -->
+  <div class="loc-mask" id="oaLocMask"></div>
+  <div class="loc-card" id="oaLocCard" role="dialog" aria-modal="true" aria-labelledby="oaLocTitle">
+    <div class="loc-ic"><svg class="ic"><use href="#i-pin"/></svg></div>
+    <h4 class="loc-title" id="oaLocTitle">定位调用申请</h4>
+    <p class="loc-text" id="oaLocText"></p>
+    <div class="loc-hints">
+      <span><i>·</i>只用于记录本次打卡的位置，不用于轨迹或考勤时段分析</span>
+      <span><i>·</i><b id="oaLocTtl">5</b> 分钟内有效，且只用这一次</span>
+      <span><i>·</i>不允许也不影响聊天、审批等其他功能</span>
+    </div>
+    <div class="loc-acts">
+      <button type="button" class="loc-btn" id="oaLocDeny">不允许</button>
+      <button type="button" class="loc-btn primary" id="oaLocOk">允许并打卡</button>
+    </div>
+    <div class="loc-note" id="oaLocNote"></div>
+  </div>
 
   <div class="sheet-mask" id="oaSheetMask"></div>
   <section class="sheet" id="oaSheet">
@@ -3554,6 +3643,14 @@ const API = {
   kbDocDetail(id){ return this.req('/v1/kb/documents/'+id); },
   kbSearch(q){ return this.req('/v1/kb/search?q='+encodeURIComponent(q)); },
   quota(){   return this.req('/v1/quota'); },
+  /* 定位授权 + 打卡（2026-11-05）：三个动作分开，服务端才留得住审计。
+     ① consent 只建一张待同意单（不取坐标）；② clock 由用户点「允许」后带坐标调用；
+     ③ deny 记录拒绝。没有任何一步能绕过用户手势完成打卡。 */
+  attendanceToday(){ return this.req('/v1/attendance/today'); },
+  attendancePending(){ return this.req('/v1/attendance/location-consent/pending'); },
+  attendanceConsent(body){ return this.req('/v1/attendance/location-consent',{method:'POST',body:JSON.stringify(body||{origin:'H5'})}); },
+  attendanceDeny(id){ return this.req('/v1/attendance/location-consent/'+id+'/deny',{method:'POST',body:'{}'}); },
+  attendanceClock(p){ return this.req('/v1/attendance/clock',{method:'POST',body:JSON.stringify(p||{})}); },
   ledger(){  return this.req('/v1/ledger?limit=50'); },
   logs(){    return this.req('/v1/logs?limit=50'); },
   packages(){ return this.req('/v1/packages'); },
@@ -10275,7 +10372,9 @@ function renderMe(){
    ============================================================================ */
 var LS_CRED = 'aios_cred';
 var LS_MODEL = 'aios_model';
-var PROVIDER_LABELS = {deepseek:'DeepSeek', dashscope:'通义百炼', minimax:'MiniMax', vllm:'vLLM（私有化）', ollama:'Ollama（本地）'};
+/* 供应商显示名：由下方 PROVIDER_CATALOG 统一派生（2026-11-05 扩充到 20 家）。
+   这里保留一个「查不到时的兜底」：未知 key 直接显示 key 本身，别显示成空白。 */
+var PROVIDER_LABELS = {};
 function provLabel(k){ return PROVIDER_LABELS[k] || k || '未知供应商'; }
 function fmtNum(v){ return Number(v || 0).toLocaleString('zh-CN'); }
 function credName(c){ return (c && (c.name || c.providerKey)) ? String(c.name || provLabel(c.providerKey)) : '未命名账号'; }
@@ -10477,20 +10576,67 @@ function oaPickCredential(id, label){
 }
 
 /* ---- 新增 / 邀请表单 ---- */
-/* 常用模型名候选（与后台 ModelConfigService.PRESETS 同源）：换厂家新模型时只要把名字
-   填进来即可调用，不用改代码；这里给候选是为了少打错字。 */
-var MODEL_NAMES = {
-  deepseek:['deepseek-chat','deepseek-reasoner'],
-  dashscope:['qwen-plus','qwen-max','qwen-turbo','qwen-long'],
-  /* 2026-11-04：MiniMax 已下线 Text-01 / M1 / abab6.5s-chat（实测 404），候选换成本账号
-     /models 当前真实返回的 9 个；留旧名在这里等于诱导用户填一个必然失败的模型名。 */
-  minimax:['MiniMax-M3.1-Flash','MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed',
-           'MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2'],
-  vllm:['Qwen2.5-7B-Instruct','Qwen2.5-14B-Instruct'],
-  ollama:['qwen2.5:7b','qwen2.5:14b','llama3.1:8b']
+/* 供应商目录（2026-11-05 扩充）：只收**OpenAI 兼容**的厂家 —— agent 侧所有非 echo 的
+   provider 都走 openai_compatible 驱动，列一个协议不同的（如 Anthropic 原生 /v1/messages）
+   在这里，用户填完 Key 只会拿到一个看不懂的 404。
+   · label：下拉里显示的名字（用户认牌子，不认技术名）；
+   · base：该厂家的兼容接口根地址（选完自动填进「接口地址」，留空也走得通）；
+   · models：常用模型候选（datalist，可自由改名 —— 厂家上新模型不该等我们发版）。
+   与后台 `ModelConfigService.PRESETS`、agent `_REGISTRY_SPEC` 三处同源，改一处要顺手改另两处。 */
+var PROVIDER_CATALOG = {
+  deepseek:   {label:'DeepSeek',        base:'https://api.deepseek.com',
+               models:['deepseek-chat','deepseek-reasoner']},
+  dashscope:  {label:'阿里云百炼',      base:'https://dashscope.aliyuncs.com/compatible-mode/v1',
+               models:['qwen-plus','qwen-max','qwen-turbo','qwen-long','qwen3-max']},
+  moonshot:   {label:'月之暗面 Kimi',   base:'https://api.moonshot.cn/v1',
+               models:['kimi-k2-0905-preview','moonshot-v1-128k','moonshot-v1-32k','moonshot-v1-8k']},
+  zhipu:      {label:'智谱 GLM',        base:'https://open.bigmodel.cn/api/paas/v4',
+               models:['glm-4.6','glm-4-plus','glm-4-air','glm-4-flash']},
+  minimax:    {label:'MiniMax',         base:'https://api.minimax.chat/v1',
+               /* 2026-11-04：MiniMax 已下线 Text-01 / M1 / abab6.5s-chat（实测 404），
+                  这里换成本账号 /models 当前真实返回的 9 个。 */
+               models:['MiniMax-M3.1-Flash','MiniMax-M3','MiniMax-M2.7','MiniMax-M2.7-highspeed',
+                       'MiniMax-M2.5','MiniMax-M2.5-highspeed','MiniMax-M2.1','MiniMax-M2.1-highspeed','MiniMax-M2']},
+  ark:        {label:'火山方舟（豆包）', base:'https://ark.cn-beijing.volces.com/api/v3',
+               models:['doubao-seed-1.6','doubao-pro-32k','doubao-lite-32k']},
+  hunyuan:    {label:'腾讯混元',        base:'https://api.hunyuan.cloud.tencent.com/v1',
+               models:['hunyuan-turbos-latest','hunyuan-turbo','hunyuan-pro']},
+  spark:      {label:'讯飞星火',        base:'https://spark-api-open.xf-yun.com/v1',
+               models:['4.0Ultra','generalv3.5','lite']},
+  baichuan:   {label:'百川智能',        base:'https://api.baichuan-ai.com/v1',
+               models:['Baichuan4-Turbo','Baichuan4','Baichuan3-Turbo']},
+  yi:         {label:'零一万物',        base:'https://api.lingyiwanwu.com/v1',
+               models:['yi-lightning','yi-large','yi-medium']},
+  stepfun:    {label:'阶跃星辰',        base:'https://api.stepfun.com/v1',
+               models:['step-2-16k','step-1-256k','step-1-8k']},
+  siliconflow:{label:'硅基流动',        base:'https://api.siliconflow.cn/v1',
+               models:['deepseek-ai/DeepSeek-V3','Qwen/Qwen2.5-72B-Instruct','Pro/Llama-3.3-70B-Instruct']},
+  openai:     {label:'OpenAI',          base:'https://api.openai.com/v1',
+               models:['gpt-4o-mini','gpt-4o','gpt-4.1-mini']},
+  gemini:     {label:'Google Gemini',   base:'https://generativelanguage.googleapis.com/v1beta/openai',
+               models:['gemini-2.0-flash','gemini-1.5-pro','gemini-1.5-flash']},
+  openrouter: {label:'OpenRouter（多模型聚合）', base:'https://openrouter.ai/api/v1',
+               models:['openai/gpt-4o-mini','anthropic/claude-3.5-sonnet','google/gemini-2.0-flash-001']},
+  groq:       {label:'Groq（低延迟）',  base:'https://api.groq.com/openai/v1',
+               models:['llama-3.3-70b-versatile','llama-3.1-8b-instant']},
+  mistral:    {label:'Mistral',         base:'https://api.mistral.ai/v1',
+               models:['mistral-large-latest','mistral-small-latest']},
+  xai:        {label:'xAI Grok',        base:'https://api.x.ai/v1',
+               models:['grok-2-latest','grok-beta']},
+  vllm:       {label:'vLLM（私有化）',  base:'http://127.0.0.1:8001/v1',
+               models:['Qwen2.5-7B-Instruct','Qwen2.5-14B-Instruct','Qwen2.5-32B-Instruct']},
+  ollama:     {label:'Ollama（本地）',  base:'http://127.0.0.1:11434/v1',
+               models:['qwen2.5:7b','qwen2.5:14b','llama3.1:8b']},
+  custom:     {label:'自定义（OpenAI 兼容）', base:'',
+               models:[]}
 };
+/* PROVIDER_LABELS / MODEL_NAMES 由目录派生（上面的空对象在这里被填满），
+   避免「下拉文案」和「模型候选」两处各写一份、改了一处忘了另一处。 */
+Object.keys(PROVIDER_CATALOG).forEach(function(k){ PROVIDER_LABELS[k] = PROVIDER_CATALOG[k].label; });
+var MODEL_NAMES = {};
+Object.keys(PROVIDER_CATALOG).forEach(function(k){ MODEL_NAMES[k] = PROVIDER_CATALOG[k].models || []; });
 function modelCreateHtml(){
-  var provs = Object.keys(PROVIDER_LABELS).map(function(k){ return '<option value="'+k+'">'+txt(PROVIDER_LABELS[k])+'</option>'; }).join('');
+  var provs = Object.keys(PROVIDER_CATALOG).map(function(k){ return '<option value="'+k+'">'+txt(PROVIDER_CATALOG[k].label)+'</option>'; }).join('');
   var allNames = [];
   Object.keys(MODEL_NAMES).forEach(function(k){ allNames = allNames.concat(MODEL_NAMES[k]); });
   var dl = '<datalist id="mfModelList">' + allNames.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join('') + '</datalist>';
@@ -10502,14 +10648,16 @@ function modelCreateHtml(){
       '<button type="button" class="mf-mini" id="mfPaste" aria-label="粘贴剪贴板内容">粘贴</button>' +
       '<button type="button" class="mf-mini mf-eye" id="mfEye" aria-label="显示/隐藏密钥">显示</button>' +
     '</div></label>' +
-    '<label>接口地址（可选）<input id="mfBase" placeholder="留空 = 用该供应商默认地址"></label>' +
-    '<label>模型名（可选）<input id="mfModel" list="mfModelList" placeholder="留空 = 用该供应商默认模型"></label>' +
     '<label class="mod-switch"><input id="mfShare" type="checkbox"> 允许共享给同事（被邀请人消耗记在你名下）</label>' +
     '<label>备注（可选）<input id="mfRemark" maxlength="255" placeholder="如：团队报销用"></label>' +
-    /* 温度/top_p/输出上限/超时/重试/流式属于平台调优项，普通用户填不对反而会把模型调坏
-       （top_p=0、max_tokens=0 会被网关当非法参数）。默认收起：需要时点开仍可覆盖。 */
-    '<details class="mod-adv"><summary>高级参数（一般不用改，留空即继承平台默认）</summary>' +
+    /* 主表单只留「选供应商 + 填 Key」这两步（2026-11-05 按用户意见精简）：
+       接口地址与模型名是**同一件事的补充说明**（留空即用该供应商的默认），
+       摆在主表单里会让人以为「必填」而停下来，所以并进高级参数，默认收起。
+       id/提交逻辑不变，只是位置变了。 */
+    '<details class="mod-adv"><summary>高级参数（接口地址 / 模型名 / 调优项，留空即跟随供应商与平台）</summary>' +
       '<div class="mod-adv-body">' +
+        '<label>接口地址（可选）<input id="mfBase" placeholder="留空 = 用该供应商默认地址"></label>' +
+        '<label>模型名（可选）<input id="mfModel" list="mfModelList" placeholder="留空 = 用该供应商默认模型"></label>' +
         '<label>温度 temperature<input id="mfTemp" type="number" step="0.05" min="0" max="2" placeholder="留空 = 跟随平台"></label>' +
         '<label>核采样 top_p<input id="mfTopP" type="number" step="0.05" min="0" max="1" placeholder="留空 = 不下发"></label>' +
         '<label>单次输出上限 max_tokens<input id="mfMaxTok" type="number" step="256" min="0" max="65536" placeholder="留空 = 不下发"></label>' +
@@ -10538,7 +10686,26 @@ function bindModelCreate(){
   };
   var pasteBtn = body.querySelector('#mfPaste');
   if(pasteBtn && key) pasteBtn.onclick = function(){ oaPasteIntoKey(key); };
+  /* 换供应商时把「接口地址 / 模型名」带到该厂家的默认值（2026-11-05）。
+     为什么需要：这两个输入框留空时，后端/agent 会沿用**平台该供应商**的地址，
+     于是「选了 Kimi 却没填地址」实际打到 DeepSeek 的域名上，报一个看不懂的 401/404。
+     只在字段为空、或上一次是我们自己填的情况下覆盖，用户手填的值不动。 */
+  var prov = body.querySelector('#mfProvider');
+  var baseIn = body.querySelector('#mfBase'), modelIn = body.querySelector('#mfModel');
+  var lastAuto = { base: '', model: '' };
+  if(prov){
+    prov.onchange = function(){
+      var c = PROVIDER_CATALOG[prov.value] || {base:'', models:[]};
+      if(baseIn && (!baseIn.value.trim() || baseIn.value.trim() === lastAuto.base)){
+        baseIn.value = c.base || ''; lastAuto.base = baseIn.value;
+      }
+      if(modelIn && (!modelIn.value.trim() || modelIn.value.trim() === lastAuto.model)){
+        modelIn.value = (c.models && c.models[0]) || ''; lastAuto.model = modelIn.value;
+      }
+    };
+  }
 }
+
 /* 把剪贴板内容写进密钥框（不经过系统长按菜单）。
    navigator.clipboard.readText 只在安全上下文（https / localhost / 127.0.0.1）可用；
    局域网 http 下接口不存在 ⇒ 切明文并聚焦，把系统「粘贴」菜单能用的概率拉到最高，同时给出明确提示。 */
@@ -10611,18 +10778,26 @@ function modelInviteHtml(){
   var c = credById(S.modelSheetCtx && S.modelSheetCtx.credentialId);
   var list = arr(S.invitable);
   /* 候选来自 GET /v1/model-credentials/invitable（同租户、启用、排除自己）。
-     文案显示「姓名（用户名）」：重名时靠用户名区分，提交的也是用户名。 */
+     2026-11-05 按用户意见：候选只显示**姓名**，不再显示「姓名（用户名）」——
+     用户名是登录标识，摆在选择列表里既多余又像内部编号。
+     只有本单位真出现同名时才给那几位补上用户名后缀（否则根本分不清该选谁），
+     提交的仍是 username（value 不变，后端校验口径不动）。 */
+  var nameOf = function(u){
+    return String(u.nickname || u.username || '').trim();
+  };
+  var dupCount = {};
+  list.forEach(function(u){ var k = nameOf(u); dupCount[k] = (dupCount[k] || 0) + 1; });
   var opts = '<option value="">请选择同事</option>' + list.map(function(u){
     var uname = String(u.username || '').trim();
-    var nick = String(u.nickname || '').trim() || uname;
-    var label = (uname && uname !== nick) ? (nick + '（' + uname + '）') : nick;
+    var nick = nameOf(u);
+    var label = (dupCount[nick] > 1 && uname && uname !== nick) ? (nick + '（' + uname + '）') : nick;
     return '<option value="'+esc(uname)+'">'+esc(label)+'</option>';
   }).join('');
   var emptyHint = list.length ? '' :
     '<div class="mod-hint" style="color:var(--red);margin:2px 2px 8px">本单位暂无可邀请的同事（或名单加载失败），请刷新后重试。</div>';
   return '<div class="mod-hint" style="margin:0 2px 8px">账号：'+txt(c ? credName(c) : '')+'。被邀请人消耗的词元由你承担（记在你名下，你自己的额度也会被扣减）。</div>' +
     '<div class="mod-form">' +
-      '<label>同事账号<select id="miUser">'+opts+'</select></label>' +
+      '<label>同事<select id="miUser">'+opts+'</select></label>' +
       emptyHint +
       '<label>共享额度<input id="miQuota" inputmode="numeric" placeholder="0 = 不限"></label>' +
       '<label>到期时间（可选）<input id="miExp" type="datetime-local"></label>' +
@@ -10781,9 +10956,213 @@ async function oaToggleShare(id, curOn){
   try{ await API.modelUpdate(id, { shareEnabled: !curOn }); toast(curOn ? '已关闭共享' : '已开启共享'); S.modelAcc = null; await ensureModelAccounts(true); renderOaModelInner(); }
   catch(e){ toast('操作失败：' + (e.message || '后端异常')); }
 }
+/* 站内确认弹窗（2026-11-05）：替代 window.confirm。
+   原生 confirm 在手机上是浏览器自己的对话框（标题「localhost:5181 显示」、系统按钮），
+   既不像产品也不受主题控制，还和「删除账号」这种危险操作的分量不匹配。
+   返回 Promise<boolean>，调用方 `if(!(await oaConfirm({...}))) return;` 即可。
+   安全默认：打开时焦点在「取消」，Esc / 点遮罩都算取消。 */
+var _cfDone = null;
+function oaConfirm(opts){
+  opts = opts || {};
+  var root = document.querySelector('.oa');
+  var card = $o('oaCfCard'), title = $o('oaCfTitle'), text = $o('oaCfText');
+  var ok = $o('oaCfOk'), cancel = $o('oaCfCancel'), mask = $o('oaCfMask');
+  if(!root || !card || !ok || !cancel || !mask){ return Promise.resolve(window.confirm(opts.text || '确认？')); }
+  if(title) title.textContent = opts.title || '确认操作';
+  if(text) text.textContent = opts.text || '';      /* 纯文本：账号名等不再拼 HTML，避免注入 */
+  ok.textContent = opts.okText || '确定';
+  ok.className = 'cf-btn ' + (opts.danger ? 'danger' : 'primary');
+  cancel.textContent = opts.cancelText || '取消';
+
+  function close(v){
+    root.classList.remove('cf-open');
+    document.removeEventListener('keydown', onKey);
+    ok.onclick = null; cancel.onclick = null; mask.onclick = null;
+    if(_cfDone){ var f = _cfDone; _cfDone = null; f(v); }
+  }
+  function onKey(e){ if(e.key === 'Escape'){ e.preventDefault(); close(false); } }
+  ok.onclick = function(){ close(true); };
+  cancel.onclick = function(){ close(false); };
+  mask.onclick = function(){ close(false); };
+  document.addEventListener('keydown', onKey);
+  root.classList.add('cf-open');
+  try{ cancel.focus({ preventScroll: true }); }catch(e){}
+  return new Promise(function(res){ _cfDone = res; });
+}
+
+/* ============================================================================
+   定位调用申请（2026-11-05）
+   ----------------------------------------------------------------------------
+   需求原话：「本系统要能调用手机设备定位，数字人可调用接口给员工打卡 —— 先完成
+   「定位调用申请」，但必须用户同意。」
+
+   所以顺序被**固定**成这样，不允许颠倒：
+     ① 服务端先建一张待同意单（POST /attendance/location-consent，此时没有任何坐标）；
+     ② 页面弹出这张卡，把「做什么 / 只这一次 / 多久有效 / 拒绝也无副作用」写清楚；
+     ③ 用户点「允许并打卡」**之后**才调用 navigator.geolocation；
+     ④ 拿到坐标立刻连同 token 提交，服务端据 token 认定「他同意过」并落考勤。
+   关键点：**没点按钮就绝不调用设备定位 API**（浏览器本身还会再弹一次系统授权，
+   那是第二道闸）。前端不自己编隐私承诺文案，一律用服务端单据里的 prompt。
+   ============================================================================ */
+var _locDone = null;
+
+function locRoot(){ return document.querySelector('.oa'); }
+
+/* 定位能力自检：http 非 localhost 时浏览器会直接拒绝（不是 bug，是安全上下文要求），
+   提前说清楚比让用户看到一个玄学失败要好。 */
+function locBlockedReason(){
+  if(!navigator.geolocation) return '当前浏览器不支持定位';
+  if(window.isSecureContext === false) return '当前页面不是 HTTPS（或 localhost），浏览器禁止取定位';
+  return '';
+}
+
+function locErrText(err){
+  var code = err && err.code;
+  if(code === 1) return '你拒绝了浏览器的定位权限。可在浏览器设置里重新允许后再试。';
+  if(code === 2) return '暂时拿不到定位信号（室内/地下常见），换个位置再试。';
+  if(code === 3) return '定位超时了，请再点一次「允许并打卡」。';
+  return '定位失败：' + ((err && err.message) || '未知原因');
+}
+
+/* 弹出定位申请卡。consent: {id, token, prompt, ttlMinutes, requestedClockType?}
+   返回 Promise<{granted:boolean, data?:object}>；用户拒绝 resolve({granted:false})，
+   出错 resolve({granted:false, error:string})（调用方决定要不要提示）。 */
+function oaAskLocation(consent){
+  consent = consent || {};
+  var root = locRoot();
+  var card = $o('oaLocCard'), mask = $o('oaLocMask'), text = $o('oaLocText');
+  var ok = $o('oaLocOk'), deny = $o('oaLocDeny'), note = $o('oaLocNote'), ttl = $o('oaLocTtl');
+  if(!root || !card || !ok || !deny || !mask){
+    // 没有 .oa 外壳（理论不可达）：退回原生确认，但**仍然**只在确认后才取定位
+    return Promise.resolve({ granted: window.confirm(consent.prompt || '允许使用一次定位完成打卡？') });
+  }
+  if(text) text.textContent = consent.prompt || '需要使用一次你的手机定位来完成打卡。';
+  if(ttl) ttl.textContent = String(consent.ttlMinutes || 5);
+  if(note){ note.textContent = ''; note.className = 'loc-note'; }
+  /* 卡片 DOM 是常驻的（避免每次重建丢动画）：**每次打开都必须把按钮恢复成初始态**。
+     2026-11-05 实测踩过：第一次打卡成功后本次没复位，第二次弹卡两个按钮都是 disabled，
+     表现为「点了打卡弹出卡片，但一个字都点不动」。 */
+  if(ok){ ok.disabled = false; ok.textContent = '允许并打卡'; }
+  if(deny){ deny.disabled = false; deny.textContent = '不允许'; }
+
+  var busy = false;
+  var blocked = locBlockedReason();
+
+  function setNote(msg, isErr){
+    if(!note) return;
+    note.textContent = msg;
+    note.className = 'loc-note' + (isErr ? ' err' : '');
+  }
+  function close(result){
+    root.classList.remove('loc-open');
+    ok.onclick = null; deny.onclick = null; mask.onclick = null;
+    document.removeEventListener('keydown', onKey);
+    if(_locDone){ var f = _locDone; _locDone = null; f(result); }
+  }
+  function onKey(e){ if(e.key === 'Escape' && !busy){ e.preventDefault(); close({granted:false}); } }
+
+  /* 拒绝：先落审计（服务端要知道「问过、被拒了」），再关卡片。
+     审计失败不阻塞用户 —— 他本来就没同意，不能因为网络问题把人卡在弹窗里。 */
+  function doDeny(){
+    if(busy) return;
+    busy = true;
+    if(ok) ok.disabled = true;
+    if(deny){ deny.disabled = true; deny.textContent = '正在关闭…'; }
+    API.attendanceDeny(consent.id).catch(function(){}).then(function(){
+      close({granted:false});
+      toast('已取消，本次未打卡');
+    });
+  }
+
+  function doAllow(){
+    if(busy) return;
+    busy = true;
+    if(ok){ ok.disabled = true; ok.textContent = '正在获取定位…'; }
+    if(deny) deny.disabled = true;
+    if(blocked){ setNote(blocked, true); reset(); return; }
+
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var c = pos.coords || {};
+      setNote('定位已获取（精度约 ' + Math.round(c.accuracy || 0) + ' 米），正在打卡…');
+      API.attendanceClock({
+        token: consent.token,
+        latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy,
+        clockType: consent.requestedClockType || null,
+        source: 'H5',
+        consentText: consent.prompt || ''       /* 用户同意时那句话的原文留痕 */
+      }).then(function(res){
+        var d = res || {};
+        setNote(d.message || '打卡成功');
+        toast(d.message || '打卡成功');
+        setTimeout(function(){ close({granted:true, data:d}); }, 900);
+      }).catch(function(e2){
+        setNote('打卡失败：' + ((e2 && e2.message) || '请稍后重试'), true);
+        reset();
+      });
+    }, function(err){
+      setNote(locErrText(err), true);
+      reset();
+    }, {enableHighAccuracy:true, timeout:12000, maximumAge:0});
+
+    /* 失败时把按钮还给用户：不还就等于「点一次失败就永远打不了卡」。 */
+    function reset(){
+      busy = false;
+      if(ok){ ok.disabled = false; ok.textContent = '允许并打卡'; }
+      if(deny) deny.disabled = false;
+    }
+  }
+
+  ok.onclick = doAllow;
+  deny.onclick = doDeny;
+  // 点遮罩 = 拒绝（与确认弹窗一致），但走同一条审计路径
+  mask.onclick = doDeny;
+  document.addEventListener('keydown', onKey);
+  root.classList.add('loc-open');
+  try{ deny.focus({ preventScroll: true }); }catch(e){}
+  return new Promise(function(res){ _locDone = res; });
+}
+
+/* 取一张可用的申请单（已有未过期的就复用，避免连点两次弹两张卡），再问用户。 */
+async function oaRequestAndAskLocation(origin, requestedClockType){
+  var consent;
+  try{ consent = await API.attendancePending(); }catch(e){ consent = null; }
+  if(!consent || !consent.token){
+    try{ consent = await API.attendanceConsent({origin: origin || 'H5'}); }
+    catch(e2){ toast('发起定位申请失败：' + (e2.message || '')); return {granted:false, error:'consent failed'}; }
+  }
+  if(requestedClockType) consent.requestedClockType = requestedClockType;
+  return oaAskLocation(consent);
+}
+
+/* 一轮对话结束后看一眼：数字人刚发起过定位申请（或用户自己点了打卡），就把卡弹出来。
+   轮询改成「每轮一次 GET」，代价很小；比给 agent 内核再加一条暂停链要稳得多 ——
+   打卡是**页面动作**，不该让对话流停在这里等用户点手机。 */
+var _locChecking = false;
+function oaCheckLocationRequest(){
+  if(_locChecking) return;
+  if(typeof API === 'undefined' || !state.token) return;
+  // 只在 OA 形态下弹：卡片是 .oa 的子元素，经典形态里它被 display:none 藏着，
+  // 弹了等于用户什么都没看到却「已经问过一次」（还可能被审计记成拒绝）。
+  if(!document.querySelector('.phone.oa-mode')) return;
+  _locChecking = true;
+  API.attendancePending().then(function(c){
+    _locChecking = false;
+    if(!c || !c.token) return;
+    // 正在生成/已有弹窗时不打断
+    var root = locRoot();
+    if(!root || root.classList.contains('loc-open') || root.classList.contains('cf-open')) return;
+    oaAskLocation(c);
+  }).catch(function(){ _locChecking = false; });
+}
+
 async function oaDeleteCred(id){
   var c = credById(id);
-  try{ if(typeof window.confirm === 'function' && !window.confirm('删除「' + (c?credName(c):('#'+id)) + '」？已产生的用量记录保留，但该账号立即不可用。')) return; }catch(e){}
+  var okDel = await oaConfirm({
+    title: '删除账号',
+    text: '删除「' + (c ? credName(c) : ('#' + id)) + '」？已产生的用量记录保留，但该账号立即不可用。',
+    okText: '删除', danger: true
+  });
+  if(!okDel) return;
   try{
     await API.modelDelete(id); toast('已删除');
     if(String(state.credentialId) === String(id)){ state.credentialId = null; state.credentialLabel = ''; persistCred(); oaSyncModelChip(); }
@@ -10791,7 +11170,12 @@ async function oaDeleteCred(id){
   }catch(e){ toast('删除失败：' + (e.message || '后端异常')); }
 }
 async function oaRevokeShare(sid){
-  try{ if(typeof window.confirm === 'function' && !window.confirm('撤销这条共享？撤销后对方下一轮对话就不能再用这个账号。')) return; }catch(e){}
+  var okRev = await oaConfirm({
+    title: '撤销共享',
+    text: '撤销这条共享？撤销后对方下一轮对话就不能再用这个账号。',
+    okText: '撤销', danger: true
+  });
+  if(!okRev) return;
   try{ await API.modelRevoke(sid); toast('已撤销'); S.modelInvites = null; await ensureModelInvites(true); renderOaModelInner(); }
   catch(e){ toast('撤销失败：' + (e.message || '后端异常')); }
 }
@@ -11104,8 +11488,12 @@ function renderModules(){
     ? '<div class="mod-tip">当前在项目《' + txt(S.currentProject ? S.currentProject.name : '') +
       '》内：模块数字人属平台公共资产，需先在「项目管理」里分配给该项目；退出项目后可直接使用。</div>'
     : '';
-  if(!ws.length){ el.innerHTML = head + empty('暂无模块数字人'); return; }
-  el.innerHTML = head + ws.map(function(w){
+  /* 固定磁贴（2026-11-05）：打卡是「页面动作」，不挂在某个数字人名下 ——
+     它需要一次定位授权，而授权只能由用户在本页点。故排在所有模块数字人之前，
+     且即使一个模块数字人都没有也要出现。 */
+  var attTile = '<button class="mod-card" data-attendance="1" aria-label="打卡">' +
+    '<span class="mi">' + ic('pin', 18) + '</span><span class="mn">打卡</span></button>';
+  el.innerHTML = head + attTile + ws.map(function(w){
     return '<button class="mod-card' + (inProject ? ' disabled' : '') + '"' +
       ' data-worker="' + txt(w.id) + '" data-oa-mod="' + txt(w.workerType) + '"' +
       ' aria-label="' + txt(w.name) + '">' +
@@ -11119,6 +11507,15 @@ function renderModules(){
       if(w) oaPickWorker(w);      /* 与「数字员工」页同一个入口：换人即换会话，不另写一套 */
     };
   });
+  var attBtn = el.querySelector('[data-attendance]');
+  if(attBtn) attBtn.onclick = oaStartClock;
+}
+
+/* 「打卡」入口（2026-11-05）：先申请、再取坐标、后落库，三步都由用户那一下点击驱动。
+   进项目时同样允许 —— 打卡是个人考勤，与项目归属无关，不该被 mod-card 的 disabled 拦住。 */
+async function oaStartClock(){
+  var res = await oaRequestAndAskLocation('H5', null);
+  if(res && res.granted){ S.attendanceStamp = Date.now(); }
 }
 
 function renderWorkers(){
@@ -12191,19 +12588,14 @@ function oaBanner(){
 }
 
 /* ---------------------------------------------------------------- 9.6 发起审批 / 指定负责人（请求 E）
-   · 发起审批：抽屉入口「发起审批」与对话里说「发起审批 / 我要申请…」都先跳到 OA 模块
-     数字人（相应的数字人），再让用户明确目标；命中具体 OA 模块意图时直接跳该数字人。
+   · 发起审批：2026-11-05 起**只有 OA 模块一个入口**（抽屉里并列的「发起审批」已删：
+     二者落点相同，两个入口反而让人以为有第二套流程）。对话里说「发起审批 / 我要申请…」
+     仍会先跳到 OA 模块数字人，命中具体模块意图时直接跳该数字人。
    · 指定负责人：OA 模块数字人对话内提供「指定负责人」按钮，可随时指定 / 修改本次审批
      交给谁；预选会在审批人选择卡出现时自动落定（复用 clarification → list_approval_handlers
      → submit_leave_request 链路，后端能力已齐备，仅补用户端触发入口）。 */
 
 function isOaWorker(w){ return !!(w && String(w.workerType || '').indexOf('OA') === 0); }
-
-/* 抽屉「发起审批」入口：直接跳到 OA 模块 Gallery，让用户选「相应的数字人」 */
-function oaLaunchApproval(){
-  oaGo('modules');
-  toast('选择要办理的审批类型，对应数字人会接管对话');
-}
 
 /* 对话里说「发起审批 / 我要申请…」：返回命中的 OA 模块数字人，或 'modules'（去 Gallery 选），或 null（不路由） */
 async function oaApprovalLaunchTarget(q){
@@ -12692,6 +13084,8 @@ async function oaSend(){
   // 收口（与老版 afterAnswer 同一批动作）：推荐更对口的同事 + 按需当场发表单。
   // 放在 finally 之后，且不 await —— S.busy 已释放，推荐晚到一步不该拖住下一次提问。
   if(answered) oaAfterOaAnswer();
+  // 数字人可能刚发起过「定位调用申请」：这一轮读完就去问用户要不要允许（自带幂等与忙闲判断）
+  oaCheckLocationRequest();
 }
 
 async function oaStop(){
@@ -13701,9 +14095,9 @@ function bind(){
   if(odS) odS.onclick = function(){ oaCloseDrawer(); oaGo('skills'); };
   var odL = $o('odLogout');
   if(odL) odL.onclick = function(){ oaCloseDrawer(); doLogout(); resetMode(); };
-  // 发起审批（#89）：抽屉入口 → 跳 OA 模块 Gallery（相应的数字人）
-  var odApply = $o('odApply');
-  if(odApply) odApply.onclick = function(){ oaCloseDrawer(); oaLaunchApproval(); };
+  // 抽屉入口只保留「OA 模块」（2026-11-05）：原先并列的「发起审批」与 OA 模块宫格是同一个落点，
+  // 两个入口容易让人以为「发起审批」是另一套流程，故合并为一个。
+  // 抽屉关闭后仍可发起审批：说「我要请假 / 发起审批」会路由到对应模块数字人（OA_ROUTES）。
   // 指定负责人（#90）：对话内按钮 → 打开候选选择器
   var assignBtn = $o('oaAssignBtn');
   if(assignBtn) assignBtn.onclick = oaOpenAssignPicker;

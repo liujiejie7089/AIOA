@@ -358,7 +358,12 @@ def test_build_messages_history():
 
 
 def test_agent_runtime_upstream_error_is_caught():
-    """上游非 200（流式路径）：按 error + run.failed 收口，错误码 MODEL_UPSTREAM_ERROR。"""
+    """上游 401（流式路径）：按 error + run.failed 收口，错误码细化成 MODEL_AUTH_FAILED。
+
+    2026-11-05 口径变更：docs/73 起上游错误按语义细分 —— 401/403 是「模型密钥无效」，
+    429 是「触发限流」，404 或关键词命中的是「模型不存在」，其余才是泛化的
+    MODEL_UPSTREAM_ERROR。断言跟着「用户看到的话」走，而不是跟着旧实现走。
+    """
     http = _mock_stream_http(_stream_resp([], status=401, err_text='{"error":"unauthorized"}'))
 
     with patch("app.core.agent_runtime.httpx.AsyncClient", return_value=http):
@@ -367,4 +372,4 @@ def test_agent_runtime_upstream_error_is_caught():
     types = [e.type for e in events]
     assert "error" in types
     assert types[-1] == "run.failed"
-    assert events[-1].data["error_code"] == "MODEL_UPSTREAM_ERROR"
+    assert events[-1].data["error_code"] == "MODEL_AUTH_FAILED"
