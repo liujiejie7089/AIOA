@@ -113,6 +113,40 @@ _REGISTRY_SPEC: dict[str, dict[str, object]] = {
         "model": "echo",
         "api_key_env": "ECHO_API_KEY",
     },
+    # ---- 2026-11-05 扩充：常用的 OpenAI 兼容厂家 ----
+    # 为什么必须在注册表里也有一份：用户建账号时「接口地址/模型名」允许留空，
+    # 留空就取**这里的默认值**。只在 H5 下拉里加名字、注册表没有 ⇒ 留空时用的是
+    # 平台默认 provider 的 base_url（选了 Kimi 却打到 DeepSeek 域名，报一个看不懂的 401）。
+    # 与 user-client 的 PROVIDER_CATALOG、ModelConfigService.PRESETS 三处同源。
+    "moonshot": {"base_url": "https://api.moonshot.cn/v1", "model": "kimi-k2-0905-preview",
+                 "api_key_env": "MOONSHOT_API_KEY"},
+    "zhipu": {"base_url": "https://open.bigmodel.cn/api/paas/v4", "model": "glm-4.6",
+              "api_key_env": "ZHIPU_API_KEY"},
+    "ark": {"base_url": "https://ark.cn-beijing.volces.com/api/v3", "model": "doubao-seed-1.6",
+            "api_key_env": "ARK_API_KEY"},
+    "hunyuan": {"base_url": "https://api.hunyuan.cloud.tencent.com/v1", "model": "hunyuan-turbos-latest",
+                "api_key_env": "HUNYUAN_API_KEY"},
+    "spark": {"base_url": "https://spark-api-open.xf-yun.com/v1", "model": "4.0Ultra",
+              "api_key_env": "SPARK_API_KEY"},
+    "baichuan": {"base_url": "https://api.baichuan-ai.com/v1", "model": "Baichuan4-Turbo",
+                 "api_key_env": "BAICHUAN_API_KEY"},
+    "yi": {"base_url": "https://api.lingyiwanwu.com/v1", "model": "yi-lightning",
+           "api_key_env": "YI_API_KEY"},
+    "stepfun": {"base_url": "https://api.stepfun.com/v1", "model": "step-2-16k",
+                "api_key_env": "STEPFUN_API_KEY"},
+    "siliconflow": {"base_url": "https://api.siliconflow.cn/v1", "model": "deepseek-ai/DeepSeek-V3",
+                    "api_key_env": "SILICONFLOW_API_KEY"},
+    "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini",
+               "api_key_env": "OPENAI_API_KEY"},
+    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+               "model": "gemini-2.0-flash", "api_key_env": "GEMINI_API_KEY"},
+    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini",
+                   "api_key_env": "OPENROUTER_API_KEY"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile",
+             "api_key_env": "GROQ_API_KEY"},
+    "mistral": {"base_url": "https://api.mistral.ai/v1", "model": "mistral-large-latest",
+                "api_key_env": "MISTRAL_API_KEY"},
+    "xai": {"base_url": "https://api.x.ai/v1", "model": "grok-2-latest", "api_key_env": "XAI_API_KEY"},
 }
 
 

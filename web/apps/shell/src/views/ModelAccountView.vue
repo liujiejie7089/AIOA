@@ -328,11 +328,31 @@ import {
 } from '@/api/modelAccount'
 import { useAuthStore } from '@/stores/auth'
 
-/** 可选供应商（与 agent 侧 provider 注册表 key 对齐；缺省走平台已配置的其余 provider）。 */
+/**
+ * 可选供应商（与 agent 侧 provider 注册表 key 对齐；缺省走平台已配置的其余 provider）。
+ * 2026-11-05 扩充到市面常用：只收 **OpenAI 兼容** 的厂家 —— agent 侧非 echo 一律走
+ * openai_compatible 驱动，协议不同的（如 Anthropic 原生 /v1/messages）列进来只会得到一个
+ * 看不懂的 404。与 user-client 的 PROVIDER_CATALOG、ModelConfigService.PRESETS 三处同源。
+ */
 const PROVIDERS = [
   { key: 'deepseek', label: 'DeepSeek' },
-  { key: 'dashscope', label: '通义百炼' },
+  { key: 'dashscope', label: '阿里云百炼' },
+  { key: 'moonshot', label: '月之暗面 Kimi' },
+  { key: 'zhipu', label: '智谱 GLM' },
   { key: 'minimax', label: 'MiniMax' },
+  { key: 'ark', label: '火山方舟（豆包）' },
+  { key: 'hunyuan', label: '腾讯混元' },
+  { key: 'spark', label: '讯飞星火' },
+  { key: 'baichuan', label: '百川智能' },
+  { key: 'yi', label: '零一万物' },
+  { key: 'stepfun', label: '阶跃星辰' },
+  { key: 'siliconflow', label: '硅基流动' },
+  { key: 'openai', label: 'OpenAI' },
+  { key: 'gemini', label: 'Google Gemini' },
+  { key: 'openrouter', label: 'OpenRouter（聚合）' },
+  { key: 'groq', label: 'Groq（低延迟）' },
+  { key: 'mistral', label: 'Mistral' },
+  { key: 'xai', label: 'xAI Grok' },
   { key: 'vllm', label: 'vLLM（私有化）' },
   { key: 'ollama', label: 'Ollama（本地）' },
 ]
