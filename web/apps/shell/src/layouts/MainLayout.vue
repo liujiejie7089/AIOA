@@ -195,7 +195,9 @@
             <el-menu-item v-if="showWorkerMenu" index="/workers/grants">数字人授权</el-menu-item>
             <!-- 专家创建/配置：系统管理员 / 租户管理员 / 企业管理员（不含部门负责人） -->
             <el-menu-item v-if="showExpertMenu" index="/experts">专家配置</el-menu-item>
-            <el-menu-item v-if="showTenantMenu" index="/tools">业务工具</el-menu-item>
+            <!-- 2026-11-05 按用户要求下线「业务工具」菜单：工具清单是给**智能体**用的，
+                 让管理员在页面里逐个点「测试执行」既不是日常工作，也容易误触发写操作。
+                 路由本身保留（直连 /tools 仍可排障），只是不再出现在侧边栏。 -->
             <el-menu-item v-if="showTenantMenu" index="/biz-systems">业务系统</el-menu-item>
             <!-- 表单设计器（docs/52 P1）：与路由 meta.allowRoles、后端 PermissionCatalog.FORM_MANAGE（form:manage）共用 FORM_MANAGER_ROLES。 -->
             <el-menu-item v-if="showFormMenu" index="/forms">表单设计器</el-menu-item>
