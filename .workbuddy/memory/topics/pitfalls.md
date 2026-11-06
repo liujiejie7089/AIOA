@@ -1965,3 +1965,25 @@ MySQL 对 `DESC` 的 NULL 是**最后**，于是空壳会话永远落在页外�
 截图/读色时可能正好在动画中间：整层发灰、底下 tabbar 与 toast 都透出来，看起来像层级压不住。
 **先固定等 500ms 再截图**。（真层级问题另有判据：`getComputedStyle(mask).zIndex` 与父级是否形成
 层叠上下文，别靠肉眼。）
+
+## 93. `try: ... except Exception: pass` 会把 `NameError` 一起吞掉 —— 批量插桩必须验证「真的跑到了」
+
+2026-11-06 实测：为修 GBK 控制台打印 ✅ 崩溃，给 193 个脚本插了
+```python
+try:  # A3
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+import sys
+```
+其中 **161 个**块落在 `import sys` **之前** ⇒ `NameError: name 'sys' is not defined`，
+被 `except Exception: pass` 静默吞掉 ⇒ **一段死代码**，控制台照旧 `UnicodeEncodeError`，
+但 `grep sys.stdout.reconfigure` 有命中、`git diff` 也显示「已修」—— 假修复。
+
+- **判据**：批量插桩后必须**实际运行一次并观察副作用**，不能只看文本命中。
+  最小复现：`PYTHONIOENCODING=gbk python x.py`，旧写法 exit=1、新写法 exit=0。
+- **修法**：在 try 内补 `import sys`（模块级 try 里的 import 仍绑定全局），
+  不搬代码、不动缩进，比「把块移到 import 之后」风险小得多。
+- **通用规律**：`except Exception: pass` / `except: pass` 包住的初始化代码，
+  写错名字、用未导入的名字、属性不存在 —— 全部静默失效。
+  凡是「加了但看不出效果」的兜底块，先怀疑它根本没执行。
