@@ -7,6 +7,13 @@
 为什么单独留一个截图脚本：布局类改动（满屏、安全区、阅读列宽）的「对不对」很多是目视判断，
 套件只能守住可度量的那部分（尺寸、颜色一致、无描边）。两者一起用，缺一样都会漏。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import os
 

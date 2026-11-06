@@ -128,7 +128,11 @@ public class ApprovalFlowService {
                             // ↓ 六期新增：发起人**亲手指定**的处理人（对话里选的那位）。
                             //   与 specificApproverId 的区别见 expandNodes 里的注释：
                             //   后者只在 step 声明 SPECIFIC 时生效，前者则会被插入为首节点。
-                            Long assigneeUserId) {
+                            Long assigneeUserId,
+                            // ↓ 八期新增（2026-11-06）：**多选**负责人，按选择顺序依次审批。
+                            //   与 assigneeUserId 同时给时合并去重（列表顺序 = 审批顺序）。
+                            //   缺省 null / 空 ⇒ 走后台配置的默认流程，行为与八期之前**逐字一致**。
+                            List<Long> assigneeUserIds) {
 
         /**
          * 十二参兼容构造器：既有 12 个调用点（请假 / 权限申请 / 额度 / 报销 / 表单 / 删除类）
@@ -143,7 +147,17 @@ public class ApprovalFlowService {
                          String applicantType, Long applicantDepartmentId) {
             this(bizType, title, content, formData, institutionId, departmentId, days,
                     applicantUserId, applicantName, specificApproverId,
-                    applicantType, applicantDepartmentId, null);
+                    applicantType, applicantDepartmentId, null, null);
+        }
+
+        /** 十三参兼容构造器：八期之前传单个 assigneeUserId 的调用点（请假提交）不受影响。 */
+        public SubmitReq(String bizType, String title, String content, String formData,
+                         Long institutionId, Long departmentId, Double days,
+                         Long applicantUserId, String applicantName, Long specificApproverId,
+                         String applicantType, Long applicantDepartmentId, Long assigneeUserId) {
+            this(bizType, title, content, formData, institutionId, departmentId, days,
+                    applicantUserId, applicantName, specificApproverId,
+                    applicantType, applicantDepartmentId, assigneeUserId, null);
         }
     }
 
@@ -183,6 +197,9 @@ public class ApprovalFlowService {
         }
         Long firstApprover = null;
         StringBuilder note = new StringBuilder();
+        // 每落一条任务就记一份「数据流节点」快照：回执要给出完整处理人与流转状态，
+        // 若事后再查 timeline 会多一次往返，且刚提交时任务 id 就在手上，没必要查库。
+        List<Map<String, Object>> approveRows = new ArrayList<>(nodes.size());
         for (Node n : nodes) {
             ApprovalTask t = new ApprovalTask();
             t.setTenantId(tenantId);
@@ -202,6 +219,7 @@ public class ApprovalFlowService {
             t.setNote(n.fallbackNote);
             t.setCreatedAt(LocalDateTime.now());
             taskMapper.insert(t);
+            approveRows.add(stepRow(t, n, null));
             if (t.getStatus().equals(ApprovalTask.PENDING) && firstApprover == null) {
                 firstApprover = n.approverId;
             }
@@ -216,6 +234,7 @@ public class ApprovalFlowService {
         // seq 取 900+ 与其审批序列明确区分（知会不占审批级次，nodeCount 也不含它们）。
         int ccSeq = 900;
         List<String> ccNames = new ArrayList<>();
+        List<Map<String, Object>> ccRows = new ArrayList<>(expand.cc().size());
         for (Node n : expand.cc()) {
             ccSeq++;
             ApprovalTask t = new ApprovalTask();
@@ -232,6 +251,7 @@ public class ApprovalFlowService {
             t.setCreatedAt(LocalDateTime.now());
             taskMapper.insert(t);
             ccNames.add(n.approverName);
+            ccRows.add(stepRow(t, n, "CC"));
             notify(n.approverId, tenantId, "抄送知会",
                     applicantName + " 提交了《" + (req.title() == null ? req.bizType() : req.title())
                             + "》，抄送给你知悉（无需审批）", orderId);
@@ -265,8 +285,169 @@ public class ApprovalFlowService {
         // 知会（抄送）对象：不阻塞流转，仅用于「我提交的申请由谁知晓」的展示
         out.put("ccCount", expand.cc().size());
         out.put("ccNames", ccNames);
+        // ── 八期：结构化回执（用户明确要求「返回数据含数据流情况与处理人信息」）──
+        // handlers = 谁在处理（口径与来源）；dataFlow = 单据怎么流（每级节点、状态、当前级）。
+        // 两者都用「用户看得懂的中文标签 + 机器可用的英文码」双写，前端不必自己映射。
+        out.put("handlers", handlersOf(approveRows, ccRows, expand.specified()));
+        out.put("dataFlow", dataFlowOf(orderId, req, approveRows, expand.specified(),
+                userId, applicantName, req.applicantDepartmentId()));
+        // timeline 保留：既有「我的申请 / 待办」详情页读它，字段一分不动（只新增不改）
         out.put("timeline", timeline(orderId));
         return out;
+    }
+
+    /**
+     * 一个节点 → 回执里的一行（内部结构，供 handlers / dataFlow 组装）。
+     *
+     * @param role {@code null} = 审批节点；{@code "CC"} = 知会节点
+     */
+    private static Map<String, Object> stepRow(ApprovalTask t, Node n, String role) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("taskId", t.getId());
+        row.put("seq", n.seq());
+        row.put("approverType", n.approverType());
+        row.put("approverId", n.approverId());
+        row.put("approverName", n.approverName());
+        row.put("nodeMode", n.nodeMode());
+        row.put("status", t.getStatus());
+        row.put("skipReason", n.skipReason());
+        row.put("note", n.fallbackNote());
+        row.put("role", role == null ? "APPROVE" : role);
+        return row;
+    }
+
+    /** 本轮是否为「用户指定的人」：指定人固定落在前 N 个 seq 上（见 applyAssignees）。 */
+    private static boolean isSpecified(Map<String, Object> row, List<Long> specified) {
+        if (specified == null || specified.isEmpty()) {
+            return false;
+        }
+        Object id = row.get("approverId");
+        Object seq = row.get("seq");
+        if (!(id instanceof Long uid) || !(seq instanceof Integer s)) {
+            return false;
+        }
+        return s >= 1 && s <= specified.size() && specified.contains(uid);
+    }
+
+    /** 处理人信息：模式（默认/指定）+ 指定名单 + 当前处理人 + 知会人。 */
+    private Map<String, Object> handlersOf(List<Map<String, Object>> approveRows,
+                                           List<Map<String, Object>> ccRows,
+                                           List<Long> specified) {
+        boolean isSpecifiedMode = specified != null && !specified.isEmpty();
+        Map<String, Object> h = new LinkedHashMap<>();
+        h.put("mode", isSpecifiedMode ? "SPECIFIED" : "DEFAULT");
+        h.put("modeLabel", isSpecifiedMode ? "指定负责人（依次审批）" : "默认负责人（按后台配置流程）");
+        List<Map<String, Object>> spec = new ArrayList<>();
+        for (Map<String, Object> r : approveRows) {
+            if (!isSpecified(r, specified)) {
+                continue;
+            }
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("userId", r.get("approverId"));
+            u.put("name", displayApprover((String) r.get("approverName"), (Long) r.get("approverId")));
+            u.put("seq", r.get("seq"));
+            spec.add(u);
+        }
+        h.put("specified", spec);
+        h.put("specifiedCount", spec.size());
+        Map<String, Object> cur = null;
+        for (Map<String, Object> r : approveRows) {
+            if (ApprovalTask.PENDING.equals(String.valueOf(r.get("status")))) {
+                cur = new LinkedHashMap<>();
+                cur.put("userId", r.get("approverId"));
+                cur.put("name", displayApprover((String) r.get("approverName"), (Long) r.get("approverId")));
+                cur.put("seq", r.get("seq"));
+                cur.put("approverType", r.get("approverType"));
+                cur.put("approverTypeLabel", labelOf(String.valueOf(r.get("approverType"))));
+                break;
+            }
+        }
+        h.put("current", cur);
+        List<Map<String, Object>> cc = new ArrayList<>(ccRows.size());
+        for (Map<String, Object> r : ccRows) {
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("userId", r.get("approverId"));
+            u.put("name", displayApprover((String) r.get("approverName"), (Long) r.get("approverId")));
+            cc.add(u);
+        }
+        h.put("cc", cc);
+        h.put("nodeCount", (int) approveRows.stream().map(r -> r.get("seq")).distinct().count());
+        return h;
+    }
+
+    /**
+     * 数据流：这张单从谁发起、经过哪些节点、现在停在哪、每一级的状态与时间。
+     *
+     * <p>与 {@link #timeline(Long)} 的差别：本结构是**回执当场**的快照（不查库、含
+     * {@code source} 与 {@code current} 两个派生字段），供提交后立刻展示；
+     * timeline 是事后回查的明细，供详情页 / 待办页使用。两者字段名保持一致，前端可复用同一套渲染。</p>
+     */
+    private Map<String, Object> dataFlowOf(Long orderId, SubmitReq req,
+                                           List<Map<String, Object>> approveRows,
+                                           List<Long> specified,
+                                           Long applicantId, String applicantName,
+                                           Long applicantDepartmentId) {
+        Map<String, Object> flow = new LinkedHashMap<>();
+        flow.put("orderId", orderId);
+        flow.put("bizType", req.bizType());
+        flow.put("title", req.title() == null ? req.bizType() : req.title());
+        Map<String, Object> applicant = new LinkedHashMap<>();
+        applicant.put("userId", applicantId);
+        applicant.put("name", applicantName);
+        flow.put("applicant", applicant);
+        flow.put("submittedAt", LocalDateTime.now().withNano(0).toString());
+        flow.put("status", "PENDING");
+        flow.put("statusLabel", "审批中");
+        List<Map<String, Object>> steps = new ArrayList<>(approveRows.size());
+        Long currentTaskId = null;
+        int currentSeq = 0;
+        for (Map<String, Object> r : approveRows) {
+            String status = String.valueOf(r.get("status"));
+            boolean isCurrent = currentTaskId == null && ApprovalTask.PENDING.equals(status);
+            Map<String, Object> s = new LinkedHashMap<>();
+            s.put("seq", r.get("seq"));
+            s.put("taskId", r.get("taskId"));
+            s.put("approverType", r.get("approverType"));
+            s.put("approverTypeLabel", labelOf(String.valueOf(r.get("approverType"))));
+            s.put("source", isSpecified(r, specified) ? "SPECIFIED" : "FLOW");
+            Map<String, Object> who = new LinkedHashMap<>();
+            who.put("userId", r.get("approverId"));
+            who.put("name", displayApprover((String) r.get("approverName"), (Long) r.get("approverId")));
+            s.put("approver", who);
+            s.put("nodeMode", r.get("nodeMode") == null ? ApprovalTask.MODE_SINGLE : r.get("nodeMode"));
+            s.put("status", status);
+            s.put("statusLabel", taskStatusLabel(status));
+            s.put("decidedAt", null);
+            s.put("note", r.get("note"));
+            s.put("skipReason", r.get("skipReason"));
+            s.put("current", isCurrent);
+            if (isCurrent) {
+                currentTaskId = (Long) r.get("taskId");
+                currentSeq = (Integer) r.get("seq");
+            }
+            steps.add(s);
+        }
+        flow.put("steps", steps);
+        flow.put("nodeCount", steps.stream().map(s -> s.get("seq")).distinct().count());
+        flow.put("currentSeq", currentSeq);
+        flow.put("currentTaskId", currentTaskId);
+        flow.put("applicantDepartmentId", applicantDepartmentId);
+        return flow;
+    }
+
+    /** 任务状态的中文标签（回执与前端共用一套文案，避免两端各写一份对不上）。 */
+    private static String taskStatusLabel(String status) {
+        if (status == null) {
+            return "待审批";
+        }
+        return switch (status) {
+            case ApprovalTask.PENDING -> "待审批";
+            case ApprovalTask.APPROVED -> "已通过";
+            case ApprovalTask.REJECTED -> "已驳回";
+            case ApprovalTask.SKIPPED -> "已跳过";
+            case ApprovalTask.STATUS_CC -> "已抄送";
+            default -> status;
+        };
     }
 
     /**
@@ -283,8 +464,8 @@ public class ApprovalFlowService {
                         String skipReason, String fallbackNote, String nodeMode, String dutyCode) {
     }
 
-    /** 展开结果：审批节点（阻塞推进）+ 知会节点（不阻塞，对标 O2OA 的「待阅」）。 */
-    private record ExpandResult(List<Node> approve, List<Node> cc) {
+    /** 展开结果：审批节点（阻塞推进）+ 知会节点（不阻塞，对标 O2OA 的「待阅」）+ 用户指定的负责人。 */
+    private record ExpandResult(List<Node> approve, List<Node> cc, List<Long> specified) {
     }
 
     /** 上级梯级的展开结果：节点 + 「梯级缺位被迫顺延」的可见提示。 */
@@ -307,6 +488,7 @@ public class ApprovalFlowService {
             case ApprovalTask.TYPE_ORG_ADMIN -> "企业管理员";
             case ApprovalTask.TYPE_TENANT_ADMIN -> "租户管理员";
             case ApprovalTask.TYPE_PLATFORM_ADMIN -> "平台管理员";
+            case ApprovalTask.TYPE_SPECIFIC -> "指定审批人";
             default -> type;
         };
     }
@@ -470,51 +652,117 @@ public class ApprovalFlowService {
         //   approver_type=SPECIFIC 时才会被策略读到（见 ApproverStrategyConfig），
         //   而请假等默认流是 APPLICANT_SUPERIOR / DEPT_LEADER，没有这个 step ⇒
         //   传了也会被**静默忽略**，表现正是「用户选了人，却没人收到审批」。
-        if (req.assigneeUserId() != null) {
-            nodes = applyAssignee(nodes, req.assigneeUserId(), flowConfigured, applicantId);
+        // ── 八期：发起人指定负责人（可多选，按选择顺序依次审批）──
+        // 单选字段 assigneeUserId 与多选列表 assigneeUserIds 合并去重（列表顺序 = 审批顺序）。
+        List<Long> specifiedIds = normalizeAssignees(req.assigneeUserIds(), req.assigneeUserId());
+        if (!specifiedIds.isEmpty()) {
+            nodes = applyAssignees(nodes, specifiedIds, flowConfigured, applicantId);
         }
 
         List<Node> ccs = expandCcNodes(steps, req, deptLeaderId, orgAdminId, tenantAdminId, platformAdminId,
                 nodes.stream().map(Node::approverId).filter(Objects::nonNull).toList());
-        return new ExpandResult(nodes, ccs);
+        return new ExpandResult(nodes, ccs, specifiedIds);
     }
 
     /**
-     * 把「发起人指定的处理人」落到节点序列上。
+     * 把「发起人指定的负责人」落到节点序列上（八期：支持多选，按选择顺序<b>依次审批</b>）。
      *
-     * <p>三条口径（都有回归用例盯着）：</p>
+     * <p>四条口径：</p>
      * <ol>
-     *   <li><b>自审拦截</b>：指定人 = 申请人 ⇒ 400。技术上能建出任务，但语义上是自己批自己，
-     *       且会占住唯一节点导致流程永远等他自己 —— 与其静默生成一个假审批，不如当场说清。</li>
-     *   <li><b>无配置流 ⇒ 单节点</b>：用户明确点名了人，就不该再追加企业管理员兜底节点，
+     *   <li><b>自审拦截</b>：指定人含申请人 ⇒ 400。技术上能建出任务，但语义上是自己批自己，
+     *       且会占住节点导致流程永远等他自己 —— 与其静默生成一个假审批，不如当场说清。</li>
+     *   <li><b>顺序即审批顺序</b>：列表第 1 位是第 1 级，第 2 位是第 2 级……（依次审批）。
+     *       每个指定人一条 {@code TYPE_SPECIFIC} 任务、{@code MODE_SINGLE}，与前一人通过后才轮到下一人。</li>
+     *   <li><b>无配置流 ⇒ 只剩指定人</b>：用户明确点名了人，就不该再追加企业管理员兜底节点，
      *       否则他要等两轮，而第二轮的审批人他从没同意过。</li>
-     *   <li><b>有配置流 ⇒ 插为首节点</b>：原节点整体后移一位（seq+1），保证「先指定人、再按规则」。
-     *       若原首节点本来就是同一个人，则<b>不重复插入</b>（否则同一个人要批两次）。</li>
+     *   <li><b>有配置流 ⇒ 插在最前面</b>：原节点整体后移 N 位，保证「先指定人、再按配置规则」。
+     *       原节点里与指定人重复的<b>整体剔除</b>（否则同一个人要批两次），剔除后若一个不剩，
+     *       则流程到指定人处理完即终态。</li>
      * </ol>
      */
-    private List<Node> applyAssignee(List<Node> nodes, Long assigneeId, boolean flowConfigured,
-                                     Long applicantId) {
-        if (assigneeId == null || assigneeId <= 0L) {
+    private List<Node> applyAssignees(List<Node> nodes, List<Long> assigneeIds,
+                                      boolean flowConfigured, Long applicantId) {
+        if (assigneeIds == null || assigneeIds.isEmpty()) {
             return nodes;
         }
-        if (assigneeId.equals(applicantId)) {
+        Set<Long> want = new LinkedHashSet<>(assigneeIds);
+        if (applicantId != null && want.contains(applicantId)) {
             throw BizException.badRequest("处理人不能是申请人本人（自己批自己没有意义），请改选其他人");
         }
-        String name = nameOf(assigneeId);
-        Node first = new Node(1, ApprovalTask.TYPE_SPECIFIC, assigneeId, name,
-                null, null, ApprovalTask.MODE_SINGLE, null);
+        List<Node> specified = new ArrayList<>(want.size());
+        int seq = 0;
+        for (Long id : want) {
+            specified.add(new Node(++seq, ApprovalTask.TYPE_SPECIFIC, id, nameOf(id),
+                    null, null, ApprovalTask.MODE_SINGLE, null));
+        }
         if (!flowConfigured) {
-            return new ArrayList<>(List.of(first));
+            return specified;
         }
-        if (!nodes.isEmpty() && assigneeId.equals(nodes.get(0).approverId())) {
-            return nodes;
-        }
-        List<Node> out = new ArrayList<>(nodes.size() + 1);
-        out.add(first);
+        List<Node> out = new ArrayList<>(specified.size() + nodes.size());
+        out.addAll(specified);
         for (Node n : nodes) {
-            out.add(withSeq(n, n.seq() + 1, n.fallbackNote()));
+            if (n.approverId() != null && want.contains(n.approverId())) {
+                continue;   // 与指定人重复：人已经在前面了，不能再批一次
+            }
+            out.add(withSeq(n, n.seq() + seq, n.fallbackNote()));
         }
         return out;
+    }
+
+    /**
+     * 归一「发起人指定的负责人」：合并多选列表与单选字段，去空去重，**保留用户选择顺序**。
+     *
+     * <p>公开给调用方（请假 / 表单）在提交前做同一套归一与校验，避免两处各写一份口径
+     * 导致「列表里 3 人、实际只建 2 条任务」这类不易发现的偏差。</p>
+     */
+    public static List<Long> normalizeAssignees(List<Long> many, Long one) {
+        LinkedHashSet<Long> set = new LinkedHashSet<>();
+        if (many != null) {
+            for (Long id : many) {
+                if (id != null && id > 0L) {
+                    set.add(id);
+                }
+            }
+        }
+        if (one != null && one > 0L) {
+            set.add(one);   // 单选字段排在列表之后（单/多混传时以列表优先）
+        }
+        return new ArrayList<>(set);
+    }
+
+    /**
+     * 校验「这些人能不能当负责人」——口径与本机构在职成员一致（允许跨部门，不允许跨机构/离职/不存在）。
+     *
+     * <p>为什么放在引擎而不是各业务自己校验：指定人是**引擎**要建任务的人，建出一条
+     * 永远没人处理的待办是最难排查的一类静默失败。请假 / 表单 / 对话工具共用这一处，
+     * 报错文案也统一。</p>
+     *
+     * @param institutionId 机构；{@code null} 或 {@code <=0}（平台级）时跳过在职校验，只拦自审
+     */
+    public void validateAssignees(List<Long> ids, Long institutionId, Long applicantId) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            if (id == null || id <= 0L) {
+                continue;
+            }
+            if (applicantId != null && id.equals(applicantId)) {
+                throw BizException.badRequest("处理人不能是申请人本人（自己批自己没有意义），请改选其他人");
+            }
+            if (institutionId == null || institutionId <= 0L) {
+                continue;
+            }
+            OrgMember m = memberMapper.selectOne(new LambdaQueryWrapper<OrgMember>()
+                    .eq(OrgMember::getUserId, id)
+                    .eq(OrgMember::getInstitutionId, institutionId)
+                    .eq(OrgMember::getStatus, OrgMember.STATUS_ACTIVE)
+                    .last("limit 1"));
+            if (m == null) {
+                throw BizException.badRequest("指定的负责人不在本机构在职成员中（userId=" + id
+                        + "），请重新选择");
+            }
+        }
     }
 
     /** 复制一个节点并换掉 seq / 提示（展开阶段用它给节点组编号、给首节点挂提示）。 */

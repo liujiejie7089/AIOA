@@ -624,38 +624,102 @@
   .clar-ok:disabled{ opacity:.45; cursor:not-allowed; }
   .clar-card.done{ opacity:.92; }
   .clar-card .clar-picked{ color:var(--text-2); font-size:11.5px; margin-top:6px; }
-  /* ---------- 指定负责人（#90）：对话内按钮 + 候选人浮层 + 已选 chip ---------- */
-  .assign-bar{
-    display:flex; align-items:center; gap:6px; padding:5px 10px; margin:0 10px 6px;
-    background:var(--brand-soft); border:1px solid var(--brand-line); border-radius:var(--r-sm);
-    font-size:12px; color:var(--text-2);
+  /* ---------- 负责人确认环节（八期，2026-11-06）----------
+     替代原先「输入框里常驻指定负责人按钮 + 浮层」：那个入口要求用户**填表前**就想好交给谁，
+     顺序反了。现在改成表单填完、真正提交前再确认一次：默认 / 指定（可多选，顺序即审批顺序）。
+     两个提交入口（对话内表单卡片 / OA 请假表单）共用同一份弹层。 */
+  .hd-mask{
+    position:fixed; inset:0; z-index:1400; background:rgba(15,23,42,.45);
+    display:flex; align-items:flex-end; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .16s ease;
   }
-  .assign-bar[hidden]{ display:none; }
-  .assign-bar .ab-tag{ color:var(--brand); font-weight:600; }
-  .assign-bar .ab-name{ color:var(--text); font-weight:600; }
-  .assign-bar .ab-x{
-    margin-left:auto; border:0; background:transparent; color:var(--text-3);
-    cursor:pointer; font-size:13px; line-height:1; padding:2px 4px; border-radius:4px;
+  .hd-mask.on{ opacity:1; pointer-events:auto; }
+  .hd-card{
+    width:100%; max-width:520px; max-height:88vh; display:flex; flex-direction:column;
+    background:var(--surface); border-radius:16px 16px 0 0; box-sizing:border-box;
+    box-shadow:0 -8px 30px rgba(0,0,0,.18);
+    transform:translateY(16px); transition:transform .18s ease;
   }
-  .assign-bar .ab-x:hover{ background:rgba(0,0,0,.06); color:var(--red); }
-  .assign-pop{
-    position:fixed; z-index:1200; width:264px; max-height:340px; display:flex; flex-direction:column;
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
-    box-shadow:var(--sh-1); padding:10px; box-sizing:border-box;
+  .hd-mask.on .hd-card{ transform:translateY(0); }
+  .hd-head{ padding:14px 16px 4px; font-size:14px; font-weight:700; color:var(--text); }
+  .hd-sub{ padding:0 16px 10px; font-size:11.5px; color:var(--text-2); line-height:1.6; }
+  .hd-opts{ padding:0 16px; display:flex; flex-direction:column; gap:8px; }
+  .hd-opt{
+    display:flex; gap:10px; align-items:flex-start; padding:10px 12px; cursor:pointer;
+    border:1px solid var(--border); border-radius:12px; background:var(--surface);
   }
-  .assign-pop .ap-head{
-    display:flex; align-items:center; justify-content:space-between;
-    font-size:13px; font-weight:600; color:var(--text); margin-bottom:8px;
+  .hd-opt.on{ border-color:var(--blue); background:rgba(37,99,235,.06); }
+  .hd-opt .hd-radio{
+    flex:0 0 auto; width:15px; height:15px; margin-top:2px; border-radius:50%;
+    border:1.5px solid var(--border); background:var(--surface); box-sizing:border-box;
   }
-  .assign-pop .ap-x{ border:0; background:transparent; color:var(--text-3); cursor:pointer; font-size:14px; }
-  .assign-pop .ap-x:hover{ color:var(--red); }
-  .assign-pop .clar-search{ margin-bottom:8px; }
-  .assign-pop .clar-cands{ flex:1 1 auto; }
-  .assign-pop .ap-empty{ color:var(--text-3); font-size:12px; text-align:center; padding:14px 0; }
-  .assign-pop .clar-cand{ display:flex; flex-direction:column; justify-content:center; }
-  .assign-pop .clar-cand .ac-name{ color:var(--text); }
-  .assign-pop .clar-cand .ac-sub{ font-size:11px; color:var(--text-3); margin-top:1px; }
-  .assign-pop .clar-cand.sel .ac-name{ color:var(--blue); }
+  .hd-opt.on .hd-radio{ border-color:var(--blue); border-width:4px; }
+  .hd-opt .hd-tt{ font-size:12.5px; font-weight:600; color:var(--text); }
+  .hd-opt .hd-ds{ display:block; font-size:11.5px; color:var(--text-2); line-height:1.55; margin-top:2px; }
+  .hd-body{ padding:10px 16px 0; overflow:auto; }
+  .hd-body[hidden]{ display:none; }
+  .hd-search{
+    width:100%; height:34px; padding:0 10px; box-sizing:border-box; font-family:inherit;
+    font-size:12.5px; color:var(--text); background:var(--surface);
+    border:1px solid var(--border); border-radius:10px; outline:none;
+  }
+  .hd-search:focus{ border-color:var(--blue); }
+  .hd-list{
+    margin-top:8px; max-height:236px; overflow:auto;
+    border:1px solid var(--border); border-radius:10px; background:var(--surface);
+  }
+  .hd-item{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
+    border-bottom:1px solid var(--border);
+  }
+  .hd-item:last-child{ border-bottom:0; }
+  .hd-item.on{ background:rgba(37,99,235,.07); }
+  .hd-item .hd-ord{
+    flex:0 0 auto; width:18px; height:18px; border-radius:50%; font-size:11px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text-3);
+  }
+  .hd-item.on .hd-ord{ background:var(--blue); border-color:var(--blue); color:#fff; }
+  .hd-item .hd-nm{ font-size:12.5px; color:var(--text); }
+  .hd-item .hd-meta{ font-size:11px; color:var(--text-3); }
+  .hd-item .hd-txt{ flex:1 1 auto; min-width:0; }
+  .hd-picked{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .hd-chip{
+    display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:999px;
+    background:var(--brand-soft); border:1px solid var(--brand-line);
+    color:var(--text); font-size:11.5px;
+  }
+  .hd-chip i{ font-style:normal; color:var(--text-3); cursor:pointer; }
+  .hd-err{ color:var(--red); font-size:11.5px; padding:8px 16px 0; }
+  .hd-err[hidden]{ display:none; }
+  .hd-acts{ display:flex; gap:8px; padding:12px 16px 16px; margin-top:10px; border-top:1px solid var(--border); }
+  .hd-btn{
+    flex:1 1 0; min-height:40px; border-radius:10px; font-family:inherit; font-size:13px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer;
+  }
+  .hd-btn.pri{ background:var(--blue); border-color:var(--blue); color:#fff; }
+  .hd-btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  /* 回执里的「处理人 / 数据流」块（八期）：默认 / 指定 + 逐级节点与当前级 */
+  .rc-flow{ margin-top:10px; padding-top:8px; border-top:1px dashed var(--border); }
+  /* 「处理人」这行的标签不能被长名单挤断行（默认 .rc-row 的 span 可收缩） */
+  .rc-row-flow span{ flex:0 0 auto; white-space:nowrap; }
+  .rc-flow .rc-flow-h{ font-size:11.5px; font-weight:600; color:var(--text-3); margin:6px 0; }
+  .rc-steps{ display:flex; flex-direction:column; gap:6px; }
+  .rc-step{
+    display:flex; gap:8px; align-items:flex-start; padding:6px 8px;
+    border:1px solid var(--border); border-radius:8px; background:var(--surface-2);
+  }
+  .rc-step.cur{ border-color:var(--blue); }
+  .rc-step .rs-seq{
+    flex:0 0 auto; width:18px; height:18px; border-radius:50%; font-size:11px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--surface); border:1px solid var(--border); color:var(--text-2);
+  }
+  .rc-step.cur .rs-seq{ background:var(--blue); border-color:var(--blue); color:#fff; }
+  .rc-step .rs-body{ flex:1 1 auto; min-width:0; }
+  .rc-step .rs-nm{ font-size:12px; font-weight:600; color:var(--text); }
+  .rc-step .rs-meta{ font-size:11px; color:var(--text-3); margin-top:1px; }
   @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
 
   /* ---------- HITL 确认卡（need_confirm）：气泡下方的「确认 / 取消」双按钮 ----------
@@ -1412,6 +1476,12 @@
 .oa .mydata{display:grid; grid-template-columns:repeat(4,1fr); text-align:center; padding:14px 0 4px}
 .oa .mydata div b{display:block; font-family:var(--font-mono); font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; color:#fff}
 .oa .mydata div span{font-size:11px; color:rgba(255,255,255,.9)}
+/* 四个统计是入口（2026-11-06）：按下给一点点反馈，视觉上仍与纯文字一致，不新增图标。
+   -webkit-tap-highlight-color 关掉，否则移动端点一下整块闪灰底，比不响应还难看。 */
+.oa .mydata .me-stat{border-radius:10px; -webkit-tap-highlight-color:transparent;
+  transition:background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease)}
+.oa .mydata .me-stat:active{background:rgba(255,255,255,.16); transform:scale(.97)}
+.oa .mydata .me-stat:focus-visible{outline:2px solid rgba(255,255,255,.72); outline-offset:1px}
 .oa .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .oa .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:13px;box-shadow:var(--sh-1)}
 .oa .metric b{display:block;font-family:var(--font-mono);font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
@@ -1441,6 +1511,13 @@
   box-shadow:0 -2px 12px rgba(20,26,38,.04); z-index:6; position:relative;
 }
 .oa .tabbar.on{display:flex}
+/* 软键盘弹起时收起底栏（2026-11-06）
+   Android / 微信 WebView 弹键盘会连带缩 layout viewport，而新版 .oa 与经典页都是
+   「顶栏 + 内容 + 底栏」的 flex 列布局 ⇒ 底栏被压到键盘正上方，看起来就是「导航被顶到键盘上面」，
+   还挤掉一截内容。这里在键盘打开期间把它收起来（键盘一收立刻恢复，不记忆、不影响其它视图）。
+   判据挂在 body 上，**两种形态共用**：新版 #oaTabs 与经典 .tabbar 都是同一个位置上的同一个问题。
+   iOS 上底栏本来就在键盘后面，收起它只是顺手，不改变可见结果。 */
+body.kb-on .tabbar{display:none !important}
 .oa .tab{
   flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   font-size:10px; color:var(--text-3); cursor:pointer; user-select:none; border:0; background:transparent;
@@ -1475,6 +1552,36 @@
 .oa .recent-item .ri-txt{flex:1;min-width:0}
 .oa .recent-item .ri-t{display:block;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .oa .recent-item .ri-s{display:block;font-size:10.5px;color:var(--text-3);margin-top:1px}
+.oa .recent-item.pinned{background:var(--brand-soft)}
+.oa .recent-item .ri-pin{display:inline-block;margin-right:5px;padding:0 5px;border-radius:5px;background:var(--brand);color:#fff;font-size:9.5px;font-weight:700;vertical-align:1px}
+
+/* ---------- 会话动作面板（长按「最近」条目，V108）----------
+   用 position:fixed 而不是 absolute：#oaRoot 与 .phone 都有 overflow:hidden，
+   absolute 会被祖先裁掉；fixed 相对视口最稳，再配 max-width 与手机壳等宽。 */
+.oa .cm-mask{position:fixed;inset:0;background:rgba(12,16,24,.38);opacity:0;pointer-events:none;transition:opacity .16s var(--ease);z-index:900}
+.oa .cm-mask.on{opacity:1;pointer-events:auto}
+.oa .cm-sheet{
+  position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;z-index:901;
+  background:var(--surface);border-radius:16px 16px 0 0;box-shadow:var(--sh-2);
+  padding:6px 8px calc(10px + env(safe-area-inset-bottom,0px));
+  transform:translateY(102%);transition:transform .22s var(--ease);
+  max-height:72vh;display:flex;flex-direction:column;
+}
+.oa .cm-sheet.on{transform:translateY(0)}
+.oa .cm-head{display:flex;align-items:center;gap:8px;padding:10px 10px 8px;font-size:12px;font-weight:600;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oa .cm-head .cm-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oa .cm-x{margin-left:auto;border:0;background:transparent;color:var(--text-3);font-size:12.5px;padding:0 6px;cursor:pointer;font-family:inherit;flex:0 0 auto}
+.oa .cm-item{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;padding:12px;border:0;background:transparent;border-radius:10px;font-family:inherit;font-size:14.5px;color:var(--text);text-align:left;cursor:pointer;font-weight:500}
+.oa .cm-item:hover{background:var(--surface-3)}
+.oa .cm-item.danger{color:var(--red)}
+.oa .cm-item.cancel{margin-top:4px;justify-content:center;color:var(--text-3);border-top:1px solid var(--surface-3);border-radius:0}
+.oa .cm-list{overflow:auto;padding:2px 4px 6px;min-height:0;-webkit-overflow-scrolling:touch}
+.oa .cm-hit{padding:9px 10px;border-radius:10px;cursor:pointer}
+.oa .cm-hit:hover{background:var(--surface-3)}
+.oa .cm-hit .h-who{font-size:10.5px;color:var(--text-3);font-weight:600;letter-spacing:.04em}
+.oa .cm-hit .h-txt{font-size:12.5px;color:var(--text);line-height:1.55;margin-top:2px;word-break:break-word}
+.oa .cm-hit mark{background:#fff2a8;color:inherit;border-radius:3px;padding:0 1px}
+.oa .cm-empty{padding:22px 10px;text-align:center;color:var(--text-3);font-size:12.5px}
 .oa .dnav-label{font-size:10.5px;color:var(--text-3);font-weight:600;letter-spacing:.08em;padding:10px 10px 6px}
 .oa .dnav-item{display:flex;align-items:center;gap:11px;padding:11px 10px;border-radius:10px;cursor:pointer;color:var(--text);font-size:14px;font-weight:500;min-height:46px;transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease);border:0;background:transparent;width:100%;text-align:left;font-family:inherit;position:relative}
 .oa .dnav-item .ic{width:19px;height:19px;color:var(--text-2)}
@@ -2060,7 +2167,15 @@
    .view 自带 14px 横向内边距，故这里只补纵向间距，避免双重缩进。
    点击 = oaPickWorker(w)，与「数字员工」页同一个入口，不另写第二套。
    --------------------------------------------------------------------------- */
-.oa .mod-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:2px 0 8px}
+.oa .mod-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+/* 分组容器（2026-11-06）：43 个模块平铺一屏，找东西只能靠扫，且看不出业务归类。
+   改为「分组标题 + 3 列宫格」，每组自带一行说明，数量放右端（等宽数字，扫一眼可比）。 */
+.oa .mod-sections{display:flex;flex-direction:column;gap:16px;padding:2px 0 8px}
+.oa .mod-ghead{display:flex;align-items:baseline;gap:8px;margin:0 2px 8px;min-width:0}
+.oa .mod-ghead b{font-size:13px;font-weight:700;color:var(--text);flex:0 0 auto}
+.oa .mod-ghead span{font-size:11px;color:var(--text-3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oa .mod-ghead em{margin-left:auto;flex:0 0 auto;font-family:var(--font-mono);font-style:normal;
+  font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
 .oa .mod-card{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 6px;
   background:#fff;border:1px solid var(--brand-line);border-radius:14px;cursor:pointer;
   font:inherit;color:inherit;-webkit-tap-highlight-color:transparent}
@@ -3066,7 +3181,6 @@
 
       <div class="attach-strip" id="oaAttachStrip"></div>
       <input type="file" id="oaAttachFile" multiple hidden accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.log">
-      <div class="assign-bar" id="oaAssignBar" hidden></div>
       <div class="composer">
         <div class="box">
           <button class="cbtn" id="oaMicBtn" aria-label="按住说话" title="按住说话"><svg class="ic" style="width:17px;height:17px"><use href="#i-mic"/></svg></button>
@@ -3074,7 +3188,6 @@
           <span class="kb-chip" id="oaKbChip" onclick="oaToggleKB()"><svg class="ic"><use href="#i-db"/></svg><span id="oaKbChipText">知识库 开</span></span>
           <div class="input-action">
             <button class="cbtn" id="oaAttachBtn" aria-label="更多" title="更多：上传文档、开关连接器"><svg class="ic" style="width:17px;height:17px"><use href="#i-plus"/></svg></button>
-            <button class="cbtn" id="oaAssignBtn" aria-label="指定负责人" title="指定负责人：指定本次审批交给谁" style="display:none"><svg class="ic" style="width:17px;height:17px"><use href="#i-user"/></svg></button>
             <button class="cbtn send" id="oaSendBtn" aria-label="发送" style="display:none"><svg class="ic" style="width:19px;height:19px"><use href="#i-send"/></svg></button>
           </div>
         </div>
@@ -3109,7 +3222,7 @@
         <h1>OA 模块</h1>
         <p class="sub">每个模块都有对应数字人，点击即可开始办理</p>
       </div>
-      <div class="mod-grid" id="oaModGrid"></div>
+      <div class="mod-sections" id="oaModGrid"></div>
     </section>
 
     <!-- ③ 知识库 -->
@@ -3313,6 +3426,26 @@
       <button class="sheet-cancel" id="odLogout">退出登录</button>
     </div>
   </aside>
+
+  <!-- 会话动作面板（长按「最近」条目触发）：置顶 · 重命名 · 查找对话记录 · 删除。
+       为什么是底部面板而不是右键菜单：手机 H5 长按后手指停在屏幕下半区，贴底出击中率最高；
+       桌面端右键（contextmenu）调用同一个函数，一套逻辑两处入口。 -->
+  <div class="cm-mask" id="oaConvMask"></div>
+  <div class="cm-sheet" id="oaConvMenu" role="dialog" aria-modal="true" aria-label="会话操作">
+    <div class="cm-head"><span class="cm-t" id="oaConvMenuTitle">会话</span></div>
+    <button type="button" class="cm-item" data-cm="pin" id="oaConvPin">置顶</button>
+    <button type="button" class="cm-item" data-cm="rename">重命名</button>
+    <button type="button" class="cm-item" data-cm="find">查找对话记录</button>
+    <button type="button" class="cm-item danger" data-cm="del">删除</button>
+    <button type="button" class="cm-item cancel" data-cm="cancel">取消</button>
+  </div>
+
+  <!-- 查找结果：只显示本会话内命中的消息（前后文各截 40 字），点一条即续聊该会话 -->
+  <div class="cm-sheet" id="oaFindSheet" role="dialog" aria-modal="true" aria-label="查找对话记录">
+    <div class="cm-head"><span class="cm-t" id="oaFindHead">查找结果</span>
+      <button type="button" class="cm-x" data-find-close>关闭</button></div>
+    <div class="cm-list" id="oaFindList"></div>
+  </div>
 
   <!-- 站内确认弹窗（居中卡片）。内容由 oaConfirm() 填，DOM 常驻以便复用与做过渡动画。 -->
   <div class="cf-mask" id="oaCfMask"></div>
@@ -3559,8 +3692,14 @@ const API = {
     if(state.credentialId != null && Number(state.credentialId) > 0) body.credential_id = Number(state.credentialId);
     return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify(body)});
   },
-  listConversations(){ return this.req('/v1/conversations'); },
+  /* onlyAsked=true：只要提过问的会话（V109）。用户端「最近」用 —— 点进数字人但一句没问的空壳会话
+     没有用户问题、标题无从总结，留在列表里只把真会话挤下去。 */
+  listConversations(onlyAsked){ return this.req('/v1/conversations'+(onlyAsked?'?onlyAsked=true':'')); },
   renameConversation(id,title){ return this.req('/v1/conversations/'+id,{method:'PUT',body:JSON.stringify({title})}); },
+  /* 置顶（V108）：pinned=true/false。后端幂等，重复置顶只刷新置顶时刻。 */
+  pinConversation(id,pinned){ return this.req('/v1/conversations/'+id+'/pin',{method:'PUT',body:JSON.stringify({pinned:!!pinned})}); },
+  /* 删除会话：后端是逻辑删除（deleted_at），列表与检索都不会再出现。 */
+  deleteConversation(id){ return this.req('/v1/conversations/'+id,{method:'DELETE'}); },
   listMessages(convId){ return this.req('/v1/conversations/'+convId+'/messages'); },
   cancel(runId){ return this.req('/v1/runs/'+runId+'/cancel',{method:'POST'}); },
 
@@ -7313,7 +7452,7 @@ async function openHistory(){
   mask.onclick = e=>{ if(e.target===mask) close(); };
   const body = mask.querySelector('#histBody');
   try{
-    const list = asArray(await API.listConversations()).filter(c=>c && c.id);
+    const list = asArray(await API.listConversations(true)).filter(c=>c && c.id);
     if(!list.length){
       body.innerHTML = '<div class="perm-tip">暂无历史会话。发起一次对话后，记录会出现在这里。</div>';
       return;
@@ -8006,7 +8145,6 @@ function mountClarCard(host, p){
           resolve(pick);          // {value, label, text, values}
         });
       }
-      window.oaAutoAnswerAssignee(card, fieldSpecs);   // #90：预选负责人自动落定（桥接 IIFE 内函数，mountClarCard 在脚本1 全局作用域）
       clarPendingResolve = function(){ abandon(); };
       return;
     }
@@ -8407,6 +8545,253 @@ function validateForm(card){
   return errs;
 }
 
+/* ══════════════════════ 负责人确认环节（八期，2026-11-06） ══════════════════════
+   用户诉求（原话）：「去掉输入框里固定指定负责人的入口和配置。审批流程调整为：用户填写完
+   表单发起审批后，再进入负责人确认环节，提供两种选择 —— 默认负责人（沿用原本配置的流程）
+   或指定负责人（支持选择多个），由用户自行决定。」
+
+   为什么这么改：原先的入口是输入框旁的常驻按钮，等于**填表之前**就要决定交给谁，顺序反了；
+   而且它只支持单选、还要靠澄清卡二次落定。现在收敛成一个环节：
+     填写表单 → 核对信息 → **确认负责人**（本文件）→ 真正提交 → 回执含处理人与数据流。
+
+   两种选择的语义（后端 ApprovalFlowService 对应实现）：
+     · DEFAULT   —— 不传 assigneeUserIds，完全走 approval_flow_def 配置的节点；
+     · SPECIFIED —— 传数组，**顺序即审批顺序**，每人一级、依次审批；配置流的节点整体后移，
+                    与指定人重复的节点会被剔除（不让同一个人批两次）。
+
+   两个提交入口共用：对话内表单卡片（mountFormCard）与 OA 请假表单（submitLeave）。
+   候选来自 /v1/org/members（与通讯录同源、排除本人），与后端「本机构在职成员」口径一致。 */
+
+function hdMembers(){
+  if(hdMembers.cache){ return Promise.resolve(hdMembers.cache); }
+  return API.req('/v1/org/members?size=200').then(function(res){
+    var items = Array.isArray(res && res.items) ? res.items : (Array.isArray(res) ? res : []);
+    var meId = state.user && state.user.id;
+    items = items.filter(function(m){ return m && m.userId != null && String(m.userId) !== String(meId); });
+    hdMembers.cache = items;
+    return items;
+  });
+}
+
+/**
+ * 这张表单一提就要走审批吗？（决定要不要弹「确认负责人」）
+ *
+ * <p>判据来自后端 `GET /v1/forms/launchable?policy=APPROVAL` —— 与「发起流程」弹层同一个口径，
+ * 不在前端猜 submit_policy 字符串（LEDGER / RESUME / APPROVAL+RESUME 三种写法都有）。
+ * 一次拉全量后按 code 缓存；请求失败时**按需要确认处理**（宁可多一步，也不静默丢掉指定入口）。</p>
+ */
+function approvalFormCodes(){
+  if(approvalFormCodes.cache){ return Promise.resolve(approvalFormCodes.cache); }
+  return API.req('/v1/forms/launchable?policy=APPROVAL').then(function(list){
+    var codes = (Array.isArray(list) ? list : []).map(function(f){ return String((f && f.code) || ''); });
+    approvalFormCodes.cache = codes;
+    return codes;
+  });
+}
+function formNeedsHandlerConfirm(code){
+  if(!code){ return Promise.resolve(true); }
+  return approvalFormCodes()
+    .then(function(codes){ return codes.indexOf(String(code)) >= 0; })
+    .catch(function(){ return true; });
+}
+
+/**
+ * 弹「确认负责人」环节。
+ * @returns Promise<{mode:'DEFAULT'|'SPECIFIED', users:[{userId,name}]} | null>（null = 用户取消提交）
+ */
+function askHandlers(opts){
+  opts = opts || {};
+  return new Promise(function(resolve){
+    var old = document.getElementById('hdMask');
+    if(old && old.parentNode){ old.parentNode.removeChild(old); }
+    var mode = 'DEFAULT';
+    var picked = [];              // 数组顺序 = 审批顺序
+    var MAX_PICK = 10;
+
+    var mask = document.createElement('div');
+    mask.className = 'hd-mask';
+    mask.id = 'hdMask';
+    mask.innerHTML =
+      '<div class="hd-card" role="dialog" aria-modal="true" aria-labelledby="hdTitle">'+
+        '<div class="hd-head" id="hdTitle">'+esc(opts.title || '确认负责人')+'</div>'+
+        '<div class="hd-sub">'+esc(opts.sub || ('「'+(opts.formName || '表单')+'」已填写完成。请确认这单交给谁审批：沿用后台配置，或由你指定。'))+'</div>'+
+        '<div class="hd-opts">'+
+          '<div class="hd-opt on" data-hd="DEFAULT" role="radio" aria-checked="true" tabindex="0">'+
+            '<span class="hd-radio"></span><div><div class="hd-tt">默认负责人</div>'+
+            '<span class="hd-ds">沿用后台已配置的审批流程（部门负责人 / 上级 / 管理员自动找人）</span></div></div>'+
+          '<div class="hd-opt" data-hd="SPECIFIED" role="radio" aria-checked="false" tabindex="0">'+
+            '<span class="hd-radio"></span><div><div class="hd-tt">指定负责人（可多选）</div>'+
+            '<span class="hd-ds">自己挑 1 人或多人，按选择顺序依次审批</span></div></div>'+
+        '</div>'+
+        '<div class="hd-body" id="hdBody" hidden>'+
+          '<input class="hd-search" id="hdSearch" placeholder="搜索姓名 / 职务 / 部门…" autocomplete="off">'+
+          '<div class="hd-list" id="hdList"></div>'+
+          '<div class="hd-picked" id="hdPicked"></div>'+
+        '</div>'+
+        '<div class="hd-err" id="hdErr" hidden></div>'+
+        '<div class="hd-acts">'+
+          '<button type="button" class="hd-btn" data-hd-cancel>取消</button>'+
+          '<button type="button" class="hd-btn pri" data-hd-ok>确认提交</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(mask);
+    requestAnimationFrame(function(){ mask.classList.add('on'); });
+
+    var body = mask.querySelector('#hdBody');
+    var listBox = mask.querySelector('#hdList');
+    var pickedBox = mask.querySelector('#hdPicked');
+    var errBox = mask.querySelector('#hdErr');
+    var search = mask.querySelector('#hdSearch');
+
+    function err(msg){
+      if(!errBox) return;
+      errBox.hidden = !msg;
+      errBox.textContent = msg || '';
+    }
+    function close(val){
+      mask.classList.remove('on');
+      document.removeEventListener('keydown', onKey, true);
+      setTimeout(function(){ if(mask.parentNode) mask.parentNode.removeChild(mask); }, 180);
+      resolve(val);
+    }
+    function onKey(e){
+      if(e.key === 'Escape'){ e.preventDefault(); close(null); }
+    }
+    document.addEventListener('keydown', onKey, true);
+
+    function renderPicked(){
+      if(!picked.length){
+        pickedBox.innerHTML = '<span class="hd-meta" style="font-size:11px;color:var(--text-3)">'+
+          '尚未选择：可多选，选择顺序即审批顺序</span>';
+        return;
+      }
+      pickedBox.innerHTML = picked.map(function(u, i){
+        return '<span class="hd-chip"><b>'+(i+1)+'.</b>'+esc(u.name || ('用户#'+u.userId))+
+          '<i data-hd-rm="'+esc(u.userId)+'" role="button" aria-label="移除">✕</i></span>';
+      }).join('');
+      Array.prototype.forEach.call(pickedBox.querySelectorAll('[data-hd-rm]'), function(x){
+        x.onclick = function(){
+          var id = String(x.getAttribute('data-hd-rm'));
+          picked = picked.filter(function(u){ return String(u.userId) !== id; });
+          renderPicked(); renderList();
+        };
+      });
+    }
+    function renderList(){
+      var rows = hdMembers.cache || [];
+      var kw = String((search && search.value) || '').trim().toLowerCase();
+      if(kw){
+        rows = rows.filter(function(m){
+          var hay = [m.name, m.jobTitle, m.departmentName, m.username].join(' ').toLowerCase();
+          return hay.indexOf(kw) >= 0;
+        });
+      }
+      if(!rows.length){
+        listBox.innerHTML = '<div class="hd-item"><span class="hd-meta">没有匹配的同事</span></div>';
+        return;
+      }
+      listBox.innerHTML = rows.slice(0, 80).map(function(m){
+        var idx = -1;
+        for(var i=0;i<picked.length;i++){
+          if(String(picked[i].userId) === String(m.userId)){ idx = i; break; }
+        }
+        var sub = [m.jobTitle, m.departmentName].filter(Boolean).join(' · ');
+        return '<div class="hd-item'+(idx>=0?' on':'')+'" data-uid="'+esc(m.userId)+'" data-name="'+esc(m.name||('用户#'+m.userId))+'">'+
+          '<span class="hd-ord">'+(idx>=0?(idx+1):'')+'</span>'+
+          '<div class="hd-txt"><div class="hd-nm">'+esc(m.name||('用户#'+m.userId))+'</div>'+
+          (sub ? '<div class="hd-meta">'+esc(sub)+'</div>' : '')+'</div></div>';
+      }).join('');
+      Array.prototype.forEach.call(listBox.querySelectorAll('[data-uid]'), function(el){
+        el.onclick = function(){ toggle(el.getAttribute('data-uid'), el.getAttribute('data-name')); };
+      });
+    }
+    function toggle(uid, name){
+      var id = String(uid);
+      for(var i=0;i<picked.length;i++){
+        if(String(picked[i].userId) === id){
+          picked.splice(i, 1);
+          err(''); renderPicked(); renderList();
+          return;
+        }
+      }
+      if(picked.length >= MAX_PICK){ err('最多选 '+MAX_PICK+' 位负责人'); return; }
+      picked.push({userId: Number(uid), name: name});
+      err(''); renderPicked(); renderList();
+    }
+    function ensureLoaded(){
+      renderPicked();
+      if(hdMembers.cache){ renderList(); return; }
+      listBox.innerHTML = '<div class="hd-item"><span class="hd-meta">加载同事名单…</span></div>';
+      hdMembers().then(renderList).catch(function(){
+        listBox.innerHTML = '<div class="hd-item"><span class="hd-meta">同事名单加载失败，可改用「默认负责人」提交</span></div>';
+      });
+    }
+
+    Array.prototype.forEach.call(mask.querySelectorAll('.hd-opt'), function(el){
+      el.onclick = function(){
+        mode = el.getAttribute('data-hd');
+        Array.prototype.forEach.call(mask.querySelectorAll('.hd-opt'), function(x){
+          var on = x === el;
+          x.classList.toggle('on', on);
+          x.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+        body.hidden = (mode !== 'SPECIFIED');
+        err('');
+        if(mode === 'SPECIFIED'){ ensureLoaded(); if(search) search.focus(); }
+      };
+    });
+    if(search){ search.addEventListener('input', renderList); }
+    mask.querySelector('[data-hd-cancel]').onclick = function(){ close(null); };
+    mask.querySelector('[data-hd-ok]').onclick = function(){
+      if(mode === 'SPECIFIED'){
+        if(!picked.length){ err('请至少选择一位负责人，或改回「默认负责人」'); return; }
+        close({mode:'SPECIFIED', users: picked.slice()});
+      }else{
+        close({mode:'DEFAULT', users: []});
+      }
+    };
+    // 点遮罩空白处 = 取消提交（不误提交，用户回到表单还能再点）
+    mask.addEventListener('click', function(e){ if(e.target === mask) close(null); });
+    renderPicked();
+  });
+}
+
+/**
+ * 回执里的「处理人 + 数据流」块（八期）。
+ * 数据来自后端 handlers / dataFlow（见 ApprovalFlowService#handlersOf / #dataFlowOf），
+ * 前端不猜、不补：字段缺失就整块不渲染。
+ */
+function flowHandlersHtml(handlers, dataFlow){
+  handlers = handlers || {};
+  dataFlow = dataFlow || {};
+  var steps = Array.isArray(dataFlow.steps) ? dataFlow.steps : [];
+  var specified = Array.isArray(handlers.specified) ? handlers.specified : [];
+  var html = '';
+  if(handlers.mode){
+    var who = specified.length
+      ? specified.map(function(u){ return u.name || ('用户#'+u.userId); }).join(' → ')
+      : '后台配置（自动匹配）';
+    html += '<div class="rc-row rc-row-flow"><span>处理人</span><b>'+
+      esc(handlers.modeLabel || (handlers.mode === 'SPECIFIED' ? '指定负责人' : '默认负责人'))+'：'+esc(who)+'</b></div>';
+  }
+  if(steps.length){
+    html += '<div class="rc-flow"><div class="rc-flow-h">数据流 · 共 '+steps.length+' 级'+
+      (handlers.mode === 'SPECIFIED' ? '（依次审批）' : '')+'</div><div class="rc-steps">';
+    steps.forEach(function(s){
+      var who2 = (s.approver && s.approver.name) || '—';
+      var meta = (s.approverTypeLabel || '审批人') + ' · ' + (s.statusLabel || s.status || '待审批')
+        + (s.source === 'SPECIFIED' ? ' · 你指定' : '');
+      html += '<div class="rc-step'+(s.current ? ' cur' : '')+'">'+
+        '<span class="rs-seq">'+esc(String(s.seq))+'</span>'+
+        '<div class="rs-body"><div class="rs-nm">'+esc(who2)+'</div>'+
+        '<div class="rs-meta">'+esc(meta)+'</div></div>'+
+        (s.current ? '<span class="badge wait">当前</span>' : '')+'</div>';
+    });
+    html += '</div></div>';
+  }
+  return html;
+}
+
 /* 结果回执卡（与 showLeaveResultCard 观感一致）。receipt 可能含 submissionId / status / fields。 */
 function formReceiptHtml(receipt){
   receipt = receipt || {};
@@ -8433,6 +8818,9 @@ function formReceiptHtml(receipt){
     '<div class="rc-row"><span>受理单号</span><b>'+esc(String(no))+'</b></div>'+
     '<div class="rc-row"><span>当前状态</span><b><span class="badge wait">'+esc(status)+'</span></b></div>'+
     rows+
+    /* 八期：走审批的表单，回执要能直接回答「谁在处理、现在到哪一级」——
+       数据全部来自后端 receipt.handlers / receipt.dataFlow，前端不补字段。 */
+    flowHandlersHtml(receipt.handlers, receipt.dataFlow)+
   '</div>';
 }
 
@@ -8560,7 +8948,8 @@ function mountFormCard(host, p, opts){
     }
 
     // 真正发起提交：与「确认提交」共用同一份 values（绝不重读 DOM，这是判断两段式正确的关键）
-    function doSubmit(values){
+    // pick：负责人确认环节的结果（八期）。SPECIFIED 才带 assigneeUserIds，DEFAULT 一个字段都不传。
+    function doSubmit(values, pick){
       if(settled) return;
       if(submitBtn){ submitBtn.textContent = '提交中…'; submitBtn.disabled = true; }
       if(cancelBtn) cancelBtn.disabled = true;
@@ -8568,6 +8957,9 @@ function mountFormCard(host, p, opts){
       if(!opts.standalone){
         if(state.conversationId) extra.conversationId = state.conversationId;
         if(state.runId) extra.runId = state.runId;
+      }
+      if(pick && pick.mode === 'SPECIFIED' && Array.isArray(pick.users) && pick.users.length){
+        extra.assigneeUserIds = pick.users.map(function(u){ return Number(u.userId); });
       }
       API.formSubmit(code, values, extra).then(function(submission){
         submission = submission || {};
@@ -8627,8 +9019,22 @@ function mountFormCard(host, p, opts){
         panel.remove();                          // 返回修改：移除面板、恢复提交按钮
         if(submitBtn) submitBtn.disabled = false; // 不发任何请求
       });
-      if(confirmBtn) confirmBtn.addEventListener('click', function(){
-        doSubmit(values);                        // 同一份 values，绝不重新读 DOM
+      if(confirmBtn) confirmBtn.addEventListener('click', async function(){
+        // 八期：确认提交之前先过「负责人确认」环节 —— 默认负责人 或 指定负责人（可多选）。
+        // 取消则**不提交**：留在汇总面板上，用户可以返回修改或再点一次。
+        if(confirmBtn.disabled) return;
+        confirmBtn.disabled = true;
+        let pick = null;
+        try{
+          // 只有「提交即走审批」的表单才需要确认负责人（台账类/续跑类表单跳过，不给用户多一步）
+          const need = await formNeedsHandlerConfirm(code);
+          pick = need ? await askHandlers({formName: (p && (p.title || p.name || p.form_name)) || code || '表单'})
+                      : {mode:'DEFAULT', users: []};
+        }finally{
+          confirmBtn.disabled = false;
+        }
+        if(!pick) return;
+        doSubmit(values, pick);                  // 同一份 values，绝不重新读 DOM
       });
     }
 
@@ -8935,6 +9341,8 @@ function showLeaveResultCard(order, info){
         '<div class="rc-row"><span>剩余可用</span><b>'+(o.availableAfterPending != null ? esc(String(o.availableAfterPending))+' 天' : '—')+'</b></div>')+
       '<div class="rc-row"><span>当前流转到</span><b>'+cur+'</b></div>'+
       '<div class="rc-row"><span>当前状态</span><b><span class="badge wait">待审批</span></b></div>'+
+      // 八期：处理人（默认/指定 + 名单）与数据流（逐级节点、当前级），后端原样返回、前端直出
+      flowHandlersHtml(o.handlers, o.dataFlow)+
       '<div class="rc-ops">'+
         (typeof window.oaResultCardOpsHtml === 'function' ? window.oaResultCardOpsHtml() :
           '<button class="btn small" onclick="openAllMine()">查看我的申请</button>'+
@@ -8970,11 +9378,19 @@ async function submitLeave(btn){
       {title:'日期确认', okText:'确认提交'});
     if(!okBack) return;
   }
+  // 八期：表单填完 → **负责人确认环节**（默认负责人 / 指定负责人可多选）→ 才真正提交。
+  // 取消则整单不提交（按钮恢复可点），用户不用重填。
+  const pick = await askHandlers({formName: '请假申请'});
+  if(!pick) return;
   if(btn){ btn.textContent = '提交中…'; btn.disabled = true; }
   const typeName = (asArray(state.leaveTypes).find(t=>t.code===code) || {}).name || code;
   // 天数不传：由后端按假种单位（工作日/自然日）计算，避免前端口径与服务端不一致
   const body = {leaveTypeCode:code, startDate:start, endDate:end, reason:reason};
   if(leaveAttachments.length) body.proofFileId = leaveAttachments[0].id;
+  // 指定负责人：顺序即审批顺序（后端按数组顺序依次建节点）；默认负责人一个字段都不传
+  if(pick.mode === 'SPECIFIED' && pick.users && pick.users.length){
+    body.assigneeUserIds = pick.users.map(function(u){ return Number(u.userId); });
+  }
   try{
     const res = await API.leaveSubmit(body);
     leaveAttachments = [];
@@ -9185,7 +9601,6 @@ var S = {
   convId:null,           // 对话坞会话（与经典 state.conversationId 分账）
   worker:null,           // 数字员工
   expert:null,           // 专家
-  oaAssignee:null,       // 指定负责人：{userId, name}（OA 模块对话内预选，落审批人选择卡）
   busy:false,
   pendingFiles:[],      // 会话内上传的参考文档（不进知识库），随 createRun 的 attachments 下发
   lastQuery:'',          // 上一轮问句（推荐相关职责同事、换人重答都以它为唯一依据）
@@ -9337,8 +9752,9 @@ function oaGo(view){
   else { S.from = view; }
   S.view = view;
   oaCloseDrawer(); oaCloseSheet();
+  // 换页时收掉长按面板（它是「对某条会话的操作」，换了页就不该还挂着）
+  oaCloseConvMenu(); oaCloseFind();
   oaRender();
-  oaSyncAssignUI();   // #90 / B4：任何换页/换人都重新同步「指定负责人」按钮与 chip 显隐
   var p = $o('v-' + view); if(p){ p.scrollTop = 0; var m = p.querySelector('.rail-main'); if(m) m.scrollTop = 0; }
   oaRefreshView(view);
   /* 换页后重算一次标题显隐：顶栏固定常显（第四轮口径），这里只同步 --hd 与 dock-scrolled */
@@ -10028,11 +10444,15 @@ function renderSchedulePanel(sch){
    meeting_book/calendar_event 两张表单模板是 LEDGER 策略（提交即完结，不写 portal_* 表），
    拿它们当「新建日程」入口会做出假的闭环（用户以为建了，其实库里没有）。 */
 function scheduleCreateCardHtml(){
+  /* 时间一律用原生 datetime-local（2026-11-06）：原来是纯文本框 + 「yyyy-MM-dd HH:mm」占位，
+     手机上要手工敲 16 个字符，还常被中文输入法塞进全角字符；手滑一个字符就整单创建失败。
+     原生控件的取值是 yyyy-MM-ddTHH:mm，后端 PortalService.parseTime 已把 'T' 归一成空格，
+     两种写法都收 —— 前端不再自己拼/校验格式。 */
   return '<div class="task-card" id="scCreate">'+
     '<div class="pc-title">'+ic('cal',13)+' 新建日程</div>'+
     '<div class="form-item"><label>标题</label><input id="scTitle" placeholder="例如：季度复盘会"></div>'+
-    '<div class="form-item"><label>开始（yyyy-MM-dd HH:mm）</label><input id="scStart" placeholder="2026-10-31 14:00"></div>'+
-    '<div class="form-item"><label>结束（可空）</label><input id="scEnd" placeholder="2026-10-31 15:00"></div>'+
+    '<div class="form-item"><label>开始时间</label><input id="scStart" type="datetime-local"></div>'+
+    '<div class="form-item"><label>结束时间（可空）</label><input id="scEnd" type="datetime-local"></div>'+
     '<div class="form-item"><label>地点（可空）</label><input id="scLoc" placeholder="3 号会议室"></div>'+
     '<div class="confirm-row"><button type="button" class="cbtn cancel" id="scCancel">清空</button>'+
     '<button type="button" class="cbtn confirm" id="scSave">保存</button></div>'+
@@ -10042,11 +10462,27 @@ function scheduleCreateCardHtml(){
 function bindScheduleCreate(root){
   var save = root.querySelector('#scSave'); if(!save) return;
   var errEl = root.querySelector('#scErr');
+  var startEl = root.querySelector('#scStart'), endEl = root.querySelector('#scEnd');
+  /* 预填「下一个整点」（本地时区，不经 UTC 换算）：datetime-local 打开时直接落在合适位置，
+     用户通常只需改个分钟 —— 空控件打开就停在 1970/今天 00:00，反而要多点好几下。 */
+  if(startEl && !startEl.value){
+    var d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0);
+    var pad = function(x){ return (x < 10 ? '0' : '') + x; };
+    startEl.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      'T' + pad(d.getHours()) + ':00';
+  }
   save.onclick = async function(){
     var title = (root.querySelector('#scTitle').value || '').trim();
     var start = (root.querySelector('#scStart').value || '').trim();
     if(!title || !start){
       errEl.style.display = ''; errEl.textContent = '标题与开始时间必填';
+      return;
+    }
+    var end = (root.querySelector('#scEnd').value || '').trim();
+    /* 两个 datetime-local 的值同为 yyyy-MM-ddTHH:mm，可直接按字符串比大小（定长、同格式） */
+    if(end && end < start){
+      errEl.style.display = ''; errEl.textContent = '结束时间不能早于开始时间';
       return;
     }
     // 加载中：立即禁用并给出可见反馈（与确认卡同一套 .cbtn 状态口径）
@@ -10056,7 +10492,7 @@ function bindScheduleCreate(root){
       await API.portalScheduleCreate({
         title: title,
         startAt: start,
-        endAt: (root.querySelector('#scEnd').value || '').trim() || null,
+        endAt: end || null,
         location: (root.querySelector('#scLoc').value || '').trim() || null
       });
       save.textContent = '保存'; save.disabled = false;
@@ -10328,12 +10764,30 @@ function renderMe(){
 
   var data = $o('oaMeData');
   if(data){
-    data.innerHTML = [
-      ['待办', n(arr(state.todoApprovals).length)],
-      ['审批', n(has(ms.myApplications) ? ms.myApplications : arr(state.approvals).length)],
-      ['会话', n(has(ms.conversations) ? ms.conversations : 0)],
-      ['知识库', n(has(ms.kbDocs) ? ms.kbDocs : arr(state.kbDocs).length)]
-    ].map(function(x){ return '<div><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'; }).join('');
+    /* 四个数字都是「入口」而不是装饰（2026-11-06）：点待办 → 协同·任务面板、点审批 → 协同·审批面板、
+       点会话 → 最近会话、点知识库 → 知识库。原先只是四段静态文字，用户看到数字却无处可点，
+       只能自己去底栏猜哪个 tab 对应。落点一律走 oaGo，不新开页面、不切回经典形态。 */
+    var stats = [
+      ['待办', n(arr(state.todoApprovals).length), 'collab', 'tasks'],
+      ['审批', n(has(ms.myApplications) ? ms.myApplications : arr(state.approvals).length), 'collab', 'approvals'],
+      ['会话', n(has(ms.conversations) ? ms.conversations : 0), 'recent', null],
+      ['知识库', n(has(ms.kbDocs) ? ms.kbDocs : arr(state.kbDocs).length), 'kb', null]
+    ];
+    data.innerHTML = stats.map(function(x){
+      return '<div class="me-stat" role="button" tabindex="0" data-view="'+x[2]+'"'+
+        (x[3] ? ' data-rail="'+x[3]+'"' : '')+' aria-label="'+x[0]+' '+x[1]+'">'+
+        '<b>'+x[1]+'</b><span>'+x[0]+'</span></div>';
+    }).join('');
+    data.querySelectorAll('.me-stat').forEach(function(el){
+      var go = function(){
+        /* collab 的两个面板靠 S.rail 选择：先设导轨再跳，否则跳到协同页仍停在默认「任务」 */
+        if(el.dataset.rail) S.rail = el.dataset.rail;
+        oaGo(el.dataset.view);
+      };
+      el.style.cursor = 'pointer';
+      el.onclick = go;
+      el.onkeydown = function(e){ if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    });
   }
   var acts = $o('oaMeActions');
   if(acts){
@@ -11197,7 +11651,13 @@ function oaBindKeyboardSafe(){
       /* 与 innerHeight 的差值 = 键盘高度；offsetTop 是 iOS 键盘弹起后的可视化偏移。
          <80px 视为噪声（地址栏收缩等），不动浮层，避免误让位。 */
       var kb = Math.round(window.innerHeight - vv.height - (vv.offsetTop || 0));
-      root.style.setProperty('--kb', (kb > 80 ? kb : 0) + 'px');
+      var open = kb > 80;
+      root.style.setProperty('--kb', (open ? kb : 0) + 'px');
+      /* 同一个判据顺手收起底栏（CSS 见 body.kb-on .tabbar）：
+         Android/微信会连 layout viewport 一起缩，底栏被压到键盘正上方 = 「导航顶在键盘上」。
+         挂在 body 上而不是 #oaRoot 上 —— 经典形态（.pages + .tabbar）也要一起收。
+         只切 class、不写内联样式，键盘收起后恢复原样。 */
+      if(document.body) document.body.classList.toggle('kb-on', open);
     };
     window.visualViewport.addEventListener('resize', apply);
     window.visualViewport.addEventListener('scroll', apply);
@@ -11480,6 +11940,31 @@ function oaModuleWorkers(){
   });
 }
 
+/* OA 模块按功能归纳（2026-11-06）：43 个模块原先是平铺宫格，找东西只能靠扫，
+   也看不出「报销归财务、请假归人事」这类业务归类。
+   分组以 worker_type 为准（与 V83 同一套编码，加模块时这里补一行即可，不改渲染逻辑）；
+   没登记的模块**不丢** —— 落到末尾「其他」组，避免「库里有、界面上找不到」。
+   组内顺序仍按 sourceTemplateId（与《OA系统功能清单》一致），不按字母排。 */
+var OA_MOD_GROUPS = [
+  {t:'办文办会', d:'公文、档案、会议、发布', types:[
+    'OA_DOC','OA_DOCMGR','OA_ARCHIVE','OA_MEETING','OA_NOTICE','OA_PUBLISH','OA_MILESTONE']},
+  {t:'日常办公', d:'日志周报、计划安排、日历待办、通讯录', types:[
+    'OA_WORKLOG','OA_WORKPLAN','OA_WEEKLY','OA_ASSIGN','OA_CALENDAR','OA_TODO','OA_REMIND',
+    'OA_FAVORITE','OA_CONTACT']},
+  {t:'审批与督办', d:'审批中心、任务督办、用印、委托', types:[
+    'OA_APPROVAL','OA_TASK','OA_SEAL','OA_DELEGATE']},
+  {t:'人事与考勤', d:'请假考勤、人事招聘培训、党群', types:[
+    'OA_LEAVE','OA_ATTENDANCE','OA_HR','OA_RECRUIT','OA_TRAIN','OA_PARTY','OA_UNION']},
+  {t:'财务与资产', d:'报销预算、采购资产、合同、差旅用车', types:[
+    'OA_EXPENSE','OA_FINANCE','OA_PURCHASE','OA_ASSET','OA_CONTRACT','OA_TRAVEL','OA_VEHICLE']},
+  {t:'项目与客户', d:'项目协同、客户管理、问卷', types:[
+    'OA_PROJECT','OA_CRM','OA_SURVEY']},
+  {t:'知识与数据', d:'知识管理、数据分析', types:[
+    'OA_KNOWLEDGE','OA_ANALYTICS']},
+  {t:'平台与安全', d:'门户、权限、系统集成、移动办公', types:[
+    'OA_PORTAL','OA_SECURITY','OA_INTEGRATION','OA_MOBILE']}
+];
+
 function renderModules(){
   var el = $o('oaModGrid'); if(!el) return;
   var ws = oaModuleWorkers();
@@ -11488,18 +11973,45 @@ function renderModules(){
     ? '<div class="mod-tip">当前在项目《' + txt(S.currentProject ? S.currentProject.name : '') +
       '》内：模块数字人属平台公共资产，需先在「项目管理」里分配给该项目；退出项目后可直接使用。</div>'
     : '';
-  /* 固定磁贴（2026-11-05）：打卡是「页面动作」，不挂在某个数字人名下 ——
-     它需要一次定位授权，而授权只能由用户在本页点。故排在所有模块数字人之前，
-     且即使一个模块数字人都没有也要出现。 */
-  var attTile = '<button class="mod-card" data-attendance="1" aria-label="打卡">' +
-    '<span class="mi">' + ic('pin', 18) + '</span><span class="mn">打卡</span></button>';
-  el.innerHTML = head + attTile + ws.map(function(w){
+  var card = function(w){
     return '<button class="mod-card' + (inProject ? ' disabled' : '') + '"' +
       ' data-worker="' + txt(w.id) + '" data-oa-mod="' + txt(w.workerType) + '"' +
       ' aria-label="' + txt(w.name) + '">' +
       '<span class="mi">' + ic(iconKey(w.icon), 18) + '</span>' +
       '<span class="mn">' + txt(w.name) + '</span></button>';
-  }).join('');
+  };
+  /* 固定磁贴（2026-11-05）：打卡是「页面动作」，不挂在某个数字人名下 ——
+     它需要一次定位授权，而授权只能由用户在本页点。故排在所有模块数字人之前，
+     且即使一个模块数字人都没有也要出现。 */
+  var attTile = '<button class="mod-card" data-attendance="1" aria-label="打卡">' +
+    '<span class="mi">' + ic('pin', 18) + '</span><span class="mn">打卡</span></button>';
+
+  var byType = {};
+  ws.forEach(function(w){
+    var t = String(w.workerType || '').toUpperCase();
+    (byType[t] = byType[t] || []).push(w);
+  });
+  var used = {};
+  var sections = [];
+  OA_MOD_GROUPS.forEach(function(g){
+    var html = '', cnt = 0;
+    g.types.forEach(function(t){
+      used[t] = true;
+      arr(byType[t]).forEach(function(w){ html += card(w); cnt++; });
+    });
+    if(cnt) sections.push({t:g.t, d:g.d, n:cnt, html:html});
+  });
+  var rest = ws.filter(function(w){ return !used[String(w.workerType || '').toUpperCase()]; });
+  if(rest.length) sections.push({t:'其他', d:'未归类的模块', n:rest.length, html:rest.map(card).join('')});
+
+  var secHtml = function(t, d, count, html){
+    return '<div class="mod-group"><div class="mod-ghead"><b>' + txt(t) + '</b><span>' + txt(d) + '</span>' +
+      (count != null ? '<em>' + count + '</em>' : '') + '</div><div class="mod-grid">' + html + '</div></div>';
+  };
+  // 打卡单独一节：它没有对应模块编码，混进任何业务分组都会让那组名不副实
+  el.innerHTML = head + secHtml('快捷入口', '不挂在某个模块下的页面动作', null, attTile) +
+    sections.map(function(g){ return secHtml(g.t, g.d, g.n, g.html); }).join('');
+
   el.querySelectorAll('[data-worker]').forEach(function(b){
     b.onclick = function(){
       if(inProject){ toast('请先退出项目，再使用模块数字人'); return; }
@@ -12391,7 +12903,7 @@ function renderRecent(){
   if(!cs.length){ el.innerHTML = empty('暂无历史会话'); return; }
   el.innerHTML = cs.slice(0, 30).map(function(c){
     return '<div class="lrow" data-conv="'+txt(c.id)+'">'+ic('chat')+
-      '<div class="txt"><div class="t1 truncate">'+txt(c.title || ('会话 #' + c.id))+'</div>'+
+      '<div class="txt"><div class="t1 truncate">'+txt(oaConvTitle(c))+'</div>'+
       '<div class="t2">'+txt(dt(c.lastMsgAt || c.createdAt))+'</div></div>'+ic('chevron')+'</div>';
   }).join('');
   el.querySelectorAll('[data-conv]').forEach(function(r){
@@ -12576,7 +13088,6 @@ window.addEventListener('resize', oaLayoutTails);
 
 /* 顶部标出当前对话对象：与 state.chatWorker 同形，但绑定在本层自己的会话上 */
 function oaBanner(){
-  oaSyncAssignUI();   // 同步指定负责人按钮/clear（任一对话对象变化都经过这里）
   var list = dockEl(); if(!list) return;
   var old = list.querySelector('.oa-who'); if(old) old.remove();
   if(!S.worker && !S.expert) return;
@@ -12597,176 +13108,140 @@ function oaBanner(){
 
 function isOaWorker(w){ return !!(w && String(w.workerType || '').indexOf('OA') === 0); }
 
+/* ══════════════════ 意图 → 在册数字员工：唯一判定点（2026-11-06） ══════════════════
+   两处调用方：「新工作任务」(#oaNewTask) 与 对话里的「发起审批」路由(oaApprovalLaunchTarget)。
+   两处原先各写一套，结果是**一处修了、一处没修**：
+
+   意图接口（POST /v1/workers/intent）返回的是**角色码**，取值只有 4 个
+   （GENERAL / LEAVE_APPROVER / KB_ASSISTANT / DOC_DRAFTER，见 WorkerRole），
+   而 OA 模块数字员工的 worker_type 是**模块码**（OA_LEAVE / OA_DOC / OA_APPROVAL …共 43 个，见 V83）。
+   拿角色码直接 === 模块码，43 个里最多只能撞上 0 个 —— 于是「输入一句话后跳不到对应数字人」，
+   界面只能提示「未能识别类型，请手动选择」。
+
+   这里只做**编码翻译 + 字面匹配**，不做第二套语义判断（铁律 1）：候选信号全部来自接口返回的
+   role / formCode / roleName / matched，按优先级逐级降级，命中即止：
+     ① role / workerType 原样（历史数据里 4 个 WorkerRole 类型的员工走这条）
+     ② formCode → OA_<FORM>（leave_request → OA_LEAVE；与 V86 表单码同一套）
+     ③ 角色码去后缀再补 OA_（LEAVE_APPROVER → OA_LEAVE，DOC_DRAFTER → OA_DOC）
+     ④ 关键词字面命中：roleName / matched[] 落在员工名称或职责描述里
+   ④ 只在「唯一最高分」时采纳：分并列或 0 分一律返回 null —— 宁可让用户自己选，
+   也不要把「请假」派给「考勤」（派错的代价比多一次点击大得多）。 */
+
+/* 角色码/表单码 → 可能的模块码（顺序即优先级，去重） */
+function oaIntentCodes(intent){
+  var codes = [];
+  function push(c){
+    c = String(c == null ? '' : c).toUpperCase().trim();
+    if(!c) return;
+    /* GENERAL 是「没识别出专用类型」的**缺省值**，不是一个可命中的类型码：
+       worker_type 里可能真躺着自建员工叫 GENERAL（本环境就有「每日考勤」），
+       拿缺省值去精确匹配 ⇒ 任何一句识别不出来的话都被派给它（2026-11-06 实测）。
+       故缺省码一律不进候选；这类问句只走关键词，或直接交给用户选。 */
+    if(c === 'GENERAL' || c === 'OA_GENERAL') return;
+    if(codes.indexOf(c) < 0) codes.push(c);
+  }
+  if(!intent) return codes;
+  var role = intent.role || intent.workerType;
+  push(role);
+  if(intent.formCode) push('OA_' + String(intent.formCode).toUpperCase().replace(/_REQUEST$/, ''));
+  if(role){
+    var r = String(role).toUpperCase()
+      .replace(/_(APPROVER|ASSISTANT|DRAFTER|HANDLER|AGENT)$/, '');
+    push(r);
+    push('OA_' + r);
+  }
+  return codes;
+}
+
+/* 返回命中的在册数字员工；null = 确实没识别出来（调用方负责让用户选） */
+function oaMatchIntentWorker(intent, opt){
+  opt = opt || {};
+  var workers = arr(state.workers).filter(function(w){
+    if(!w || w.on === false) return false;
+    return opt.oaOnly ? isOaWorker(w) : true;
+  });
+  if(!workers.length) return null;
+
+  var codes = oaIntentCodes(intent);
+  for(var ci = 0; ci < codes.length; ci++){
+    for(var wi = 0; wi < workers.length; wi++){
+      if(String(workers[wi].workerType || '').toUpperCase() === codes[ci]) return workers[wi];
+    }
+  }
+
+  /* ③ 服务端候选（2026-11-06）：/v1/workers/intent 现在会一并返回 workers 候选 ——
+     它按本租户**真实在册清单**算好「这句话最像谁」（类型直译 + 名称关键词 + 平台模块优先）。
+     判断只做一件事：唯一最高分才采纳；并列或 0 分一律不猜，交回用户。
+     这一段是主路径；下面的本地关键词段只是旧后端（没 workers 字段）时的兼容退路。 */
+  var cand = arr(intent && intent.workers);
+  if(cand.length){
+    var top = cand[0], next = cand[1];
+    var topScore = Number(top && top.score) || 0;
+    var nextScore = Number(next && next.score) || 0;
+    if(topScore > 0 && (!next || topScore > nextScore)){
+      var picked = workers.filter(function(w){ return String(w.id) === String(top.id); })[0];
+      if(picked) return picked;
+    }
+  }
+
+  // ④ 关键词：roleName 权重 5、matched[] 每条 2；必须唯一最高分
+  /* ⚠️ 通用类型的 roleName（「通用办公助手」）是**缺省值**，不是信号：
+     每个 worker_type=GENERAL 的自建员工（如「每日考勤」）在列表里拿到的 roleName 就是它，
+     用它当关键词 ⇒ 任何一句识别不出来的话都会被满 5 分派给某个 GENERAL 员工
+     （2026-11-06 实测：「今天天气怎么样」被派给「每日考勤」）。
+     故只有**非通用**类型才把 roleName 当强信号；通用类型只认 matched 里的内容词，
+     一个都没有就返回 null，让用户自己选。 */
+  var role = String((intent && intent.role) || '').toUpperCase();
+  var generic = !role || role === 'GENERAL';
+  var kw = [];
+  if(!generic && intent && intent.roleName) kw.push({k: String(intent.roleName), w: 5});
+  arr(intent && intent.matched).forEach(function(m){
+    var s = String(m == null ? '' : m).trim();
+    if(s.length >= 2 && s !== String(intent.roleName || '')) kw.push({k: s, w: 2});
+  });
+  if(!kw.length) return null;
+  var best = null, bestScore = 0, tie = false;
+  workers.forEach(function(w){
+    var hay = [w.name, w.roleName, w.duty, w.description].join(' ');
+    var score = 0;
+    kw.forEach(function(x){ if(hay.indexOf(x.k) >= 0) score += x.w; });
+    if(score > bestScore){ best = w; bestScore = score; tie = false; }
+    else if(score === bestScore && score > 0){ tie = true; }
+  });
+  return (best && bestScore > 0 && !tie) ? best : null;
+}
+
 /* 对话里说「发起审批 / 我要申请…」：返回命中的 OA 模块数字人，或 'modules'（去 Gallery 选），或 null（不路由） */
 async function oaApprovalLaunchTarget(q){
   // 1) 精确意图：workerIntent 命中 OA 模块数字人 → 直接跳该数字人（相应的数字人）
   try{
     var intent = await API.workerIntent(q);
-    if(intent){
-      /* 意图侧是「角色码」（LEAVE_APPROVER / GENERAL …），OA 模块是「模块编码」（OA_LEAVE / OA_APPROVAL …），
-         两套编码直接相等会全部落空（2026-11-04 真机回归发现：请假意图永远跳不过去）。
-         这里按「角色码 / formCode → OA 模块编码」生成候选，命中任一即直跳；不改变原有精确匹配优先级。 */
-      var codes = [];
-      var role = intent.role || intent.workerType;
-      if(role) codes.push(String(role).toUpperCase());
-      if(intent.formCode){ codes.push('OA_' + String(intent.formCode).toUpperCase().replace(/_REQUEST$/, '')); }
-      if(role){ var r2 = String(role).toUpperCase(); if(/_APPROVER$/.test(r2)) codes.push('OA_' + r2.replace(/_APPROVER$/, '')); }
-      var workers = arr(state.workers);
-      for(var ci = 0; ci < codes.length; ci++){
-        for(var wi = 0; wi < workers.length; wi++){
-          var w = workers[wi];
-          if(w.on !== false && String(w.workerType || '').toUpperCase() === codes[ci] && isOaWorker(w)) return w;
-        }
-      }
-    }
+    var hit = oaMatchIntentWorker(intent, {oaOnly:true});
+    if(hit) return hit;
   }catch(e){ /* 意图接口失败不阻断正常发送 */ }
   // 2) 兜底：明确「发起 / 申请审批」措辞但未命中具体模块 → 跳模块 Gallery
   if(/发起\s*审批|我要\s*审批|申请\s*审批|发起\s*一个\s*审批|我要\s*申请|办\s*个\s*审批|提交\s*审批|我要\s*办\s*审批|发起\s*一个\s*申请/.test(q)) return 'modules';
   return null;
 }
 
-/* 指定负责人 UI 同步：按钮仅对 OA 模块数字人可见；chip 随预选状态显隐 */
-function oaSyncAssignUI(){
-  var btn = $o('oaAssignBtn');
-  if(btn) btn.style.display = (S.worker && isOaWorker(S.worker)) ? '' : 'none';
-  var bar = $o('oaAssignBar');
-  if(bar){
-    if(S.oaAssignee){
-      bar.hidden = false;
-      bar.innerHTML = '<span class="ab-tag">审批负责人</span>' +
-        '<span class="ab-name">'+esc(S.oaAssignee.name || ('用户#'+S.oaAssignee.userId))+'</span>' +
-        '<button type="button" class="ab-x" aria-label="清除指定" title="清除指定">✕</button>';
-      var x = bar.querySelector('.ab-x');
-      if(x) x.onclick = function(e){ e.stopPropagation(); oaClearAssignee(); };
-    }else{
-      bar.hidden = true; bar.innerHTML = '';
-    }
-  }
-}
-function oaSetAssignee(userId, name){
-  S.oaAssignee = {userId:userId, name:name};
-  oaSyncAssignUI();
-  toast('已指定负责人「'+txt(name)+'」：后续审批人会据此提交（也可在审批人选择卡里改）');
-}
-function oaClearAssignee(){
-  S.oaAssignee = null;
-  oaSyncAssignUI();
-}
-
-/* 指定负责人选择器：复用通讯录名册（S.org.members，已排除本人）作为候选源，无需新增后端接口 */
-function oaOpenAssignPicker(){
-  if(!S.worker || !isOaWorker(S.worker)){ toast('请先进入某个 OA 审批数字人对话'); return; }
-  if(!S.org || !S.org.members || !S.org.members.length){
-    toast('正在加载通讯录…');
-    loadOrgAll().catch(function(){}).then(function(){
-      if(!S.org || !S.org.members || !S.org.members.length){ toast('通讯录为空，暂无法指定负责人'); return; }
-      oaOpenAssignPicker();
-    });
-    return;
-  }
-  oaCloseAssignPicker();
-  var meId = state.user && state.user.id;
-  var list = arr(S.org.members).filter(function(m){ return m.userId != null && m.userId !== meId; });
-  var pop = document.createElement('div');
-  pop.className = 'assign-pop';
-  pop.id = 'oaAssignPop';
-  pop.innerHTML =
-    '<div class="ap-head">指定负责人<button type="button" class="ap-x" aria-label="关闭">✕</button></div>' +
-    '<input class="clar-search" id="oaAssignSearch" placeholder="搜索姓名 / 职务 / 部门…" autocomplete="off">' +
-    '<div class="clar-cands" id="oaAssignCands"></div>';
-  document.body.appendChild(pop);
-  var search = pop.querySelector('#oaAssignSearch');
-  var cands = pop.querySelector('#oaAssignCands');
-  function render(kw){
-    kw = String(kw || '').trim().toLowerCase();
-    var rows = list.filter(function(m){
-      if(!kw) return true;
-      var hay = [m.name, m.jobTitle, m.departmentName, m.username].join(' ').toLowerCase();
-      return hay.indexOf(kw) >= 0;
-    }).slice(0, 60);
-    if(!rows.length){ cands.innerHTML = '<div class="ap-empty">没有匹配的同事</div>'; return; }
-    cands.innerHTML = rows.map(function(m){
-      var sel = (S.oaAssignee && String(S.oaAssignee.userId) === String(m.userId)) ? ' sel' : '';
-      var sub = [m.jobTitle, m.departmentName].filter(Boolean).join(' · ');
-      return '<button type="button" class="clar-cand'+sel+'" data-uid="'+esc(m.userId)+'" data-name="'+esc(m.name||('用户#'+m.userId))+'">' +
-        '<span class="ac-name">'+esc(m.name||('用户#'+m.userId))+'</span>' +
-        (sub ? '<span class="ac-sub">'+esc(sub)+'</span>' : '') + '</button>';
-    }).join('');
-    cands.querySelectorAll('.clar-cand').forEach(function(b){
-      b.onclick = function(){
-        oaSetAssignee(Number(b.dataset.uid), b.dataset.name);
-        oaCloseAssignPicker();
-      };
-    });
-  }
-  render('');
-  search.addEventListener('input', function(){ render(search.value); });
-  pop.querySelector('.ap-x').onclick = oaCloseAssignPicker;
-  document.addEventListener('click', oaAssignOutside, true);   // 点击浮层外关闭（下一帧注册，避免吞掉本次打开点击）
-  // 定位到按钮附近
-  var btn = $o('oaAssignBtn');
-  if(btn){
-    var r = btn.getBoundingClientRect();
-    pop.style.left = Math.max(8, (r.left + r.width/2) - 132) + 'px';
-    var top = r.top - pop.offsetHeight - 8;
-    pop.style.top = (top < 8 ? (r.bottom + 8) : top) + 'px';
-  }
-  search.focus();
-}
-function oaAssignOutside(e){
-  var pop = $o('oaAssignPop');
-  if(pop && !pop.contains(e.target) && e.target.id !== 'oaAssignBtn') oaCloseAssignPicker();
-}
-function oaCloseAssignPicker(){
-  var pop = $o('oaAssignPop');
-  if(pop) pop.remove();
-  document.removeEventListener('click', oaAssignOutside, true);
-}
-
-/* 审批人选择卡出现时，若已预选负责人则自动落定（#90 两者都要：数字人问 + 用户主动指定） */
-function oaAutoAnswerAssignee(card, fields){
-  if(!S.oaAssignee || !S.worker || !isOaWorker(S.worker)) return;
-  for(var i=0;i<fields.length;i++){
-    var f = fields[i];
-    if(f.type !== 'select' || f.searchable !== true) continue;
-    var opts = Array.isArray(f.options) ? f.options : [];
-    var hit = null;
-    for(var j=0;j<opts.length;j++){
-      if(String(opts[j].value) === String(S.oaAssignee.userId)){ hit = opts[j]; break; }
-    }
-    if(!hit) continue;
-    var fid = String(f.id || ('f'+i));
-    var wrap = card.querySelector('.clar-field[data-fid="'+esc(fid)+'"]');
-    if(!wrap) continue;
-    var cand = wrap.querySelector('.clar-cand[data-value="'+esc(String(hit.value))+'"]');
-    if(!cand) continue;
-    cand.click();                         // 选中候选（触发既有选择监听）
-    var ok = card.querySelector('.clar-ok');
-    if(ok) ok.click();                    // 提交（走既有校验 + resolve）
-    toast('已按你指定的负责人「'+txt(S.oaAssignee.name)+'」提交');
-    oaClearAssignee();
-    return;
-  }
-}
-/* 暴露给全局 mountClarCard（脚本1，普通 <script>）在澄清卡挂载时调用：
-   该函数依赖 IIFE 内的 S/isOaWorker/oaClearAssignee，故定义在此处（IIFE 内），
-   而 mountClarCard 在脚本1 的全局作用域，跨脚本作用域无法直接引用，需经 window 桥接。 */
-window.oaAutoAnswerAssignee = oaAutoAnswerAssignee;
-
 function oaPickWorker(w){
   if(!w) return;
   // 换了对话对象就要换会话：后端在**创建会话时**把 workerId 绑上去（API.ensureConversation 同款），
   // 沿用旧会话会让「换人」只换了个称呼、回答仍出自原数字员工（老版 startChat 同样重置会话）。
   // 换了对话对象：作废在途收口（按旧对象给出的推荐已不成立）
-  if(!S.worker || w.id !== S.worker.id){ S.convId = null; oaAnswerSeq++; S.oaAssignee = null; }
+  if(!S.worker || w.id !== S.worker.id){ S.convId = null; oaAnswerSeq++; }
   S.worker = w; S.expert = null;
   oaGo('home');
   oaBanner();
-  oaSyncAssignUI();
   oaPushBub('ai', '已选择数字员工「'+txt(w.name || '数字员工')+'」'+
     (w.roleName ? '（职责：'+txt(w.roleName)+'）' : '')+'<div class="bub-meta">'+
     txt(w.scheduleTime ? '排班 ' + w.scheduleTime : '可随时对话')+'</div>');
-  var i = $o('oaInput'); if(i) i.focus();
+  /* 「新工作任务」没接上人时留下的那句话：选完人自动填回输入框，并顺手刷新计数，
+     用户不用把刚打的一句话再打一遍（这是「识别失败」之后最容易被骂的一步）。 */
+  var pending = (typeof oaTakePendingTaskText === 'function') ? oaTakePendingTaskText() : '';
+  var inp = $o('oaInput');
+  if(pending && inp){ inp.value = pending; oaSyncInput(); }
+  if(inp) inp.focus();
 }
 
 /* 会话内自动转交（后端 worker.handoff SSE 帧）：只改「当前数字人」状态，绝不换会话。
@@ -12792,7 +13267,6 @@ function oaApplyHandoff(p){
   }
   // 顶部标出当前对话对象（.oa-who）刷新到新数字人
   oaBanner();
-  oaSyncAssignUI();
   // 对话坞落一条可见提示气泡：已自动转交、原问题已带过去、不用重述
   var text;
   if(p.from_worker_name){
@@ -12808,13 +13282,15 @@ function oaPickExpert(e){
   if(!e) return;
   // 同 oaPickWorker：换人即换会话，并作废在途收口
   if(!S.expert || e.key !== S.expert.key){ S.convId = null; oaAnswerSeq++; }
-  S.expert = e; S.worker = null; S.oaAssignee = null;
-  oaGo('home');
+  S.expert = e; S.worker = null;  oaGo('home');
   oaBanner();
-  oaSyncAssignUI();
   oaPushBub('ai', '已选择专家「'+txt(e.name || e.key)+'」<div class="bub-meta">'+
     txt(e.description || '领域专家视角')+'</div>');
-  var i = $o('oaInput'); if(i) i.focus();
+  /* 与 oaPickWorker 同款：把「新工作任务」里没接上人的那句话填回来 */
+  var pending = (typeof oaTakePendingTaskText === 'function') ? oaTakePendingTaskText() : '';
+  var inp = $o('oaInput');
+  if(pending && inp){ inp.value = pending; oaSyncInput(); }
+  if(inp) inp.focus();
 }
 
 async function oaEnsureConv(){
@@ -13341,7 +13817,10 @@ function oaNewChat(){
   toast(pid > 0 ? '已在项目内开启新对话' : '已开启新对话，点数字人可选择数字员工或专家');
 }
 
-/* 新工作任务：workerIntent 识别类型 → 命中在册数字员工则直接对话，否则回到选择卡 */
+/* 新工作任务：workerIntent 识别类型 → 命中在册数字员工则直接对话。
+   判定统一走 oaMatchIntentWorker（与「对话里发起审批」同一处），不再在这里写第二套 === 比较：
+   意图返回的是角色码、模块员工是模块码，直接相等必然落空 —— 那正是「输完一句话只弹
+   『未能识别类型』」的根因（2026-11-06 修）。 */
 async function oaNewTask(){
   askDialog({
     title:'新工作任务', mode:'input',
@@ -13349,24 +13828,48 @@ async function oaNewTask(){
     placeholder:'例如：帮我起草一份周报', required:true,
     onOk: async function(v){
       var text = String(v || '').trim();
+      if(!text) return;
       var intent = null;
       try{ intent = await API.workerIntent(text); }catch(e){ intent = null; }
-      var code = intent && (intent.role || intent.workerType);
-      var hit = code ? arr(state.workers).filter(function(w){
-        return String(w.workerType || '').toUpperCase() === String(code).toUpperCase() && w.on !== false;
-      })[0] : null;
+      var hit = oaMatchIntentWorker(intent);
       if(hit){
-        toast('已识别为「' + (intent.roleName || code) + '」，交给 ' + (hit.name || '数字员工'));
+        toast('已识别为「' + (intent.roleName || hit.name) + '」，交给 ' + (hit.name || '数字员工'));
         oaPickWorker(hit);
         var i = $o('oaInput'); if(i){ i.value = text; oaSyncInput(); oaSend(); }
+        return;
+      }
+      /* 没命中：不再停在只有「数字员工 / 专家」两个选项的浮层（用户点进去还得自己再找一遍，
+         等于没帮上忙）。识别出了类型就直开数字员工列表让他挑；完全没识别才保留二选一浮层。 */
+      var recognized = !!(intent && intent.role && String(intent.role).toUpperCase() !== 'GENERAL');
+      if(recognized){
+        toast('已识别为「' + (intent.roleName || intent.role) + '」，该类型暂无在册数字员工，请从列表中选择');
+        setPendingTaskText(text);   // 选完人直接把这句填回输入框，少打一遍
+        oaGo('workers');
       }else{
-        toast(intent && intent.roleName
-          ? ('识别为「' + intent.roleName + '」，当前无匹配的在册数字员工，请手动选择')
-          : '未能识别类型，请手动选择数字员工或专家');
+        toast('未识别出类型，请选择数字员工或专家');
+        setPendingTaskText(text);
         oaOpenSheet();
       }
     }
   });
+}
+
+/* 「新工作任务」没接上人时先记住这句话：用户在列表里点了某位数字员工就自动填回输入框。
+   只存一次、用掉即清；并加 5 分钟时效 —— 用户可能中途放弃（关掉浮层去干别的），
+   十几分钟后再点某个数字员工时突然冒出一句旧话，比不填更吓人。 */
+var oaPendingTaskText = '';
+var oaPendingTaskAt = 0;
+function setPendingTaskText(t){
+  oaPendingTaskText = String(t || '');
+  oaPendingTaskAt = oaPendingTaskText ? Date.now() : 0;
+}
+function oaTakePendingTaskText(){
+  var t = oaPendingTaskText;
+  var at = oaPendingTaskAt;
+  oaPendingTaskText = '';
+  oaPendingTaskAt = 0;
+  /* 先算时效再清标记：把清零写在取值之前会让 Date.now() - 0 恒为巨大值 ⇒ 永远返回空 */
+  return (t && (Date.now() - at) < 300000) ? t : '';
 }
 
 /* --------------------------------------- 9.5 职责推荐 / 换人（同老版）
@@ -13956,20 +14459,258 @@ function fillSheet(){
   setSkillsSegCounts();   /* 三段分段计数（插件/技能/连接器），唯一实现在 8b 节 */
 }
 
+/* 「最近」条目的标题：用户要看到的是**自己问了什么**，而不是「新会话」这类占位。
+   后端首轮会用第一句问题重写 title（V108），这里只兜住两种漏网：
+   · 会话建了但还没提问（title 仍是「新会话」）⇒ 明说「还没提问」，别假装有标题；
+   · 老数据的空标题 ⇒ 同上。 */
+function oaConvTitle(c){
+  var t = c && c.title ? String(c.title).trim() : '';
+  if(!t || t === '新会话'){ return (Number(c && c.msgCount) > 0) ? '未命名会话' : '还没有提问'; }
+  return t;
+}
+
 function renderDrawer(){
   var box = $o('oaDrawerRecent'); if(!box) return;
   var cs = arr(state.conversations);
   if(!cs.length){ box.innerHTML = empty('暂无最近会话'); return; }
-  box.innerHTML = cs.slice(0, 6).map(function(c){
-    return '<div class="recent-item" data-conv="'+txt(c.id)+'">'+
+  // 置顶在前（后端已按 pinned/pinned_at 排序，这里只保证本地乐观更新后也不会乱）
+  var sorted = cs.slice().sort(function(a,b){
+    var pa = Number(a && a.pinned) === 1 ? 1 : 0, pb = Number(b && b.pinned) === 1 ? 1 : 0;
+    if(pa !== pb) return pb - pa;
+    return 0;   // 同组保持后端给的顺序（稳定排序）
+  });
+  box.innerHTML = sorted.slice(0, 8).map(function(c){
+    var pin = Number(c && c.pinned) === 1;
+    return '<div class="recent-item' + (pin ? ' pinned' : '') + '" data-conv="'+txt(c.id)+'">'+
       '<div class="ri-ico">'+ic('chat',17)+'</div>'+
-      '<div class="ri-txt"><span class="ri-t">'+txt(c.title || ('会话 #' + c.id))+'</span>'+
+      '<div class="ri-txt"><span class="ri-t">'+(pin ? '<span class="ri-pin">置顶</span>' : '')+
+        txt(oaConvTitle(c))+'</span>'+
       '<span class="ri-s">'+txt(dt(c.lastMsgAt || c.createdAt))+'</span></div></div>';
   }).join('');
   box.querySelectorAll('[data-conv]').forEach(function(r){
-    r.onclick = function(){ oaCloseDrawer(); oaResumeConversation(Number(r.dataset.conv)); };
+    var id = Number(r.dataset.conv);
+    /* 单击续聊（原有行为）；长按 500ms 弹动作菜单。
+       长按结束后浏览器还会补发一次 click —— 用 data-long 挡掉，否则「长按」会顺带把会话打开。 */
+    r.onclick = function(){
+      if(r.dataset.long === '1'){ r.dataset.long = '0'; return; }
+      oaCloseDrawer(); oaResumeConversation(id);
+    };
+    var timer = null, sx = 0, sy = 0;
+    var start = function(ev){
+      var p = ev.touches ? ev.touches[0] : ev;
+      sx = p.clientX; sy = p.clientY;
+      r.dataset.long = '0';
+      timer = setTimeout(function(){
+        timer = null;
+        r.dataset.long = '1';
+        oaOpenConvMenu(id);
+      }, 500);
+    };
+    var cancel = function(){ if(timer){ clearTimeout(timer); timer = null; } };
+    var move = function(ev){
+      if(!timer) return;
+      var p = ev.touches ? ev.touches[0] : ev;
+      // 手指滑动 = 滚动列表，不是长按
+      if(Math.abs(p.clientX - sx) > 8 || Math.abs(p.clientY - sy) > 8){ cancel(); }
+    };
+    r.addEventListener('touchstart', start, {passive:true});
+    r.addEventListener('touchmove', move, {passive:true});
+    r.addEventListener('touchend', cancel);
+    r.addEventListener('touchcancel', cancel);
+    r.addEventListener('mousedown', start);
+    r.addEventListener('mousemove', move);
+    r.addEventListener('mouseup', cancel);
+    r.addEventListener('mouseleave', cancel);
+    /* 桌面端右键 / 安卓长按系统菜单：同样给动作面板，并挡掉浏览器默认菜单 */
+    r.addEventListener('contextmenu', function(ev){
+      ev.preventDefault();
+      cancel();
+      oaOpenConvMenu(id);
+    });
   });
 }
+
+/* ---------------------------------------------- 1.5 会话动作面板（V108，长按「最近」）
+   四项：置顶 / 重命名 / 查找对话记录 / 删除。都走真实接口，本地只做乐观更新。 */
+var oaConvTarget = null;
+
+function oaConvById(id){
+  var hit = null;
+  arr(state.conversations).forEach(function(c){ if(Number(c.id) === Number(id)) hit = c; });
+  return hit;
+}
+
+function oaOpenConvMenu(id){
+  var c = oaConvById(id);
+  if(!c){ return; }
+  oaConvTarget = c;
+  var root = $o('oaConvMenu'); if(!root) return;
+  var t = $o('oaConvMenuTitle'); if(t) t.textContent = oaConvTitle(c);
+  var pin = $o('oaConvPin');
+  if(pin){ pin.textContent = (Number(c.pinned) === 1) ? '取消置顶' : '置顶'; }
+  /* 只关掉会抢焦点的浮层，**保留抽屉**：用户长按的是列表里的某一条，
+     抽屉一消失就看不见自己操作的是哪条了。 */
+  try{ oaCloseModelSheet(); }catch(e){}
+  try{ oaCloseSheet(); }catch(e){}
+  try{ oaCloseDoc(); }catch(e){}
+  var mask = $o('oaConvMask'); if(mask) mask.classList.add('on');
+  root.classList.add('on');
+}
+
+function oaCloseConvMenu(){
+  var root = $o('oaConvMenu'); if(root) root.classList.remove('on');
+  var mask = $o('oaConvMask');
+  if(mask && !($o('oaFindSheet') && $o('oaFindSheet').classList.contains('on'))) mask.classList.remove('on');
+}
+
+function oaCloseFind(){
+  var s = $o('oaFindSheet'); if(s) s.classList.remove('on');
+  var mask = $o('oaConvMask'); if(mask) mask.classList.remove('on');
+}
+
+/* 列表刷新：置顶/重命名/删除之后都要重排，且「最近」整页与抽屉读的是同一份 state */
+async function oaReloadRecent(){
+  try{
+    state.conversations = arr(await API.listConversations(true));
+    renderDrawer();
+    if(S.mode === 'oa' && S.view === 'recent'){ oaRender(); }
+  }catch(e){
+    toast('刷新会话失败：' + (e.message || '未知错误'));
+  }
+}
+
+async function oaConvTogglePin(){
+  var c = oaConvTarget; if(!c) return;
+  var next = Number(c.pinned) !== 1;
+  oaCloseConvMenu();
+  try{
+    await API.pinConversation(c.id, next);
+    c.pinned = next ? 1 : 0;
+    await oaReloadRecent();
+    toast(next ? '已置顶' : '已取消置顶');
+  }catch(e){
+    toast('置顶失败：' + (e.message || '未知错误'));
+  }
+}
+
+async function oaConvRename(){
+  var c = oaConvTarget; if(!c) return;
+  oaCloseConvMenu();
+  var name = await askInput('给这个会话起个名字', {
+    title:'重命名会话', value: oaConvTitle(c), placeholder:'例如：11 月报销进度',
+    required:true, okText:'保存'
+  });
+  if(name == null) return;
+  try{
+    await API.renameConversation(c.id, name);
+    c.title = name;
+    // 手动改名后后端会置 title_source=MANUAL，之后不会再被首轮问题覆盖
+    await oaReloadRecent();
+    toast('已重命名');
+  }catch(e){
+    toast('重命名失败：' + (e.message || '未知错误'));
+  }
+}
+
+async function oaConvFind(){
+  var c = oaConvTarget; if(!c) return;
+  oaCloseConvMenu();
+  var kw = await askInput('在「' + oaConvTitle(c) + '」里查找什么？', {
+    title:'查找对话记录', placeholder:'输入关键词，例如：报销', required:true, okText:'查找'
+  });
+  if(!kw) return;
+  var list = $o('oaFindList'), head = $o('oaFindHead');
+  if(head) head.textContent = '查找中…';
+  if(list) list.innerHTML = '<div class="cm-empty">正在读取这条会话的记录…</div>';
+  var sheet = $o('oaFindSheet'); if(sheet) sheet.classList.add('on');
+  var mask = $o('oaConvMask'); if(mask) mask.classList.add('on');
+  try{
+    oaRenderFind(arr(await API.listMessages(c.id)), kw, c);
+  }catch(e){
+    if(list) list.innerHTML = '<div class="cm-empty">读取失败：' + esc(e.message || '未知错误') + '</div>';
+  }
+}
+
+function oaRenderFind(msgs, kw, c){
+  var list = $o('oaFindList'), head = $o('oaFindHead');
+  var k = String(kw || '').toLowerCase();
+  var hits = [];
+  arr(msgs).forEach(function(m){
+    var text = String((m && m.content) || '');
+    var i = text.toLowerCase().indexOf(k);
+    if(i >= 0) hits.push({ m: m, text: text, i: i });
+  });
+  if(head) head.textContent = '「' + kw + '」命中 ' + hits.length + ' 条';
+  if(!list) return;
+  if(!hits.length){
+    list.innerHTML = '<div class="cm-empty">这条会话里没有包含「' + esc(kw) + '」的记录</div>';
+    return;
+  }
+  /* 截前后各 40 字做上下文，命中词用 <mark> 高亮：
+     只给一行原文的话，用户常常看不出上下文在说什么。 */
+  list.innerHTML = hits.slice(0, 50).map(function(h){
+    var t = h.text, from = Math.max(0, h.i - 40), to = Math.min(t.length, h.i + k.length + 40);
+    var pre = (from > 0 ? '…' : '') + t.slice(from, h.i);
+    var mid = t.slice(h.i, h.i + k.length);
+    var post = t.slice(h.i + k.length, to) + (to < t.length ? '…' : '');
+    return '<div class="cm-hit" data-msg="' + txt(h.m.id) + '">'+
+      '<div class="h-who">' + (h.m.role === 'user' ? '我' : 'AI') + ' · ' + txt(dt(h.m.createdAt)) + '</div>'+
+      '<div class="h-txt">' + esc(pre) + '<mark>' + esc(mid) + '</mark>' + esc(post) + '</div></div>';
+  }).join('');
+  list.querySelectorAll('[data-msg]').forEach(function(r){
+    r.onclick = function(){
+      oaCloseFind();
+      oaCloseDrawer();
+      // 点命中项 = 「从这条记录接着聊」：打开该会话（历史由后端续接）
+      oaResumeConversation(Number(c.id)).catch(function(){});
+    };
+  });
+}
+
+async function oaConvDelete(){
+  var c = oaConvTarget; if(!c) return;
+  oaCloseConvMenu();
+  var ok = await askConfirm('删除后不可恢复，这条会话的聊天记录不会再出现在「最近」里。确定删除「'
+      + oaConvTitle(c) + '」？', { title:'删除会话', danger:true, okText:'删除' });
+  if(!ok) return;
+  try{
+    await API.deleteConversation(c.id);
+    state.conversations = arr(state.conversations).filter(function(x){
+      return Number(x.id) !== Number(c.id);
+    });
+    // 删掉的正是当前对话 ⇒ 清空对话坞，否则用户会继续往一个已删会话发消息
+    if(Number(S.convId) === Number(c.id)){
+      S.convId = null;
+      var dock = dockEl(); if(dock) dock.innerHTML = '';
+      oaPushBub('ai', '这条会话已删除。直接输入即可开始新对话。');
+    }
+    renderDrawer();
+    if(S.mode === 'oa'){ oaRender(); }
+    toast('已删除');
+  }catch(e){
+    toast('删除失败：' + (e.message || '未知错误'));
+  }
+}
+
+(function bindConvMenu(){
+  var root = $o('oaConvMenu');
+  if(root){
+    root.querySelectorAll('[data-cm]').forEach(function(b){
+      b.onclick = function(){
+        var act = b.dataset.cm;
+        if(act === 'pin') return oaConvTogglePin();
+        if(act === 'rename') return oaConvRename();
+        if(act === 'find') return oaConvFind();
+        if(act === 'del') return oaConvDelete();
+        oaCloseConvMenu();
+      };
+    });
+  }
+  var mask = $o('oaConvMask');
+  if(mask) mask.onclick = function(){ oaCloseConvMenu(); oaCloseFind(); };
+  var fs = $o('oaFindSheet');
+  if(fs) fs.querySelectorAll('[data-find-close]').forEach(function(b){ b.onclick = oaCloseFind; });
+})();
 
 /* 续聊：载入历史消息到对话坞（原地，不跳经典会话页） */
 async function oaResumeConversation(id, restored){
@@ -14007,7 +14748,7 @@ async function loadOaExtras(){
   var r = await Promise.all([
     loadOrgAll().catch(function(){ return null; }),
     API.leaveMine().catch(function(){ return []; }),
-    (!arr(state.conversations).length ? API.listConversations().catch(function(){ return []; }) : Promise.resolve(state.conversations)),
+    (!arr(state.conversations).length ? API.listConversations(true).catch(function(){ return []; }) : Promise.resolve(state.conversations)),
     // 日程 / 会议（真实业务数据）：失败在 loadPortalAgenda 内部吞掉并记 S.agendaErr，
     // 不能让它拖垮整批加载（OA 首页还有五个面板要渲染）。
     loadPortalAgenda().catch(function(){ return null; })
@@ -14098,10 +14839,6 @@ function bind(){
   // 抽屉入口只保留「OA 模块」（2026-11-05）：原先并列的「发起审批」与 OA 模块宫格是同一个落点，
   // 两个入口容易让人以为「发起审批」是另一套流程，故合并为一个。
   // 抽屉关闭后仍可发起审批：说「我要请假 / 发起审批」会路由到对应模块数字人（OA_ROUTES）。
-  // 指定负责人（#90）：对话内按钮 → 打开候选选择器
-  var assignBtn = $o('oaAssignBtn');
-  if(assignBtn) assignBtn.onclick = oaOpenAssignPicker;
-  oaSyncAssignUI();
   /* 账号模型：顶栏选择 chip / 五 tab 浮层与视图（静态控件只绑一次） */
   oaBindModelEvents();
 

@@ -33,6 +33,12 @@ _check_voice_gesture.py —— 语音输入「手势状态机」哨兵（矩阵�
   python scripts/_check_voice_gesture.py --selftest # 判别力证明：**修复前版本**(见 PREFIX_REV)必须为红（S3/S6 必红）
 退出码 = 失败数（0 才算通过）；前置不满足（找不到 node / 找不到被测文件）以 2 报错，不伪装 PASS。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import shutil
 import subprocess

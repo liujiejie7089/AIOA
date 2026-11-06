@@ -54,8 +54,10 @@ class WorkerIntakeActionPassthroughTest {
         // 于是本类顺带成为「签名口径两端一致」的活体验收（密钥不一致会在这里 401 暴露）。
         cn.aios.security.ServiceTokenProvider tokens =
                 new cn.aios.security.ServiceTokenProvider(new cn.aios.security.ServiceJwtProperties());
+        // 第 11 个位置是 workerMapper（2026-11-06 新增：意图要回「该交给哪位在册员工」）：
+        // 本类只验证 action 透传，候选为空即可，故传 null（matchWorkers 对 null 有显式短路）。
         service = new WorkerIntakeService(new ObjectMapper(), null, null, null, null, null, grants,
-                null, null, null, null, tokens);
+                null, null, null, null, null, tokens);
         Field baseUrl = WorkerIntakeService.class.getDeclaredField("agentBaseUrl");
         baseUrl.setAccessible(true);
         baseUrl.set(service, AGENT);

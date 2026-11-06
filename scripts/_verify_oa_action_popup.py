@@ -39,6 +39,12 @@
   逻辑正常走完；G9d 再回头核验 `#upFolder` 真的被填上、控件真的被解锁。
 用法：python scripts/_verify_oa_action_popup.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import sys
 from pathlib import Path

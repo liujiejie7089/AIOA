@@ -43,10 +43,11 @@ public class LeaveSubmitToolHandler implements ExternalToolHandler {
     @Override
     public String description() {
         return "为当前用户发起请假申请（会自动展开审批流）。调用前必须已经收齐："
-                + "假种码、开始日期、结束日期、事由；若用户说「交给某某处理」，还要先调 "
-                + "list_approval_handlers 拿到 assigneeUserId。"
+                + "假种码、开始日期、结束日期、事由；若用户说「交给某某处理」或点名了多个负责人，"
+                + "还要先调 list_approval_handlers 拿到 userId（多个用 assigneeUserIds 数组，顺序即审批顺序）。"
                 + "**不要在信息不全时调用本工具** —— 缺项应通过 ask_user 的 fields 一次性问全。"
-                + "成功返回 orderId / leaveRequestId / currentApproverName（当前流转到谁）/ status。";
+                + "成功返回 orderId / leaveRequestId / currentApproverName（当前流转到谁）/ status，"
+                + "以及 handlers（处理人信息）与 dataFlow（数据流：每级节点、状态、当前级）。";
     }
 
     @Override
@@ -58,6 +59,10 @@ public class LeaveSubmitToolHandler implements ExternalToolHandler {
                 + "\"reason\":{\"type\":\"string\",\"description\":\"请假事由，会展示给审批人\"},"
                 + "\"assigneeUserId\":{\"type\":\"integer\",\"description\":\"指定处理人的 userId（来自 list_approval_handlers）；"
                 + "为空则按后台审批流默认规则找人\"},"
+                // 八期：多选负责人（按数组顺序依次审批）。与 assigneeUserId 互斥，优先用本字段。
+                + "\"assigneeUserIds\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"},"
+                + "\"description\":\"指定多个负责人时用本字段（userId 数组，顺序即审批顺序）；"
+                + "单个时用 assigneeUserId 亦可。为空则按后台审批流默认规则找人\"},"
                 + "\"proofFileId\":{\"type\":\"integer\",\"description\":\"证明材料文件 id（假种要求证明时必填）\"},"
                 + "\"userId\":{\"type\":\"integer\",\"description\":\"代他人提交时的目标员工 userId，一般不要填\"}"
                 + "},\"required\":[\"leaveTypeCode\",\"startDate\",\"endDate\"]}";

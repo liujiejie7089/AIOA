@@ -3,6 +3,13 @@
 把「接口文档声称」与「生产实测」合并，生成映射表 Markdown。
 原则：实测结果与文档声称同源对照，不手抄、不臆造。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 
 # 文档声称：(分组, 前缀, 路径, 必填参数, 可选参数, 文档声称返回)

@@ -9,6 +9,12 @@
   · 数字人能不能查到内部事实，测的是 /api/v1/tools 的清单与 invoke 结果，
     而不是「模型答得好不好」——后者不可判定。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import sys
 import json
 from pathlib import Path

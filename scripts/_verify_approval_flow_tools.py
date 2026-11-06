@@ -6,6 +6,12 @@
   · 只有 confirm=true 才真的写，且写后有版本快照、可原样改回。
 每一步都回库比对（铁律 12：界面/工具说改了，必须回库确认）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 

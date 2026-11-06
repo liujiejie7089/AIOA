@@ -22,6 +22,12 @@
 注意：脚本会先把历史表重命名为 `<表名>_broken_<日期>`（不删数据），并导出 JSON 备份。
 修复后仍建议按项目约定携带 `-Dspring.flyway.validate-on-migrate=false` 启动。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import datetime as dt
 import json

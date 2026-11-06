@@ -6,6 +6,12 @@
      对应授权单从 PENDING 变 USED（不是只弹了个 toast）；
   3. 点「不允许」不会产生任何考勤记录，但会留下一条 DENIED 的审计（问过、被拒了）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import sys
 import time
 from pathlib import Path

@@ -161,14 +161,42 @@ public class AsrController {
             throw new BizException(503, "语音识别服务不可用，请稍后重试");
         }
 
-        String raw = resp.body() == null ? "{}" : resp.body();
-        JsonNode root = objectMapper.readTree(raw);
+        String raw = resp.body() == null ? "" : resp.body();
+        JsonNode root = parseJsonOrNull(raw, resp.statusCode());
         if (resp.statusCode() != 200) {
+            if (root == null) {
+                // 网关/反向代理挡回时 body 常是 HTML 错误页：透传状态码也没法给用户看
+                throw new BizException(503, "语音识别服务不可用，请稍后重试");
+            }
             throw new BizException(resp.statusCode(), root.path("message").asText("语音识别失败"));
+        }
+        if (root == null) {
+            // 200 但不是 JSON：同样按不可用处理，别让下游 root.has() 抛 NPE
+            throw new BizException(503, "语音识别服务不可用，请稍后重试");
         }
         if (root.has("code") && root.path("code").asInt(-1) != 0) {
             throw new BizException(502, root.path("message").asText("语音识别失败"));
         }
         return root;
+    }
+
+    /**
+     * 宽松解析 agent 的响应体。
+     *
+     * <p>原实现直接 {@code readTree(raw)} 且这行在状态码判断**之前**、没有 try ——
+     * agent 被网关挡回 HTML 时 Jackson 抛 {@code JsonParseException}，用户拿到 500，
+     * 而不是设计里的「503 服务不可用」（B7）。</p>
+     */
+    private JsonNode parseJsonOrNull(String raw, int status) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(raw);
+        } catch (Exception e) {
+            log.warn("asr agent returned non-JSON (status={}, {} chars): {}",
+                    status, raw.length(), e.getClass().getSimpleName());
+            return null;
+        }
     }
 }

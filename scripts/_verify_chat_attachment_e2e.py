@@ -35,6 +35,12 @@ SKIP 纪律（铁律：绝不为转绿放宽断言 / 伪造 PASS）：
     python scripts/_verify_chat_attachment_e2e.py
 退出码：0 = 全过；1 = 有 FAIL（链路真断）；2 = 仅 SKIP（环境不可用）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import io
 import os
 import sys

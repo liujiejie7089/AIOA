@@ -48,6 +48,10 @@ public class ConversationService {
         conversation.setTenantId(AuthUserContext.tenantIdOrDefault());
         conversation.setUserId(userId);
         conversation.setTitle(StringUtils.hasText(title) ? title : "新会话");
+        // 标题来源（V108）：创建方给了名字记 CREATE（但首轮问题仍会覆盖它，见 RunService.start），
+        // 没给记 AUTO（等第一句问题来生成「用户的问题总结」）。
+        conversation.setTitleSource(StringUtils.hasText(title)
+                ? ChatConversation.TITLE_CREATE : ChatConversation.TITLE_AUTO);
         conversation.setAppCode(appCode);
         conversation.setAgentCode("main");
         conversation.setProjectId(normalizeProjectId(projectId));
@@ -114,7 +118,11 @@ public class ConversationService {
     }
 
     public PageResult<ChatConversation> page(long page, long size, String keyword) {
-        return page(page, size, keyword, null);
+        return page(page, size, keyword, null, false);
+    }
+
+    public PageResult<ChatConversation> page(long page, long size, String keyword, Long projectId) {
+        return page(page, size, keyword, projectId, false);
     }
 
     /**
@@ -122,13 +130,23 @@ public class ConversationService {
      *
      * @param projectId {@code null}=不过滤（兼容旧调用）；{@code <=0}=只要「非项目会话」；
      *                  {@code >0}=只要该项目的会话。用户端按项目分账即依赖此过滤。
+     * @param onlyAsked {@code true}=只要**已经提过问**的会话（{@code msg_count > 0}）。
+     *                  用户端「最近」列表用它把「点进数字人但一句没问」的空壳会话挡在外面 ——
+     *                  这些会话没有用户问题、标题也就无从总结，排在列表里只会把真会话挤下去。
+     *                  默认 {@code false}，其余调用方（管理端/脚本）行为不变；
+     *                  空壳会话**不删**，按 id 仍可打开续聊，问出第一句后自然出现在列表里。
      */
-    public PageResult<ChatConversation> page(long page, long size, String keyword, Long projectId) {
+    public PageResult<ChatConversation> page(long page, long size, String keyword, Long projectId,
+                                             boolean onlyAsked) {
         long p = Math.max(1, page);
         long s = Math.min(Math.max(1, size), 100);
-        long total = conversationMapper.selectCount(ownedWrapper(keyword, projectId));
-        LambdaQueryWrapper<ChatConversation> wrapper = ownedWrapper(keyword, projectId);
-        wrapper.orderByDesc(ChatConversation::getLastMsgAt)
+        long total = conversationMapper.selectCount(ownedWrapper(keyword, projectId, onlyAsked));
+        LambdaQueryWrapper<ChatConversation> wrapper = ownedWrapper(keyword, projectId, onlyAsked);
+        // 置顶优先（V108）：先按 pinned 倒序，再按置顶时刻（后置顶的在上），最后才是常规的最近活动。
+        // 只加在最前面，未置顶的会话之间顺序与旧版完全一致 ⇒ 老用户观感不变。
+        wrapper.orderByDesc(ChatConversation::getPinned)
+                .orderByDesc(ChatConversation::getPinnedAt)
+                .orderByDesc(ChatConversation::getLastMsgAt)
                 .orderByDesc(ChatConversation::getId)
                 .last("limit " + s + " offset " + ((p - 1) * s));
         List<ChatConversation> list = conversationMapper.selectList(wrapper);
@@ -154,6 +172,20 @@ public class ConversationService {
                 .setSql("deleted_at = now()"));
     }
 
+    /**
+     * 置顶 / 取消置顶（V108，用户端「最近」长按菜单）。
+     *
+     * <p>幂等：重复置顶只刷新 {@code pinned_at}（等于把这条再顶到置顶区最前），不会报错。
+     * 取消时把 {@code pinned_at} 清空，否则下次置顶会沿用旧时刻排到中间去。</p>
+     */
+    public void pin(Long conversationId, boolean pinned) {
+        getOwned(conversationId);
+        conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
+                .eq(ChatConversation::getId, conversationId)
+                .set(ChatConversation::getPinned, pinned ? 1 : 0)
+                .set(ChatConversation::getPinnedAt, pinned ? LocalDateTime.now() : null));
+    }
+
     /** FR-D3 会话重命名（仅本人，标题非空，长度上限 60）。 */
     public void rename(Long conversationId, String title) {
         getOwned(conversationId);
@@ -166,7 +198,9 @@ public class ConversationService {
         }
         conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
                 .eq(ChatConversation::getId, conversationId)
-                .set(ChatConversation::getTitle, trimmed));
+                .set(ChatConversation::getTitle, trimmed)
+                // 手动改过就锁住：之后首轮自动标题不再覆盖它（V108）
+                .set(ChatConversation::getTitleSource, ChatConversation.TITLE_MANUAL));
     }
 
     /**
@@ -212,10 +246,15 @@ public class ConversationService {
      * {@code deleted_at = now()}，因此这里必须显式过滤已删行；否则「删除会话」后
      * 列表与统计都还把它算进去，删除按钮等于失灵。</p>
      */
-    private LambdaQueryWrapper<ChatConversation> ownedWrapper(String keyword, Long projectId) {
+    private LambdaQueryWrapper<ChatConversation> ownedWrapper(String keyword, Long projectId, boolean onlyAsked) {
         LambdaQueryWrapper<ChatConversation> wrapper = new LambdaQueryWrapper<ChatConversation>()
                 .eq(ChatConversation::getUserId, AuthUserContext.requireUserId())
                 .isNull(ChatConversation::getDeletedAt);
+        // 空壳会话（一句没问）不进「最近」：没有用户问题就没有可总结的标题。
+        // 注意 msg_count 可能为 NULL（老数据），`> 0` 天然把 NULL 排除，正是想要的语义。
+        if (onlyAsked) {
+            wrapper.gt(ChatConversation::getMsgCount, 0);
+        }
         if (StringUtils.hasText(keyword)) {
             wrapper.like(ChatConversation::getTitle, keyword);
         }

@@ -8,6 +8,13 @@
 - 拿到 JSON（含 paths / apis / groups）→ 直接枚举接口，与契约 67 个对照
 - 一律 401/404/000 → 说明线上接口清单不可匿名获取，只能以接口文档为准（结论也是结论）
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import urllib.error

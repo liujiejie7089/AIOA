@@ -30,6 +30,12 @@
 结构照抄 _verify_oa_intent_e2e.py：chk 累计 / report() 末尾打印并以失败数作退出码。
 截图落 scripts/_shot_exec_intent/。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import asyncio
 import os
 import sys

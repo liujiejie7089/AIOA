@@ -5,6 +5,12 @@
 用途：建立「文档声称 vs 实测」的差异基线，为映射表与校验器提供事实依据。
 只读探测，不做任何写操作。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import sys

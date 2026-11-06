@@ -16,6 +16,12 @@ C 组 · 生产/本地配置分离（静态判据）
 
 跑法：D:/aios/agent/.venv/Scripts/python.exe scripts/_check_ai_answer_accuracy.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import re
 import sys

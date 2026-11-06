@@ -25,6 +25,12 @@
   python scripts/backfill_gitee_repo_urls.py --base https://gitee.com            # 干跑
   python scripts/backfill_gitee_repo_urls.py --base https://gitee.com --apply    # 落库
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import sys
 

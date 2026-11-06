@@ -17,6 +17,12 @@
 备份：quota_backup_<YYYYmmdd_HHMMSS>.json（仓库根），含被改行的改前全字段快照，
       回滚 SQL 见文件内 rollback_sql 字段。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import datetime as dt
 import json

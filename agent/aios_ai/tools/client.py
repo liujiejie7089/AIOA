@@ -159,10 +159,19 @@ class ToolClient:
         async def _load_one(srv: dict) -> list[dict]:
             code = srv.get("code")
             url = srv.get("url")
-            mcp_client = MultiServerMCPClient({
-                code: {"transport": "streamable_http", "url": url,
-                       "headers": {"Authorization": f"Bearer {self._token}"}}
-            })
+            # ★ handle_tool_errors=False（2026-11-06 修）：适配器默认 True，会把
+            #   CallToolResult(isError=True) **转成一个 status="error" 的 ToolMessage 交回来**，
+            #   而我们的 invoke 只认 list[dict] 形状 ⇒ 会走到最后一个 return，把失败报成 ok=True
+            #   （用户看到「工具执行成功」但内容是 "Error executing tool …"）。
+            #   置 False 后适配器改为抛 ToolException，由 invoke 的 except 统一收敛成 ok=False +
+            #   服务端原始错误文本 —— 与「失败不静默」的契约（docs/59 §10.4 判据 4）一致。
+            mcp_client = MultiServerMCPClient(
+                {
+                    code: {"transport": "streamable_http", "url": url,
+                           "headers": {"Authorization": f"Bearer {self._token}"}}
+                },
+                handle_tool_errors=False,
+            )
             raw_tools = await mcp_client.get_tools()     # list[BaseTool]
             out: list[dict] = []
             for t in raw_tools:
@@ -213,7 +222,14 @@ class ToolClient:
             tool_obj = entry[0]
             try:
                 resp = await tool_obj.ainvoke(args)     # BaseTool：内部完成 MCP tools/call
-                # 归一 content blocks（list[dict]）与直接返回值两种形状。
+                # ① ToolMessage 形态：适配器（handle_tool_errors=True 时）把 MCP 执行错误
+                #    包成 ToolMessage(status="error") 返回。必须判失败 —— 否则又是「失败报成功」。
+                #    本类已改用 handle_tool_errors=False 让它抛异常，这里是对旧/新适配器的兜底。
+                if getattr(resp, "status", None) == "error":
+                    detail = getattr(resp, "content", None)
+                    return ToolOutcome(name=name, arguments=args, ok=False,
+                                       error=str(detail or "MCP 工具返回错误")[:1000])
+                # ② content blocks（list[dict]）形态：逐个找 text / isError。
                 if isinstance(resp, list) and resp and isinstance(resp[0], dict):
                     parts: list[str] = []
                     is_error = False

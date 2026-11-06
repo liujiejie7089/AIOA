@@ -25,6 +25,12 @@
 前置：后端 :8080 已起；V71 已应用；租户 Gitee 组织名必须是**真实存在**的组织
       （组织名写错时建仓任务会以「找不到组织」失败，见 docs/42 缺陷 D2）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 import time

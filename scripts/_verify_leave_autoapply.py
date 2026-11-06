@@ -9,6 +9,12 @@
 注意：负对照是**统计性**证据而非硬门禁——修前该语料自动触发率约 2/3，5 轮 0 触发在
 原行为下概率约 (1/3)^5≈0.4%，可判定提示词生效，但提示词本身不构成硬门禁（硬门禁需服务端）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 import urllib.error

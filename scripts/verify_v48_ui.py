@@ -16,6 +16,12 @@
 菜单与路由、页面渲染、控制台/5xx、角色门控陷阱、详情五 Tab、深链、跨租户/不存在、
 交互边界、错误文案贯通，以及伸长的 OAuth 绑定与网页上传提交。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import os
 import sys

@@ -57,6 +57,12 @@ OAuth：`GET /oauth/authorize`、`POST /oauth/token`（授权码 / 刷新令牌�
   python scripts/gitee_stub.py            # 默认 127.0.0.1:8090
   python scripts/gitee_stub.py 8091
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import hashlib
 import json
 import sys

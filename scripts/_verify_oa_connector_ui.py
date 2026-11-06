@@ -16,6 +16,12 @@
 「接口真的可用」由 `scripts/_verify_connectors.py` 负责，两者互补不重复。
 用法：python scripts/_verify_oa_connector_ui.py   退出码 = 失败项数。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import sys
 from pathlib import Path

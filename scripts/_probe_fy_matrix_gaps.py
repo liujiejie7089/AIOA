@@ -8,6 +8,13 @@
   Q3 getTravelRoadDataDetail / getEcologicalAreaImageUrl 用 dataId=1 为空 ——
      真实 dataId 应从列表接口取；确认列表里能取到 id 的结构。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import urllib.error

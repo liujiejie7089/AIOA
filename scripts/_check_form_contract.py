@@ -60,6 +60,12 @@
 纪律：抓取一律用精确正则，不用 `in` 全文模糊命中（否则恒真）；若结构变了导致抓不到，
 **报 FAIL 而不是跳过**（这里没有可复核的 SKIP 理由）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import re
 import sys

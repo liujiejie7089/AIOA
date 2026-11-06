@@ -16,6 +16,12 @@
 用法：python scripts/_check_menu_scroll.py
 退出码 0 = 全部通过；非 0 = 有条目失败（打印在末尾）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 

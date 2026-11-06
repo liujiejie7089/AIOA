@@ -2,6 +2,12 @@
 
 界面结论一律回接口/库再核一遍：菜单文案取自渲染后的 DOM，租户列表取自 /admin/tenants。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import sys
 from pathlib import Path
 

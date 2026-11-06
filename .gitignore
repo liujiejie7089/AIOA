@@ -110,6 +110,10 @@ proxy-run*.log
 # ---- WorkBuddy 工作区临时产物（截图/调试/文档抽取，不入库）----
 .workbuddy/*.png
 .workbuddy/*.txt
+# PPT 生成产物（.workbuddy/ppt，190MB 二进制，2026-11-06 实测被 `git status` 列为未跟踪）
+.workbuddy/ppt/
+# 临时工作区（截图/提交信息草稿，30MB，同上）
+.workbuddy/tmp/
 # 版式截图目录（scripts/_shot_h5_layout.py 产出，人工核对用，随时可重生成）
 .workbuddy/shots/
 # 验收截图产物（可随时重跑套件再生成）

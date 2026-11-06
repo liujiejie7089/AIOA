@@ -40,6 +40,12 @@ C7 的真实 IMAP 登录失败用例，它天然不写库）。
 前置：后端在线且 V96 已执行（首次启动自动建表 + 种子）。缺前置时脚本会明说而非静默 SKIP。
 退出码 = 失败项数。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import json
 import os

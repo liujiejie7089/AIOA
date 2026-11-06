@@ -17,6 +17,12 @@
 产物：logs/proof/ai-assistant/ 下的截图与 console 文本。
 前置：后端 :8080 已起且管理端产物已同步到 webroot（单端口形态）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import os
 import sys

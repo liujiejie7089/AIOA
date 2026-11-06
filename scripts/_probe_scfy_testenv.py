@@ -3,6 +3,13 @@
 探测本地后台测试服务 http://127.0.0.1:16060 —— 只做只读探测，不改任何数据。
 目的：确认上下文路径、是否暴露 /show/* 免登录接口、登录端点形态。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import urllib.error
 import urllib.request

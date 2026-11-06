@@ -30,6 +30,12 @@
 前置：无需后端、无需登录态（用本地静态服务 + page.route 打桩）。
 用法：python scripts/_verify_oa_handoff_ui.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import functools
 import http.server
 import json

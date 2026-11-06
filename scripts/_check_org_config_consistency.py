@@ -28,6 +28,12 @@
     python scripts/_check_org_config_consistency.py              # 正跑
     python scripts/_check_org_config_consistency.py --selftest   # 判据有效性（喂变异副本，必须逐条报红）
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import os
 import re

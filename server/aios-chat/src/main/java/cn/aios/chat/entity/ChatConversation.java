@@ -56,4 +56,30 @@ public class ChatConversation {
     private LocalDateTime updatedAt;
     private Long createdBy;
     private LocalDateTime deletedAt;
+
+    /**
+     * 置顶（V108）：1 = 在本人的「最近」列表里固定在最上方。
+     *
+     * <p>为什么落库而不是放前端 localStorage：换设备/换浏览器就丢，而「置顶」是用户
+     * 对工作内容的整理结果，属于会话元数据的一部分。列非空默认 0 ⇒ 旧数据行为零变化。</p>
+     */
+    private Integer pinned;
+
+    /** 置顶时刻：多条置顶之间按它倒序（后置顶的排更上），避免顺序乱跳。 */
+    private LocalDateTime pinnedAt;
+
+    /**
+     * 标题来源（V108）：{@code AUTO}=由用户第一句问题自动总结 / {@code CREATE}=创建方指定 /
+     * {@code MANUAL}=用户手动重命名。
+     *
+     * <p>为什么要单独一列：脚本与集成方 create 时会传技术名（{@code grade-sheet-probe}、
+     * {@code enum-probe}），而用户要看到的是「我问了什么」。只看 title 字符串分不清
+     * 「技术名」与「用户改过的名」—— 前者该被首轮问题覆盖，后者必须尊重。
+     * 判据：首轮对话时只要 {@code titleSource != MANUAL} 就重写标题。</p>
+     */
+    private String titleSource;
+
+    public static final String TITLE_AUTO = "AUTO";
+    public static final String TITLE_CREATE = "CREATE";
+    public static final String TITLE_MANUAL = "MANUAL";
 }

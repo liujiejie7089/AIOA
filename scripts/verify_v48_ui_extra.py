@@ -5,6 +5,13 @@
 整页空白，故 OAuth 绑定按钮不可见。改用未绑定且非租管的企业成员 znsfb_m01（页面不渲染
 运维卡片，不触发崩溃）来验证完整 OAuth 流程。网页上传沿用已绑定的 znkjyf_admin / 项目10。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import os
 import time

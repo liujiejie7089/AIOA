@@ -15,6 +15,12 @@ curl 退出码 18 = "transfer closed with outstanding read data remaining"，
 定位：**报告型长期哨兵**（原 `_diag_sse_truncation.py`，因该缺陷至今未修故转正入库）。
 恒退出 0，只在 stdout 打 `[STATUS]`；修复判据 = 该行从 `DEFECT-PRESENT` 变为 `OK`。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import subprocess
 import sys

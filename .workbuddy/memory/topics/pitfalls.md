@@ -1724,3 +1724,244 @@ agent 侧要验服务，得**直接**用后台任务分别起 `java -jar …` �
   ⇒ 两端都把 `default`/`auto` 归一成「未点名」。
 
 
+
+## 67. 「知识库里有资料」≠「检索得到」：`chunk_count` 是声明值，不是 `kb_chunk` 的行数
+
+`kb_document.chunk_count` 可以由种子 SQL / 历史导入直接写成任意数字。本机实测 11 篇演示文档
+声明 `chunk_count=402`，而 `kb_chunk` 里这 11 篇**一条切片都没有** —— 管理端列表显示"已索引 402 段"、
+检索永远命中 0 条，**全程无任何报错**。
+
+排障顺序：先 `SELECT COUNT(*) FROM kb_chunk WHERE doc_id=? AND deleted_at IS NULL` 与 `chunk_count` 比对，
+再看检索打分。不要一上来怀疑 embedding / 阈值。
+根治：`KbService.index()` 末做「声明数 vs 实际行数」自检，不一致置 `state=FAILED` + `errorMsg`。
+
+## 68. 表格类文档默认切出来是「一行一块、无列名」，改阈值改 topK 都救不回来
+
+`KbFileParser.readSheet()` 每行写一个 `\n`，`KbService.split()` 按 `\n` 切段且 ≤500 字直接成块
+⇒ 500 行表 = 503 块，**含列名的块只有 1 个**（就是表头那块，且它还常被 `### SheetName` 挤开）。
+
+更关键：`topK` 默认 5，对「共有多少条 / 分类计数」这类聚合问题，**给 5 行明细问总数**，
+换任何模型都答不出。此时模型会老实说「知识库未收录」—— 它没说谎，是我们没给它判断依据。
+
+因此：表格要按「表名+列名+连续 N 行」成块，并**另生成一块统计摘要**；
+且摘要块必须在**聚合意图**时强制注入，不能只靠分数 —— 实测摘要块与数据行块**同分**
+（0.01639 vs 0.01613），靠排序偶然拿 top1，换个插入顺序就掉下去。
+
+## 69. `local` embedding 与关键词腿同源，「调阈值」是伪解法
+
+`LocalEmbeddingProvider` 是 FNV 哈希 char2gram 词频（256 维），**不是语义向量**；
+与 `KeywordScorer` 的 2-gram 覆盖率是同一路信号。实测「帮我统计下四川省的省级非遗项目有多少个?」
+对 500 行名录：cos 最高 0.157、中位 0.080，`threshold=0.5` 下 **0/503 过阈**（hybrid 实际只有一路）。
+
+把阈值降到 0 反而更差：过阈 503/503，top1 从「第 1 行」漂到「第 17 行」，仍与问题无关 ——
+同源信号放开只放大噪声。要真语义必须换 provider（`aios.kb.embedding-provider=http` 指向 bge），
+且**换完必须 `reembed-on-start=true` 重算**，否则旧维度向量与新 query 余弦恒 0（静默不命中）。
+
+## 70. 工具返回字段名与提示词取值链不一致 ⇒ 检索命中了但正文从未进入提示词
+
+`ToolGatewayService.searchKb()` 返回的字段是 **`snippet`**，而
+`agent/aios_ai/prompt/builder.py#build_kb_reference_block` 取值链写的是
+`content` / `text` ⇒ `text` 恒为 `""` ⇒ `continue` 跳过每一条命中 ⇒ **参考块恒为空字符串**。
+
+后果：检索日志显示「命中 N 条」、引用标签正常显示，但模型一个字都没看到，
+回答退化成「知识库未收录 / 不如网上资料」。**全程无异常、无告警**。
+
+判据（30 秒可查）：拿一条真实工具返回 `{"docName":…,"snippet":…,"chunkIndex":…}` 调
+`build_kb_reference_block([row])`，长度必须是正数。改字段名时两侧必须同步，
+并把「工具网关真实字段」写进单测（`tests/test_kb_reference_block.py`）。
+
+## 71. pymysql 校验「刚被接口删掉/改掉」的数据必须**另开连接**
+
+同一连接在默认 REPEATABLE READ 下，第一次 SELECT 就建立了快照；接口在**另一个事务**里
+提交的删除/更新，用这个老连接**看不到** ⇒ 验收脚本会误报「删了但 deleted_at 还是空」
+「切片没删干净」。本轮 `_verify_kb_nonheritage.py` 连踩两次。
+
+正确写法：改动后再 `pymysql.connect(...)` 开一个**新连接**查。
+
+## 72. 工具入参缺 `mode` 时 `String.valueOf(null)` == 字符串 `"null"` ⇒ 检索**恒 0 条**且返回 `ok:true`
+
+`ToolGatewayService.searchKb()` 旧写法
+`String mode = args == null ? null : String.valueOf(args.get("mode"));`
+—— 模型不传 `mode` 是**常态**，此时 `args.get("mode")` 为 null，`String.valueOf(null)` 得到的是
+**四个字符的 `"null"`**，不是 null。`MysqlKnowledgeStore` 于是 `"bm2".equals("null")` 全不匹配 ⇒
+`wantVector=false && wantBm25=false` ⇒ 两路都不打分 ⇒ RRF 融合为空 ⇒ 返回 `{"ok":true,"data":[]}`。
+
+调用方**无法区分**「库里真没有」与「模式传错」，最终表现为用户那句
+「知识库明明有文件，AI 说没有」。判据：同一 keyword 带 `mode:"bm25"` 有 5 条、不带 mode 只有 0 条。
+
+修法（两侧都要）：工具侧用 `strArg()`（缺省返回 null）并归一化 `""/"null"/auto/default`；
+store 侧 `normalizeMode()` **认不出就退回 hybrid** 并 warn。单测 `MysqlKnowledgeStoreModeTest`。
+**同类风险**：任何 `String.valueOf(map.get(k))` 都要先判 null。
+
+## 73. PDF 成绩单是「四栏并排被拍平」：栏名与数值天生分居两行，切片必然切散
+
+`课    程 课程 学 成 补 重 …`（表头拆两行 ×4 组）+ 每行混着 4 门课 +
+汇总处 `毕业设计(论文)题目 历年平均成绩 历年平均学分绩点` 换行后才 `80.26 2.69`。
+按行切片 ⇒ 命中「栏名」的那块**旁边没有数字**，模型如实答「没有相邻的数值」。
+
+修法见 `GradeSheetExtractor`（docs/75）：正则还原记录 + 「标签行 + 下一行」按 token 位对齐
+（去 `其中/包括/含`；数值少时**右对齐**，否则首格为空的「毕业设计(论文)题目」会错配成 `80.26`），
+再回填成两张 Markdown 表 —— 之后**复用** Excel 那条链路（列名分块/统计摘要/`kb_table_query`）。
+
+两个必踩的正则坑：
+- 补考分必须 `(?=\s|$)` 前瞻，否则 `2025-2026学年` 被截成 `202` 当成补考分；
+- 学分列同理，任何「数字后面紧跟 `-`」都不是数值。
+
+## 74. 「列出全部」是**取行**问题，不是检索问题：检索 topK 天然不全
+
+`kb_table_query` 原本命中行硬上限 10 行且**没有 offset 参数**，于是 62 门课只能给 10 门，
+模型答「接口每次只返回前 10 行，其余没有返回」——**它没胡说，是接口真的只给了 10 行**。
+
+判据：问「列出全部/所有」，看返回里有没有 `hasMore`。没有分页字段 = 结构上取不全。
+修法：`offset`/`limit`（默认 50、上限 500）+ `hasMore`/`nextOffset`/`nextHint`，
+提示词强制「hasMore=true 就继续取，直到 false」，并禁止「只答第一页」与「接口只给前几行」这种半截话。
+
+**别用检索凑**：topK=5 × 每块 N 行，最多看到 5N 行，且是「分数最高的 5 块」不是前 5 块。
+
+## 75. 一份资料多张表时，「所有表一起数」会把两个口径混成一个数
+
+成绩单解析后有「成绩明细 62 行」+「成绩汇总 14 行」。旧实现把所有表行累加：
+`matchedRows=76`（用户问「多少门课」，76 是错数），且分页到 46 行之后吐出的是汇总表的
+「通识必修课 24.0」这类键值行，模型会把它们当课程名。
+
+修法：先算每张表命中行数 → **选一张**（默认命中最多的，同分取行数多的）+ `sheet` 参数切表
++ 返回 `otherSheets`/`sheetHint`。`matchedRows` 必须按**所选表**口径，`totalRows` 才给全资料行数。
+
+## 76. 「角色码」与「模块码」是两套编码，直接 === 必然全落空（2026-11-06 第二次踩）
+
+`POST /v1/workers/intent` 回 **角色码**，全项目只有 4 个（`GENERAL` / `LEAVE_APPROVER` /
+`KB_ASSISTANT` / `DOC_DRAFTER`，见 `WorkerRole`）；OA 模块数字员工的 `worker_type` 是
+**模块码**（`OA_LEAVE` / `OA_DOC` … 43 个，见 `V83`）。前端拿两者直接 `===` ⇒ 一个都撞不上，
+界面只能提示「未能识别类型，请手动选择」。
+
+**这次是「一处修了、另一处漏」**：2026-11-04 已为「对话里说『我要请假』」补过
+`formCode → OA_*` 的映射（`oaApprovalLaunchTarget`），但「新工作任务」(`oaNewTask`) 那条入口没跟着改，
+于是同一个 bug 换了个入口又出现。**判据必须抽成一个函数给所有入口共用**（`oaMatchIntentWorker`）。
+
+## 77. `GENERAL` 与「通用办公助手」都是**缺省值**，不能当匹配信号
+
+- `GENERAL` 既是「没识别出专用类型」的缺省角色码，也是自建员工的 `worker_type`
+  （本环境有一台「每日考勤」就是 `GENERAL`）。把它当候选码去精确匹配 ⇒ 任何一句识别不出来的话
+  都被派给那台员工（实测「今天天气怎么样」→「每日考勤」）。
+  **缺省码一律不进候选**（`oaIntentCodes`/`roleTypeCodes` 都显式短路）。
+- 同理，`/v1/workers` 给每个通用员工回的 `roleName` 都是「通用办公助手」—— 拿它当关键词，
+  会对所有 GENERAL 员工满分命中。**只有非通用类型才把 roleName 当强信号**。
+- 兜底结论：识别不出来就**不猜**（弹选择浮层 / 打开数字员工列表 + 把原句记住），
+  派错的代价（用户以为系统听懂了）比多一次点击大得多。
+
+## 78. `collab` 有 4 个面板：跳视图不设 `S.rail` 会停在默认「任务」
+
+「我的」四个统计要跳到「待办 / 审批」时，只 `oaGo('collab')` 是不够的 ——
+`renderCollab()` 用 `S.rail` 决定哪个 rail 项与 panel 带 `.on`。必须**先 `S.rail='approvals'` 再 `oaGo`**，
+否则「点审批」落在任务面板上，看起来像没反应。
+
+## 79. 键盘顶底栏：判据挂 `body`，不挂 `#oaRoot`
+
+Android/微信 WebView 弹键盘会**连 layout viewport 一起缩**，而页面是「顶栏+内容+底栏」flex 列布局
+⇒ 底栏被压到键盘正上方。收起的 CSS 必须写 `body.kb-on .tabbar`：
+经典形态的 `.tabbar` 与新版 `#oaTabs` 是同一个位置上的同一个问题，挂 `#oaRoot` 只能解决一半。
+复用已有 `visualViewport` 差值（>80px）判据，别新写一个键盘探测。
+
+## 80. `@TableLogic` 让 `LambdaUpdateWrapper` **也**够不到软删行（只有裸 SQL 能复活）
+
+`updateById` 因 NOT_NULL 策略跳过 null 字段，这个早就知道了；但**换成 wrapper 也修不好** ——
+`@TableLogic` 会给 select/update 自动追加 `deleted_at IS NULL`，wrapper 的 `set(deletedAt, null)`
+同样落不到软删行上（UPDATE 的 WHERE 里就把它排除了）。
+再叠上「唯一键不区分删除态」（`uk_mcp_tool(server_id, name)`），后果是：恢复不了 + 下次 insert 撞 DuplicateKey。
+**唯一可行解是裸 SQL**（`@Update` 注解里手写 `SET deleted_at = NULL ... WHERE deleted_at IS NOT NULL`）。
+顺序也是判据：必须先复活**再** selectList —— 先查后复活等于没复活。
+
+## 81. `MultiServerMCPClient` 不传 `handle_tool_errors` ⇒ 工具失败被包成「正常返回」
+
+`langchain-mcp-adapters` 默认 `handle_tool_errors=True`：`CallToolResult(isError=True)` 会被包成
+`ToolMessage(status="error")` **当正常返回值交回来**，不抛异常。于是 `ainvoke()` 外层写
+`return ok=True` 就把失败报成了成功（A1 的真相）。
+两个修法要一起上：构造时 `handle_tool_errors=False`（让它抛 `ToolException`），
+`invoke()` 里再判一次 `getattr(resp, "status", None) == "error"`（双保险，换库版本也不至于静默）。
+**别把 `isError` 当唯一判据** —— 那条分支在适配器包装形态下根本走不到。
+
+## 82. `sitecustomize.py` **不会**被自动加载（放脚本目录没用）
+
+Python 只在 `sys.path` 里找 `sitecustomize`，而 `python scripts/x.py` 只把 **scripts 目录**加进 `sys.path[0]`，
+site 模块是在**那之前**导入的 ⇒ 放在 `scripts/sitecustomize.py` 永远不生效（实测过）。
+要「一处防护管全部脚本」只能：① 每个脚本插一行（`sys.stdout.reconfigure(encoding="utf-8")`）；
+② 统一 launcher；③ 环境变量 `PYTHONIOENCODING=utf-8`。
+本项目走 ①：`ast` 定位 `docstring` / `from __future__` **之后**插入（插在 future 前会 SyntaxError），
+插完再 `ast.parse` 复核 + `compileall` 全量验证。
+
+## 83. `BizException(503)` 落到错误码/HTTP 层是 **502**
+
+`ErrorCode.ofCode` 把 `502/503/504` 统一映射成 `MODEL_UPSTREAM_ERROR(502)`，且该枚举的 `HttpStatus` 是 `OK`
+（200 + 信封，见铁律 29/30）。所以「抛出 503」在测试里断言 `getCode()` 会得到 502，**不是修复没生效**。
+断言写 `ErrorCode.MODEL_UPSTREAM_ERROR.code()`，判据放在「抛的是业务异常 + 人话」而不是码值字面量。
+
+## 84. `java -jar` 起后端必须带 `--aios.web.h5-dir`，否则 `/aios/h5/` 404
+
+默认 H5 目录是部署形态的路径（本机解析成 `D:/app/web`，不存在）⇒ 启动日志只有一条 WARN，
+接口侧表现为 `/aios/h5/` 返回 `{"code":404,"message":"接口不存在：/aios/h5/"}`。
+本地联调口径：
+`java -jar ... --server.port=8080 --aios.web.h5-dir=D:/aios/user-client`。
+**症状识别**：H5 套件卡在 `wait_for_selector("#oaRoot")` 超时，而 `:5181` 是好的 ——
+因为套件写死的是单端口路径 `BASE + "/aios/h5/"`。
+
+## 85. `mcp-hub` 缺密钥会 `/health` 503（`init_failed`），不是「没起」
+
+只跑 `python run.py` 会得到
+`{"ok":false,"error":"init_failed","message":"连接器存储初始化失败：CryptoError: 生产模式必须设置 WECOM_CONNECTOR_KEY"}`，
+而端口是通的（容易误判成「hub 在跑只是慢」）。
+启动口径与 `start-all.sh` 一致：`WECOM_MOCK=1` + `WECOM_CONNECTOR_KEY=<fixed>` + `AIOS_SERVICE_JWT_SECRET=<fixed>`。
+`_verify_mcp_registry` 的 M13「工具目录无漂移」会因此红（`hubHTTP=502`），属外部依赖桶。
+
+## 86. `nohup java ... &` 起的后端会被 shell 的 SIGTERM 带走
+
+在工具里 `nohup ... &` 起后端，命令返回后进程仍在，但**下一次** shell 收尾时会把它一起 TERM 掉
+（日志停在启动中段，`health` 从 200 变 000，无异常栈）。
+正确姿势：用工具托管的后台任务（`run_in_background`）+ 输出重定向到文件，
+**不要** `| tail -40`（管道会缓冲，`TaskOutput` 拿不到实时日志）。
+
+## 87. 「表格过大」守卫要计**扫描行**，不是命中行
+
+原写法 `if (idx + 1 > MAX_SCAN_ROWS)` 在过滤 `continue` 之前，`idx++` 在其后 ⇒ `idx` 是命中行数。
+带过滤的查询（`课程性质=学基必修`）命中率低时，扫描 20 万行 `idx` 也可能只有个位数，守卫形同不存在。
+拆两个计数器：`idx` 只管分页序号，`scanned` 只管守卫。
+守卫阈值做实例字段 + package-private setter，否则 200 000 行造不出来、测不了。
+
+## 88. `ORDER BY x DESC` 里 NULL 排最后 ⇒ 「第一页还在不在」不能当「没被删」的判据
+
+会话列表按 `last_msg_at` 倒序，而一句没问的空壳会话 `last_msg_at` 是 NULL。
+MySQL 对 `DESC` 的 NULL 是**最后**，于是空壳会话永远落在页外。
+`_verify_h5_conv_menu` 的 T7b 原来写「默认列表（size=50）还能查到它」⇒ 首跑假红（test 账号 105 条会话）。
+
+判据要么按关键词精确捞（`?keyword=xx`），要么按 id 取详情。**别用「第一页里有没有」验证存在性**。
+同类陷阱：`LIMIT/OFFSET` + 非唯一排序键（`last_msg_at` 同秒并列）也会让分页结果漂移。
+
+## 89. H5 的 `index.html` 里两个 `<script>` 是两个独立 IIFE，作用域不共享
+
+`脚本1`（表格/经典形态那一大段）与 `块 2`（OA 形态）各自 `(function(){ ... })()`，
+顶层的 `function foo(){}` **不会**变成 `window.foo`。
+- `oaConvTitle`（块 2，~14262）能被同块的 `renderRecent`（~12563）用 —— 函数声明同作用域内提升；
+- 但 `脚本1` 的 `openHistory`（~7381）用不了它，只能就地写 `c.title || '未命名会话'`。
+跨块共享必须显式挂 `window`（仓库里已有这种写法，见 3506 行注释）。
+
+## 90. 表单/AI 的两条路径容易写错：请假提交是 `/v1/leave/requests`
+
+`workflow` 前缀下只有 tasks / mine / defs / timeline / cc，**没有** leave；
+请假在 `OrgLeaveController` 之外、由 `WorkflowController` 暴露为 `/v1/leave/types|balance|requests`。
+写 e2e 时按「workflow/leave」猜路径 ⇒ 10 条断言全红且都是 404，很容易误判成实现没生效。
+
+## 91. e2e 造请假单必须用「不占额度」的假种，且清理要还原在途额度
+
+假种 `quotaDaysPerYear>0` ⇒ 后端 `quotaTracked=true`，提交时立刻压 `leave_balance.pending_days`。
+只删 `approval_order` 不删 `leave_request` ⇒ 在途额度一直挂着，**第二次跑就变成「余额不足」假红**
+（本次实测：COMP 5 天额度被两轮跑满）。
+正确做法：优先选 `quotaDaysPerYear=0` 的假种（如事假 CASUAL），并在清理段按剩余 PENDING 单重算：
+`UPDATE leave_balance b SET pending_days = COALESCE((SELECT SUM(r.days) FROM leave_request r
+ WHERE r.user_id=b.user_id AND r.leave_type_code=b.leave_type_code AND YEAR(r.start_date)=b.year
+   AND r.status='PENDING' AND r.deleted_at IS NULL),0)`。
+
+## 92. 弹层截图必须等过渡动画结束，否则会把「半透明」误判成 z-index 问题
+
+`.hd-mask{opacity:0→1; transition:.16s}`，`wait_for_selector('#hdMask.on')` 只保证 class 已加，
+截图/读色时可能正好在动画中间：整层发灰、底下 tabbar 与 toast 都透出来，看起来像层级压不住。
+**先固定等 500ms 再截图**。（真层级问题另有判据：`getComputedStyle(mask).zIndex` 与父级是否形成
+层叠上下文，别靠肉眼。）

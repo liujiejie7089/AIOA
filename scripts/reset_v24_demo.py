@@ -22,6 +22,12 @@ V24 企业入驻 E2E 演示数据复位（可重复运行）
   python scripts/reset_v24_demo.py --dry-run
   python scripts/reset_v24_demo.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import datetime
 import json

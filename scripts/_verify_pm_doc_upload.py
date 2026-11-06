@@ -25,6 +25,12 @@ Java 三元要做「数值提升」：另一支是基本类型 `long`，会把�
 
 退出码：0 = 全过；1 = 有失败。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import io
 import os
 import re

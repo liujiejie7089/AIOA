@@ -103,7 +103,8 @@ public class FormController {
         Map<String, Object> data = body == null || body.data() == null ? Map.of() : body.data();
         SubmitResult result = submissionService.submit(user.getTenantId(), user.getUserId(), code,
                 data, body == null ? null : body.conversationId(),
-                body == null ? null : body.runId());
+                body == null ? null : body.runId(),
+                body == null ? null : body.assigneeUserIds());
         return ApiResponse.ok(result);
     }
 

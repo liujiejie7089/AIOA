@@ -11,6 +11,12 @@
   P4 #6       GET/PUT /expert-config/experts/{key} → settings.visibleTargets 无损往返
 用法：python scripts/_probe_v65_changes.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import os
 import sys

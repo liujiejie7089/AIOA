@@ -11,6 +11,12 @@ tool_system / tool_definition / tool_permission / agent_definition
     python scripts/_prod_baseline_cleanup.py            # 预演
     python scripts/_prod_baseline_cleanup.py --apply    # 备份 + 执行
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import datetime as dt
 import os
 import sys

@@ -35,6 +35,12 @@
     python scripts/_check_boot_jar_fat.py                  # 检查默认产物
     python scripts/_check_boot_jar_fat.py --jar <path>     # 检查指定 jar
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import io
 import json

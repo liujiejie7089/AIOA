@@ -19,6 +19,12 @@
 输出：scripts/_shot_oa/*.png + 控制台逐项结论
 退出码非零 = 有断言失败。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import asyncio
 import json
 import math
@@ -1091,6 +1097,13 @@ async def main():
                 # 表单里三枚按钮：证明材料上传（最先）、提交、取消；
                 # 必须精确点到「提交请假申请」那枚（onclick 含 submitLeave），否则会点到上传按钮、整条链路不提交。
                 await page.click('#leaveForm button[onclick*="submitLeave"]')
+                # 八期（2026-11-06）：提交前新增「负责人确认」环节 —— 本用例只验「提交后能看到
+                # 结果卡 / 单号」，负责人选择由 _verify_handler_confirm.py 专门覆盖，这里走默认负责人。
+                try:
+                    await page.wait_for_selector('#hdMask.on', timeout=4000)
+                    await page.click('#hdMask [data-hd-ok]')
+                except Exception:
+                    pass
                 try:
                     await page.wait_for_function(
                         "() => { const dk = document.getElementById('oaDockList'); "

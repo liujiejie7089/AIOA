@@ -72,16 +72,21 @@ def test_chitchat_skips_pre_retrieve(monkeypatch):
 
 
 def test_substantive_text_still_pre_retrieves(monkeypatch):
-    """负向对照：实义消息（「报销制度是什么」）必须照常预检索。"""
+    """负向对照：实义消息（「报销制度是什么」）必须照常预检索。
+
+    2026-11-06（docs/74 根因 5）起改为**多查询变体**：原句 + 清洗句各查一次，
+    因此断言口径从「恰好一次」改为「至少一次」，并校验**首次调用用的是原句**
+    （变体顺序即优先级，原句的正文召回不能被丢）。
+    """
     async def invoke(name, args):
         return None  # pre_retrieve 对 falsy outcome 走「无数据」分支，足够判定
 
     invoke_mock = AsyncMock(side_effect=invoke)
     _run_once(monkeypatch, "报销制度是什么", invoke_mock)
-    invoke_mock.assert_awaited_once()
-    call_args = invoke_mock.await_args.args
-    assert call_args[0] == "search_kb_documents", call_args
-    assert call_args[1]["keyword"] == "报销制度是什么", call_args
+    assert invoke_mock.await_count >= 1, "实义消息必须预检索"
+    first = invoke_mock.await_args_list[0].args
+    assert first[0] == "search_kb_documents", first
+    assert first[1]["keyword"] == "报销制度是什么", first
 
 
 # ---------- ③ 阈值：未配置走保守默认，显式配置（含 0）优先 ----------

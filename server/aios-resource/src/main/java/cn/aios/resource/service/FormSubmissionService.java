@@ -51,8 +51,9 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
                                Long approvalOrderId, Map<String, Object> receipt) {
     }
 
-    /** 提交返回正文：{data:{...}, conversationId?, runId?}。 */
-    public record SubmitBody(Map<String, Object> data, Long conversationId, String runId) {
+    /** 提交返回正文：{data:{...}, conversationId?, runId?, assigneeUserIds?}。 */
+    public record SubmitBody(Map<String, Object> data, Long conversationId, String runId,
+                             List<Long> assigneeUserIds) {
     }
 
     /**
@@ -67,6 +68,17 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
      */
     public SubmitResult submit(Long tenantId, Long applicantId, String code,
                               Map<String, Object> data, Long conversationId, String runId) {
+        return submit(tenantId, applicantId, code, data, conversationId, runId, null);
+    }
+
+    /**
+     * 提交一份表单（八期：支持在「负责人确认」环节带上用户指定的负责人，可多选）。
+     *
+     * @param assigneeUserIds 用户指定的负责人（顺序即依次审批顺序）；空/null = 沿用后台默认流程
+     */
+    public SubmitResult submit(Long tenantId, Long applicantId, String code,
+                              Map<String, Object> data, Long conversationId, String runId,
+                              List<Long> assigneeUserIds) {
         if (data == null) {
             data = Map.of();
         }
@@ -109,6 +121,13 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
             log.warn("表单提交含未定义字段，已丢弃：code={} fields={}", code, dropped);
         }
         data = cleaned;
+        // ②.7 负责人（八期）：先归一 + 校验，**再落库** —— 校验失败时不留一条孤儿 submission。
+        // 口径复用审批引擎（本机构在职成员、非申请人本人），与请假提交同一处，不各写一份。
+        List<Long> handlers = ApprovalFlowService.normalizeAssignees(assigneeUserIds, null);
+        if (!handlers.isEmpty()) {
+            AuthUser me = AuthUserContext.require();
+            approvalFlowService.validateAssignees(handlers, me.getInstitutionId(), applicantId);
+        }
         // ③ 落 form_submission（status 初始 SUBMITTED，data_json 落白名单裁剪后的 cleaned）
         FormSubmission sub = new FormSubmission();
         sub.setTenantId(tenantId);
@@ -133,10 +152,13 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
         List<String> policies = parsePolicy(template.getSubmitPolicy());
         boolean resume = policies.contains(FormTemplate.POLICY_RESUME);
         Long approvalOrderId = null;
+        // 审批回执（八期）：审批流的 handlers / dataFlow 要原样透到 receipt，供前端一次渲染完
+        Map<String, Object> flowOut = null;
 
         if (policies.contains(FormTemplate.POLICY_APPROVAL)) {
             try {
-                approvalOrderId = invokeApproval(tenantId, applicantId, template, sub.getId(), data);
+                flowOut = invokeApproval(tenantId, applicantId, template, sub.getId(), data, handlers);
+                approvalOrderId = ((Number) flowOut.get("orderId")).longValue();
                 sub.setStatus(FormSubmission.STATUS_APPROVING);
                 sub.setApprovalOrderId(approvalOrderId);
             } catch (Exception e) {
@@ -160,12 +182,21 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
         receipt.put("submissionId", sub.getId());
         receipt.put("status", sub.getStatus());
         receipt.put("statusLabel", statusLabel(sub.getStatus()));
+        // 八期：把审批回执里「谁在处理 + 单据怎么流」一并挂到回执上（用户明确要求返回数据含这两块）。
+        // 未走审批（LEDGER / RESUME）时保持为空，前端据此不渲染流转块。
+        if (flowOut != null) {
+            receipt.put("approvalOrderId", approvalOrderId);
+            receipt.put("handlers", flowOut.get("handlers"));
+            receipt.put("dataFlow", flowOut.get("dataFlow"));
+            receipt.put("currentApproverName", flowOut.get("currentApproverName"));
+        }
         return new SubmitResult(sub.getId(), sub.getStatus(), resume, approvalOrderId, receipt);
     }
 
     /** 调审批引擎：把 submission 快照（含 submissionId 与用户数据）作为 formData 传入。 */
-    private Long invokeApproval(Long tenantId, Long applicantId, FormTemplate template,
-                               Long submissionId, Map<String, Object> data) {
+    private Map<String, Object> invokeApproval(Long tenantId, Long applicantId, FormTemplate template,
+                                               Long submissionId, Map<String, Object> data,
+                                               List<Long> assigneeUserIds) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("submissionId", submissionId);
         snapshot.put("data", data);
@@ -190,12 +221,15 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
                         null,                     // applicantName（由引擎按 actor 兜底）
                         null,                     // specificApproverId
                         null,                     // applicantType
-                        null));                   // applicantDepartmentId
+                        null,                     // applicantDepartmentId
+                        null,                     // assigneeUserId（单值，八期由列表取代）
+                        assigneeUserIds));        // 八期：用户指定的负责人（多选，依次审批）
         Object orderId = out.get("orderId");
         if (orderId == null) {
             throw BizException.badRequest("审批单创建失败");
         }
-        return ((Number) orderId).longValue();
+        // 整个 map 交回调用方：orderId 用于回写 submission，handlers/dataFlow 用于回执
+        return out;
     }
 
     /**

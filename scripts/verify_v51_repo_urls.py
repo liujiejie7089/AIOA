@@ -24,6 +24,12 @@ UR-5 快照证据：撤销 public-base 后**已存在**项目的地址不随之�
   即桩的 `/_stub/public-base`（本脚本用），而不是对着一堆本机地址硬断言。
 - 可重复运行；不修改任何生产代码，只建 2 个测试项目（前缀「URL排查」）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 import time

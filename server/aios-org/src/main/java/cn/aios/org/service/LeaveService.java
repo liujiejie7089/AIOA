@@ -288,34 +288,21 @@ public class LeaveService implements ApprovalCallback {
             throw BizException.badRequest("「" + type.getName() + "」必须上传证明材料");
         }
 
-        // ── 指定处理人（2026-11-03）──
-        // 对话里用户亲手选了「这单交给谁」。此处只做**能不能交给这个人**的校验，
-        // 「他怎么参与流转」由审批引擎决定（无流=唯一节点；有流=首节点，其后按规则续接）。
-        // 校验口径与组织口径一致：必须是本机构在职成员 —— 允许跨部门（用户可能就是要找
-        // 别的部门主管批），但不允许跨机构/已离职/不存在，否则会生成一条永远没人处理的待办。
-        Long assigneeUserId = Vals.lngObj(body, "assigneeUserId");
+        // ── 指定负责人（八期：支持多选，按选择顺序依次审批）──
+        // 口径统一收在审批引擎（ApprovalFlowService#validateAssignees）：必须是本机构在职成员，
+        // 允许跨部门（用户可能就是要找别的部门主管批），不允许跨机构/已离职/不存在/申请人本人 ——
+        // 否则会生成一条永远没人处理的待办，这是最难排查的一类静默失败。
+        // 兼容旧参数：`assigneeUserId`（单个）与 `assigneeUserIds`（数组）合并去重，数组顺序即审批顺序。
+        List<Long> assigneeUserIds = parseAssigneeIds(body);
         // ★ 传了「非空但解析不出」的处理人时必须报错，不能当成「没指定」继续走默认流：
-        //   否则用户明明选了人，单据却按默认规则派给了别人，且**没有任何提示** ——
-        //   属于最难排查的一类静默失败（看起来一切正常，只是收件人不对）。
-        Object rawAssignee = body.get("assigneeUserId");
-        if (assigneeUserId == null && rawAssignee != null
-                && !String.valueOf(rawAssignee).isBlank()) {
-            throw BizException.badRequest("assigneeUserId 非法：" + rawAssignee
-                    + "（应为 list_approval_handlers 返回的 userId）");
+        //   否则用户明明选了人，单据却按默认规则派给了别人，且**没有任何提示**。
+        Object rawMany = body.get("assigneeUserIds");
+        if (assigneeUserIds.isEmpty() && rawMany != null && !String.valueOf(rawMany).isBlank()
+                && !"[]".equals(String.valueOf(rawMany).trim())) {
+            throw BizException.badRequest("assigneeUserIds 非法：" + rawMany
+                    + "（应为审批候选人的 userId 数组）");
         }
-        if (assigneeUserId != null && assigneeUserId > 0) {
-            OrgMember handler = memberMapper.selectOne(new LambdaQueryWrapper<OrgMember>()
-                    .eq(OrgMember::getUserId, assigneeUserId)
-                    .eq(OrgMember::getInstitutionId, institutionId)
-                    .eq(OrgMember::getStatus, OrgMember.STATUS_ACTIVE)
-                    .last("limit 1"));
-            if (handler == null) {
-                throw BizException.badRequest("指定的处理人不在本机构在职成员中（userId="
-                        + assigneeUserId + "），请重新选择");
-            }
-        } else {
-            assigneeUserId = null;
-        }
+        flowService.validateAssignees(assigneeUserIds, institutionId, userId);
 
         int year = start.getYear();
         LeaveBalance balance = findBalance(tenantId, userId, code, year);
@@ -383,7 +370,7 @@ public class LeaveService implements ApprovalCallback {
                         req.getApplicantName() + " 的" + type.getName() + "申请（" + days + " 天）",
                         "起止：" + start + " ~ " + end + "；事由：" + (req.getReason() == null ? "未填写" : req.getReason()),
                         formData, institutionId, req.getDepartmentId(), days.doubleValue(),
-                        userId, req.getApplicantName(), null, null, null, assigneeUserId));
+                        userId, req.getApplicantName(), null, null, null, null, assigneeUserIds));
         Long orderId = ((Number) flow.get("orderId")).longValue();
         req.setOrderId(orderId);
         req.setUpdatedAt(LocalDateTime.now());
@@ -412,8 +399,71 @@ public class LeaveService implements ApprovalCallback {
         out.put("currentApproverName", flow.get("currentApproverName"));
         // 回显「这单是我指定给谁的」：AI 据此在回执里说「已交给张三审批」，
         // 而不是笼统地说「已提交」。指定人批完若还有后续节点，timeline 会显示完整链路。
-        out.put("assigneeUserId", assigneeUserId);
+        out.put("assigneeUserId", assigneeUserIds.isEmpty() ? null : assigneeUserIds.get(0));
+        // 八期：多选负责人（顺序即审批顺序，依次审批）
+        out.put("assigneeUserIds", assigneeUserIds);
+        // 用户明确要求回执「含数据流情况与处理人信息」，两者由引擎统一产出，此处原样透出：
+        //   handlers = 谁在处理（默认/指定 + 名单 + 当前处理人 + 知会人）
+        //   dataFlow = 单据怎么流（每级节点、状态、是否当前级、指定来源）
+        out.put("handlers", flow.get("handlers"));
+        out.put("dataFlow", flow.get("dataFlow"));
         return out;
+    }
+
+    /**
+     * 解析「指定负责人」：{@code assigneeUserIds}（数组 / 逗号串 / JSON 串）与
+     * 旧参数 {@code assigneeUserId}（单个）合并去重，**保留用户选择顺序**。
+     *
+     * <p>之所以容忍三种形态：对话工具传数组、老前端传单个、HTTP 直调可能传逗号串 ——
+     * 解析失败一律交给调用方报错（不静默当没传）。</p>
+     */
+    private static List<Long> parseAssigneeIds(Map<String, Object> body) {
+        List<Long> ids = new ArrayList<>();
+        Object raw = body == null ? null : body.get("assigneeUserIds");
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                Long id = toUserId(o);
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        } else if (raw instanceof Number || raw instanceof String) {
+            String s = String.valueOf(raw).trim();
+            if (s.startsWith("[")) {
+                s = s.substring(1, s.endsWith("]") ? s.length() - 1 : s.length());
+            }
+            for (String part : s.split("[,，\\s]+")) {
+                Long id = toUserId(part);
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        }
+        Long single = Vals.lngObj(body, "assigneeUserId");
+        if (single != null && single > 0) {
+            ids.add(single);
+        }
+        return ApprovalFlowService.normalizeAssignees(ids, null);
+    }
+
+    private static Long toUserId(Object o) {
+        if (o instanceof Number n) {
+            long v = n.longValue();
+            return v > 0 ? v : null;
+        }
+        if (o == null) {
+            return null;
+        }
+        String s = String.valueOf(o).trim().replace("\"", "");
+        if (s.isEmpty()) {
+            return null;
+        }
+        try {
+            long v = Long.parseLong(s);
+            return v > 0 ? v : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** 天数计算：WORKDAY 只算工作日（周一~周五）；DAY 按自然日；显式传入 days 时以传入为准。 */

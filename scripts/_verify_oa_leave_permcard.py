@@ -25,6 +25,12 @@
 成功断言冻结+落库、失败断言「错误就地显示+按钮恢复+未假装落库」，并断言二者互斥 ——
 环境修好后不会假红。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import asyncio
 import json
 import os

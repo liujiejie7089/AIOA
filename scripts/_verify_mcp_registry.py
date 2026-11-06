@@ -44,6 +44,12 @@ M1「默认不可信」、M3「probe 不改 trusted」、M2/M9「manifest 为空
      前置缺失时脚本会明确报 FATAL/FAIL 原因，不静默 SKIP。
 退出码 = 失败项数。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import json
 import os

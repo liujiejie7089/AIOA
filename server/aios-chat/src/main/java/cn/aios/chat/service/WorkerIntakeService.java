@@ -8,7 +8,9 @@ import cn.aios.org.mapper.OrgMemberMapper;
 import cn.aios.org.service.ApprovalFlowService;
 import cn.aios.org.service.LeaveService;
 import cn.aios.org.service.PermissionGrantService;
+import cn.aios.resource.entity.AgentWorker;
 import cn.aios.resource.entity.KbDocument;
+import cn.aios.resource.mapper.AgentWorkerMapper;
 import cn.aios.resource.service.BillingService;
 import cn.aios.resource.service.FormTemplateService;
 import cn.aios.resource.service.KbService;
@@ -32,6 +34,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -93,6 +96,11 @@ public class WorkerIntakeService {
     private final OrgMemberMapper memberMapper;
     /** 表单模板服务：按 form_code 取 ACTIVE 表单的字段标签（与库定义同源）。 */
     private final FormTemplateService formTemplateService;
+    /**
+     * 数字员工表：意图识别后要回答「这句话该交给哪位在册员工」，只能查本租户的真实清单
+     * （候选不能由前端拼，见 {@link #matchWorkers}）。
+     */
+    private final AgentWorkerMapper workerMapper;
     /** 数字人能力声明服务：第 7 项「声明的能力自检」复用其 checkCapabilities。 */
     private final WorkerCapabilityService workerCapabilityService;
     /**
@@ -196,7 +204,114 @@ public class WorkerIntakeService {
         out.put("held", PermissionCatalog.holds(user, permission));
         out.put("pending", (permission != null && !permission.isBlank())
                 ? permissionGrantService.hasPending(user, permission) : false);
+        /* 「这句话该交给哪位在册数字员工」—— H5「新工作任务」据此直接跳人。
+           为什么不放前端算：意图接口只回 4 个 WorkerRole 角色码（GENERAL/LEAVE_APPROVER/…），
+           而 OA 模块员工是 43 个模块码（OA_LEAVE/OA_DOC/…，见 V83），两套编码前端无法可靠互译；
+           更要紧的是「哪句话像哪位员工」属于业务判断，只该有一处实现（铁律 1）。
+           故在本方法里用**本租户的真实在册清单**算好候选，前端只做「唯一最高分就跳」。 */
+        out.put("workers", matchWorkers(user, text, role.code()));
         return out;
+    }
+
+    /**
+     * 意图文本 → 本租户在册数字员工候选（按匹配度降序，最多 3 个）。
+     *
+     * <p><b>解决什么</b>：H5「新工作任务」原来拿 {@code intent.role} 去和 {@code worker_type}
+     * 精确相等，而两者是两套编码（角色码 vs 模块码），43 个 OA 模块一个都撞不上 ——
+     * 用户输完一句话只会看到「未能识别类型，请手动选择」。这里把「最像谁」在服务端算出来。</p>
+     *
+     * <p><b>怎么算</b>（全部是字面匹配，不引入第二套语义模型）：
+     * <ol>
+     *   <li><b>类型直译</b> 100 分：把角色码按同一套规则翻成模块码（{@code LEAVE_APPROVER}
+     *       → {@code OA_LEAVE}；表单码同理），命中 {@code worker_type} 即最高分。</li>
+     *   <li><b>名称关键词</b> 10 分：从员工名里剥掉「数字人 / 助手 / 管理 / 中心」这类通用后缀，
+     *       剩下的词（「公文」「考勤」）与词尾 2–3 字（「周报」「报销」）出现在用户句子里即命中。
+     *       这一步覆盖「帮我订个会议室」「考勤异常怎么申诉」这类意图分类器给不出专用类型的问句。</li>
+     *   <li><b>平台模块优先</b> +1：同分时 {@code OA_*} 模块员工排在自建通用员工之前
+     *       （本环境有自建员工 {@code worker_type=GENERAL} 名叫「每日考勤」，会与「考勤管理数字人」同分）。</li>
+     * </ol>
+     * 只读、无副作用；{@code user} 为空（内部透传调用）时返回空列表，绝不因此让意图接口整体失败。</p>
+     */
+    private List<Map<String, Object>> matchWorkers(AuthUser user, String text, String roleCode) {
+        if (user == null || user.getTenantId() == null || text == null || text.isBlank()) {
+            return List.of();
+        }
+        if (workerMapper == null) {
+            // 无 Spring 上下文的单测里协作者一律传 null（见 WorkerIntake*Test）：候选为空，接口照常返回
+            return List.of();
+        }
+        List<AgentWorker> rows;
+        try {
+            rows = workerMapper.selectList(new LambdaQueryWrapper<AgentWorker>()
+                    .eq(AgentWorker::getTenantId, user.getTenantId())
+                    .eq(AgentWorker::getEnabled, 1)
+                    .eq(AgentWorker::getIsTemplate, 0));
+        } catch (Exception e) {
+            // 候选清单是「锦上添花」：查不到就退回「让用户自己选」，不能拖垮意图接口
+            log.warn("数字员工候选查询失败，本次返回空候选: {}", e.getMessage());
+            return List.of();
+        }
+        String role = roleCode == null ? "" : roleCode.toUpperCase();
+        Set<String> typeCodes = roleTypeCodes(role);
+        List<Map<String, Object>> scored = new ArrayList<>();
+        for (AgentWorker w : rows) {
+            int score = 0;
+            String type = w.getWorkerType() == null ? "" : w.getWorkerType().toUpperCase();
+            if (!typeCodes.isEmpty() && typeCodes.contains(type)) {
+                score += 100;
+            }
+            for (String key : nameKeys(w.getName())) {
+                if (text.contains(key)) {
+                    score += 10;
+                    break;
+                }
+            }
+            if (score > 0 && type.startsWith("OA")) {
+                score += 1;   // 同分时平台模块优先（自建 GENERAL 员工不与模块争）
+            }
+            if (score > 0) {
+                Map<String, Object> one = new LinkedHashMap<>();
+                one.put("id", w.getId());
+                one.put("name", w.getName());
+                one.put("workerType", w.getWorkerType());
+                one.put("score", score);
+                scored.add(one);
+            }
+        }
+        scored.sort((a, b) -> Integer.compare((int) b.get("score"), (int) a.get("score")));
+        return scored.size() > 3 ? scored.subList(0, 3) : scored;
+    }
+
+    /** 角色码 → 可能的模块码（与 H5 侧 oaIntentCodes 同一套规则，此为其唯一实现来源）。 */
+    private static Set<String> roleTypeCodes(String role) {
+        if (role.isBlank() || "GENERAL".equals(role)) {
+            // GENERAL 是「没识别出专用类型」的缺省值，不当类型码用（自建员工可能就叫 GENERAL）
+            return Set.of();
+        }
+        Set<String> codes = new LinkedHashSet<>();
+        codes.add(role);
+        String stripped = role.replaceAll("_(APPROVER|ASSISTANT|DRAFTER|HANDLER|AGENT)$", "");
+        codes.add(stripped);
+        codes.add("OA_" + stripped);
+        return codes;
+    }
+
+    /** 员工名 → 关键词（剥通用后缀 + 词尾 2–3 字），用于「这句问句像不像它」。 */
+    private static Set<String> nameKeys(String name) {
+        Set<String> keys = new LinkedHashSet<>();
+        if (name == null || name.isBlank()) {
+            return keys;
+        }
+        String core = name.trim().replaceAll("(数字人|数字员工)$", "")
+                .replaceAll("(助手|管理|中心)$", "");
+        if (core.length() >= 2) {
+            keys.add(core);
+        }
+        if (core.length() >= 3) {
+            keys.add(core.substring(core.length() - 2));
+        }
+        keys.remove("");
+        return keys;
     }
 
     private JsonNode callPython(String text) {

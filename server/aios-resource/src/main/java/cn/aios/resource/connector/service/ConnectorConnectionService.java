@@ -90,7 +90,21 @@ public class ConnectorConnectionService {
         if (insert) {
             connectionMapper.insert(c);
         } else {
-            connectionMapper.updateById(c);
+            /* ★ 更新必须走 LambdaUpdateWrapper 显式 set（2026-11-06 修）：
+               updateById 是 NOT_NULL 策略，上两行 setLastError(null)/setDisconnectedAt(null)
+               **不会进 UPDATE 语句** ⇒ 重连成功后库里仍挂着上一次的错误文案与断开时间，
+               界面就会出现「状态=已连接，却还显示上次错误/断开于昨天」的自相矛盾。
+               disconnect() 早就改成了这套写法，connect() 这条一直漏着。 */
+            connectionMapper.update(null,
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConnectorConnection>()
+                            .eq(ConnectorConnection::getId, c.getId())
+                            .set(ConnectorConnection::getStatus, ConnectorConnection.STATUS_CONNECTED)
+                            .set(ConnectorConnection::getAccountLabel, email)
+                            .set(ConnectorConnection::getCredentialJson, credJson)
+                            .set(ConnectorConnection::getConnectedAt, now)
+                            .set(ConnectorConnection::getLastCheckedAt, now)
+                            .set(ConnectorConnection::getLastError, null)
+                            .set(ConnectorConnection::getDisconnectedAt, null));
         }
         return new ConnectResult(ConnectorConnection.STATUS_CONNECTED, email);
     }
@@ -257,7 +271,15 @@ public class ConnectorConnectionService {
                 c.setStatus(ConnectorConnection.STATUS_CONNECTED);
                 c.setLastCheckedAt(LocalDateTime.now());
                 c.setLastError(null);
-                connectionMapper.updateById(c);
+                /* 与 connect() 同一个坑（2026-11-06）：updateById 会跳过 null 字段 ⇒
+                   「重新检测通过」之后旧的 lastError 仍留在库里，界面继续显示上次失败原因。
+                   这里显式 set NULL，成功即清干净。 */
+                connectionMapper.update(null,
+                        new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConnectorConnection>()
+                                .eq(ConnectorConnection::getId, c.getId())
+                                .set(ConnectorConnection::getStatus, ConnectorConnection.STATUS_CONNECTED)
+                                .set(ConnectorConnection::getLastCheckedAt, c.getLastCheckedAt())
+                                .set(ConnectorConnection::getLastError, null));
                 return new VerifyResult(ConnectorConnection.STATUS_CONNECTED, null);
             }
             c.setStatus(ConnectorConnection.STATUS_UNVERIFIED);

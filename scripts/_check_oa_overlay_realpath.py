@@ -10,6 +10,13 @@
   2. 真实气泡进来后，滚动渐隐 + 让位 + 隐藏三件事都成立。
   3. 让位期间 scrollTop 不被钳制（正在翻历史的人不被顶走）。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import pathlib
 

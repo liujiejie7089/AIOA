@@ -38,6 +38,12 @@
 仅在原本未配置时才写入测试假值，并在复原时**显式清空**（空串＝显式清空），
 避免把「未配置」伪装成「已配置」、或把真实凭据覆盖成假值。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import json
 import os

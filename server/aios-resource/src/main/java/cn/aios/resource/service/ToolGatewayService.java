@@ -202,7 +202,15 @@ public class ToolGatewayService {
         // 检索参数（专家配置 topK/threshold/retrievalMode/kbScope 经 agent 透传，真实生效）
         int topK = intArg(args, "topK", MAX_ROWS);
         double threshold = doubleArg(args, "threshold", 0.0);
-        String mode = args == null ? null : String.valueOf(args.get("mode"));
+        // 模式必须是 null（=默认 hybrid）或三选一。踩过的坑：args 里没有 mode 时
+        // String.valueOf(null) 得到的是**字符串 "null"**，store 认不出这个模式 ⇒
+        // 关键词与向量两路都不打分 ⇒ 恒返回 0 条，而调用方看到的是「ok:true, data:[]」，
+        // 于是模型答「知识库里没有」。模型不传 mode 是常态，这条路径必须走默认值。
+        String mode = strArg(args, "mode");
+        if (mode != null && (mode.isBlank() || "null".equalsIgnoreCase(mode)
+                || "auto".equalsIgnoreCase(mode) || "default".equalsIgnoreCase(mode))) {
+            mode = null;
+        }
         List<Long> scope = docIdScope(args);
         List<KnowledgeStore.KbHit> hits = kbService.search(
                 user.getTenantId() == null ? 0L : user.getTenantId(), uid, keyword.trim(),
@@ -228,6 +236,14 @@ public class ToolGatewayService {
         SqlQueryToolService.SqlResult r = sqlQueryToolService.query(
                 sql, user.getTenantId() == null ? 0L : user.getTenantId());
         return r.toMap();
+    }
+
+    /** 取字符串参数：**缺省返回 null**（不要用 String.valueOf，它会把 null 变成 "null"）。 */
+    private static String strArg(Map<String, Object> args, String key) {
+        if (args == null || args.get(key) == null) {
+            return null;
+        }
+        return String.valueOf(args.get(key));
     }
 
     private static int intArg(Map<String, Object> args, String key, int def) {

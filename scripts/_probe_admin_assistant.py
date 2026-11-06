@@ -4,6 +4,12 @@
 逐段打点，把「创建会话 / 创建 run / SSE 首包 / 收尾」四个环节分别定位，
 避免只看到「按钮点不动」这种笼统现象。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 import time

@@ -7,6 +7,12 @@
 起法：python _raw_dump_srv.py <port>
 抓到的字节打印到 stdout（ASCII 可见 + 长度）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import socket
 import sys
 import threading

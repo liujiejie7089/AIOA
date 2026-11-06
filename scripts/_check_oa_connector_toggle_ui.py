@@ -22,6 +22,12 @@
 
 用法：python scripts/_check_oa_connector_toggle_ui.py   退出码 = 失败项数。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import sys
 from pathlib import Path

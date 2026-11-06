@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """导出入驻租户账号清单（负责人 + 全部普通成员）为 Markdown 文件。"""
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import pymysql
 
 conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='',

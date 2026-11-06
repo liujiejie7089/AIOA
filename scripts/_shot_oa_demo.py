@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """oa-demo.html 视觉自检：390x844 视口截图 + console 错误/横向溢出检查。
 产出 scripts/_shot_oa/<name>.png（_* 不入库）。"""
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import pathlib, sys
 from playwright.sync_api import sync_playwright
 

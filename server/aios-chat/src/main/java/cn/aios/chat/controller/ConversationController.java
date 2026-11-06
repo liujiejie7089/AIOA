@@ -50,8 +50,10 @@ public class ConversationController {
             @RequestParam(name = "page", defaultValue = "1") long page,
             @RequestParam(name = "size", defaultValue = "20") long size,
             @RequestParam(name = "keyword", required = false) String keyword,
-            @RequestParam(name = "projectId", required = false) Long projectId) {
-        return ApiResponse.ok(conversationService.page(page, size, keyword, projectId));
+            @RequestParam(name = "projectId", required = false) Long projectId,
+            // onlyAsked=true：只返回已经提过问的会话（用户端「最近」用），默认 false 兼容旧调用
+            @RequestParam(name = "onlyAsked", defaultValue = "false") boolean onlyAsked) {
+        return ApiResponse.ok(conversationService.page(page, size, keyword, projectId, onlyAsked));
     }
 
     @Operation(summary = "会话详情")
@@ -72,6 +74,18 @@ public class ConversationController {
     public ApiResponse<Void> rename(@PathVariable Long id,
                                     @RequestBody(required = false) RenameConversationRequest request) {
         conversationService.rename(id, request == null ? null : request.getTitle());
+        return ApiResponse.ok();
+    }
+
+    @Operation(summary = "置顶 / 取消置顶会话（长按菜单）")
+    @PutMapping("/{id}/pin")
+    public ApiResponse<Void> pin(@PathVariable Long id,
+                                 @RequestBody(required = false) java.util.Map<String, Object> body) {
+        // 缺省视为「置顶」：前端长按菜单点在「置顶」上，传 {"pinned":true}；
+        // 不传时按置顶处理更符合直觉（误触后再点一次「取消置顶」即可，幂等）。
+        Object v = body == null ? null : body.get("pinned");
+        boolean pinned = v == null || Boolean.parseBoolean(String.valueOf(v));
+        conversationService.pin(id, pinned);
         return ApiResponse.ok();
     }
 

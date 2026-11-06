@@ -5,6 +5,13 @@
 E. getTouristCountyData 是否可能只是参数形式不对？（若换成区县编码仍全零，才能定性为恒空接口）
 F. getDetailsData（保护区/旅游两前缀）的 type 语义：是 1 能出数据、还是各 type 都可？
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import urllib.error

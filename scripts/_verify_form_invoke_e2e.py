@@ -30,6 +30,12 @@
 退出码 = 失败条数。**不 stub 提交端点**：只伪造 SSE 流（避免依赖真实 LLM 的随机性），
 提交打到真后端，所以「表单校验 / 落库 / 分流 / 回执」都是真的。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import asyncio
 import json
 import os

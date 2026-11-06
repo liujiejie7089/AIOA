@@ -364,6 +364,14 @@ public class McpRegistryService {
 
     /** 事务内按 name 覆盖写工具目录：存在则更新描述/结构/只读，多余则逻辑删除。 */
     private int syncTools(McpServer s, List<McpProbeClient.Tool> tools) {
+        /* ★ 先「复活」曾被逻辑删除的同名行（2026-11-06 修）。
+           唯一键 uk_mcp_tool(server_id, name) 不区分删除态 ⇒ 软删行仍占键；
+           而 @TableLogic 让 selectList 看不见它们、也让 LambdaUpdateWrapper 改不到它们。
+           不先复活，下面的 byName 查不到 ⇒ 当新工具 insert ⇒ 撞唯一键。
+           场景：某次探活工具少了（被软删），下次探活又回来了。 */
+        for (McpProbeClient.Tool t : tools) {
+            toolMapper.restoreDeleted(s.getId(), t.getName());
+        }
         List<McpServerTool> existing = toolMapper.selectList(new LambdaQueryWrapper<McpServerTool>()
                 .eq(McpServerTool::getServerId, s.getId()));
         Map<String, McpServerTool> byName = existing.stream()
@@ -386,7 +394,9 @@ public class McpRegistryService {
             row.setReadOnly(t.isReadOnly() ? 1 : 0);
             row.setSort(sort++);
             row.setUpdatedAt(LocalDateTime.now());
-            row.setDeletedAt(null); // 恢复（若曾被逻辑删除）
+            /* 删掉旧的 `row.setDeletedAt(null)`：它对**新对象**毫无作用（id 为 null 走 insert），
+               对已存在行又是 NOT_NULL 策略下的空操作；真正负责「复活」的是上面那次
+               restoreDeleted 裸 SQL（注释里写清了为什么只能用裸 SQL）。 */
             if (row.getId() == null) {
                 toolMapper.insert(row);
             } else {

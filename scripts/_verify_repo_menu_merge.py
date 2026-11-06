@@ -28,6 +28,13 @@
 用法：python scripts/_verify_repo_menu_merge.py      （需后端 :8080 已起，且管理端产物已同步）
 输出证据截图到 logs/proof/。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import os
 

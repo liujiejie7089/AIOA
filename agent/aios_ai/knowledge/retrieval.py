@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 import re
 
+from types import SimpleNamespace
+
 from aios_ai.knowledge.kb import KB_TOOL, _citations_from_tool
 from aios_ai.prompt.builder import build_kb_reference_block
 
@@ -33,6 +35,81 @@ _CHITCHAT_RE = re.compile(
     r")+$",
     re.IGNORECASE,
 )
+
+# 查询清洗（2026-11-06，docs/74 根因 5）：原先直接把**整句**当关键词丢给检索，
+# 「帮我统计下四川省的省级非遗项目有多少个?」被拆成 19 个 2-gram，其中
+# 「帮我/我统/计下/有多/少个」全是噪声，真正有区分度的只有「非遗」——
+# 覆盖率被稀释，排序也随之失准。
+_ASK_PREFIX = re.compile(
+    r"^(?:那么|那个|然后|另外)?"
+    # 长词必须排在短词**前面**：Python 的交替是最左优先，`替我` 写在 `替我看看` 之前
+    # 会先吃掉短词，把「看看」留在查询里当噪声；`(?:...)+` 只会拿同一批分支反复匹配，
+    # 补不回已经被漏掉的更长的词（B4）。同理 `麻烦` 先前置会被 `麻烦你` 顶掉。
+    r"(?:请帮我|麻烦你|替我看看|替我瞧瞧|帮我看看|帮我看下|告诉我"
+    r"|请|麻烦|帮我|帮忙|给我|替我|我想|我要|我需要|你能|能否|可以"
+    r"|看看|瞧瞧|查一下|看一下)+"
+)
+_ASK_TAIL = re.compile(
+    r"(?:一共有|共有|总共有|总共|合计)?"
+    r"(?:有多少个|有多少项|有多少条|有多少|多少个|多少项|多少条|多少人|多少"
+    r"|是哪些|是什么|有哪些|有什么|怎么样|如何|吗|呢|吧)"
+    r"[\s。.!！?？]*$"
+)
+_QUOTED = re.compile(r"[「『\"“《]([^」』\"”》]{2,30})[」』\"”》]")
+
+
+def query_variants(question: str | None) -> list[str]:
+    """把问句拆成 1~3 条检索变体（原句 + 清洗句 + 引号内的书名/词条）。
+
+    只做**确定性**清洗，不额外调用模型：去掉口语前缀与疑问尾缀，
+    让「四川省 省级 非遗 项目 名录」这类核心词不被"帮我/多少个"稀释。
+    顺序即优先级；去重后返回，最少一条（原句）。
+    """
+    if not question:
+        return []
+    out: list[str] = []
+    raw = question.strip()
+    if raw:
+        out.append(raw)
+    cleaned = _ASK_PREFIX.sub("", raw)
+    cleaned = _ASK_TAIL.sub("", cleaned)
+    cleaned = re.sub(r"[\s，,。.、!！?？~～]+", " ", cleaned).strip()
+    if cleaned and cleaned != raw:
+        out.append(cleaned)
+    for q in _QUOTED.findall(raw):
+        q = q.strip()
+        if q and q not in out:
+            out.append(q)
+    # 变体最多 3 条：再多只是重复打同一个库，白白拉长首字延迟
+    return out[:3]
+
+
+def _merge_hits(groups: list[list]) -> list:
+    """多路召回合并：按 (docId, chunkIndex) 去重，同片段取最高分，按分数降序。
+
+    为什么要合并而不是取第一路：清洗句召回的是「标题/统计块」这类高区分度片段，
+    原句召回的是「正文命中」。两条都要 —— 只留一条会丢另一条的收益。
+    """
+    best: dict = {}
+    order: list = []
+    for rows in groups:
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            key = (row.get("id"), row.get("chunkIndex"))
+            if key not in best:
+                best[key] = row
+                order.append(key)
+                continue
+            prev = best[key]
+            try:
+                if float(row.get("score") or 0) > float(prev.get("score") or 0):
+                    best[key] = row
+            except (TypeError, ValueError):
+                pass
+    merged = [best[k] for k in order]
+    merged.sort(key=lambda r: float(r.get("score") or 0), reverse=True)
+    return merged
 
 
 def is_chitchat(text: str | None) -> bool:
@@ -76,21 +153,41 @@ def strip_kb_tool(tools: list[dict]) -> list[dict]:
 
 async def pre_retrieve(tool_client, question: str, top_k: int, threshold: float,
                        mode: str, kb_scope: str) -> tuple[str, list[dict]]:
-    """进入工具循环前的知识库预检索。
+    """进入工具循环前的知识库预检索（多查询变体 + 合并去重）。
 
     返回 (参考块文本, 引用条目列表)。**任何异常都不上抛**——检索失败只记日志，
     保证 run 能跑完（这是既有产品行为，勿改成抛错）。
+
+    为什么打多路（2026-11-06，docs/74 根因 5）：整句直查时「帮我/多少个」这类词会把
+    覆盖率稀释掉，真正有区分度的词（非遗、名录）被淹没。这里用原句 + 清洗句各查一次
+    （清洗句只做确定性去前后缀，不额外调模型），按片段去重后合并 —— 原句负责正文命中，
+    清洗句负责标题/统计块命中，两条都要。
     """
-    try:
-        args = inject_search_params(KB_TOOL, {"keyword": question},
-                                    top_k, threshold, mode, kb_scope)
-        outcome = await tool_client.invoke(KB_TOOL, args)
-    except Exception as exc:  # 检索失败不冒泡成 error，保证 run 能跑完
-        logger.warning("kb pre-retrieval failed (ignored): %s", exc)
-        return "", []
-    if not (outcome.ok and isinstance(outcome.data, list) and outcome.data):
+    variants = query_variants(question) or ([question] if question else [])
+    groups: list[list] = []
+    for v in variants:
+        try:
+            args = inject_search_params(KB_TOOL, {"keyword": v},
+                                        top_k, threshold, mode, kb_scope)
+            outcome = await tool_client.invoke(KB_TOOL, args)
+        except Exception as exc:  # 检索失败不冒泡成 error，保证 run 能跑完
+            logger.warning("kb pre-retrieval failed (ignored): %s", exc)
+            continue
+        data = getattr(outcome, "data", None)
+        if not getattr(outcome, "ok", False) or not isinstance(data, list) or not data:
+            continue
+        groups.append(data)
+    if not groups:
         logger.info("kb pre-retrieval returned no data")
         return "", []
-    block = build_kb_reference_block(outcome.data)
-    logger.info("kb pre-retrieval hit %d docs", len(outcome.data))
-    return block, _citations_from_tool(KB_TOOL, outcome)
+    merged = _merge_hits(groups)
+    if not merged:
+        return "", []
+    # 上限 = 2×topK（默认 10 条）：多路召回要保留清洗句带回来的高区分度片段，
+    # 但也不能让参考块无界膨胀（每条 ≤500 字，10 条约 5KB，已是上限）。
+    merged = merged[: max(top_k * 2, top_k)]
+    block = build_kb_reference_block(merged)
+    logger.info("kb pre-retrieval hit %d rows (variants=%d, merged=%d)",
+                sum(len(g) for g in groups), len(groups), len(merged))
+    # 引用条目按合并结果给：只按第一路给会漏掉清洗句召回的那几份文档
+    return block, _citations_from_tool(KB_TOOL, SimpleNamespace(ok=True, data=merged))

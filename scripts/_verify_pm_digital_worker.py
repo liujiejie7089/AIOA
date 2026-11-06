@@ -20,6 +20,12 @@
 ★ 用法：python scripts/_verify_pm_digital_worker.py
   前置：后端 :8080 已起（含本批代码）；V74/V76 已应用；MySQL 127.0.0.1:3306 可直连。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 import time

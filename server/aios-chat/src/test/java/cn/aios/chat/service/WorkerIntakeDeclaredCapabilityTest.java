@@ -30,7 +30,8 @@ class WorkerIntakeDeclaredCapabilityTest {
         // formTemplateService, workerCapabilityService, serviceTokenProvider
         // 末位令牌传 null：本类只调 checkDeclaredCapabilities()，不触达 HTTP（intent 才用令牌）。
         return new WorkerIntakeService(
-                new ObjectMapper(), null, null, null, null, null, null, null, null, forms, caps, null);
+                new ObjectMapper(), null, null, null, null, null, null, null, null, forms,
+                null, caps, null);   // null = workerMapper（候选清单，本类不校验）
     }
 
     private static AuthUser user() {

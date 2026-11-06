@@ -17,6 +17,13 @@
 用法：python scripts/_verify_oa_qr_modal.py     退出码 = 失败项数。
 （Playwright 装在 agent/.venv 与托管 3.13 里，下面任一都能跑。）
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 from pathlib import Path
 

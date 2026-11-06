@@ -27,6 +27,12 @@ UI 已改：内置 MCP 服务器**并入**对应连接器卡（卡内 .oa-mcp-in
 用法（由托管 python 3.13 跑，本机 Playwright 装在那套解释器里）：
   python scripts/_verify_oa_mcp_panel.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import functools
 import glob
 import http.server

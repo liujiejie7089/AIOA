@@ -23,6 +23,12 @@ renderFormHtml 返回的 HTML 字符串 / 拦截到的真实 SSE 帧），且每
 
 退出码非零 = 有断言失败。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import asyncio
 import json
 import os

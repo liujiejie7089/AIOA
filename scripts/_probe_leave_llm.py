@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 """探针：确认本环境后端(:8080)+agent(:8000)+LLM 是否对对话 runs 有真实响应。"""
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import sys
 import urllib.error

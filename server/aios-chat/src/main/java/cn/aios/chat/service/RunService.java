@@ -362,10 +362,24 @@ public class RunService {
         run.setCreatedBy(user.getUserId());
         agentRunMapper.insert(run);
 
-        conversationMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChatConversation>()
+        // 首轮自动标题（V108）：用户端「最近」列表要显示的是「用户的问题总结」，
+        // 而不是创建方传进来的技术名（grade-sheet-probe / enum-probe）或「新会话」。
+        // 只在第一轮做（msg_count 还是 0），且尊重用户手动改过的标题（title_source=MANUAL）。
+        String autoTitle = null;
+        if (!ChatConversation.TITLE_MANUAL.equals(conversation.getTitleSource())
+                && (conversation.getMsgCount() == null || conversation.getMsgCount() == 0L)) {
+            autoTitle = summarizeQuestion(text);
+        }
+
+        var convUpdate = new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChatConversation>()
                 .eq(ChatConversation::getId, conversationId)
                 .setSql("msg_count = COALESCE(msg_count, 0) + 1")
-                .set(ChatConversation::getLastMsgAt, LocalDateTime.now()));
+                .set(ChatConversation::getLastMsgAt, LocalDateTime.now());
+        if (autoTitle != null) {
+            convUpdate.set(ChatConversation::getTitle, autoTitle)
+                    .set(ChatConversation::getTitleSource, ChatConversation.TITLE_AUTO);
+        }
+        conversationMapper.update(null, convUpdate);
 
         activityLogService.record(run.getTenantId(), user.getUserId(),
                 "发起会话（" + displayTitle(conversation) + "）", "ok", "成功");
@@ -2370,6 +2384,37 @@ public class RunService {
             return "会话";
         }
         return title.replace(" · 会话", "").trim();
+    }
+
+    /** 自动标题的字数上限（手机「最近」列表一行放得下，超出补省略号）。 */
+    static final int TITLE_MAX = 30;
+
+    /**
+     * 把用户第一句问题浓缩成会话标题（「用户的问题总结」，V108）。
+     *
+     * <p>只做<b>确定性</b>清洗，不调模型：① 折叠换行与连续空白；② 去掉「帮我/麻烦你」这类
+     * 口语前缀（标题要的是问题本身）；③ 按<b>码点</b>截断到 {@link #TITLE_MAX} 并补省略号。</p>
+     *
+     * <p>为什么不调模型：标题要在第一轮就出现在「最近」列表里，等一次模型调用意味着
+     * 刚建的会话几秒内还叫「新会话」；而标题只需「看得出在问什么」，30 字足够。</p>
+     */
+    static String summarizeQuestion(String text) {
+        if (text == null) {
+            return null;
+        }
+        String t = text.replaceAll("\\s+", " ").trim();
+        // 口语前缀与 agent 侧 _ASK_PREFIX 同口径（长词在前，否则「替我」会吃掉「替我看看」）
+        t = t.replaceAll("^(?:你好|您好|hi|hello|请帮我|麻烦你|帮我看看|帮我|麻烦|请|给我|替我看看|替我"
+                + "|我想问一下|我想问|我想|我要)+[\\s，,。.：:、!！?？]*", "");
+        t = t.trim();
+        if (t.isEmpty()) {
+            return null;
+        }
+        // 按码点截断：substring 按 char 切会把 emoji 切成半个代理对，存库后就是乱码
+        if (t.codePointCount(0, t.length()) <= TITLE_MAX) {
+            return t;
+        }
+        return t.substring(0, t.offsetByCodePoints(0, TITLE_MAX)) + "…";
     }
 
     private void markFailed(AgentRun run, String message) {

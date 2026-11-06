@@ -15,6 +15,12 @@
 夹具说明：会新增一条**已通过的事假记录**（零额度成本、可被人工忽略，reason 里带自动化标记）。
 不留清理步骤 —— 请假单无删除接口，且已通过的单据正是演示数据的一部分。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import asyncio
 import sys
 

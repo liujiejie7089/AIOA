@@ -19,6 +19,12 @@
     python scripts/_e2e_pm_ui.py --selftest   # 只跑判据有效性（喂假 DOM，必须在 GHOST 上报红）
 前置：后端 :8080 已起且 V71 已应用；webroot 已由 web/apps/shell/dist 同步（单端口形态）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import re
 import sys
 import time

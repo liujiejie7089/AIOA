@@ -13,6 +13,12 @@
 ★ 自净：临时项目全部软删（铁律 11 —— 造数据的脚本收尾必须让数据退出业务可见面）。
 ★ 用法：python scripts/_smoke_pm.py   （需要后端 8080 已起、V71 迁移已应用）
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import sys
 import time
 

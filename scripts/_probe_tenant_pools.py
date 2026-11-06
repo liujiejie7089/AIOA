@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """只读探查：各租户的资源池席位（用来判断「调整资源」弹窗点第一行时 0 是否本来就对）。"""
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import pymysql
 
 conn = pymysql.connect(host="localhost", port=3306, user="root", password="",

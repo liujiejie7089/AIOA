@@ -14,6 +14,13 @@
 - 401/403 → 服务在，需鉴权（也是一种「可达」）
 - 404 / 502 / 000 → 不可达或无此路径，并区分「服务不存在」与「网关无上游」
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import urllib.error

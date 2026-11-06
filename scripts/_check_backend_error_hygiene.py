@@ -22,6 +22,12 @@
     python scripts/_check_backend_error_hygiene.py [--base http://127.0.0.1:8080]
 需要：后端在线；本机有 jcmd（可选，缺失时 S5 记 SKIP 并打印具体原因）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import json
 import os

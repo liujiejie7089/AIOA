@@ -13,6 +13,12 @@ h5-inputbar-verify —— 独立验证「语音停录修复 + 输入栏重排 + 
 
 用法： python scripts/_verify_h5_inputbar.py
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import functools
 import hashlib
 import http.server

@@ -33,6 +33,12 @@
 前置：Java 后端 :8080 在线；mcp-hub :8099 在线（AIOS_MCP_HUB=true）。
 退出码 = 失败项数。全程只读 + 一次必被拒绝的 PUT，不留任何状态。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import json
 import sys

@@ -11,6 +11,13 @@
     已知不存在模块 zzz_nope + 假方法 → 基线 B
   凡响应形态等于 A、且明显不等于 B 的，判为「模块存在」。
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import urllib.error

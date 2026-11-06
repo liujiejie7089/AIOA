@@ -158,6 +158,6 @@ def build_block(types: list[dict] | None, handlers: list[dict] | None) -> str:
                      + (f"（{title}）" if title else ""))
     lines.append(
         "提交用工具 submit_leave_request，参数：leaveTypeCode / startDate(YYYY-MM-DD) / "
-        "endDate(YYYY-MM-DD) / reason / assigneeUserId。"
+        "endDate(YYYY-MM-DD) / reason / assigneeUserId（单个）或 assigneeUserIds（多个，数组顺序即审批顺序）。"
         "**不要**再用正文追问这些值 —— 用户已在卡片里选过。")
     return "\n".join(lines)

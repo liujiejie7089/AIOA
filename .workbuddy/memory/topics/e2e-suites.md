@@ -555,15 +555,65 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 | `_verify_connectors.py` | **25** | Java:8080 + 本机 mysql（C10b 第二源读库） | C1 期望 `['qq_mail','wecom_cli']`；C9a/C9b 已下线 code 必须 **404 不存在**；C10a 回调匿名 401 / C10b 带 token 404；C15/C15b 工具目录 |
 | `_verify_connectors_registry.py` | **15** | 无后端（自起 uvicorn，mock 身份） | 主体换成运行期登记的 `provider=vault`；S13 明文扫描在清除之前跑并先解出真值 |
 | `_verify_mcp_registry.py` | **14** | Java:8080 + hub:8099 + mysql | M1 期望 retired=0；M1b 保留行+不可信+无工具；M13 反向断言 hub 无残留 |
+| `_verify_kb_nonheritage.py` | **23** | Java:8080 + Python312(pymysql/openpyxl) | 240 行真表 → 切片/摘要/聚合/参考块（docs/74） |
+| `_verify_kb_grade_sheet.py` | **31** | Java:8080 + Python312 | 真实 PDF 成绩单 id=249：解析 8 / 切片 6 / 检索 3 / 聚合 6 / 参考块 3（docs/75） |
+| `_verify_kb_grade_enum.py` | **19** | Java:8080 + agent:8000 | 枚举类：切片 8（总数/正文块/汇总整表/明细 20 行）+ 分页 8（50+12=62 不重不漏、sheet 切表）+ 端到端 3（回答里 62 行课程）（docs/76） |
+| `_verify_kb_grade_answer.py` | **5** | Java:8080 + agent:8000 | **端到端问答**：回答里必须出现 2.69 / 80.26 / 134，且不是「未取得」（LLM 非确定，只断言数字与拒答） |
 | `_verify_mcp_hub.py` | 全通过 | hub:8099 | 真 MCP 客户端连 `/mcp/wecom_cli`（5 工具，required 逐字对齐） |
 | `_verify_connector_state_sync.py` | **7** | Java + 服务令牌 | 主体 wecom_cli（验同源机制，与主体无关） |
 | `_verify_connector_tenant_config.py` | **8** | Java + hub | **整体换主体**：验「不需要管理员配凭据」的形态（清单空 / 视图拒绝 / PUT 不静默成功 / 已下线 404） |
 | `_verify_agent_mcp_wiring.py` | **6** | 本地桩 MCP :8098 | 与连接器无关 |
 | `_verify_agent_textual_toolcall.py` | **12** | agent/.venv + Java:8080（E 段真跑一轮） | 伪调用兜底：U 段用**库里真实坏样本**单测解析器 + 4 种不该救；E 段不变量「正文写出的调用必须都真执行过」 |
 | `_verify_oa_connector_ui.py` / `_verify_oa_mcp_panel.py` | **17 / 19** | 无后端（打桩） | 桩数据第二张卡已换成 `wecom_cli` |
+| `_verify_h5_oa_5fix.py` | **15** | Java:8080（H5 由 `/aios/h5/` 提供）+ agent:8000 | H5/OA 五项：P1 新任务落人（真接口 + 真员工；含「不乱派」反向）· P1b 选完人原句回填 · P2 我的四统计跳转（collab 导轨要对）· P3 日程 datetime-local + 倒挂拦下 · P4 模块 9 组 43 卡无空组 · P5 键盘收底栏（body.kb-on）。脚本自己 abort `POST .../runs`，白名单只放 `/asr/status` 401（docs/77） |
 | `_verify_h5_inputbar.py` | **53** | 无后端（自起静态站 + 打桩，需 playwright） | 语音手势/输入栏 + 2026-10-30 四项交互：**6 组**输入框自增高 · **7 组**气泡内停止（真点、真 cancel）· **8 组**滚动渐隐（离底判据）· **3(OA) 组**「＋」浮层与连接器开关（开关真值=status/断开先确认） |
 | ~~`_verify_wecom_dual_mode_p0.py`~~ / ~~`_verify_wecom_group.py`~~ | 已删（24 / 7） | — | 被测能力本身被删，无法换主体；覆盖损失已在 docs/64 §9.7.3 记账 |
 
 **纪律**：连接器下线后，围绕它写的套件**不许直接删或跳过**——
 能换主体就换（state_sync→wecom_cli、tenant_config→「无需配置」形态、registry→provider=vault），
 换不了才删，且**必须在 docs 里记账覆盖损失**（本次：24+7 项随能力消失）。
+
+## 5.6 2026-11-06 评审 11 项后的回归面（可直接照跑）
+
+**一、修复自带单测（全绿，秒级）**
+`agent/tests/test_mcp_tool_errors.py` 8 · `agent/tests/test_kb_query_variants.py` 9 ·
+`McpRegistrySyncToolsTest` 4 · `ConnectorConnectionServiceTest` 3 · `KbTableQueryPagingTest` 11 ·
+`KeywordScorerTest` 10 · `GradeSheetExtractorTest` 6 · `AsrControllerTest` 5；`agent` 全量 **369 passed**。
+
+**二、近两天功能域（对现库，逐条已跑）**
+`_verify_h5_oa_5fix` **15/15** · `e2e_p0a_worker_intake` **41/41** · `_verify_kb_grade_sheet` **31/31** ·
+`_verify_kb_grade_enum` **19/19** · `_verify_kb_grade_answer` **5/5** · `_verify_kb_nonheritage` **23/23** ·
+`_verify_connector_state_sync` **7/7** · `_verify_mcp_registry` **14/14** · `_verify_mcp_e2e` **11/11**（需 agent/.venv）·
+`e2e_worker_schedule_exec` **17/18** · `_verify_project_isolation` **24/25+1skip**（需改口令，见下）。
+截图归档：`docs/assets/regression-2026-11-06/`（`_shot_regression_1106.py` 采 5 张，其余来自 `_shot_oa5/`）。
+
+**三、跑这一轮踩到的三条环境前提（缺一个就假红）**
+1. 后端必须带 `--aios.web.h5-dir=D:/aios/user-client`（否则 `/aios/h5/` 404，H5 套件全卡在 `#oaRoot`）。
+2. `mcp-hub` 必须 `WECOM_MOCK=1` + `WECOM_CONNECTOR_KEY` 起（否则 `/health` 503 `init_failed` ⇒ M13 红）。
+3. `_verify_mcp_e2e` 要用 `agent/.venv/Scripts/python.exe`（System Python 没有 `langchain_mcp_adapters`）。
+
+**四、两条已定性的「非回归」，别当红修**
+- `_verify_project_isolation` **G4**：读的 `user-client/_oa_app.js` **已不存在**（H5 合并为单文件 `index.html`）
+  ⇒ `appjs=""` 必失败；产物里 `projectConvWorker` 9 处、禁止的无条件复用 0 次 ⇒ 语义成立。
+  该套件还用 `dsj_admin/User@123` 登录，**真实口令已漂成 `Admin@123`**（查库 `sys_user` 有该账号）。
+  跑法：临时副本改口令（原套件不动），得 24/25 + 1 skip。
+- `e2e_worker_schedule_exec` **18 项里的探针那条**：agent 的 `/internal/v1/*` 已强制服务令牌，探针没带票 ⇒ 401，
+  不是「agent 跑在 h11」。前提用进程命令行独立确认（`--http httptools`）。**别为了让这条变绿去放宽它。**
+
+## `_verify_h5_conv_menu.py`（28 项，2026-11-06 起）
+
+「最近」会话列表：标题=问题总结 / 续聊 / 长按四项（置顶·重命名·查找·删除）+ 空壳会话不入口径。
+前置：后端 :8080 带 `--aios.web.h5-dir=D:/aios/user-client`；agent :8000（发 run 只为触发首轮标题，不等回答）。
+分段：T 系（接口）T1/T2/T3/T4/T5/T6/T7/T8；U 系（浏览器）U0/U0b/U0c/U1~U5/U6/U7。
+截图落 `docs/assets/regression-2026-11-06/20~26`。
+自纠记录：T7b 曾用「默认列表第一页还在不在」判「没被删」⇒ 假红，见 pitfalls 88。
+
+## `_verify_handler_confirm.py`（21 项，2026-11-06 起，docs/80）
+
+负责人确认环节：输入栏固定入口已删 / 发起后可选「默认负责人」或「指定负责人（多选，依次审批）」/ 回执含 handlers+dataFlow。
+前置：后端 :8080 带 `--aios.web.h5-dir=D:/aios/user-client`；Python312（要 pymysql，清理段直接改 `leave_balance`）。
+分段：**A** 接口·请假 A1 / A1b / A2 / A2b / A2c / A3 / A4 / A5 / A6 / A7（默认口径、指定两人顺序、指定人 seq 小于配置流、自审 400、非在职 400、重复去重、字段完整性）；
+**B1** 表单链 `notice_publish`（APPROVAL 类）同口径；**U** 浏览器 U1 / U2 / U2b / U3 / U4 / U4b / U5 / U5b / U6 / U7（入口已消失、核对面板、两选项默认选 DEFAULT、未选人拦截且零请求、选 2 人 chips 带序号且真 body 带 `assigneeUserIds`、回执渲染）。
+截图落 `docs/assets/regression-2026-11-06/30~34`。
+★ 造数据必须用 `quotaDaysPerYear=0` 的假种（CASUAL），否则每跑一次压 1 天 `pending_days` 把额度跑满 ⇒ 见 pitfalls 91。
+★ 请假提交路径是 `/v1/leave/requests`（**不在** `workflow` 前缀下）⇒ 见 pitfalls 90。

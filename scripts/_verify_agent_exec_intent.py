@@ -38,6 +38,12 @@ SKIP 纪律（铁律：绝不为转绿放宽断言 / 伪造 PASS）：
     python scripts/_verify_agent_exec_intent.py
 退出码：0 = 全过；>0 = 有 FAIL（=失败数）；仅 SKIP = 2。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import os
 import sys
 import time

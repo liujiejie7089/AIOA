@@ -4,6 +4,13 @@
 第一阶段：从列表接口抽取真实 ID
 第二阶段：带真实 ID 调详情接口；对首轮 500 接口按修正后的参数名重试
 """
+
+import sys
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import json
 import ssl
 import time

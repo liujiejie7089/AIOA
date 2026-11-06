@@ -5,13 +5,17 @@ import cn.aios.resource.entity.KbChunk;
 import cn.aios.resource.entity.KbDocument;
 import cn.aios.resource.store.KbRelationalDao;
 import cn.aios.resource.store.KnowledgeStore;
+import cn.aios.resource.support.GradeSheetExtractor;
+import cn.aios.resource.support.MarkdownTable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 知识库资料（FR-F）：上传入库 → 切片 → 检索 → 引用溯源。
@@ -138,11 +142,37 @@ public class KbService {
      */
     public KbDocument index(KbDocument doc, int chunkSize, int chunkOverlap) {
         try {
-            List<String> chunks = split(doc.getContent(), chunkSize, chunkOverlap);
+            // 拍平表格还原（docs/75）：PDF 成绩单是「四栏并排 + 表头拆两行 + 汇总标签行与数值行
+            // 分居两行」，取文本后列结构全丢，切片只剩「栏名」或只剩「数字」。这里先还原成
+            // Markdown 表并**回写正文**（kb_table_query 读的也是 content 字段），
+            // 使 PDF 与 Excel 共用同一条下游（列名分块 / 统计摘要 / 聚合查询）。
+            String enriched = GradeSheetExtractor.enrich(doc.getContent());
+            if (!enriched.equals(doc.getContent())) {
+                doc.setContent(enriched);
+                log.info("资料 {} 已还原为结构化成绩表（追加 Markdown 明细与汇总）", doc.getId());
+            }
+            // 表格感知切分（docs/74 P0-1）：每块带「《doc》/sheet｜列: a/b/c｜」前缀
+            List<String> chunks = new ArrayList<>(
+                    split(doc.getContent(), chunkSize, chunkOverlap, doc.getDocName()));
             if (chunks.isEmpty()) {
                 throw new IllegalArgumentException("正文为空，无法入库");
             }
+            // 统计摘要块置首位（docs/74 P0-2）：回答「共有多少条 / 分类各多少」。
+            // 必须排在切片 0，检索命中后可被优先注入；正文块整体后移一位。
+            List<String> stats = statsChunks(doc.getDocName(), doc.getContent());
+            if (!stats.isEmpty()) {
+                List<String> merged = new ArrayList<>(stats);
+                merged.addAll(chunks);
+                chunks = merged;
+            }
             int count = store.replaceChunks(doc, chunks);
+            // 落库自检（docs/74 P2）：声明值与实际行数不一致 = 「列表看着已索引、检索永远 0 条」，
+            // 这种状态原先完全静默，只有用户发现「AI 说没有」时才会暴露。
+            int actual = relationalDao.chunksOfDoc(doc.getId()).size();
+            if (actual != count) {
+                throw new IllegalStateException(
+                        "切片落库不完整（声明 " + count + " / 实际 " + actual + "），请重试入库");
+            }
             embedAll(doc.getId(), doc.getTenantId(), chunks);
             doc.setState(KbDocument.STATE_OK);
             doc.setChunkCount(count);
@@ -160,6 +190,24 @@ public class KbService {
         doc.setUpdatedAt(LocalDateTime.now());
         store.updateDocument(doc);
         return doc;
+    }
+
+    /**
+     * 为一篇文档里的每张表格生成一块统计摘要（docs/74 P0-2）。
+     *
+     * <p>为什么必须有：topK 默认 5，1241 行的表即使用完美检索也只覆盖 5 行 ——
+     * 拿 5 行明细去回答「共有多少条」是结构性不可能。摘要块把「行数 + 低基数列的分组计数」
+     * 压成一块，让聚合类问题第一次就有答案。</p>
+     */
+    private List<String> statsChunks(String docName, String content) {
+        List<String> out = new ArrayList<>();
+        for (MarkdownTable.Table t : MarkdownTable.parse(content, docName)) {
+            String text = MarkdownTable.statsText(docName, t);
+            if (!text.isEmpty()) {
+                out.add(text);
+            }
+        }
+        return out;
     }
 
     /** 对切片逐条向量化并回写（失败不中断整体，仅记录日志，检索时自动退化关键词）。 */
@@ -276,27 +324,92 @@ public class KbService {
 
     /** 带参数的切分：chunkSize 为单块字符数，chunkOverlap 为相邻块重叠字符数。 */
     static List<String> split(String content, int chunkSize, int chunkOverlap) {
+        return split(content, chunkSize, chunkOverlap, null);
+    }
+
+    /**
+     * 带文档名的切分：**表格走「列名 + 连续 N 行」**，其余按段落切（docs/74 P0-1）。
+     *
+     * <p>原实现按 {@code \n} 切段、单段 ≤ chunkSize 直接成块，而 Excel 转 Markdown 后
+     * <b>每个数据行都以 {@code \n} 结尾</b> ⇒ 表格被切成「一行一块」：500 行的表切出 503 块，
+     * 其中带列名的只有 1 块（表头那块，还常被 {@code ### Sheet1} 挤开）。模型看到
+     * {@code | 1 | 川剧 | 传统技艺 | 成都市 | 第六批 |} 并不知道哪列是"批次"。</p>
+     *
+     * <p>改法：解析出表格区间后<b>原位替换</b>为该表的「列名前缀 + 连续数据行」块；
+     * 紧贴表格上方的 {@code ### sheetName} 标题不再单独成块（信息已并入前缀）。</p>
+     *
+     * <p><b>2026-11-06 追加（docs/76）</b>：非表格内容原先是「一行一块」（{@code p.length() <= size}
+     * 就直接成块），于是 PDF 取出的 1800 字正文变成 <b>38 块</b>，每块只有 4 门课、没有列名 ——
+     * 命中也没法用，还挤掉真正的表格块。现在改为<b>按段落合并</b>：累积到 {@code size} 才落盘，
+     * 空行与 Markdown 标题作为段落边界。同一份 PDF 由 38 块降到 3~4 块。</p>
+     */
+    static List<String> split(String content, int chunkSize, int chunkOverlap, String docName) {
         List<String> out = new ArrayList<>();
         if (content == null) {
             return out;
         }
         int size = chunkSize <= 0 ? CHUNK_SIZE : chunkSize;
         int overlap = Math.max(0, Math.min(chunkOverlap, size / 2));
-        for (String para : content.split("\\r?\\n")) {
-            String p = para.trim();
-            if (p.isEmpty()) {
-                continue;
+        String normalized = content.replace("\r", "");
+        String[] lines = normalized.split("\n", -1);
+        List<MarkdownTable.Table> tables = MarkdownTable.parse(normalized, docName);
+        // 表格占用的行区间 + 需要吞掉的 sheet 标题行（紧邻表格上方一行）
+        Set<Integer> consumed = new HashSet<>();
+        for (MarkdownTable.Table t : tables) {
+            for (int i = t.startLine(); i <= t.endLine(); i++) {
+                consumed.add(i);
             }
-            if (p.length() <= size) {
-                out.add(p);
-                continue;
-            }
-            int step = size - overlap;
-            for (int s = 0; s < p.length(); s += step) {
-                out.add(p.substring(s, Math.min(p.length(), s + size)));
+            int above = t.startLine() - 1;
+            if (above >= 0 && above < lines.length && lines[above].trim().startsWith("###")) {
+                consumed.add(above);
             }
         }
+        int ti = 0;
+        StringBuilder buf = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (consumed.contains(i)) {
+                // 表格起点：先把累积的段落落盘，再把整表替换为它的列名块
+                flush(buf, out);
+                if (ti < tables.size() && tables.get(ti).startLine() == i) {
+                    out.addAll(MarkdownTable.chunks(docName, tables.get(ti)));
+                    ti++;
+                }
+                continue;
+            }
+            String p = lines[i].trim();
+            // 空行与 Markdown 标题都是段落边界
+            if (p.isEmpty() || p.startsWith("#")) {
+                flush(buf, out);
+                if (p.isEmpty()) {
+                    continue;
+                }
+            }
+            // 累积到 size 再落盘：一行一块会把「1800 字的 PDF 正文」切成 38 块，
+            // 每块只有 4 门课、且没有列名 —— 检索命中了也用不上。
+            if (buf.length() > 0 && buf.length() + 1 + p.length() > size) {
+                flush(buf, out);
+            }
+            if (buf.length() > 0) {
+                buf.append('\n');
+            }
+            buf.append(p);
+            while (buf.length() > size) {
+                int step = size - overlap;
+                out.add(buf.substring(0, size));
+                buf.delete(0, step);
+            }
+        }
+        flush(buf, out);
         return out;
+    }
+
+    /** 把累积的段落落盘（空白段直接丢弃）。 */
+    private static void flush(StringBuilder buf, List<String> out) {
+        String s = buf.toString().trim();
+        if (!s.isEmpty()) {
+            out.add(s);
+        }
+        buf.setLength(0);
     }
 
     private static String normalizeScope(String scope) {

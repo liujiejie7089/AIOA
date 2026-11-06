@@ -36,6 +36,12 @@
     脚本用 try/finally 保证**无论失败在哪一步都恢复成 CONNECTED**，不留残局。
 退出码 = 失败项数（SKIP 不算失败，但会打印出来）。
 """
+
+try:  # A3：GBK 控制台打印 ✅ 会 UnicodeEncodeError；统一按 utf-8 输出（Windows 控制台/伪终端都正确）
+    import sys
+    sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import argparse
 import json
 import subprocess
