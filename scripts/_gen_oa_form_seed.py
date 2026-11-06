@@ -301,12 +301,16 @@ MODULES = [
     dict(seq=20, name="请假助手", source="原有", worker_type="OA_LEAVE", module_code="leave",
          form_code="leave_request", task_name="请假申请", biz_type="LEAVE", submit_policy="APPROVAL+RESUME", derived=True,
          fields=[
+             # 假种不再写死枚举：一律引用 leave_type 字典表（渲染时后端内联 options）。
+             # 写死过的代价：PERSONAL / COMPENSATORY 在 leave_type 表里根本不存在
+             # （真值是 CASUAL 事假 / COMP 调休），用户选了必然打不到真实请假链路。
              dict(name="leave_type", label="假种", type="select", required=True,
-                  options=opt([("ANNUAL", "年休假"), ("SICK", "病假"), ("PERSONAL", "事假"),
-                               ("COMPENSATORY", "调休"), ("MARRIAGE", "婚假"), ("MATERNITY", "产假")])),
+                  options_ref="leave_types"),
              dict(name="start_date", label="开始日期", type="date", required=True),
              dict(name="end_date", label="结束日期", type="date", required=True),
-             dict(name="days", label="请假天数", type="number", required=True),
+             # 天数是**派生字段**：由 LeaveService.calcDays 按假种 unit（WORKDAY/DAY）与起止日期算，
+             # 不接受用户自报 —— 否则填 1 天实休 5 天，余额也只扣 1 天。
+             dict(name="days", label="请假天数", type="number", required=False, system="days"),
              dict(name="reason", label="请假事由", type="textarea", required=True),
              dict(name="proof", label="证明材料", type="file", required=False),
          ]),
@@ -554,9 +558,19 @@ def build_schema(fields):
             p["description"] = f["placeholder"]
         if t == "multiselect":
             p["items"] = {"type": "string"}
-        if t in ("select", "multiselect") and f.get("options"):
+        # 动态选项引用：值在渲染时由后端解析（FormTemplateService.resolveOptions），
+        # 语义上优先于内联 enum —— 内联枚举一旦与字典表脱钩就会产出「能选但必失败」的死选项
+        # （2026-11-06 实测：请假表写死 PERSONAL/COMPENSATORY，而 leave_type 表真值是 CASUAL/COMP）。
+        if f.get("options_ref"):
+            if t not in ("select", "multiselect"):
+                raise ValueError("字段 %s 用了 options_ref 但类型不是选择类：%s" % (f["name"], t))
+            p["x-options-ref"] = f["options_ref"]
+        elif t in ("select", "multiselect") and f.get("options"):
             p["enum"] = [o["value"] for o in f["options"]]
             p["enumNames"] = [o["label"] for o in f["options"]]
+        # 系统派生字段：值由后端算，前端不渲染、不做必填校验（见 FormSchemaValidator / 渲染器）
+        if f.get("system"):
+            p["x-system"] = f["system"]
         props[f["name"]] = p
         if f.get("required"):
             required.append(f["name"])
@@ -627,6 +641,11 @@ def check_xlsx():
 
 
 def main():
+    # ⚠️ 重跑本脚本会**改写已执行的 V86**（同样的行号、不同的内容），
+    #    后果是 flyway_schema_history 里 V86 的 checksum 与库记录不一致，只有带
+    #    -Dspring.flyway.validate-on-migrate=false 才能启动。请假表的假种选项与 days
+    #    已在 V110__leave_form_real_chain.sql 里修正，**不需要为此重跑本脚本**；
+    #    真要重跑，先确认 V110 的 UPDATE 在生成结果之后仍然成立。
     name_by_seq, src_by_seq = check_xlsx()
     assert len(name_by_seq) == 43, "xlsx 模块数应为 43，实际 %d" % len(name_by_seq)
 

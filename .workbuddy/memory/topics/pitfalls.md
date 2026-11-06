@@ -2103,3 +2103,49 @@ resolve。用户点右上「停止生成」时，`oaStop()` 只 abort 了 SSE、
 - 新增任何一种"等用户操作"的卡片时，必须同时提供 `cancelXxxCard()` 并在 `oaStop()` 里挂上。
 - 反向确认也有价值：经典形态**没有** `bub-stop`（只在 OA 的 `oaSend` 里创建），
   所以同款死锁在经典形态没有触发入口 —— 排查时要能说清"为什么不修"。
+
+## 101. MySQL JSON path 里带连字符的键必须加双引号
+
+`JSON_EXTRACT(schema_json, '$.properties.leave_type.x-options-ref')` 报
+`Invalid JSON path expression. The error is around character position 37`，
+写在 Flyway 迁移里会**让整个后端起不来**（报错完全没提是哪条 SQL）。
+- 正确写法：`'$.properties.leave_type."x-options-ref"'`。
+- 自查：键名里出现 `-` `.` 空格 或数字开头，一律加引号。
+- 顺手记：迁移里的 DML 失败会回滚，只留一条 `success=0` 的 history 记录；
+  删掉那条（`delete from flyway_schema_history where version='NNN' and success=0`）才能重跑。
+
+## 102. 改了平台表单行 ≠ 生效 —— 租户有一份副本
+
+`FormTemplateService.getByCode` 是「**本租户优先**，没有才回退 tenant_id=0」。
+租户建号时会复制平台表单，所以平台行改了、登录进去读到的还是旧定义。
+2026-11-06：V110 只更新 tenant_id=0，接口仍返回旧的假种枚举（PERSONAL/COMPENSATORY），
+是回归里 V2d/V2c'' 原样报红才发现的 —— **没有回归就是一次「改了却不生效」**。
+- 改任何 `form_template` 定义，都要同时处理 `tenant_id<>0` 的副本；
+- 判据别只看 `code`，用「内容特征」区分「没改过的副本」与「租户自定义过的行」，
+  后者不能动（例：假种枚举里含字典表中不存在的 PERSONAL，就说明它还是 V86 原样）。
+
+## 103. dev profile 不传 `--server.port` 会拿到随机端口
+
+现象：`Web server failed to start. Port 62170 was already in use.` —— 看着像端口冲突，
+其实是**根本没指定端口**（dev profile 下 Tomcat 取了随机端口，那个端口恰好被别的进程占着）。
+- 启动必须显式 `--server.port=8080`（与铁律同条），漏了会得到上面这条极具误导性的报错。
+- 判断依据看更早那行：`Tomcat initialized with port 62170 (http)`。
+
+## 104. 「表单字段」到「业务字段」要过一道真上传
+
+通用表单的 file 控件，`collectFormValues` 采到的是**文件名**（`f.name`），
+而业务侧要的是 fileId（请假的 `proof → proofFileId`）。
+2026-11-06：不改这一步的话，用户选了病历、界面明明白白显示着文件名，
+后端仍判「必须上传证明材料」——用户会认为是系统瞎了。
+- 修法：`uploadFormFiles(card, values)` 在确认提交前真上传，值换成 `[{fileId,name}]`，失败中断提交；
+- 配套：核对面板渲染 file 数组时要取 `.name`，否则 `[object Object]`。
+
+## 105. 判「这条链路是真的还是假的」，看它写哪张表
+
+2026-11-06 请假一例：两条提交路径**接口都返回成功**，但一条写 `leave_request`、
+另一条只写 `form_submission`。后者看起来一切正常（有单号、有审批、有回执），
+实际上查不到记录、不占余额、审批通过也不扣额度。
+- 判据：问「这个业务的结果表是哪张？这条路径写它吗？」
+- 验证：提交一次，直接查那张表有没有新行、关键字段（如 `order_id`）是否与其他表一致；
+- 反例（**不该**当缺陷）：`form_submission` 里没有 `leave_request` 行本身不是错，
+  错的是「本该建请假单的路径没建」——所以要按 `biz_type` 分流，而不是让所有提交都去建请假单。

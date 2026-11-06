@@ -183,10 +183,12 @@ class RunServiceHitlTest {
     }
 
     private static Method completeRunMethod() throws NoSuchMethodException {
+        // 与 forwardMethod 同一个坑：尾部 currentWorkerId（Long）是后加的，
+        // 产品加参数这里必须同步，否则 NoSuchMethodException（2026-11-06 实测挂了两条用例）。
         return RunService.class.getDeclaredMethod("completeRun",
                 AgentRun.class, SseEmitter.class, AtomicReference.class, StringBuilder.class,
                 AtomicReference.class, AtomicReference.class, AtomicReference.class,
-                AtomicReference.class, AtomicReference.class);
+                AtomicReference.class, AtomicReference.class, Long.class);
     }
 
     @SuppressWarnings("unchecked")
@@ -210,7 +212,7 @@ class RunServiceHitlTest {
         Method m = completeRunMethod();
         m.setAccessible(true);
         m.invoke(runService, run, emitter, lastId, assistant, usageRef, citationsRef,
-                toolCallsRef, failureRef, clarificationRef);
+                toolCallsRef, failureRef, clarificationRef, 1L);
     }
 
     // ---------------------------------------------------------------- 构造辅助

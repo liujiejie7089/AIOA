@@ -35,9 +35,12 @@ class FormSubmissionServiceOutcomeTest {
     private final FormTemplateService templateService = mock(FormTemplateService.class);
     private final FormSubmissionMapper submissionMapper = mock(FormSubmissionMapper.class);
     private final ApprovalFlowService approvalFlowService = mock(ApprovalFlowService.class);
+    /** 请假分流（2026-11-06）：bizType=LEAVE 时委托它，本类测的是审批终态回写，用不到。 */
+    private final cn.aios.org.service.LeaveService leaveService =
+            mock(cn.aios.org.service.LeaveService.class);
 
     private final FormSubmissionService service =
-            new FormSubmissionService(templateService, submissionMapper, approvalFlowService);
+            new FormSubmissionService(templateService, submissionMapper, approvalFlowService, leaveService);
 
     private static FormSubmission approving(Long id, Long orderId) {
         FormSubmission s = new FormSubmission();

@@ -98,9 +98,10 @@ class RunServiceFormFrameTest {
     private FormTemplateService.FormRender render(String code, String name, String policy) {
         List<FormTemplateService.FormField> fields = List.of(
                 new FormTemplateService.FormField("leave_type", "假种", "select", true,
-                        List.of(Map.of("label", "年休假", "value", "ANNUAL")), null, null, null),
-                new FormTemplateService.FormField("days", "请假天数", "number", true,
-                        List.of(), null, null, null));
+                        List.of(Map.of("label", "年休假", "value", "ANNUAL")), null, null, null, false),
+                // 天数是系统派生字段（x-system）：值由后端算，前端不渲染、不做必填校验
+                new FormTemplateService.FormField("days", "请假天数", "number", false,
+                        List.of(), null, null, null, true));
         return new FormTemplateService.FormRender(1L, code, name, 1, "leave", policy, fields);
     }
 

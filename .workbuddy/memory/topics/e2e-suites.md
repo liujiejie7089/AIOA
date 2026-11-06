@@ -646,3 +646,28 @@ S5 转对人才出表 / S6 字段名是人话 / **S7 同时只有一张卡**（�
 **T** 停止（T1 卡片收起 + `S.busy=false` + 停止键已摘 + 输入框可用；T2 真发 `/runs/{id}/cancel`）· C1 无 JS 异常。
 ★ 判据避坑：**别拿「发送键可见」判输入栏可用** —— 它本就随输入框有无文字显隐（空值是话筒）。
 ★ 停止后要断言「**没有**补发经典请假卡」的现场：截图 `docs/assets/regression-2026-11-06/52-form-stopped.png`。
+
+
+## `_verify_leave_form_real_chain.py`（12 项，2026-11-06 起，docs/85）
+
+验「后端 need_form 卡提交的请假**真的走进请假业务链**」：建 `leave_request` 行、
+占在途额度、天数由后端按 WORKDAY 算、审批单号三处一致。
+前置：后端 :8080；`agent/.venv` 的 python；**agent 不必在线**（纯接口 + 回库）。
+分段：**P0** 找可用额度 ≥3 天的假种（COMP）· **P1** `POST /forms/leave_request/submit` ·
+**P2a** 天数 == 工作日数（区间选「周四~下周一」⇒ 工作日 3 / 自然日 5，且提交时故意传 `days=99`，三值必须互不相同）·
+**P2b** 回执带 `leaveRequestId`+`approvalOrderId` · **P3** 回库核 `leave_request` 行 / 天数 / `order_id` ·
+**P4** `form_submission` APPROVING 且同单号 · **P5** pending `+N`、可用 `−N` · **P6** 幽灵码 `PERSONAL` 被拒 ·
+**P7** 缺必填按中文名报错 · **P8** 撤销后 pending 归零（反向证明额度真被占过）。
+★ 工作日数由**脚本自己按日历算**，不采信接口/DB 的输出（避免自证）。
+★ 跑完自动 `cancel` 释放额度，并删掉本次 `run_id like 'e2e-leave-chain%'` 的 `form_submission`。
+★ 会留下 `leave_request` 的 CANCELED 行（真实撤销记录，属正常）。
+
+## `_verify_leave_form_split.py`（15 项，2026-11-06 起，docs/80·85）
+
+验「对话里说请假 ⇒ 渲染的是**后端表单库定义**，字段不漂移、负责人单独一步、不挤在一张表里」。
+三方对照：页面 / 接口 / `form_template.schema_json`，互不同源。**不打 SSE 桩**（要走真实链路，需 agent 在线）。
+分段：V1 出的是 `.leave-form[data-code]` 而非自造字段卡 · V2/V2b 接口字段 == DB 定义 ·
+**V2d 接口字段顺序 == required 业务顺序**（不能拿接口自己的顺序反筛自己）· **V2c 页面字段名 == 接口字段名 − 系统派生字段**（有序）·
+**V2c'' `system=true` 的字段页面无控件** · V2c' 不再出现「假种」· V4/V5 无负责人字段 + 假种是下拉 ·
+V6/V6b 负责人环节独立弹层且是选择器 · V7 取消负责人不发提交 · V8 无 JS 异常。
+★ 2026-11-06 判据升级过两次：先「label → 字段名+顺序」，再加「去掉 x-system 字段再比」。

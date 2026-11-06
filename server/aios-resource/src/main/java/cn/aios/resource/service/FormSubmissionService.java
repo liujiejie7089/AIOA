@@ -3,6 +3,7 @@ package cn.aios.resource.service;
 import cn.aios.common.exception.BizException;
 import cn.aios.common.port.ApprovalOutcomeSink;
 import cn.aios.org.service.ApprovalFlowService;
+import cn.aios.org.service.LeaveService;
 import cn.aios.resource.entity.FormSubmission;
 import cn.aios.resource.entity.FormTemplate;
 import cn.aios.resource.mapper.FormSubmissionMapper;
@@ -44,6 +45,7 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
     private final FormTemplateService templateService;
     private final FormSubmissionMapper submissionMapper;
     private final ApprovalFlowService approvalFlowService;
+    private final LeaveService leaveService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** 提交结果。 */
@@ -123,8 +125,13 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
         data = cleaned;
         // ②.7 负责人（八期）：先归一 + 校验，**再落库** —— 校验失败时不留一条孤儿 submission。
         // 口径复用审批引擎（本机构在职成员、非申请人本人），与请假提交同一处，不各写一份。
+        //
+        // 请假表单（bizType=LEAVE）例外：负责人校验交给 LeaveService —— 它按**员工档案所属机构**
+        // 判定（member.institutionId），而这里只有 actor.institutionId，两者在「代他人提交」时
+        // 可能不同，各校一遍必然打架。此处只做归一（保留用户选择顺序），校验留给请假服务。
+        boolean leaveBiz = LeaveService.BIZ_TYPE.equalsIgnoreCase(String.valueOf(template.getBizType()));
         List<Long> handlers = ApprovalFlowService.normalizeAssignees(assigneeUserIds, null);
-        if (!handlers.isEmpty()) {
+        if (!leaveBiz && !handlers.isEmpty()) {
             AuthUser me = AuthUserContext.require();
             approvalFlowService.validateAssignees(handlers, me.getInstitutionId(), applicantId);
         }
@@ -154,8 +161,45 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
         Long approvalOrderId = null;
         // 审批回执（八期）：审批流的 handlers / dataFlow 要原样透到 receipt，供前端一次渲染完
         Map<String, Object> flowOut = null;
+        // 请假回执（2026-11-06）：请假单号与后端算出的天数要透给前端，否则用户只知道「提交成功」
+        Map<String, Object> leaveOut = null;
 
-        if (policies.contains(FormTemplate.POLICY_APPROVAL)) {
+        if (leaveBiz) {
+            // ★ 请假必须走请假业务服务，不能只落 form_submission。
+            //   历史缺陷：need_form 卡走通用表单路径时，只写 form_submission —— 不建 leave_request、
+            //   不占余额、不校验假种有效期/提前天数/最长连续天数/证明材料，days 传 null 导致
+            //   「按天数条件路由」恒不成立，审批通过后 LeaveService.onApproved 按 order_id
+            //   找不到请假单而静默 return，余额永远不扣。等于假链路。
+            try {
+                leaveOut = leaveService.submit(AuthUserContext.require(), toLeaveBody(data, handlers));
+                Object oid = leaveOut.get("orderId");
+                if (oid == null) {
+                    throw BizException.badRequest("请假审批单创建失败");
+                }
+                approvalOrderId = ((Number) oid).longValue();
+                sub.setStatus(FormSubmission.STATUS_APPROVING);
+                sub.setApprovalOrderId(approvalOrderId);
+                // 权威天数回填：calcDays 按假种 unit（WORKDAY/DAY）与起止日期算出来的才是扣额度依据。
+                // 用户填的 days 一律不采信（V110 已把它变成 x-system 派生字段，前端不再渲染）。
+                Object calcDays = leaveOut.get("days");
+                if (calcDays != null) {
+                    data.put("days", calcDays);
+                    sub.setDataJson(objectMapper.writeValueAsString(data));
+                }
+                flowOut = new LinkedHashMap<>();
+                flowOut.put("handlers", leaveOut.get("handlers"));
+                flowOut.put("dataFlow", leaveOut.get("dataFlow"));
+                flowOut.put("currentApproverName", leaveOut.get("currentApproverName"));
+            } catch (Exception e) {
+                sub.setStatus(FormSubmission.STATUS_FAILED);
+                sub.setUpdatedAt(LocalDateTime.now());
+                submissionMapper.updateById(sub);
+                // 请假服务抛的是给人看的中文原因（余额不足/假种停用/需提前 N 天…），直接透出，
+                // 不再套一层「提交审批失败：」——套了之后用户看到的是自己的原因被糊在技术前缀后面。
+                String msg = e.getMessage() == null ? "请假提交失败" : e.getMessage();
+                throw BizException.badRequest(msg);
+            }
+        } else if (policies.contains(FormTemplate.POLICY_APPROVAL)) {
             try {
                 flowOut = invokeApproval(tenantId, applicantId, template, sub.getId(), data, handlers);
                 approvalOrderId = ((Number) flowOut.get("orderId")).longValue();
@@ -190,7 +234,82 @@ public class FormSubmissionService implements ApprovalOutcomeSink {
             receipt.put("dataFlow", flowOut.get("dataFlow"));
             receipt.put("currentApproverName", flowOut.get("currentApproverName"));
         }
+        // 请假回执：单号 + 后端算出的天数 + 剩余额度，用户才知道「扣了几天、还剩几天」。
+        // 不带这些字段时前端只能显示「已提交」，扣没扣额度完全不可见。
+        if (leaveOut != null) {
+            receipt.put("leaveRequestId", leaveOut.get("leaveRequestId"));
+            receipt.put("days", leaveOut.get("days"));
+            receipt.put("leaveTypeName", leaveOut.get("leaveTypeName"));
+            receipt.put("quotaTracked", leaveOut.get("quotaTracked"));
+            receipt.put("availableAfterPending", leaveOut.get("availableAfterPending"));
+        }
         return new SubmitResult(sub.getId(), sub.getStatus(), resume, approvalOrderId, receipt);
+    }
+
+    /**
+     * 表单字段 → 请假提交入参。
+     *
+     * <p>字段名映射是**唯一一处**：表单侧 snake_case（leave_type/start_date/end_date/proof）
+     * ↔ 请假服务侧 camelCase（leaveTypeCode/startDate/endDate/proofFileId）。</p>
+     *
+     * <p>★ 刻意不映射 {@code days}：天数是后端派生值，必须由 {@code LeaveService.calcDays}
+     * 按假种 unit 与起止日期算。把用户填的 days 传进去，等于让用户自报扣多少额度。</p>
+     */
+    private Map<String, Object> toLeaveBody(Map<String, Object> data, List<Long> assigneeUserIds) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("leaveTypeCode", strOf(data.get("leave_type")));
+        body.put("startDate", strOf(data.get("start_date")));
+        body.put("endDate", strOf(data.get("end_date")));
+        body.put("reason", strOf(data.get("reason")));
+        Long proofFileId = fileIdOf(data.get("proof"));
+        if (proofFileId != null) {
+            body.put("proofFileId", proofFileId);
+        }
+        if (assigneeUserIds != null && !assigneeUserIds.isEmpty()) {
+            body.put("assigneeUserIds", assigneeUserIds);
+        }
+        return body;
+    }
+
+    private static String strOf(Object v) {
+        if (v == null) {
+            return null;
+        }
+        String s = String.valueOf(v).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    /**
+     * 取文件字段里的 fileId。
+     *
+     * <p>file 控件在不同入口下形态不同：上传组件的数组
+     * {@code [{fileId:12,name:...}]}、纯 id 数组 {@code [12]}、单值 {@code "12"} 或 {@code 12}。
+     * 解析不出返回 null（= 未上传证明），由请假服务按假种 needProof 决定是否报错。</p>
+     */
+    private static Long fileIdOf(Object v) {
+        Object first = v;
+        if (v instanceof List<?> list) {
+            first = list.isEmpty() ? null : list.get(0);
+        }
+        if (first instanceof Map<?, ?> m) {
+            first = m.get("fileId") != null ? m.get("fileId") : m.get("id");
+        }
+        if (first == null) {
+            return null;
+        }
+        if (first instanceof Number n) {
+            return n.longValue() > 0 ? n.longValue() : null;
+        }
+        String s = String.valueOf(first).trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        try {
+            long v2 = Long.parseLong(s);
+            return v2 > 0 ? v2 : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** 调审批引擎：把 submission 快照（含 submissionId 与用户数据）作为 formData 传入。 */

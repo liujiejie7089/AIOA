@@ -50,7 +50,9 @@ public class FormTemplateService {
     /** 渲染后的单个字段（给前端/agent 用）。 */
     public record FormField(String name, String label, String type, boolean required,
                             List<Map<String, Object>> options, String placeholder,
-                            Map<String, Object> validation, Object defaultVal) {
+                            Map<String, Object> validation, Object defaultVal,
+                            /** 系统派生字段：true 表示值由后端算，前端不渲染、不校验（见 x-system）。 */
+                            boolean system) {
     }
 
     /** 渲染后的整张表单。 */
@@ -242,6 +244,12 @@ public class FormTemplateService {
             @SuppressWarnings("unchecked")
             Map<String, Object> def = (Map<String, Object>) e.getValue();
             boolean isRequired = required.contains(name) || Boolean.TRUE.equals(def.get("required"));
+            // 派生字段（x-system）不是用户能填的东西，一律不算必填 —— 否则前端不渲染它，
+            // 后端却要求它非空，用户会看到一个填不了的「必填」错误。
+            boolean isSystem = def.get("x-system") != null;
+            if (isSystem) {
+                isRequired = false;
+            }
             // 控件类型/标签/占位三者的判定统一走 FormFieldMeta（唯一判定点）：
             // 种子与设计器写的是 x-type + title + description，纯标准 schema 也能回退解析。
             fields.add(new FormField(
@@ -252,7 +260,8 @@ public class FormTemplateService {
                     resolveOptions(resolveTenantId, def),
                     cn.aios.resource.support.FormFieldMeta.placeholder(def),
                     buildValidation(def),
-                    def.get("default")));
+                    def.get("default"),
+                    isSystem));
         }
         return new FormRender(t.getId(), t.getCode(), t.getName(), t.getVersion(),
                 t.getModuleCode(), t.getSubmitPolicy(), fields);

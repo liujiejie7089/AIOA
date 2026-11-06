@@ -3527,23 +3527,29 @@ var ERR_FALLBACK = {
   CONNECTOR_ERROR:'连接的外部应用调用失败',
   INTERNAL_ERROR:'服务内部出错了，本次操作没有完成'
 };
+/* 后端 message → 可展示文本。
+   技术细节防漏：万一上游/框架文案漏网（含 JSON、类名、路径），这里退回兜底文案。
+   ★ 唯一口径：errText 与 API.req 共用本函数。只挂在 errText 上时，
+     H5 里直接拼 'X失败：'+e.message 的地方会全部绕过它（实测 48 处）。 */
+function safeErrMsg(msg, errorCode){
+  var s = (msg == null) ? '' : String(msg);
+  if(!s) return (errorCode && ERR_FALLBACK[errorCode]) || '操作没有完成，请稍后重试';
+  if(/^\s*[{\[]/.test(s) || /\b(java|javax|traceback|Exception)\b/i.test(s)){
+    return (errorCode && ERR_FALLBACK[errorCode]) || '操作没有完成，请稍后重试';
+  }
+  return s;
+}
 /* 把错误对象（Error / 后端信封 / SSE 载荷）拼成可展示文本。
    opts.withId=true 时追加「错误编号」，仅在需要用户报障的场合显示。 */
 function errText(e, opts){
   opts = opts || {};
   if(!e) return '未知错误';
-  var msg = e.message ? String(e.message) : '';
+  var msg = safeErrMsg(e.message, e.errorCode);
   var sug = e.suggestion ? String(e.suggestion) : '';
   var eid = e.errorId || e.traceId || '';
-  if(!msg){
-    msg = (e.errorCode && ERR_FALLBACK[e.errorCode]) || '操作没有完成，请稍后重试';
-  }
-  /* 技术细节防漏：万一上游/框架文案漏网（含 JSON、类名、路径），这里再兜一层 */
-  if(/^\s*[{\[]/.test(msg) || /\b(java|javax|traceback|Exception)\b/i.test(msg)){
-    msg = '操作没有完成，请稍后重试';
-  }
   var out = msg;
-  if(sug) out += '　建议：' + sug;
+  /* api.req 已把建议并进 message 的场景，这里不再拼第二次 */
+  if(sug && out.indexOf(sug) < 0) out += '　建议：' + sug;
   if(opts.withId && eid) out += '（错误编号 ' + eid + '）';
   return out;
 }
@@ -3652,6 +3658,20 @@ function workerRoleText(roles){
    接口基址不写死：生产入口带前缀（https://host/aios/h5/ ⇒ 接口在 /aios/api），
    本地直连是 http://127.0.0.1:5181/ ⇒ 接口在 /api。由 pathname 推导，见 apiBaseFromPath()。
    ============================================================================ */
+/* 裸 fetch 的错误信封 → Error，与 API.req 同一口径（message 并入 suggestion + 技术细节清洗）。
+   fileUpload / kbUploadFile / asrTranscribe 走的是 fetch 而非 API.req，
+   不包这一层就是「错误文案两套标准」：用户在这三处永远看不到「怎么办」。 */
+function envelopeError(d, r){
+  const body = (d && typeof d === 'object') ? d : {};
+  const rawMsg = safeErrMsg(body.message, body.errorCode);
+  const sug = body.suggestion ? String(body.suggestion) : '';
+  const err = new Error(!sug || rawMsg.indexOf(sug) >= 0 ? rawMsg : rawMsg + '　建议：' + sug);
+  err.rawMessage = rawMsg;
+  err.code = body.code; err.status = r ? r.status : 0;
+  err.errorCode = body.errorCode || null; err.category = body.category || null;
+  err.suggestion = body.suggestion || null; err.traceId = body.traceId || null;
+  return err;
+}
 const API = {
   base:apiBaseFromPath(location.pathname),
   async req(path, opts={}){
@@ -3661,9 +3681,18 @@ const API = {
     const body = await res.json().catch(()=>null);
     if(body && typeof body==='object' && 'code' in body){
       if(body.code !== 0){
-        const err = new Error(body.message || ('业务错误 '+body.code));
+        /* 统一错误信封（docs/73）：message 是「发生了什么」，suggestion 是「怎么办」。
+           ★ 在这里拼一次，等于 H5 里 48 处 catch（只读 e.message）同时拿到可操作提示，
+             不必逐页改造 —— 与管理端 toApiError 同一做法（web/apps/shell/src/api/index.ts）。
+             原始 message 留在 err.rawMessage，需要分开展示时用它。
+           同时 message 过一遍 safeErrMsg（技术细节防漏）—— 这一步原先只对 errText 生效，
+           裸拼 e.message 的地方全绕过了它。 */
+        const rawMsg = safeErrMsg(body.message, body.errorCode);
+        const sug = body.suggestion ? String(body.suggestion) : '';
+        const err = new Error(!sug || rawMsg.indexOf(sug) >= 0 ? rawMsg : rawMsg + '　建议：' + sug);
         err.code = body.code; err.status = res.status; err.data = body.data;  // 把响应 data 挂到错误上（规则命中 40090 用），向后兼容
         /* 统一错误信封（docs/73）：把「怎么处理」「错误编号」带出来，界面才能给可操作提示 */
+        err.rawMessage = rawMsg;
         err.errorCode = body.errorCode || null; err.category = body.category || null;
         err.suggestion = body.suggestion || null; err.traceId = body.traceId || null;
         err.details = body.details || null;
@@ -3711,7 +3740,7 @@ const API = {
       headers:{Authorization:'Bearer '+state.token, 'Content-Type': blob.type || 'audio/webm'},
       body: blob
     }).then(r=>r.json().then(d=>{
-      if(!r.ok || d.code) throw new Error(d.message || ('HTTP '+r.status));
+      if(!r.ok || d.code) throw envelopeError(d, r);
       return d.data;
     }));
   },
@@ -3773,7 +3802,7 @@ const API = {
     const fd = new FormData(); fd.append('file', file);
     const q = scope ? ('?scope='+encodeURIComponent(scope)) : '';
     return fetch(this.base+'/v1/kb/documents/upload'+q, {method:'POST', headers:{Authorization:'Bearer '+state.token}, body:fd})
-      .then(r=>r.json().then(d=>{ if(!r.ok || d.code) throw new Error(d.message||('HTTP '+r.status)); return d.data; }));
+      .then(r=>r.json().then(d=>{ if(!r.ok || d.code) throw envelopeError(d, r); return d.data; }));
   },
   kbRetry(id){ return this.req('/v1/kb/documents/'+id+'/retry',{method:'POST'}); },
   kbDelete(id){ return this.req('/v1/kb/documents/'+id,{method:'DELETE'}); },
@@ -3807,7 +3836,7 @@ const API = {
   fileUpload(file){
     const fd = new FormData(); fd.append('file', file);
     return fetch(this.base+'/v1/files/upload', {method:'POST', headers:{Authorization:'Bearer '+state.token}, body:fd})
-      .then(r=>r.json().then(d=>{ if(!r.ok || d.code) throw new Error(d.message||('HTTP '+r.status)); return d.data; }));
+      .then(r=>r.json().then(d=>{ if(!r.ok || d.code) throw envelopeError(d, r); return d.data; }));
   },
   fileUrl(id){ return this.base+'/v1/files/'+id; },
   approvalList(scope){ return this.req('/v1/approvals?scope='+(scope||'mine')); },
@@ -5871,7 +5900,7 @@ async function agentDemo(q){
         '<button class="btn small" id="'+cid+'-ok" data-role="confirm" disabled '+
           'onclick="confirmAgent(this,\''+nameArg+'\',\''+qArg+'\')">'+
           (editing?'保存修改':'确认创建')+'</button>'+
-        '<button class="btn ghost small" onclick="toast(\'已取消\')">取消</button>'+
+        '<button class="btn ghost small" onclick="dismissCard(this)">取消</button>'+
       '</div>'+
     '</div></div>');
   m.scrollTop = m.scrollHeight;
@@ -8234,6 +8263,34 @@ function cancelFormCard(){
   if(typeof formPendingResolve === 'function'){ const fn = formPendingResolve; formPendingResolve = null; fn(); }
 }
 
+/* 经典请假卡（#leaveForm）的收口：它不是 await 出来的，没有 resolve 可解，
+   历史上「取消」只 toast('已取消')、卡片留在 DOM 里，点「停止生成」也摘不掉它
+   —— 用户看到的就是「点了取消/停止，表单还在那儿」。这里统一成「真摘除」，
+   取消按钮与 oaStop 共用同一个出口。 */
+function cancelLegacyLeaveForm(){
+  const card = document.getElementById('leaveForm');
+  if(card && card.parentNode){
+    card.parentNode.removeChild(card);
+    return true;
+  }
+  return false;
+}
+/* 卡片上的「取消」：真的把这张卡从对话里收掉。
+   历史形态是 onclick="toast('已取消')" —— 只弹一句提示、卡片原地不动，
+   用户会以为没生效（与经典请假卡同型）。取消 = 放弃这次填写/创建，
+   卡片就该消失；用户自己那句问话在上一行，不受影响。 */
+function dismissCard(btn){
+  if(!btn || !btn.closest) return;
+  const tc = btn.closest('.task-card');
+  const card = tc || btn.closest('.leave-form');
+  if(!card) return;
+  const box = tc ? (tc.closest('.msg') || tc) : card;
+  if(box.parentNode) box.parentNode.removeChild(box);
+  toast('已取消');
+}
+/* 经典请假卡的取消按钮走这里（保留独立入口，便于回归脚本按名字定位） */
+function leaveCancel(btn){ dismissCard(btn); }
+
 /* 澄清卡回填载荷：**始终**是 {value,label,text} 对象（字段卡额外带 values）。
    以前只回传标量 value —— 于是「选完人」和「要发什么」被拆成两轮：
    模型拿到一个 userid，不知道内容，只能再问一句（2026-11-02 现场）。
@@ -8470,6 +8527,10 @@ function renderFormHtml(p){
   let unknown = 0;
   fields.forEach(function(f){
     if(!f || typeof f !== 'object') return;
+    /* 系统派生字段（x-system）：值由后端算并回填，不给用户一个「填了也不算」的输入框。
+       典型是请假的「请假天数」——真值来自后端按假种单位与起止日期算。
+       判据只认后端标记，前端不维护字段名清单（否则后端加一个派生字段，前端就会漏一个）。 */
+    if(f.system === true) return;
     const name = f.name != null ? String(f.name) : '';
     const label = formFieldLabel(f);
     const type = (f.type || 'text');
@@ -8574,6 +8635,31 @@ function collectFormValues(card){
     }
   });
   return vals;
+}
+
+/* file 控件在 collectFormValues 里只采到**文件名**，而业务侧要的是文件 id
+   （请假证明材料 proof → LeaveService 的 proofFileId）。这里在真正提交前把选中的文件上传，
+   把该字段的值换成 [{fileId, name}]；上传失败就中断提交 —— 不能拿「文件名」冒充「已上传」，
+   否则用户选了附件、后端仍判「必须上传证明材料」，而界面上明明显示着文件名。
+   后端 fileIdOf() 认 {fileId} / {id} 两种键，这里统一写 fileId。 */
+async function uploadFormFiles(card, values){
+  const ctrls = card.querySelectorAll('[data-field][data-type="file"]');
+  const list = Array.prototype.slice.call(ctrls);
+  for(let i=0;i<list.length;i++){
+    const c = list[i];
+    const name = c.getAttribute('data-field');
+    const picked = Array.prototype.slice.call(c.files || []);
+    if(!picked.length) continue;
+    const out = [];
+    for(let j=0;j<picked.length;j++){
+      const rec = await API.fileUpload(picked[j]);
+      const id = rec && (rec.id != null ? rec.id : rec.fileId);
+      if(id == null) throw new Error('「'+fieldLabelOf(c)+'」上传失败：没有拿到文件标识');
+      out.push({fileId: Number(id), name: rec.name || picked[j].name});
+    }
+    values[name] = out;
+  }
+  return values;
 }
 
 /* 体验级校验：必填 + 类型（数字）。返回错误文案数组，空数组表示通过。 */
@@ -8920,14 +9006,17 @@ function formSummaryHtml(p, values){
   const fields = Array.isArray(p.fields) ? p.fields : [];
   values = (values && typeof values === 'object') ? values : {};
   /* 系统计算 / 派生字段：用户没填过，不该出现在「确认提交」里。
-     只影响本面板，不影响表单控件与提交内容（它们仍按 schema 走）。 */
+     只影响本面板，不影响表单控件与提交内容（它们仍按 schema 走）。
+     ★ 判据以后端下发为准：fields[].system（来自 schema 的 x-system）。
+       下面的名单只是**老后端的兜底** —— 前端自己维护一份字段名清单，
+       后端加一个派生字段前端就会漏一个，这一条已经被证明过一次。 */
   const SYSTEM_FIELDS = ['days', 'hours', 'duration', 'total_days', 'total_amount'];
   let rows = '';
   fields.forEach(function(f){
     if(!f || typeof f !== 'object') return;
     const name = f.name != null ? String(f.name) : '';
     if(!name) return;
-    if(SYSTEM_FIELDS.indexOf(name) >= 0) return;       // 派生字段：不列
+    if(f.system === true || SYSTEM_FIELDS.indexOf(name) >= 0) return;   // 派生字段：不列
     let v = values[name];
     let txt;
     if(Array.isArray(v)){
@@ -8941,8 +9030,12 @@ function formSummaryHtml(p, values){
           return hit && (hit.label != null && hit.label !== '') ? String(hit.label) : String(val);
         }).join('、');
       } else {
-        // file 等：元素本身是文件名，直接连接
-        txt = v.join('、');
+        /* file 等：元素可能是文件名（未上传），也可能是 {fileId,name}（真上传后的形态）。
+           后者直接 join 会渲染成 [object Object]，用户看到的是一串乱码。 */
+        txt = v.map(function(x){
+          if(x && typeof x === 'object') return String(x.name || x.fileName || '');
+          return String(x);
+        }).filter(function(s){ return s; }).join('、');
       }
     } else if(f.type === 'select'){
       // 单选：回显选项名（裸 value 用户看不懂）；命中不到就原样显示（负向对照）
@@ -9142,6 +9235,13 @@ function mountFormCard(host, p, opts){
           confirmBtn.disabled = false;
         }
         if(!pick) return;
+        // file 字段：values 里此刻只有文件名，业务要的是文件 id。真上传一次再提交。
+        try{
+          await uploadFormFiles(card, values);
+        }catch(e){
+          fail((e && (e.rawMessage || e.message)) || '附件上传失败，请重试');
+          return;
+        }
         doSubmit(values, pick);                  // 同一份 values，绝不重新读 DOM
       });
     }
@@ -9385,7 +9485,7 @@ function leaveFormHtml(){
     '<div class="lf-error" id="lfError" style="display:none"></div>'+
     '<div class="lf-actions">'+
       '<button class="btn small" type="button" onclick="submitLeave(this)">提交请假申请</button>'+
-      '<button class="btn ghost small" type="button" onclick="toast(\'已取消\')">取消</button>'+
+      '<button class="btn ghost small" type="button" onclick="leaveCancel(this)">取消</button>'+
     '</div></div>';
 }
 
@@ -13798,6 +13898,9 @@ async function oaStop(){
   cancelClarCard();
   cancelConfirmCard();
   cancelFormCard();     // 表单卡也要收：否则那条 await 永不 settle ⇒ S.busy 卡死、输入栏被吃掉
+  // 经典请假卡不是 await 出来的、没有 resolve 可解，但它同样会留在对话里：
+  // 用户点「停止生成」却看到表单还在那儿，与「表单停不下来」是同一个观感（2026-11-06）。
+  cancelLegacyLeaveForm();
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+oaHumanRunError((e && e.message) || '')); } }

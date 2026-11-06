@@ -189,9 +189,19 @@ def main():
         #   （假种→请假类型），拿 label 比会把「对的展示」判成红；而比字段名其实更硬 ——
         #   label 可能碰巧相同，name 相同才真正证明「页面用的是接口这份定义」。
         api_names = [f.get("name") for f in (api_fields or [])]
+        # ★2026-11-06 判据升级（x-system）：请假天数改成后端派生字段后，页面**有意不渲染**它
+        #   （值由 LeaveService.calcDays 按假种单位与起止日期算，用户填了也不算）。
+        #   所以这里比的是「接口字段 − 系统派生字段」：仍然一一对应、仍然有序，
+        #   并额外多一条负向断言 —— 派生字段不得出现在页面上。
+        sys_names = [f.get("name") for f in (api_fields or []) if f.get("system") is True]
+        expect_names = [n for n in api_names if n not in sys_names]
         page_names = [f.get("name") for f in page_fields]
-        rec("V2c 页面渲染字段名 == 接口字段名（顺序也一致）",
-            page_names == api_names, api_names, page_names)
+        rec("V2c 页面渲染字段名 == 接口字段名（去掉系统派生字段后，顺序也一致）",
+            page_names == expect_names, expect_names, page_names,
+            "系统派生字段（不渲染）：%s" % sys_names)
+        rec("V2c'' 系统派生字段（请假天数）在页面上没有输入控件",
+            bool(sys_names) and all(n not in page_names for n in sys_names),
+            "days 只由后端算、页面无控件", {"system": sys_names, "page": page_names})
 
         # 展示层：内部叫法必须换成用户语言（与上一条互补：结构一致 + 文案人话）
         alias_bad = [l for l in page_labels if l in ("假种", "假别")]

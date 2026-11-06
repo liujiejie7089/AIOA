@@ -116,6 +116,12 @@ public final class FormSchemaValidator {
             Map<String, Object> def = (Map<String, Object>) defObj;
             boolean fieldRequired = required.contains(field)
                     || Boolean.TRUE.equals(def.get("required"));
+            // 系统派生字段（x-system）：值由后端算并回填，用户不填也算通过。
+            // 典型是请假的 days —— 真值来自 LeaveService.calcDays，
+            // 前端不渲染它；若仍按 required 校验，用户会在一个看不见的字段上被判「必填不能为空」。
+            if (def.get("x-system") != null) {
+                fieldRequired = false;
+            }
             validateField(field, def, fieldRequired, data, errors);
         }
         return errors;
