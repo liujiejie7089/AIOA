@@ -7336,16 +7336,22 @@ async function send(){
     // 两形态同此循环，行为一致。
     while(clar || form || cfm){
       // 等待用户选择/填表/决策期间：若气泡还停在「打字中」占位，换成明确的等待提示，
-      // 别让用户对着三个点发呆
+      // 别让用户对着三个点发呆。
+      // ★ 文案按暂停类型分开：表单是「填写」、确认是「确认」，混用「等待你的选择」会
+      //   让用户以为要在一堆字段里"选"一项（2026-11-06 截图实证）。
+      //   打 data-wait 标记，下面三处清理统一看属性 —— 原来是比文本，改文案就删不掉占位了。
       const tp = bubble.querySelector('.typing');
-      if(tp) tp.textContent = '等待你的选择…';
+      if(tp){
+        tp.textContent = clar ? '等待你的选择…' : (form ? '请填写表单…' : '等待你的确认…');
+        tp.setAttribute('data-wait', '1');
+      }
       if(clar){
         const pick = await mountClarCard(bubble, clar);
         clar = null;
         if(!pick) break;                          // 用户放弃：就地收口
         // 收口时若还停在等待提示（续跑没来过正文），清掉它，给 delta 让位
         const wait = bubble.querySelector('.typing');
-        if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        if(wait && wait.hasAttribute('data-wait')) wait.remove();
         liftTextBelowCard(bubble);   // 回答要落在卡片之下（见函数注释）
         const beforeClar = text.length;
         // 选项 + 补充内容一次提交（不再是裸标量）
@@ -7364,7 +7370,7 @@ async function send(){
         form = null;
         if(!res) break;                            // 用户取消：就地收口
         const wait = bubble.querySelector('.typing');
-        if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        if(wait && wait.hasAttribute('data-wait')) wait.remove();
         const sub = res.submission || {};
         if(sub.resume === false){ break; }          // 回执已在卡片内渲染，结束
         // 对象走新路：把 submission 信息作为 answer 续跑同一 run
@@ -7377,7 +7383,7 @@ async function send(){
         const q = cfm; cfm = null;
         const textBefore = text.length;
         const wait2 = bubble.querySelector('.typing');
-        if(wait2 && wait2.textContent === '等待你的选择…') wait2.remove();
+        if(wait2 && wait2.hasAttribute('data-wait')) wait2.remove();
         const outcome = await mountConfirmCard(bubble, q, function(decision){
           return API.resumeStream(state.runId, {decision: decision}, h);
         });
@@ -13473,13 +13479,16 @@ async function oaSend(){
     // 与经典形态同此循环，行为一致。
     while(clar || form || cfm){
       var tp = bubble.querySelector('.typing');
-      if(tp) tp.textContent = '等待你的选择…';
+      if(tp){
+        tp.textContent = clar ? '等待你的选择…' : (form ? '请填写表单…' : '等待你的确认…');
+        tp.setAttribute('data-wait', '1');
+      }
       if(clar){
         var pick = await mountClarCard(bubble, clar);
         clar = null;
         if(!pick) break;                            // 用户放弃：就地收口
         var wait = bubble.querySelector('.typing');
-        if(wait && wait.textContent === '等待你的选择…') wait.remove();
+        if(wait && wait.hasAttribute('data-wait')) wait.remove();
         liftTextBelowCard(bubble);   // 与经典形态同口径：回答落在卡片之下
         var beforeClar = text.length;
         // 与经典形态共用一份载荷：{value,label,text} —— 只说 value 会让模型丢掉
@@ -13497,7 +13506,7 @@ async function oaSend(){
         form = null;
         if(!fres) break;                             // 用户取消：就地收口
         var wait2 = bubble.querySelector('.typing');
-        if(wait2 && wait2.textContent === '等待你的选择…') wait2.remove();
+        if(wait2 && wait2.hasAttribute('data-wait')) wait2.remove();
         var sub = fres.submission || {};
         if(sub.resume === false){ break; }            // 回执已在卡片内渲染，结束
         // 对象走新路：把 submission 信息作为 answer 续跑同一 run
@@ -13508,7 +13517,7 @@ async function oaSend(){
         var q = cfm; cfm = null;
         var textBefore = text.length;
         var wait3 = bubble.querySelector('.typing');
-        if(wait3 && wait3.textContent === '等待你的选择…') wait3.remove();
+        if(wait3 && wait3.hasAttribute('data-wait')) wait3.remove();
         var resCf = await mountConfirmCard(bubble, q, function(decision){
           return API.resumeStream(runId, {decision: decision}, h);
         });

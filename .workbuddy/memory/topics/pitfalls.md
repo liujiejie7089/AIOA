@@ -2009,3 +2009,33 @@ import sys
 - 反例校准：本地 `agent/.venv` 的 site-packages 里**没有** `aios_ai`、没有 `__editable__` 标记，
   是靠 `cd agent` 后 cwd 解析（`uvicorn app.main:app`）⇒ **本地改代码只需重启进程，不用重装**。
   同一份代码，「本地怎么生效」与「生产怎么生效」是两套机制，别互相类推。
+
+## 95. MySQL 的 `JSON` 列会**重排对象键** —— 别用 JSON 对象顺序表达业务顺序
+
+2026-11-06 实测：`form_template.schema_json` 是 MySQL `JSON` 列。种子脚本
+`_gen_oa_form_seed.py` 的 `build_schema()` 明明按业务顺序写 `properties`，
+落库后顺序却变成了「key 长度升序、同长再字典序」：
+`archive_borrow` = `title(5) → archive_no(10) → borrow_use(10) → attachments(11) → return_date(11) → archive_type(12)`。
+
+- 后果：请假表单在 H5 上渲染成「请假天数 → 证明材料 → 请假事由 → 结束日期 → 假种 → 开始日期」，
+  用户根本填不下去。**43 张平台表单里 39 张受影响**，一直没人发现 ——
+  因为此前前端用的是自己硬编码的卡片，没真读过这份 schema。
+- **数组不受影响**：`required` 保序。种子里的 required 顺序恰好就是业务顺序
+  ⇒ 用它当业务前序（`FormTemplateService.orderFieldEntries`：required 在前、非必填在后）。
+- 判据：`select schema_json from form_template where code='leave_request'` 看键顺序；
+  再对 `/api/v1/forms/leave_request` 的 `fields[].label` 顺序，两者应**不同**（接口是修好的）。
+- 长期正解是每字段加显式 `x-order`（种子 + 迁移 + 渲染三处），需一次数据迁移；本轮用 required 顺序兜住。
+
+## 96. `cmd | tail` 之后 `echo $?` 拿到的是 `tail` 的退出码 —— 打包「假成功」
+
+2026-11-06 实测：`bash mvnw -o -DskipTests -q clean package 2>&1 | tail -15; echo "EXIT=$?"`
+打印 `EXIT=0`，于是我以为打好了、直接起服务，结果接口行为完全没变。
+真实输出里躺着 `[ERROR] Failed to clean project: Failed to delete D:/aios/server/aios-gitee/target`。
+
+- **根因**：VSCode 的 Java 语言服务（jdt.ls，进程名 `java.exe` + `redhat.java` 扩展）在索引项目，
+  **锁住 target 目录** ⇒ `maven-clean-plugin` 删不掉，`clean` 阶段直接失败。
+- 取真实码：`cmd > /tmp/x.log 2>&1; echo "EXIT=$?"`，别接管道；
+  或先 `set -o pipefail`。
+- **绕开锁**：用不带 `clean` 的 `package`（只重编变化源文件，25s 完成）；
+  真要 `clean` 就先关掉 IDE 的 Java 语言服务。
+- 收口判据不看退出码、看产物：`stat -c '%y' aios-boot/target/*.jar` 必须晚于源码改动时间。

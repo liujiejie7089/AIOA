@@ -565,25 +565,26 @@ async def prepare(state: dict) -> dict:
         logger.info("run %s: 模糊实体预取 %d 个候选（source=%s）",
                     req.run_id, len(entity_candidates), entity_source or "-")
 
-    # —— 请假发起 + 指定处理人（2026-11-03）——
-    # 只在「请假类词 + 指派语义」时触发（见 intent/leave_apply.py 的收窄口径）。
-    # 为什么要抢在模型之前：请假要 4~5 项信息，靠模型正文追问会变成五六轮往返；
-    # 而假种码与可审批人本来就在库里，代码先查好再合成一张卡，用户一次填完。
-    # 未命中时 leave_card 为 None，此段对既有链路零影响（既有表单入口照常工作）。
-    leave_card = None
-    if _hitl_enabled() and leave_apply_tool.needs_handler_pick(req.text):
-        _types, _handlers = await leave_apply_tool.prefetch(tool_client)
-        leave_card = leave_apply_tool.build_card(_types, _handlers, req.text)
-        _blk = leave_apply_tool.build_block(_types, _handlers)
-        if _blk and messages:
-            messages[0]["content"] = (messages[0].get("content") or "") + _blk
-        if leave_card:
-            effective["leaveHandlerCandidates"] = len(_handlers)
-            effective["leaveTypes"] = len(_types)
-            logger.info("run %s: 请假发起 ⇒ 合成字段卡（%d 假种 / %d 处理人）",
-                        req.run_id, len(_types), len(_handlers))
-        elif _handlers == []:
-            logger.info("run %s: 请假发起但查不到可审批人 ⇒ 不合成卡，交回模型", req.run_id)
+    # —— 请假发起：直接请后端定义的业务表单（2026-11-06 改）——
+    # 原先在这里合成一张 ask_user 字段卡（假种/起止/事由/处理人）。实测两个问题：
+    #   ① 字段与 form_template 漂移（漏 days / proof）；② 未命中本闸时模型自造卡，
+    #      把「负责人」造成自由文本框 —— 用户要的是选人，不是敲名字。
+    # 现在只挑表单码、产出 request_form：字段由 Java 从 DB 补全（单一事实源），
+    # 负责人留到提交时由 H5 的选择器问（见 H5 askHandlers）。
+    # 未命中时 leave_form 为 None，此段对既有链路零影响。
+    leave_form = None
+    if _hitl_enabled() and leave_apply_tool.needs_leave_form(req.text):
+        leave_form = leave_apply_tool.build_request(req.available_forms, req.text)
+        if leave_form:
+            _blk = leave_apply_tool.build_block(req.available_forms,
+                                                leave_form["arguments"]["form_code"])
+            if _blk and messages:
+                messages[0]["content"] = (messages[0].get("content") or "") + _blk
+            effective["leaveFormCode"] = leave_form["arguments"]["form_code"]
+            logger.info("run %s: 请假发起 ⇒ 开后端表单 %s（字段由 Java 补全）",
+                        req.run_id, leave_form["arguments"]["form_code"])
+        else:
+            logger.info("run %s: 请假发起但可用表单清单里没有请假表单 ⇒ 交回模型", req.run_id)
 
     # 观测（docs/60 P2-12）：附件注入量与检索参数进同一条 run 日志，线上排查
     # 「模型为什么看不见附件」不再靠猜。
@@ -611,7 +612,7 @@ async def prepare(state: dict) -> dict:
         "fatal": None,
         "entity_candidates": entity_candidates,
         "entity_source": entity_source,
-        "leave_card": leave_card,
+        "leave_form": leave_form,
     }
 
 
@@ -634,16 +635,17 @@ async def agent(state: dict) -> dict:
     content_parts = list(state.get("content_parts") or [])
     usage = dict(state.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0})
 
-    # —— 确定性短路①：请假发起（2026-11-03）——
-    # 卡已在 prepare 阶段用真实候选合成好，这里直接把它作为本轮的 tool_call 抛出。
-    # 抢在模型前面的理由与下面「模糊实体」一致：真机实测模型会用自己的话再问一遍
-    # （而且问得不全、假种码靠猜），用户拿到的是一张残缺的追问，而不是能一次填完的表单。
+    # —— 确定性短路①：请假发起（2026-11-03，2026-11-06 改为开后端表单）——
+    # 已在 prepare 阶段挑好表单码（`request_form{form_code}`），这里直接作为本轮
+    # tool_call 抛出 ⇒ clarify 节点 interrupt ⇒ Java 补全字段 ⇒ 前端渲染。
+    # 抢在模型前面的理由与下面「模糊实体」一致：真机实测模型会自己拼一张残缺的卡
+    # （负责人成文本框、days 字段丢失），而字段定义本来就在 DB 里。
     if (rounds == 0 and _hitl_enabled() and not (state.get("clarifications") or [])
-            and state.get("leave_card")):
-        early = state.get("leave_card")
+            and state.get("leave_form")):
+        early = state.get("leave_form")
         args = early["arguments"]
-        logger.info("run %s: 请假发起 ⇒ 跳过模型，直接弹字段卡（%d 个字段）",
-                    req.run_id, len(args.get("fields") or []))
+        logger.info("run %s: 请假发起 ⇒ 跳过模型，直接开后端表单 %s",
+                    req.run_id, args.get("form_code"))
         return {
             "agent_rounds": rounds,
             "allow_tools": allow_tools,

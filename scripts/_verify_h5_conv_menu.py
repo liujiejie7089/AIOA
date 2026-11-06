@@ -25,6 +25,7 @@
 """
 
 try:  # A3：GBK 控制台打印 emoji 会 UnicodeEncodeError
+    import sys
     sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
 except Exception:
     pass

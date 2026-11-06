@@ -215,17 +215,26 @@ public class FormTemplateService {
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> props = (Map<String, Object>) propsObj;
+        // ★ 字段顺序不能靠 JSON 对象键顺序 —— MySQL 的 JSON 列会**重排对象键**
+        //   （实测按 key 长度升序再字典序：title(5) → archive_no(10) → attachments(11) → …）。
+        //   43 张平台表单里有 39 张因此渲染成「乱序」（请假表变成 天数→证明→事由→结束日期→假种→开始日期，
+        //   用户根本填不下去）。数组不受该重排影响 ⇒ 用 `required` 数组的顺序作为**业务前序**。
+        //   契约：schema 的 required 顺序 = 开发者写下的业务顺序（种子 _gen_oa_form_seed.py 即如此）。
+        //   非必填字段仍按原顺序排在后面。
+        List<String> requiredOrder = new ArrayList<>();
         Set<String> required = new java.util.HashSet<>();
         Object reqObj = schema.get("required");
         if (reqObj instanceof List<?>) {
             for (Object o : (List<?>) reqObj) {
                 if (o != null) {
                     required.add(o.toString());
+                    requiredOrder.add(o.toString());
                 }
             }
         }
+        List<Map.Entry<String, Object>> ordered = orderFieldEntries(props, requiredOrder);
         List<FormField> fields = new ArrayList<>();
-        for (Map.Entry<String, Object> e : props.entrySet()) {
+        for (Map.Entry<String, Object> e : ordered) {
             String name = e.getKey();
             if (!(e.getValue() instanceof Map)) {
                 throw BizException.badRequest("字段「" + name + "」的定义格式错误");
@@ -247,6 +256,43 @@ public class FormTemplateService {
         }
         return new FormRender(t.getId(), t.getCode(), t.getName(), t.getVersion(),
                 t.getModuleCode(), t.getSubmitPolicy(), fields);
+    }
+
+    /**
+     * 计算字段渲染顺序：**required 数组顺序在前，其余保持 properties 原顺序**。
+     *
+     * <p>为什么需要它：MySQL 的 JSON 列会重排对象键（按 key 长度升序、再字典序），
+     * 所以 properties 的键顺序在落库后就与开发者写下的顺序无关了 —— 43 张平台表单里
+     * 39 张因此渲染成乱序（请假表：天数→证明→事由→结束日期→假种→开始日期）。
+     * 数组不受该重排影响，而种子里的 required 数组恰好就是业务顺序，
+     * 故以其为业务前序：{@code leave_type → start_date → end_date → days → reason}，
+     * 非必填字段（如证明材料）排在最后。
+     *
+     * <p>抽成包级静态方法是为了能脱离 DB 直接单测。
+     */
+    static List<Map.Entry<String, Object>> orderFieldEntries(Map<String, Object> props,
+                                                             List<String> requiredOrder) {
+        List<Map.Entry<String, Object>> ordered = new ArrayList<>();
+        Set<String> req = new java.util.HashSet<>();
+        if (requiredOrder != null) {
+            for (String name : requiredOrder) {
+                if (name == null) {
+                    continue;
+                }
+                req.add(name);
+                Object v = props.get(name);
+                // required 里可能有 properties 不存在的脏键：跳过，不造字段
+                if (v != null) {
+                    ordered.add(new java.util.AbstractMap.SimpleImmutableEntry<>(name, v));
+                }
+            }
+        }
+        for (Map.Entry<String, Object> e : props.entrySet()) {
+            if (!req.contains(e.getKey())) {
+                ordered.add(e);
+            }
+        }
+        return ordered;
     }
 
     /** 解析字段选项：x-options-ref 动态引用（目前只支持 leave_types）或静态 enum+enumNames。 */

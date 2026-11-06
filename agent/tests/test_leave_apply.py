@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
-"""请假发起 + 指定处理人：意图闸 / 字段卡 / 候选预取。
+"""请假发起：意图闸 / 表单码挑选 / request_form 载荷。
 
 ## 为什么要有这一层
 
-请假要 4~5 项信息（假种、起止、事由、交给谁）。若交给模型用正文追问，实测会变成
-五六轮往返，且假种码经常靠猜（猜错被服务端拒，用户被迫重填）。
-所以这里：代码先把候选查好 → 合成一张字段卡 → 一次填完。
+请假要 4~5 项信息（假种、起止、事由、处理人）。若交给模型用正文追问，实测会变成
+五六轮往返；而让模型自己拼字段卡，实测更糟：字段与 ``form_template`` 漂移
+（漏 ``days``/``proof``）、负责人被造成**自由文本框**。
+
+所以这里只做一件事：**挑出后端已定义的那张请假表单的 code**，产出
+``request_form{form_code}``；字段由 Java 从 DB 补全，负责人留到提交时由前端选择器问。
 
 ## 用例口径
 
-  L1  触发面：请假类词 + 指派语义；问政策/查记录/陈述事实都**不**触发
-  L2  候选缺失时不弹空控件（宁可不弹，也不给一张点了没反应的卡）
-  L3  字段卡形状：假种 select、起止 date、事由 textarea、处理人 searchable select
-  L4  候选上限与脏数据过滤
-  L5  提示块必须给出 userId（否则模型不知道 assigneeUserId 该填什么）
+  L1  触发面：请假类词 + 指派语义（含「审批人王启铭」这类直接跟名字的句式）
+  L2  表单码只从 Java 下发的 available_forms 里挑，挑不到返回 None（绝不猜）
+  L3  request_form 载荷：只有 form_code/reason/prefill，**绝不生成 fields**
+  L4  提示块：不列字段、不列候选人、明确「别再追问审批人」
 """
 from __future__ import annotations
-
-import asyncio
 
 from aios_ai.intent import leave_apply as la
 
@@ -26,152 +26,114 @@ from aios_ai.intent import leave_apply as la
 def test_trigger_with_assign():
     for t in ("帮我请个假，交给张三代批", "我明天调休，让李四处理",
               "年假交给王五审批", "请一天假，指定赵六负责"):
-        assert la.needs_handler_pick(t), t
+        assert la.needs_leave_form(t), t
+
+
+def test_trigger_with_name_right_after_role_word():
+    """2026-11-06 补：真机里用户更常说「审批人王启铭」「负责人：张大大」。
+
+    旧正则只认「审批人是/选/指」，这类句式全部漏判 ⇒ 落到模型自造卡（负责人变文本框）。
+    """
+    for t in ("帮我请假，审批人王启铭", "请个事假，负责人：张大大",
+              "请假 3 天，审批人=李四", "帮我请个假,处理人 张三"):
+        assert la.needs_leave_form(t), t
 
 
 def test_no_trigger_without_assign():
     """只说「帮我请假」⇒ 走既有表单链路，本闸不介入（零回归）。"""
     for t in ("帮我请假", "我要休年假", "帮我请个假"):
-        assert not la.needs_handler_pick(t), t
+        assert not la.needs_leave_form(t), t
 
 
 def test_no_trigger_for_question_or_query():
-    for t in ("请假流程是什么", "年假有几天", "请假要给谁看",
+    for t in ("请假流程是什么", "年假有几天", "请假要给谁看", "负责人是谁",
               "我的请假记录查一下", "上个月的请假批了吗"):
-        assert not la.needs_handler_pick(t), t
+        assert not la.needs_leave_form(t), t
 
 
 def test_no_trigger_for_short_or_empty():
-    assert not la.needs_handler_pick("")
-    assert not la.needs_handler_pick(None)
-    assert not la.needs_handler_pick("假")
+    assert not la.needs_leave_form("")
+    assert not la.needs_leave_form(None)
+    assert not la.needs_leave_form("假")
 
 
-# ---------------------------------------------------------------- L2/L3 字段卡
+# ---------------------------------------------------------------- L2 表单码挑选
 
-TYPES = [
-    {"code": "annual", "name": "年假", "needProof": False},
-    {"code": "personal", "name": "事假", "needProof": False},
-    {"code": "sick", "name": "病假", "needProof": True},
-]
-HANDLERS = [
-    {"userId": 11, "name": "张三", "jobTitle": "算法部负责人"},
-    {"userId": 12, "name": "李四", "jobTitle": None, "dutyCode": "DEPT_DUTY"},
+FORMS = [
+    {"code": "notice_publish", "name": "通知发布", "module_code": "notice", "biz_type": ""},
+    {"code": "leave_request", "name": "请假申请", "module_code": "leave", "biz_type": "LEAVE"},
+    {"code": "expense_apply", "name": "报销申请", "module_code": "expense", "biz_type": ""},
 ]
 
 
-def test_card_shape():
-    card = la.build_card(TYPES, HANDLERS)
-    assert card and card["name"] == "ask_user"
-    fields = card["arguments"]["fields"]
-    ids = [f["id"] for f in fields]
-    assert ids == ["leave_type", "start", "end", "reason", "handler"]
-    by = {f["id"]: f for f in fields}
-    assert by["leave_type"]["type"] == "select"
-    assert by["start"]["type"] == "date" and by["end"]["type"] == "date"
-    assert by["reason"]["type"] == "textarea"
-    # 处理人必须是**可检索**下拉：人一多，纯菜单滚不动
-    assert by["handler"]["type"] == "select" and by["handler"]["searchable"] is True
-    assert by["handler"]["required"] is True
-    # 需证明的假种要在标签上提示，避免提交时才被拒
-    sick = [o for o in by["leave_type"]["options"] if o["value"] == "sick"][0]
-    assert "需证明" in sick["label"]
+def test_pick_prefers_biz_type_leave():
+    assert la.pick_leave_form(FORMS) == "leave_request"
 
 
-def test_handler_value_is_userid():
-    card = la.build_card(TYPES, HANDLERS)
-    opts = {f["id"]: f for f in card["arguments"]["fields"]}["handler"]["options"]
-    assert opts[0]["value"] == 11           # 机器值必须是 userId，不是姓名
-    assert "张三" in opts[0]["label"]
-    assert "算法部负责人" in opts[0]["label"]
-    # 无 jobTitle 时退到 dutyCode，两个都没有就只显示姓名
-    assert "DEPT_DUTY" in opts[1]["label"]
+def test_pick_falls_back_to_module_code():
+    forms = [{"code": "custom_leave", "module_code": "leave", "biz_type": ""}]
+    assert la.pick_leave_form(forms) == "custom_leave"
 
 
-def test_card_none_without_handlers():
-    """查不到可审批人 ⇒ 不弹卡（弹了也没人能选）。"""
-    assert la.build_card(TYPES, []) is None
-    assert la.build_card(TYPES, None) is None
+def test_pick_falls_back_to_code_containing_leave():
+    forms = [{"code": "leave_request_v2", "module_code": "", "biz_type": ""}]
+    assert la.pick_leave_form(forms) == "leave_request_v2"
 
 
-def test_card_falls_back_to_text_type_when_no_types():
-    """假种目录查不到时退化为文本输入，而不是少一个必填项。"""
-    card = la.build_card([], HANDLERS)
-    by = {f["id"]: f for f in card["arguments"]["fields"]}
-    assert by["leave_type"]["type"] == "text"
-    assert by["leave_type"]["required"] is True
+def test_pick_returns_none_when_absent():
+    """清单里没有请假表单 ⇒ None。**不猜 code**：猜错的表现是「点了提交 404」。"""
+    assert la.pick_leave_form(None) is None
+    assert la.pick_leave_form([]) is None
+    assert la.pick_leave_form([{"code": "notice_publish", "module_code": "notice"}]) is None
+    # 脏数据（缺 code）不得被当成命中
+    assert la.pick_leave_form([{"module_code": "leave", "biz_type": "LEAVE"}]) is None
 
 
-# ---------------------------------------------------------------- L4 上限与脏数据
+# ---------------------------------------------------------------- L3 request_form 载荷
 
-def test_caps():
-    many_types = [{"code": f"t{i}", "name": f"假{i}"} for i in range(50)]
-    many_handlers = [{"userId": i, "name": f"人{i}"} for i in range(1, 100)]
-    card = la.build_card(many_types, many_handlers)
-    by = {f["id"]: f for f in card["arguments"]["fields"]}
-    assert len(by["leave_type"]["options"]) <= la.MAX_LEAVE_TYPES
-    assert len(by["handler"]["options"]) <= la.MAX_HANDLERS
-
-
-def test_dirty_handlers_skipped():
-    """没有 userId 的成员不能进候选：建不出审批任务。"""
-    card = la.build_card(TYPES, [{"name": "幽灵"}, {"userId": 21, "name": "真人"}])
-    opts = {f["id"]: f for f in card["arguments"]["fields"]}["handler"]["options"]
-    assert [o["value"] for o in opts] == [21]
+def test_request_shape():
+    call = la.build_request(FORMS, "帮我请假，审批人王启铭")
+    assert call is not None
+    assert call["name"] == "request_form"
+    args = call["arguments"]
+    assert args["form_code"] == "leave_request"
+    assert args["reason"]
+    assert isinstance(args["prefill"], dict)
+    # ★ 核心约束：绝不生成 fields —— 字段定义在 Java/DB
+    assert "fields" not in args
+    # 纯 A 段：载荷里不得出现任何字段名/候选人，避免又退回"agent 拼表单"
+    assert set(args) == {"form_code", "reason", "prefill"}
 
 
-# ---------------------------------------------------------------- L5 提示块
-
-def test_block_contains_userid():
-    block = la.build_block(TYPES, HANDLERS)
-    assert "userId=11" in block
-    assert "submit_leave_request" in block
-    assert "assigneeUserId" in block
-    # 必须明确「别再追问」：否则模型拿到回填值仍会再问一遍
-    assert "不要" in block
+def test_request_none_without_form():
+    assert la.build_request([], "帮我请假，审批人王启铭") is None
+    assert la.build_request(None, "帮我请假，审批人王启铭") is None
 
 
-def test_block_empty_without_handlers():
-    assert la.build_block(TYPES, []) == ""
+def test_prefill_is_empty_on_purpose():
+    """刻意不预填：把原话当事由会得到「帮我请个假交给张三代批」这种垃圾值。"""
+    call = la.build_request(FORMS, "帮我请个假交给张三代批")
+    assert call["arguments"]["prefill"] == {}
 
 
-# ---------------------------------------------------------------- 预取
+# ---------------------------------------------------------------- L4 提示块
 
-class _Outcome:
-    def __init__(self, ok, data=None, error=""):
-        self.ok = ok
-        self.data = data
-        self.error = error
-
-
-class _Client:
-    def __init__(self, mapping):
-        self.mapping = mapping
-        self.calls = []
-
-    async def invoke(self, name, args=None):
-        self.calls.append(name)
-        v = self.mapping.get(name)
-        if isinstance(v, Exception):
-            raise v
-        return v or _Outcome(True, [])
+def test_block_forbids_asking_assignee_again():
+    block = la.build_block(FORMS, "leave_request")
+    assert "leave_request" in block
+    # 负责人不在表单里：不允许模型再追问审批人
+    assert "不要再追问审批人" in block or "不要" in block
+    # 不得再引导模型去调 submit_leave_request（提交由表单链路完成）
+    assert "submit_leave_request" not in block
+    # 不得列出任何 userId 候选（那是旧字段卡的做法）
+    assert "userId=" not in block
 
 
-def test_prefetch_both_sources():
-    client = _Client({
-        "list_leave_types": _Outcome(True, TYPES),
-        "list_approval_handlers": _Outcome(True, HANDLERS),
-    })
-    types, handlers = asyncio.run(la.prefetch(client))
-    assert len(types) == 3 and len(handlers) == 2
-    assert set(client.calls) == {"list_leave_types", "list_approval_handlers"}
+def test_block_resolves_code_itself():
+    block = la.build_block(FORMS)
+    assert "leave_request" in block
 
 
-def test_prefetch_tolerates_failures():
-    """单侧失败不能打挂 run：返回空列表即可（build_card 会据此决定不弹卡）。"""
-    client = _Client({
-        "list_leave_types": RuntimeError("boom"),
-        "list_approval_handlers": _Outcome(False, error="未绑定机构"),
-    })
-    types, handlers = asyncio.run(la.prefetch(client))
-    assert types == [] and handlers == []
+def test_block_empty_without_form():
+    assert la.build_block([]) == ""
+    assert la.build_block(None) == ""

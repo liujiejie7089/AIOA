@@ -35,10 +35,11 @@ class RunState(TypedDict, total=False):
     citations: list[dict]        # 引用溯源条目
     entity_candidates: list[dict]  # 「模糊的人」预取到的候选人（连接器无关，见 tools/entity_clarify）
     entity_source: str           # 候选来源：contact（通讯录）/ mail（最近邮件发件人）/ ""（没查）
-    # 请假发起：prepare 阶段用真实候选（假种目录 + 可审批人）合成好的 ask_user 调用。
-    # 存**成品调用**而不是候选本身，是因为它不是"要不要问"的判断，而是"已经确定要问这些"；
+    # 请假发起：prepare 阶段从 `available_forms` 挑好表单码后合成的 request_form 调用。
+    # 存**成品调用**而不是候选本身，是因为它不是"要不要问"的判断，而是"已经确定要开哪张表"；
     # 让 agent 节点直接抛出去，避免两处各拼一次参数导致形状漂移。
-    leave_card: dict | None      # None = 本轮不是请假发起（既有链路零影响）
+    # ★ 只带 {form_code, reason, prefill}：字段由 Java 从 form_template 补全（单一事实源）。
+    leave_form: dict | None      # None = 本轮不是请假发起（既有链路零影响）
 
     # ---- 循环态 ----
     agent_rounds: int            # 已调模型的次数
