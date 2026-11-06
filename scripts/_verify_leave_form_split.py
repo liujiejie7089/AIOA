@@ -184,8 +184,20 @@ def main():
         page_fields = page_fields or []
         page_labels = [(f.get("label") or "").replace("*", "").strip() for f in page_fields]
         # ★ 有序比较（不能 sorted）：MySQL 的 JSON 列会重排对象键，字段顺序曾是乱序的
-        rec("V2c 页面渲染字段 == 接口字段（顺序也一致）",
-            page_labels == api_labels, api_labels, page_labels)
+        # ★2026-11-06 判据升级：按**字段名 + 顺序**比，不再比 label。
+        #   这一轮用户要求「内部字段不能展示给用户」，label 已被有意改成人话
+        #   （假种→请假类型），拿 label 比会把「对的展示」判成红；而比字段名其实更硬 ——
+        #   label 可能碰巧相同，name 相同才真正证明「页面用的是接口这份定义」。
+        api_names = [f.get("name") for f in (api_fields or [])]
+        page_names = [f.get("name") for f in page_fields]
+        rec("V2c 页面渲染字段名 == 接口字段名（顺序也一致）",
+            page_names == api_names, api_names, page_names)
+
+        # 展示层：内部叫法必须换成用户语言（与上一条互补：结构一致 + 文案人话）
+        alias_bad = [l for l in page_labels if l in ("假种", "假别")]
+        rec("V2c' 内部叫法已换人话（页面不再出现「假种」）",
+            not alias_bad and "请假类型" in page_labels, "出现「请假类型」且无「假种」",
+            {"labels": page_labels, "bad": alias_bad})
 
         card_text = pg.evaluate("""(code) => {
             const card = document.querySelector('.leave-form[data-code="'+code+'"]');

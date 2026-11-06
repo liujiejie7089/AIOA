@@ -2058,3 +2058,21 @@ import sys
 - **判据自检**：任何「等待某事件发生」的断言，若超时后又在你下一次任何 Playwright 调用时
   立刻成立，就该先怀疑是被自己的 sleep 堵住了，而不是被测代码慢。
 
+
+## 98. `await` 住的卡片必须能被「停止」解开 —— 否则 `S.busy` 永久为 true
+
+2026-11-06 实测（用户口径：「填写表单时，无法停止」）：
+
+`oaSend` 里是 `await mountFormCard(bubble, form)`，而这个 Promise 只在用户「提交」或「取消」时
+resolve。用户点右上「停止生成」时，`oaStop()` 只 abort 了 SSE、cancel 了 run ——
+**那条 await 还在等** ⇒ while 循环出不来 ⇒ `finally` 不执行 ⇒ `S.busy` 永远为 true ⇒ 输入栏废掉。
+
+- 修法：与既有的 `cancelClarCard()` 同构加 `cancelFormCard()`，`oaStop()` 里一并调用，
+  把未决卡以 `null` 收掉让 while 正常 break。
+- **凡是「等用户操作」的卡片（澄清 / 确认 / 表单）都要有一个外部可解的口子**，
+  这是新增第三种卡时最容易漏的一条。
+- 连带 bug：用户停止后 `oaAfterOaAnswer` 仍会执行收口副作用（`held=true` 分支当场补发
+  经典请假单）——那时 need_form 卡刚被收走、防重闸拦不住 ⇒「点了停止又冒出一张空表」。
+  **用户主动终止的那一轮，收口副作用一律不做**（`stopped` / `cancelledForm`）。
+- 「取消」按钮不能只摘 DOM：run 会留在 `WAITING_INPUT`，之后再提交就撞
+  「该运行当前不是等待澄清状态（CANCELLED）」。取消必须同时 `API.cancel(runId)`。

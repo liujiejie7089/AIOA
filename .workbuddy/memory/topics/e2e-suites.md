@@ -633,3 +633,16 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 ★ 会话 id 取自**请求 URL**（`oaState` 虽挂在 window，但被测状态不要拿来当判据 —— 见铁律 14）。
 ★ 等待必须用 `pg.wait_for_timeout` 轮询，**不能用 `time.sleep`** ⇒ 见 pitfalls 97（本次差点误判成「重发没触发」）。
 
+
+## `_verify_form_order_stop_fields.py`（16 项，2026-11-06 起，docs/83）
+
+三件事：**表单先于换人** / **填表无法停止** / **内部字段外露**。
+前置：后端 :8080（H5 在 `/aios/h5/`）；`agent/.venv` 的 python；agent 不必在线（SSE 打桩），
+字段定义取真实 `GET /v1/forms/leave_request`（不手搓 schema）。
+分段：**S** 起手在 1314 文档管理数字人说「我要请假」⇒ S1 用 `MutationObserver` 记录
+「表单出现那一刻 `.oa-who` 是谁」/ S2 已切人 / S3 同句自动重发 / **S4 回库核 `worker_id=523`** /
+S5 转对人才出表 / S6 字段名是人话 / **S7 同时只有一张卡**（防经典卡与后端卡并存）·
+**F** 核对面板（F1/F3 纯函数 + 真实面板双证，无 `假种/请假天数/证明材料/leave_type`）·
+**T** 停止（T1 卡片收起 + `S.busy=false` + 停止键已摘 + 输入框可用；T2 真发 `/runs/{id}/cancel`）· C1 无 JS 异常。
+★ 判据避坑：**别拿「发送键可见」判输入栏可用** —— 它本就随输入框有无文字显隐（空值是话筒）。
+★ 停止后要断言「**没有**补发经典请假卡」的现场：截图 `docs/assets/regression-2026-11-06/52-form-stopped.png`。

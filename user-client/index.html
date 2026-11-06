@@ -8219,6 +8219,17 @@ function cancelClarCard(){
   if(typeof clarPendingResolve === 'function'){ const fn = clarPendingResolve; clarPendingResolve = null; fn(); }
 }
 
+/* 未决**表单卡**的收口句柄（2026-11-06「填写表单时，无法停止」）。
+   表单卡是 `await mountFormCard(...)` 挂住的：它只在用户「提交」或「取消」时 resolve。
+   用户点右上「停止生成」时，SSE 被 abort 了、但这条 await 还在等 ——
+   于是 while 循环出不来、finally 不执行、S.busy 永远为 true ⇒ **输入栏被永久吃掉**，
+   用户看到的就是「填表单时停不下来」。这里与 cancelClarCard 同构：
+   把未决卡以 null 收掉，让 while 走 break 正常收口。 */
+var formPendingResolve = null;
+function cancelFormCard(){
+  if(typeof formPendingResolve === 'function'){ const fn = formPendingResolve; formPendingResolve = null; fn(); }
+}
+
 /* 澄清卡回填载荷：**始终**是 {value,label,text} 对象（字段卡额外带 values）。
    以前只回传标量 value —— 于是「选完人」和「要发什么」被拆成两轮：
    模型拿到一个 userid，不知道内容，只能再问一句（2026-11-02 现场）。
@@ -8413,6 +8424,34 @@ function appendSysNote(host, text){
 const FORM_FIELD_TYPES = ['text','textarea','number','amount','date','datetime','select','multiselect','file','boolean','location'];
 
 /* 纯字符串渲染。返回挂到气泡里的表单卡片 HTML；所有动态值均转义。 */
+/* 字段的**用户可见**标签（表单控件与核对面板共用，唯一一处口径）。
+   2026-11-06 用户口径：「内部字段不能展示给用户」。
+
+   旧写法两处都是 `f.label != null ? f.label : name`，于是：
+     · label 缺失时把**内部键名**直接印在界面上（leave_type / start_date）；
+     · label 是内部叫法时也照印（schema 里 leave_type 的 title 就是「假种」）。
+   这里统一：内部叫法走向人话别名；label 缺失/与键名相同 ⇒ 不抖键名，用「该项」。 */
+var FORM_LABEL_ALIAS = {
+  '假种': '请假类型',
+  '假别': '请假类型',
+  'days': '请假天数',
+  'leave_type': '请假类型',
+  'start_date': '开始日期',
+  'end_date': '结束日期',
+  'reason': '请假事由',
+  'proof': '证明材料'
+};
+function formFieldLabel(f){
+  f = f || {};
+  var name = f.name != null ? String(f.name) : '';
+  var raw = (f.label != null && f.label !== '') ? String(f.label) : '';
+  if(raw && !(raw === name && /^[A-Za-z0-9_]+$/.test(raw))){
+    return FORM_LABEL_ALIAS[raw] || raw;
+  }
+  if(name && FORM_LABEL_ALIAS[name]) return FORM_LABEL_ALIAS[name];
+  return '该项';
+}
+
 function renderFormHtml(p){
   p = p || {};
   const code = p.form_code || '';
@@ -8428,7 +8467,7 @@ function renderFormHtml(p){
   fields.forEach(function(f){
     if(!f || typeof f !== 'object') return;
     const name = f.name != null ? String(f.name) : '';
-    const label = f.label != null ? String(f.label) : name;
+    const label = formFieldLabel(f);
     const type = (f.type || 'text');
     const required = !!f.required;
     const placeholder = f.placeholder != null ? String(f.placeholder) : '';
@@ -8837,24 +8876,37 @@ function formReceiptHtml(receipt){
 }
 
 /* 提交前汇总确认卡的纯函数（与 renderFormHtml/formReceiptHtml 同级，便于浏览器级哨兵直接 evaluate 调用）。
-   返回 HTML 字符串：标题「请核对以下信息」+ 逐字段一行（label + 值）+ 末尾两个按钮。
-   值展示口径：multiselect/file 数组用「、」连接；boolean 显示「是/否」；null/''/空数组显示「—」。
-   全部经 esc() 转义（值和标签都可能是用户/库里数据）。 */
+   返回 HTML 字符串：标题 + 逐字段一行（label + 值）+ 末尾两个按钮。
+   值展示口径：multiselect/file 数组用「、」连接；boolean 显示「是/否」；null/''/空数组不显示该行。
+   全部经 esc() 转义（值和标签都可能是用户/库里数据）。
+
+   ★2026-11-06 用户口径：「内部字段不能展示给用户」。
+   旧实现把 schema 里**每个**字段原样列一行，于是用户看到的是
+   「假种 / 开始日期 / 结束日期 / 请假天数 / 请假事由 / 证明材料 —」—— 一张**内部字段清单**：
+     · 空值行（证明材料 —）是纯噪音，用户填都没填；
+     · 「请假天数」是系统按起止日期算出来的，让用户"核对"一个自己没填过的数只会困惑；
+     · 「假种」是内部叫法（schema 里的 title），不是用户语言。
+   新口径：只列**用户真的填了值**的字段 + 标签走人话别名 + 系统计算字段不列。
+   值仍以 collectFormValues 采到的那份为准（本函数只负责展示，不参与提交）。 */
 function formSummaryHtml(p, values){
   p = p || {};
   const fields = Array.isArray(p.fields) ? p.fields : [];
   values = (values && typeof values === 'object') ? values : {};
+  /* 系统计算 / 派生字段：用户没填过，不该出现在「确认提交」里。
+     只影响本面板，不影响表单控件与提交内容（它们仍按 schema 走）。 */
+  const SYSTEM_FIELDS = ['days', 'hours', 'duration', 'total_days', 'total_amount'];
   let rows = '';
   fields.forEach(function(f){
     if(!f || typeof f !== 'object') return;
     const name = f.name != null ? String(f.name) : '';
-    const label = f.label != null ? String(f.label) : name;
+    if(!name) return;
+    if(SYSTEM_FIELDS.indexOf(name) >= 0) return;       // 派生字段：不列
     let v = values[name];
     let txt;
     if(Array.isArray(v)){
-      // multiselect / file 都是数组：空 → 「—」
-      if(v.length === 0){ txt = '—'; }
-      else if(f.type === 'multiselect'){
+      // multiselect / file 都是数组：空 → 整行不显示
+      if(v.length === 0) return;
+      if(f.type === 'multiselect'){
         // 多选：尽量回显 label（选项名比裸 value 好懂）
         const opts = Array.isArray(f.options) ? f.options : [];
         txt = v.map(function(val){
@@ -8867,24 +8919,29 @@ function formSummaryHtml(p, values){
       }
     } else if(f.type === 'select'){
       // 单选：回显选项名（裸 value 用户看不懂）；命中不到就原样显示（负向对照）
-      if(v === null || v === undefined || v === ''){ txt = '—'; }
-      else {
-        const opts = Array.isArray(f.options) ? f.options : [];
-        const hit = opts.filter(function(o){ return o && String(o.value) === String(v); })[0];
-        txt = (hit && hit.label != null && hit.label !== '') ? String(hit.label) : String(v);
-      }
+      if(v === null || v === undefined || v === ''){ return; }
+      const opts = Array.isArray(f.options) ? f.options : [];
+      const hit = opts.filter(function(o){ return o && String(o.value) === String(v); })[0];
+      txt = (hit && hit.label != null && hit.label !== '') ? String(hit.label) : String(v);
     } else if(f.type === 'boolean'){
-      // boolean：显示「是/否」（未定义也回落到否）
-      txt = (v === true || v === 'true') ? '是' : '否';
+      // 未勾选 = 用户没表达任何东西，列一行「否」只是噪音
+      if(!(v === true || v === 'true')){ return; }
+      txt = '是';
     } else if(v === null || v === undefined || v === ''){
-      txt = '—';
+      return;                                          // 空值不列
     } else {
       txt = String(v);
     }
+    const label = formFieldLabel(f);
     rows += '<div class="lf-confirm-row"><span>'+esc(label)+'</span><b>'+esc(txt)+'</b></div>';
   });
+  if(!rows){
+    /* 一个可显示的字段都没有（极端：全是空/派生）——不要给一张空面板，
+       但确认动作仍要有，故用一句人话占位。 */
+    rows = '<div class="lf-confirm-row"><span>内容</span><b>已按你填写的内容提交</b></div>';
+  }
   return '<div class="lf-confirm">'+
-    '<div class="lf-confirm-title">请核对以下信息</div>'+
+    '<div class="lf-confirm-title">确认提交以下内容</div>'+
     rows+
     '<div class="lf-confirm-actions">'+
       '<button class="btn small" type="button" data-form-confirm="1">确认提交</button>'+
@@ -8912,6 +8969,17 @@ function mountFormCard(host, p, opts){
     const submitBtn = card.querySelector('[data-form-submit]');
     const cancelBtn = card.querySelector('[data-form-cancel]');
     let settled = false;
+
+    /* 「收起这张卡并交回 null」——取消按钮、后端取消、以及顶部的「停止生成」都走这一条，
+       三条出口行为一致，不会出现"卡片没了但 Promise 还挂着"的半死状态。 */
+    function dismiss(){
+      if(settled) return;
+      settled = true;
+      formPendingResolve = null;
+      if(card.parentNode) card.parentNode.removeChild(card);
+      resolve(null);
+    }
+    formPendingResolve = dismiss;
 
     function fail(msg){
       if(errBox){ errBox.textContent = msg; errBox.style.display = 'block'; }
@@ -8976,6 +9044,7 @@ function mountFormCard(host, p, opts){
       API.formSubmit(code, values, extra).then(function(submission){
         submission = submission || {};
         const resume = submission.resume;
+        formPendingResolve = null;      // 已经有结果了 ⇒ 外部「停止」不再需要收这张卡
         if(opts.standalone || resume === false){
           // 独立入口或后端明确不续跑：就地渲染回执卡，结束
           showReceipt(submission);
@@ -9089,10 +9158,14 @@ function mountFormCard(host, p, opts){
 
     if(cancelBtn){
       cancelBtn.addEventListener('click', function(){
-        if(settled) return;
-        settled = true;
-        if(card.parentNode) card.parentNode.removeChild(card);
-        resolve(null);
+        /* ★2026-11-06 用户口径：「填写表单时，无法停止」。
+           旧实现只把卡片从 DOM 摘掉就 resolve(null)，**服务端那个 run 仍挂在 WAITING_INPUT**：
+           用户以为已经取消，随后任何一次提交/续跑都会撞上「该运行当前不是等待澄清状态」，
+           界面上只剩一句看不懂的后端错误。取消必须同时把 run 也取消掉。 */
+        if(opts.runId && !opts.standalone && typeof API.cancel === 'function'){
+          try{ API.cancel(opts.runId).catch(function(){}); }catch(e){ /* 已结束则忽略 */ }
+        }
+        dismiss();
       });
     }
 
@@ -13236,6 +13309,68 @@ async function oaApprovalLaunchTarget(q){
   return null;
 }
 
+/* 这张表单该由谁发？（2026-11-06，用户：「还没转到专业数字人，表单就已经出来了」）
+   返回非 null = 归属人是别人，调用方应先换人再让对口的人重新发起。
+   返回 null   = 已经是对口的人 / 判不出归属 ⇒ 维持原行为（不在前端硬拦）。
+
+   判据来源只有服务端 intent（POST /v1/workers/intent）：
+     · intent.action 是明确动作（APPLY_LEAVE / …）才有意义，纯聊天不参与；
+     · 命中哪位数字人仍走 oaMatchIntentWorker(**不带 oaOnly**)——
+       请假助手是 LEAVE_APPROVER，不在 OA* 类型里，带 oaOnly 会永远匹配不到它，
+       这正是"该转的人转不过去、于是旧人先把表单发了出来"的由来。
+   前端不另写「哪些数字人能做请假」的本地词表（铁律 1：判定只有一个来源）。 */
+async function oaFormOwner(form, q){
+  if(!form || !form.form_code || !q) return null;
+  var intent = null;
+  try{ intent = await API.workerIntent(q); }catch(e){ return null; }
+  if(!intent) return null;
+  /* 「这句话有没有明确归属」——两个信号任一成立即可，实测（2026-11-06）：
+       · 请假：role=LEAVE_APPROVER（action 只在「我要请假」这种句式才有值，
+         光看 action 会漏掉「请假」「帮我提交一个请假申请」）；
+       · 报销：role=GENERAL，但 action=REPORT_EXPENSE、候选取到「费用报销数字人」；
+       · 闲聊（今天天气 / 你好 / 策划书里说了什么）：role=GENERAL、action 空、**候选为空**。
+     故：领域码具体 ⇒ 可以转；领域码 GENERIC 时必须带具体动作才算数。 */
+  var role = String(intent.role || '').toUpperCase();
+  var act  = String(intent.action || '').toUpperCase();
+  var concreteRole = role && role !== 'GENERAL' && role !== 'UNKNOWN';
+  var concreteAct  = act && act !== 'NONE' && act !== 'UNKNOWN' && act !== 'CHAT';
+  if(!concreteRole && !concreteAct) return null;
+  /* 已在**同一领域**就不要再转（2026-11-06 实测踩到）：
+     请假在库里有两位（523 `LEAVE_APPROVER`、1316 `OA_LEAVE`），而
+       · oaApprovalLaunchTarget 带 oaOnly ⇒ 选中 1316；
+       · 本函数按 intent.role 解析 ⇒ 会得到 523。
+     两者都"对口"，若按 id 比较就会 1316→523→… 来回换，用户看到来回跳。
+     故这里只比**领域**（去掉 OA_ / _APPROVER 前缀和尾缀后的主码）：
+       OA_LEAVE / LEAVE_APPROVER ⇒ LEAVE 相同 ⇒ 不转人。
+     真正要修的现场是「文档管理数字人（OA_DOCMGR）在发请假单」，领域不同才转。 */
+  var domainOf = function(t){
+    return String(t || '').toUpperCase().replace(/^OA_/, '').replace(/_APPROVER$/, '').replace(/_REQUEST$/, '');
+  };
+  var curType = String((S.worker && S.worker.workerType) || '');
+  var w = null;
+  try{ w = oaMatchIntentWorker(intent, {}); }catch(e){ w = null; }
+  if(!w) return null;
+  if(S.worker && String(w.id) === String(S.worker.id)) return null;   // 已经是对口的人
+  /* 同领域的另一位不转（见上：OA_LEAVE 与 LEAVE_APPROVER 都是"请假"）。
+     判据放在解析出 w 之后，这样只靠 action 判定（如报销 role=GENERAL）时也能比到具体类型。 */
+  if(curType && domainOf(curType) === domainOf(w.workerType)) return null;
+  if(S.expert) return null;      // 专家会话不劫持（与 suggestWorker 同一道闸）
+  return w;
+}
+
+/* 后端 run 状态类错误转人话（2026-11-06 截图：用户看到的是
+   「生成失败：该运行当前不是等待澄清状态（CANCELLED）」——既不知道发生了什么，也不知道该做什么）。
+   这类错误几乎都发生在「用户先取消/停止了，前端还拿着旧 runId 去续跑」之后，
+   所以文案要直接指向下一步，而不是复述服务端状态码。 */
+function oaHumanRunError(msg){
+  var m = String(msg || '');
+  if(/不是等待澄清状态|不是等待|WAITING_INPUT|CANCELLED|CANCELED|已取消/i.test(m)){
+    return '这一轮已经结束（你可能刚点了取消或停止），再发一次就能重新开始。';
+  }
+  if(/timeout|超时/i.test(m)) return '后端响应超时，稍后再试一次。';
+  return m;
+}
+
 function oaPickWorker(w){
   if(!w) return;
   // 换了对话对象就要换会话：后端在**创建会话时**把 workerId 绑上去（API.ensureConversation 同款），
@@ -13439,6 +13574,8 @@ async function oaSend(){
   var errMsg = '';
   var handoff = null;         // worker.handoff 帧：会话内自动转交（只改当前数字人、不换会话）
   var suggestWorker = null;   // suggest.worker 帧：越界建议（本次回答说「这事不归我管」）
+  var resendAfter = false;    // 表单归属不对 ⇒ 已换人，收口后用同一句话自动重发一次
+  var cancelledForm = false;  // 用户取消/停止了表单 ⇒ 收口阶段不许再补发请假卡
   var h = {
     onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
     onCompleted: function(p){
@@ -13456,7 +13593,7 @@ async function oaSend(){
     },
     onError: function(err){
       errored = true;           // 与经典形态同口径：只记账，位置由收口处决定
-      errMsg = errText(err, {withId:true}) || '未知错误';
+      errMsg = oaHumanRunError(errText(err, {withId:true})) || '未知错误';
       tx.style.color = 'var(--red)';
     },
     onClarification: function(p){ clar = p; },
@@ -13511,9 +13648,33 @@ async function oaSend(){
         }
       } else if(form){
         var fc = form.form_code;                     // 先记下 code，随后把 form 置空
-        var fres = await mountFormCard(bubble, form);
+        /* ★2026-11-06 用户口径：「还没转到专业数字人，表单就已经出来了，应该要先进行专业数字人」。
+           表单是**某个对口数字人的产物**，不是当前这位的。谁的口径：只认服务端 intent（下面的
+           oaFormOwner 复用它），不在前端另写「哪些数字人能做请假」的本地词表（铁律 1）。
+           不是对口的人 ⇒ 这一轮**不挂卡**：先把人换过去、把原话带回来继续问一遍。 */
+        var owner = await oaFormOwner(form, effectiveQ);
+        /* 同一句话只自动转一次：转过去之后再把表退回来说"还是不对"，就按对方的表挂上，
+           否则两个数字人互相推会让用户看到无限跳转（比顺序错更难接受）。 */
+        if(owner && S.autoResentFor === effectiveQ) owner = null;
+        if(owner){
+          form = null;
+          // 这一轮的 run 已经没意义了（表单不该由旧人发出），先收掉再换人，避免留下挂起的 run
+          try{ await API.cancel(runId); }catch(e){ /* 已结束则忽略 */ }
+          oaPickWorker(owner);                        // 会重置会话 + 顶部标识 + 落「已选择」气泡
+          oaPushBub('ai', '这件事该由「' + txt(owner.name || '对口数字人') + '」来办，' +
+            '已把你转过去，正在用同一句话继续。');
+          oaScrollDock(); oaLayoutTails();
+          S.autoResentFor = effectiveQ;                // 一次性：换完人自动重发，避免同一个问题被重复转
+          resendAfter = true;
+          break;
+        }
+        var fres = await mountFormCard(bubble, form, {runId: runId});
         form = null;
-        if(!fres) break;                             // 用户取消：就地收口
+        if(!fres){                                   // 用户取消（卡片已把它自己摘掉、并已取消 run）
+          cancelledForm = true;                      // 收口时别再补发一张经典请假卡（见下方注释）
+          if(text.length === 0) appendSysNote(bubble, '已取消本次填写，这一轮已结束。');
+          break;
+        }
         var wait2 = bubble.querySelector('.typing');
         if(wait2 && wait2.hasAttribute('data-wait')) wait2.remove();
         var sub = fres.submission || {};
@@ -13563,7 +13724,7 @@ async function oaSend(){
       if(!text) tx.textContent = '（已停止生成）';
       tx.style.color = 'var(--text-3)';
     }else{
-      tx.textContent = '请求失败：' + (e.message || '请检查网络或后端服务');
+      tx.textContent = '请求失败：' + oaHumanRunError(e.message || '请检查网络或后端服务');
       tx.style.color = 'var(--red)';
     }
   }finally{
@@ -13577,7 +13738,23 @@ async function oaSend(){
   }
   // 收口（与老版 afterAnswer 同一批动作）：推荐更对口的同事 + 按需当场发表单。
   // 放在 finally 之后，且不 await —— S.busy 已释放，推荐晚到一步不该拖住下一次提问。
-  if(answered) oaAfterOaAnswer(suggestWorker);
+  // ★换人重发这条路径**不做收口**：这一轮的表单与回答都不成立（发它的不是对口的人），
+  //   再推一张「找谁办」的卡只会和紧接着的重发打架。
+  // ★用户主动「停止 / 取消填表」后也**不做收口**：oaMaybeLeaveAction 里 held=true 的分支会
+  //   当场再发一张经典请假单（oaEmitLeaveForm），而那时 need_form 卡刚被收走、防重闸拦不住，
+  //   于是用户明明点了停止，屏幕上却又冒出一张空表单（2026-11-06 实测截图）。
+  if(answered && !resendAfter && !stopped && !cancelledForm) oaAfterOaAnswer(suggestWorker);
+  /* 表单归属不对 ⇒ 已换到对口数字人。这里用同一句话自动重发一次：
+     S.busy 刚在 finally 里释放，输入框已由 oaPickWorker 回填好原话。
+     S.autoResentFor 是一次性闸：同一句话只自动重发一次，防止两边都不认这张表时来回弹。 */
+  if(resendAfter){
+    var again = S.lastQuery;
+    if(again && S.autoResentFor === again){
+      S.autoResentFor = '';          // 用掉即清，下一次（同句）不再自动重发
+      $o('oaInput') && ($o('oaInput').value = again);
+      oaSend();
+    }
+  }
   // 数字人可能刚发起过「定位调用申请」：这一轮读完就去问用户要不要允许（自带幂等与忙闲判断）
   oaCheckLocationRequest();
 }
@@ -13588,6 +13765,7 @@ async function oaStop(){
   // 否则它们的 await 永不 settle、S.busy 永不释放（吃掉整个输入栏）。
   cancelClarCard();
   cancelConfirmCard();
+  cancelFormCard();     // 表单卡也要收：否则那条 await 永不 settle ⇒ S.busy 卡死、输入栏被吃掉
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
   if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }
@@ -14183,7 +14361,11 @@ function oaOnLeaveWorker(intent){
    表单本体 leaveFormHtml() 与假种 ensureLeaveTypes() 仍在经典基线里，两形态共用同一文档 ⇒ 直接复用，
    不在 OA 侧另写第二份表单（否则就是「同一决策点两处判定」的反面：两处渲染）。 */
 function oaEmitLeaveForm(){
-  if(document.getElementById('leaveForm')) return false;      // 文档里已有一份，不重复发放
+  /* 已有表单就不再发第二张。判据用**类名**而不是 id：后端 need_form 发下来的那张
+     是 renderFormHtml 产物（`.leave-form` 但**没有** #leaveForm），只查 id 会漏，
+     于是同一屏出现两张请假单（2026-11-06 截图实证）。 */
+  if(document.getElementById('leaveForm')) return false;
+  if(document.querySelector('.leave-form')) return false;
   if(typeof leaveFormHtml !== 'function') return false;
   oaPushBub('ai', '已为你生成《请假申请》，请填写后提交审批：' + leaveFormHtml());
   if(typeof ensureLeaveTypes === 'function') ensureLeaveTypes(); // 假种来自后端配置，写死会打不到真实链路
