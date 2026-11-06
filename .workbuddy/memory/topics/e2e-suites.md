@@ -634,7 +634,7 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 ★ 等待必须用 `pg.wait_for_timeout` 轮询，**不能用 `time.sleep`** ⇒ 见 pitfalls 97（本次差点误判成「重发没触发」）。
 
 
-## `_verify_form_order_stop_fields.py`（16 项，2026-11-06 起，docs/83）
+## `_verify_form_order_stop_fields.py`（19 项，2026-11-06 起，docs/83–84）
 
 三件事：**表单先于换人** / **填表无法停止** / **内部字段外露**。
 前置：后端 :8080（H5 在 `/aios/h5/`）；`agent/.venv` 的 python；agent 不必在线（SSE 打桩），

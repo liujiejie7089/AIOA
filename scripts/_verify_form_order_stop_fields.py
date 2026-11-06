@@ -252,6 +252,23 @@ def main():
             all(k in pure for k in ["请假类型", "年休假", "开始日期", "请假事由", "522"]),
             "人话标签与值都在", [k for k in ["请假类型", "年休假", "开始日期", "请假事由", "522"] if k not in pure])
 
+        # ---- V 段：同类「内部标识外露」的其余入口（2026-11-06 排查时补的） ----------
+        # V1 回执：后端契约是 lines([{label}])，但 fields 旧形态的 key 是字段名，不能直接印
+        rc = pg.evaluate("""() => formReceiptHtml({submissionId: 1, status: '已提交',
+            fields: {leave_type: 'ANNUAL', days: '1', 请假类型: '年休假', foo_bar: 'x'}})""")
+        rec("V1 回执不打印内部键名（leave_type / days / 未知键），已知的换人话",
+            ("leave_type" not in rc) and (">days<" not in rc) and ("foo_bar" not in rc)
+            and ("请假类型" in rc),
+            "无 leave_type/foo_bar，含「请假类型」",
+            {"has_leave_type": "leave_type" in rc, "has_foo": "foo_bar" in rc})
+
+        # V2 未知字段类型：提示文案不抖 schema 里的类型码
+        unk = pg.evaluate("""() => renderFormHtml({form_code:'x', fields:[
+            {name:'a', label:'甲', type:'weird_type'}]})""")
+        rec("V2 不支持的字段类型不会把类型码印出来",
+            ("weird_type" not in unk) and ("暂不支持" in unk), "无 weird_type，含「暂不支持」",
+            {"has_code": "weird_type" in unk})
+
         # 真实 UI：填必填 → 点提交 → 看核对面板（**不**点确认，避免产生业务数据）
         pg.evaluate("""() => {
             const card = document.querySelector('.leave-form');
@@ -276,6 +293,23 @@ def main():
         rec("F4 标题改为用户语言「确认提交以下内容」",
             bool(panel) and "确认提交以下内容" in panel, "含「确认提交以下内容」", panel[:60])
         pg.screenshot(path=str(OUT / "51-form-confirm-human.png"))
+
+        # V3 漏填时的校验提示：说人话，不抖 schema 键名（旧实现是「reason 为必填项」）
+        pg.click(".leave-form [data-form-back]")
+        pg.wait_for_timeout(300)
+        pg.evaluate("""() => {
+            const c = document.querySelector('.leave-form [data-field="reason"]');
+            if(c){ c.value = ''; c.dispatchEvent(new Event('input',{bubbles:true})); }
+            const d = document.querySelector('.leave-form [data-field="days"]');
+            if(d){ d.value = ''; d.dispatchEvent(new Event('input',{bubbles:true})); }
+        }""")
+        pg.click(".leave-form [data-form-submit]")
+        pg.wait_for_timeout(400)
+        vmsg = pg.evaluate("() => { const e=document.querySelector('.leave-form [data-form-error]');"
+                           " return e && e.style.display!=='none' ? e.textContent : null; }")
+        rec("V3 漏填提示用字段人话名，不出现 reason / days 这类内部键",
+            bool(vmsg) and ("请假事由" in vmsg) and ("reason" not in vmsg) and ("days" not in vmsg),
+            "含「请假事由」且无 reason/days", vmsg)
 
         # ---- T 段：填表时能停止 --------------------------------------------
         rec("T0 表单挂起时 S.busy 为 true（确有「正在进行的一轮」可停止）",

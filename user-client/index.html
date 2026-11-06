@@ -6448,7 +6448,9 @@ function permPathText(g){
   const tl = asArray(g.timeline);
   if(tl.length){
     const parts = tl.map(function(t){
-      const nm = t.approverName || ('#'+(t.approverId||''));
+      /* 审批人姓名缺失时旧实现显示 '#<userId>' —— 那是系统里的用户 id，不是用户认识的称呼。
+         同一类「内部标识符不能当文案给人看」：宁可说"未具名"，也不抖 id。 */
+      const nm = t.approverName || '未具名审批人';
       return nm + '·' + ({PENDING:'待审',APPROVED:'已通过',REJECTED:'已驳回',SKIPPED:'跳过'}[t.status]||t.status||'');
     });
     return parts.join(' → ');
@@ -6466,7 +6468,9 @@ function applyPermission(code){
     : '';
   askDialog({
     title:'申请权限',
-    message:'权限：' + (item.permissionName||code) + '（' + code + '）\n'
+    /* 只显示权限的**名称**。旧实现还附了「（worker:create）」这样的权限码 ——
+       那是管理端配置用的内部标识，申请权限的人不需要它，也看不懂（同「内部字段」口径）。 */
+    message:'权限：' + (item.permissionName || code) + '\n'
       + (asDept
           ? ('申请主体：' + deptName + '（以部门名义申请，审批从机构管理员起算）')
           : '审批流程：从你的上一级起逐级上报（部门负责人 → 企业管理员 → 租户管理员），通过后立即生效。'),
@@ -8477,10 +8481,11 @@ function renderFormHtml(p){
     const phAttr = ' placeholder="'+esc(placeholder)+'"';
 
     if(FORM_FIELD_TYPES.indexOf(type) === -1){
-      // 未知类型：跳过控件，给一行提示（不 innerHTML 原样插入 schema）
+      // 未知类型：跳过控件，给一行提示。
+      // 不把 type（schema 内部类型码）印出去 —— 与「内部字段不能展示给用户」同一口径。
       unknown++;
       rows += '<div class="lf-row"><label>'+esc(label)+'</label>'+
-        '<div class="lf-unknown">不支持的字段类型「'+esc(type)+'」，已跳过</div></div>';
+        '<div class="lf-unknown">该字段暂不支持填写，已跳过</div></div>';
       return;
     }
 
@@ -8572,25 +8577,39 @@ function collectFormValues(card){
 }
 
 /* 体验级校验：必填 + 类型（数字）。返回错误文案数组，空数组表示通过。 */
+/* 从一个控件反查它的**用户可见**字段名（校验报错用）。
+   2026-11-06 用户口径：「内部字段不能展示给用户」——而旧 validateForm 拿
+   `data-field`（= schema 里的 name，如 reason / leave_type）拼提示，
+   用户漏填时看到的是「reason 为必填项」。这里改读同行 <label> 的文案（renderFormHtml
+   已用 formFieldLabel 渲染成人话），拿不到才回落到别名表。 */
+function fieldLabelOf(ctrl){
+  var row = ctrl && ctrl.closest ? ctrl.closest('.lf-row') : null;
+  var lab = row ? row.querySelector('label:not(.lf-switch)') : null;
+  var t = lab ? String(lab.textContent || '').replace(/\*/g, '').trim() : '';
+  if(t) return t;
+  var n = (ctrl && ctrl.getAttribute) ? String(ctrl.getAttribute('data-field') || '') : '';
+  return (n && typeof formFieldLabel === 'function') ? formFieldLabel({name: n}) : '该项';
+}
+
 function validateForm(card){
   const errs = [];
   const ctrls = card.querySelectorAll('[data-field]');
   Array.prototype.forEach.call(ctrls, function(c){
-    const name = c.getAttribute('data-field');
     const type = c.getAttribute('data-type');
     const required = c.getAttribute('data-required') === '1';
     if(!required) return;
+    const label = fieldLabelOf(c);
     if(type === 'multiselect'){
       const any = Array.prototype.some.call(c.options, function(o){ return o.selected; });
-      if(!any) errs.push((name || '该项') + ' 为必填项');
+      if(!any) errs.push(label + ' 为必填项');
     } else if(type === 'file'){
-      if(!c.files || !c.files.length) errs.push((name || '该项') + ' 为必填项');
+      if(!c.files || !c.files.length) errs.push(label + ' 为必填项');
     } else if(type === 'location'){
-      if(c.value === '' || c.value == null) errs.push((name || '该项') + ' 为必填项');
+      if(c.value === '' || c.value == null) errs.push(label + ' 为必填项');
     } else if(type === 'boolean'){
-      if(!c.checked) errs.push((name || '该项') + ' 为必填项');
+      if(!c.checked) errs.push(label + ' 为必填项');
     } else {
-      if(c.value === '' || c.value == null) errs.push((name || '该项') + ' 为必填项');
+      if(c.value === '' || c.value == null) errs.push(label + ' 为必填项');
     }
   });
   return errs;
@@ -8852,7 +8871,15 @@ function formReceiptHtml(receipt){
   let rows = '';
   if(receipt.fields && typeof receipt.fields === 'object'){
     Object.keys(receipt.fields).forEach(function(k){
-      rows += '<div class="rc-row"><span>'+esc(k)+'</span><b>'+esc(String(receipt.fields[k]))+'</b></div>';
+      /* 后端的回执契约是 lines([{label,value}])，label 已是中文；fields 是旧形态/兼容形态，
+         它的 key 是**字段名**（leave_type）。同一类「内部字段不能展示给用户」：
+         认得出别名就换人话，认不出（纯 ASCII 键名）**宁可不显示**，也不把键名印在回执上。 */
+      const raw = String(k);
+      const label = /^[A-Za-z0-9_]+$/.test(raw)
+        ? ((typeof FORM_LABEL_ALIAS === 'object' && FORM_LABEL_ALIAS[raw]) || '')
+        : raw;
+      if(!label) return;
+      rows += '<div class="rc-row"><span>'+esc(label)+'</span><b>'+esc(String(receipt.fields[k]))+'</b></div>';
     });
   } else if(Array.isArray(receipt.lines)){
     /* 后端并行修复后实际返回 lines（[{label, value}]）；旧版只渲染 fields 会丢字段行。
@@ -13367,6 +13394,11 @@ function oaHumanRunError(msg){
   if(/不是等待澄清状态|不是等待|WAITING_INPUT|CANCELLED|CANCELED|已取消/i.test(m)){
     return '这一轮已经结束（你可能刚点了取消或停止），再发一次就能重新开始。';
   }
+  /* 「运行不存在：<runId>」这类也会把内部 id 抖给用户（2026-11-06 截图里就出现过
+     「停止失败：运行不存在：e2e-form-2」）。id 对用户没有意义，只说结论。 */
+  if(/运行不存在|不存在：|not found/i.test(m)){
+    return '这一轮已经结束（可能已被取消），再发一次就能重新开始。';
+  }
   if(/timeout|超时/i.test(m)) return '后端响应超时，稍后再试一次。';
   return m;
 }
@@ -13768,7 +13800,7 @@ async function oaStop(){
   cancelFormCard();     // 表单卡也要收：否则那条 await 永不 settle ⇒ S.busy 卡死、输入栏被吃掉
   var rid = (state.runId != null) ? state.runId : null;
   // 停止生成：经典链路把 runId 存在 state.runId 上，这里沿用同一字段
-  if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+(e.message||'')); } }
+  if(rid){ try{ await API.cancel(rid); toast('已请求停止生成'); }catch(e){ toast('停止失败：'+oaHumanRunError((e && e.message) || '')); } }
   /* 本地也要立刻断开 SSE 读取：只发 cancel 的话，后端把这一帧处理完之前前端仍在收 delta，
      用户点了停止却还看到字在往外蹦（实测）。abort 会让 _sse 抛 AbortError，
      由调用方按「用户主动停止」处理，不当作失败展示。 */
