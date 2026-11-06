@@ -13,8 +13,15 @@ from app.tools import sandbox
 
 # ---------- H-3：沙箱属性访问黑名单 ----------
 
+# 时间预算 ≠ 断言：子进程是全新 Python 解释器，`import pandas` 冷启动在 Windows 上
+# 实测 4.5–5.4s；原先写死 5s，全量并发跑时卡在边界偶发 5027ms 超时（单跑必过）。
+# 这里只放宽**执行预算**，下面每一条 ok/data/拦截断言逐字不变；另补一条判别力判据
+# （见 test_sandbox_timeout_still_bites）证明超时闸仍有牙，不会被预算掩盖跑飞脚本。
+SANDBOX_TEST_TIMEOUT = 20
+
+
 def _run(src: str) -> sandbox.SandboxResult:
-    return sandbox.run_script(src, {"t": [{"x": 1}]}, timeout=5)
+    return sandbox.run_script(src, {"t": [{"x": 1}]}, timeout=SANDBOX_TEST_TIMEOUT)
 
 
 def test_sandbox_benign_still_works():
@@ -34,6 +41,13 @@ def test_sandbox_blocks_dunder_escape_chain():
     """.__subclasses__ / __class__ / __bases__ 等 dunder 逃逸链必须被拦截。"""
     r = _run("__RESULT__ = ().__class__.__bases__[0].__subclasses__()")
     assert not r.ok
+
+
+def test_sandbox_timeout_still_bites():
+    """判别力证明：放宽测试时间预算后，跑飞脚本仍必须被超时闸拦下。"""
+    r = sandbox.run_script("while True: pass", {"t": []}, timeout=1)
+    assert not r.ok and "超时" in (r.error or ""), (
+        f"超时闸失效：ok={r.ok} error={r.error!r}")
 
 
 def test_sandbox_blocks_os_popen_and_eval():

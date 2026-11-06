@@ -48,6 +48,10 @@ class RunState(TypedDict, total=False):
     content_parts: list[str]     # 正文分片（累计）
     tool_calls_log: list[dict]   # 工具调用日志（回传前端）
     usage: dict                  # token 用量（多轮累加）
+    # 完成判定（docs/86）：交付未达标时回 agent 补齐成稿，避免「只说计划就收尾」。
+    delivery_pending: bool       # 本轮是否要回到 agent（由 agent 节点置位、每轮都写回）
+    delivery_retries: int        # 已补齐轮数，上限 delivery.MAX_DELIVERY_RETRIES
+    delivery_reason: str         # 最近一次未达标原因（收口兜底与日志用）
     clarifications: list[dict]   # 本轮 run 内发生过的 HITL 回填，供审计与回传。
                                   # 两种形状都允许（同走 interrupt/resume 底座，不新建状态机）：
                                   #   - ask_user 澄清：{"question": str, "answer": 标量}

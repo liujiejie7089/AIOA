@@ -3560,7 +3560,13 @@ function sseError(raw){
     try{ p = JSON.parse(raw); }catch(_){ p = null; }
   }
   if(!p || typeof p !== 'object'){
-    return new Error('生成失败，请稍后重试。');
+    /* run.failed / error 帧的 data 允许是**纯文本**（如后端直接转发的
+       「连接器 qq_mail 调用失败：401」「模型服务不可用：502」）。
+       旧版一律丢成「生成失败，请稍后重试。」，真实原因永久丢失，用户无从排查。
+       这里保留原文，但仍过 safeErrMsg 清洗（防 Java 堆栈/SQL/密钥外泄）。 */
+    var plain = (typeof raw === 'string' ? raw.trim() : '');
+    var msg = plain ? safeErrMsg(plain, '') : '';
+    return new Error(msg || '生成失败，请稍后重试。');
   }
   var code = p.code || p.error_code || '';
   var err = new Error(p.message || ERR_FALLBACK[code] || (p.reason ? '生成失败，请稍后重试。' : ''));

@@ -24,6 +24,7 @@ from aios_ai import capabilities
 from aios_ai import aggregate as aggregate_tool
 from aios_ai.config import settings
 from aios_ai.contracts import RunRequest
+from aios_ai.graph import delivery
 from aios_ai.guard import WallClock, check_text_len
 from aios_ai.intent import intake as worker_intake
 from aios_ai.intent import leave_apply as leave_apply_tool
@@ -623,7 +624,12 @@ async def agent(state: dict) -> dict:
     req = _req(state)
     clock = _clock(state)
     rounds = int(state.get("agent_rounds") or 0)
-    allow_tools = rounds < MAX_TOOL_ROUNDS
+    # 补齐轮（agent→agent 自环）的唯一任务是「把话说完」，不是「再做事」。
+    # 真机实测（2026-11-06 MiniMax）：给补齐轮继续挂工具清单，模型会惯性再吐 tool_calls，
+    # 于是 delivery_pending 的 `not calls` 变假 ⇒ 补齐中断 ⇒ finalize 把工具清单当交付。
+    # 故补齐轮强制不挂工具，且下拨的模型幻觉调用一律丢弃（见下方 calls 解析处）。
+    continuation = bool(state.get("delivery_pending"))
+    allow_tools = rounds < MAX_TOOL_ROUNDS and not continuation
     provider = gateway.resolve(req.model_ref, credential=req.model_credential)
     api_key = provider.api_key()
     temperature = float(state.get("temperature") or 0.3)
@@ -738,6 +744,21 @@ async def agent(state: dict) -> dict:
 
     calls = _parse_tool_calls(message)
     assistant_calls = message.get("tool_calls")
+    assistant_in_messages = False
+
+    # 补齐轮只许写正文：真机实测模型在这一轮仍会惯性吐 tool_calls（MiniMax 连吐数轮），
+    # 若保留它们，delivery_pending 的 `not calls` 就变假 ⇒ 补齐被跳过 ⇒ finalize 把
+    # 「工具查询结果汇总」这种中间态当成最终交付还记 SUCCEEDED。这里一律丢弃。
+    # 丢弃后必须补一条纯文本 assistant 消息：否则 messages 里会留下没有 tool 消息回应的
+    # 孤儿 tool_calls（上游直接 400），或出现连续两条 user 消息。
+    if continuation and calls:
+        logger.warning("run %s: 补齐轮模型仍返回 %d 个 tool_calls，已丢弃（本轮只写正文）：%s",
+                       req.run_id, len(calls), [c.get("name") for c in calls])
+        calls = []
+        assistant_calls = None
+        messages.append({"role": "assistant",
+                         "content": str(message.get("content") or "")})
+        assistant_in_messages = True
 
     # 兜底：模型把工具调用写成正文时必须**在判定「这是不是最终回答」之前**救回来，
     # 否则这一轮会带着「请稍等，我正在为您查询」直接收尾（工具一次都没执行）。
@@ -780,6 +801,7 @@ async def agent(state: dict) -> dict:
         # 且它们的 id 必须与下游 tool 消息的 tool_call_id 一致，否则上游直接 400。
         messages.append({"role": "assistant", "content": message.get("content"),
                          "tool_calls": assistant_calls})
+        assistant_in_messages = True
 
     # —— 确定性开表（Java 判定，agent 只执行）——
     # 触发条件：模型这一轮**没有**任何工具调用、本轮也还没有过澄清/表单回执
@@ -788,7 +810,8 @@ async def agent(state: dict) -> dict:
     # 为什么必须在**图里**开表：`request_form` 的语义是走到 `clarify` 节点 `interrupt()`，
     # 只有 `interrupt()` 才会把挂起态写进 checkpointer；若改由后端在流末补发一帧，
     # 图里没有断点，用户提交表单后 /resume 无从恢复（实测表现为续跑零帧、模型不再确认）。
-    if (not calls and _hitl_enabled() and not (state.get("clarifications") or [])):
+    if (not calls and not continuation and _hitl_enabled()
+            and not (state.get("clarifications") or [])):
         hint = (state.get("req") or {}).get("form_hint") or {}
         hint_code = hint.get("form_code") if isinstance(hint, dict) else None
         if hint_code:
@@ -820,7 +843,8 @@ async def agent(state: dict) -> dict:
     #      若它已经给出了答案（哪怕答错），再插一张「要发给哪一位」的卡只会更乱。
     # 合成后走 clarify 节点 interrupt()，前端渲染真按钮。
     _model_text = str(message.get("content") or "").strip()
-    if (not calls and _hitl_enabled() and not (state.get("clarifications") or [])
+    if (not calls and not continuation and _hitl_enabled()
+            and not (state.get("clarifications") or [])
             and (state.get("entity_candidates") or [])
             and not entity_clarify_tool.names_in_text(state.get("entity_candidates"), req.text)
             and (not _model_text
@@ -841,6 +865,35 @@ async def agent(state: dict) -> dict:
                         req.run_id, len(state.get("entity_candidates") or []),
                         "字段卡" if synth["arguments"].get("fields") else "单选卡")
 
+    # —— 完成判定闸（2026-11-06，docs/86）——
+    # 无 tool_calls 就意味着 loop 要收尾了，但「模型没再调工具」≠「目标已达成」。
+    # 现场实测：说「帮我写一份周报」，代码已把多源素材注入 system，模型无需调工具，
+    # 于是它只回「我先把本周的原始素材拉齐，再整理成周报。」就停下 —— 零工具调用，
+    # 旧 loop 直接 finalize，run 记 SUCCEEDED，界面只剩一句导语 + 数据来源卡。
+    # 这里不撤回已流出的导语（前端没有撤回通道），而是追加一轮把成稿**接着写完**：
+    # content_parts 累积拼接 ⇒ 用户看到「导语 + 正文」，落库/界面/上下文仍同源。
+    full_text = "".join(content_parts).strip()
+    aggregated = bool((state.get("effective") or {}).get("aggregate"))
+    is_delivery = delivery.is_delivery_request(req.text, aggregated)
+    complete, reason = delivery.assess_delivery(full_text, is_delivery)
+    retries = int(state.get("delivery_retries") or 0)
+    delivery_pending = (
+        not calls and not complete and retries < delivery.MAX_DELIVERY_RETRIES
+    )
+    if delivery_pending:
+        # 先把本轮 assistant 的导语并入上下文：模型要「接着写」就得看见自己上一句说了什么，
+        # 否则只能看到「用户原话 + 继续完成」两条连续 user 消息（部分兼容网关会直接 400，
+        # 模型也容易把导语重复输出一遍）。原来只有 ``if calls`` 分支才 append assistant 消息，
+        # 而完成判定恰恰发生在**零 tool_calls** 的路径上，所以这里必须单独补。
+        # 补齐轮丢弃幻觉 tool_calls 时已经 append 过一条，用标志避免两条连续 assistant。
+        if not assistant_in_messages:
+            messages.append({"role": "assistant",
+                             "content": str(message.get("content") or round_text or "")})
+        messages.append({"role": "user",
+                         "content": delivery.continuation_prompt(reason, req.text)})
+        logger.warning("run %s: 交付未达标（%s）⇒ 第 %d 次回到 agent 补齐成稿",
+                       req.run_id, reason, retries + 1)
+
     return {
         "agent_rounds": rounds + 1,
         "allow_tools": allow_tools,
@@ -848,6 +901,10 @@ async def agent(state: dict) -> dict:
         "content_parts": content_parts,
         "usage": usage,
         "messages": messages,
+        # 完成判定：每次都写回，避免上一轮的 pending=True 残留导致自环停不下来
+        "delivery_pending": delivery_pending,
+        "delivery_retries": retries + 1 if delivery_pending else retries,
+        "delivery_reason": "" if complete else reason,
         # 记下本轮 assistant 原始消息（调试用；上下文注入已在上面的 messages 里完成）
         "_assistant_message": message,
     }
@@ -1133,13 +1190,20 @@ async def finalize(state: dict) -> dict:
         logger.warning("本轮零工具调用但回答像是「正在查询」的承诺（%r…）："
                        "用户会看到停在查询中，检查模型是否把工具调用写成了正文", content[:40])
 
+    # 这两个兜底产出的是**状态说明**，不是交付正文。真机实测（2026-11-06）：模型把
+    # 工具轮跑满后零正文，finalize 把「已完成的工具查询结果：· xxx」当成交付落库，
+    # 且因补齐轮数没用尽，连「未完成」都不标注 —— 用户拿到一份工具清单却看到 SUCCEEDED。
+    # 故用 fallback_only 记下来，收口判定时一律视为不达标并如实标注。
+    fallback_only = False
     if not content and tool_calls_log:
-        # 工具轮数用尽仍未产出正文：汇总已获取的数据直接作答（与原行为一致）
+        # 工具轮数用尽仍未产出正文：汇总已获取的数据（保留信息量，但不许冒充成稿）
+        fallback_only = True
         content = "已完成的工具查询结果：\n" + "\n".join(
             f"· {c['name']}：{'成功' if c['ok'] else '失败'}" for c in tool_calls_log)
         for ch in content:
             _emit("message.delta", {"text": ch})
     elif not content:
+        fallback_only = True
         # 既没正文也没工具调用 —— 模型这一轮返回了空内容（MiniMax 偶发）。
         # 此前会直接落一条空消息，前端只能显示「（本次未返回内容）」：用户既不知道发生了什么，
         # 也不知道下一步能做什么（2026-10-30 用户现场截图）。这里补一句**可行动**的说明，
@@ -1150,6 +1214,32 @@ async def finalize(state: dict) -> dict:
         for ch in content:
             _emit("message.delta", {"text": ch})
 
+    # —— 完成判定收口（2026-11-06，docs/86）——
+    # 补齐次数用尽仍未达标：绝不把半成品包装成「已完成」。
+    # 也不得以「有阻塞」为由只丢一句说明就结束 —— 上面能写的正文照常保留，
+    # 这里再精确列出未决项 / 原因 / 当前状态 / 下一步，用户拿到的是**如实但可执行**的收尾。
+    try:
+        user_text = _req(state).text
+    except Exception:                       # noqa: BLE001 —— 状态缺 req 时不影响收口
+        user_text = ""
+    aggregated = bool((state.get("effective") or {}).get("aggregate"))
+    complete, why = delivery.assess_delivery(
+        content, delivery.is_delivery_request(user_text, aggregated))
+    if fallback_only:
+        # 兜底文案再长也不是成稿：不能有「凑够 140 字就判绿」的漏网。
+        complete, why = False, "模型本轮没有产出正文，上面只是工具结果/状态说明，不是交付"
+    retries = int(state.get("delivery_retries") or 0)
+    if not complete:
+        # 只要收口时不达标就如实标注，不以「补齐轮数用尽」为前提 ——
+        # 补齐被幻觉 tool_calls 中断时 retries 可能仍是 0，旧条件会静默放行中间态。
+        note = delivery.exhausted_note(
+            why or state.get("delivery_reason") or "正文不完整", retries, aggregated)
+        content += note
+        for ch in note:
+            _emit("message.delta", {"text": ch})
+        logger.warning("run 收口时交付仍不完整（%s，补齐 %d 轮），已如实标注未完成",
+                       why, retries)
+
     _emit("message.completed", {
         "content": content,
         "citations": state.get("citations") or [],
@@ -1157,7 +1247,10 @@ async def finalize(state: dict) -> dict:
         "usage": usage,
         "effective_params": state.get("effective") or {},
     })
-    _emit("run.completed", {"status": "SUCCEEDED", "usage": usage})
+    # run.completed 的 status 由 Java 侧据帧置 SUCCEEDED（表示链路正常收口），
+    # 这里另挂一个 delivery_complete：让「流程成功但交付未达标」可观测、不伪装成功。
+    _emit("run.completed", {"status": "SUCCEEDED", "usage": usage,
+                            "delivery_complete": bool(complete)})
     return {}
 
 
@@ -1169,18 +1262,24 @@ def route_after_prepare(state: dict) -> str:
 
 
 def route_after_agent(state: dict) -> str:
-    """agent 之后：含内置控制调用且 HITL 已开 ⇒ 先暂停取值；否则有工具调用且未达上限 ⇒ 执行工具；否则收尾。
+    """agent 之后：控制调用 ⇒ clarify；有工具调用 ⇒ tools；**交付未达标 ⇒ 回 agent 补齐**；否则 finalize。
 
     三条内置控制链（ask_user / request_form / request_confirm）都走 ``clarify`` 节点。
     分支必须同时看开关：关闭时模型本不该拿到这些工具，但若它（或因缓存/伪造）仍返回了同名调用，
     绝不能进 ``clarify`` —— 那里会 ``interrupt()``，而关闭态没有 checkpointer，会直接抛错。
     开关必须是唯一权威。
+
+    2026-11-06 补的第三条是「完成判定」：旧版只看有没有 tool_calls，
+    导致「我先…再…」这类只说计划的导语被当成最终答案收尾（详见 graph/delivery.py）。
+    ``delivery_pending`` 由 agent 节点在**零工具调用且未达标**时置位，且自带重试上限。
     """
     calls = state.get("pending_calls") or []
     if _hitl_enabled() and any(_is_control_call(c.get("name")) for c in calls):
         return "clarify"
     if calls and state.get("allow_tools"):
         return "tools"
+    if state.get("delivery_pending"):
+        return "agent"
     return "finalize"
 
 

@@ -271,8 +271,21 @@ async def main():
         'count=%d' % src.count('errored = false'))
     chk('S1 errored 两形态都在 onError 置位', src.count('errored = true') == 2,
         'count=%d' % src.count('errored = true'))
-    chk('S1 报错原因两形态都记账（errMsg）', src.count("errMsg = (err && err.message) || '未知错误'") == 2,
-        'count=%d' % src.count('errMsg = (err'))
+    # 2026-11-06 起 errMsg 走 errText(err,{withId:true})（清洗技术细节 + 带错误编号），
+    # 旧判据钉的是更早期 `errMsg = (err && err.message)` 的字面量，早已过期 ⇒ 恒 FAIL。
+    # 升级为检查新写法：两形态都必须把**真实原因**记进 errMsg，不许退回裸 e.message。
+    # `errMsg = ` 会把两处 `var errMsg = ''` 声明也数进去（共 4），故只认**赋值**形态。
+    chk('S1 报错原因两形态都记账（errText，含错误编号）',
+        src.count("errText(err, {withId:true})") == 2
+        and src.count("errMsg = errText(err") == 1
+        and src.count("errMsg = oaHumanRunError(errText(err") == 1,
+        'errText=%d 经典=%d OA=%d' % (src.count("errText(err, {withId:true})"),
+                                     src.count("errMsg = errText(err"),
+                                     src.count("errMsg = oaHumanRunError(errText(err")))
+    chk('S1b 纯文本 run.failed 帧保留原始原因（不丢 401/502）',
+        "msg = plain ? safeErrMsg(plain, '') : ''" in src
+        and "return new Error(msg || '生成失败，请稍后重试。')" in src,
+        'sseError 纯文本分支')
     # 退化写法：`if(!text && !errored){` —— errored 会掉进 else 被 formatAnswer('') 冲成空
     chk('S1 未退化成 if(!text && !errored){（会掉进 else 把报错冲成空）',
         'if(!text && !errored){' not in src)

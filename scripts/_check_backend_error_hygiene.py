@@ -150,9 +150,20 @@ def main():
         d = json.loads(raw)
     except Exception:
         d = {}
-    ok = st == 406 and ("json" in ctype) and d.get("code") == 406 and "不支持的响应类型" in (d.get("message") or "")
-    rec("S4 协商失败归 406", ok, "http=%s ctype=%s code=%s msg=%s"
-        % (st, ctype, d.get("code"), d.get("message")))
+    # 文案以 ErrorCode.NOT_ACCEPTABLE 为**唯一真值**：判据从后端源码回源取，
+    # 不在脚本里再硬编码一份中文 —— 2026-11-06 实测旧判据钉「不支持的响应类型」，
+    # 而后端早已改为「该接口不提供你要求的响应格式」，导致状态/信封全对却恒 FAIL。
+    _repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ec = open(os.path.join(_repo, "server", "aios-common", "src", "main", "java",
+                           "cn", "aios", "common", "error", "ErrorCode.java"),
+              encoding="utf-8").read()
+    m = re.search(r'NOT_ACCEPTABLE\(406,.*?HttpStatus\.NOT_ACCEPTABLE,\s*\n?\s*"([^"]+)"',
+                  ec, re.S)
+    official = m.group(1) if m else ""
+    ok = (st == 406 and ("json" in ctype) and d.get("code") == 406
+          and bool(official) and official in (d.get("message") or ""))
+    rec("S4 协商失败归 406", ok, "http=%s ctype=%s code=%s msg=%s official=%r"
+        % (st, ctype, d.get("code"), d.get("message"), official))
 
     # ---- S5：@Async 线程池已装配（线程名 aios-async-*）----
     try:

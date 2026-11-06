@@ -2149,3 +2149,36 @@ resolve。用户点右上「停止生成」时，`oaStop()` 只 abort 了 SSE、
 - 验证：提交一次，直接查那张表有没有新行、关键字段（如 `order_id`）是否与其他表一致；
 - 反例（**不该**当缺陷）：`form_submission` 里没有 `leave_request` 行本身不是错，
   错的是「本该建请假单的路径没建」——所以要按 `biz_type` 分流，而不是让所有提交都去建请假单。
+
+## 106. SSE 解析别用 `str.splitlines()`，也别把续行并进 payload
+
+2026-11-06 真机验收脚本踩到：`splitlines()` 除 `\n` 还会按 U+2028/U+0085 切中文正文，
+长 JSON 帧被切碎报 `Unterminated string`；又试过把「非 data: 的续行」并进 buf，
+结果把 `id:null` 拼进 JSON，制造出「delta 比 completed 多 2 字」的假故障。
+- 用 `re.split(r"\r?\n", raw)`，只认 `event:` / `data:` / `:` 注释 / 空行，其余忽略。
+
+## 107. `requests` 读 SSE 必须显式 utf-8
+
+SSE 响应不带 charset ⇒ `requests` 按 latin-1 解 `resp.text`，中文成 `å·²ä¸º…`、
+长度翻倍、所有中文判据恒假。**必须** `resp.content.decode("utf-8")`。
+
+## 108. 回库核正文别用 `mysql -N` 命令行
+
+`mysql -N -e "select content…"` 会把正文里的真实换行转义成字面 `\n`，
+造成「库里 699 字 vs SSE 674 字」的假不一致（25 个换行正好多 25 字）。
+回库比正文**必须用 pymysql 取 Python str**。数值/计数用命令行没问题。
+
+## 109. 完成判定的补齐轮必须显式禁工具（docs/86）
+
+旧闸只判「有没有 tool_calls」；补齐轮若继续挂工具清单，模型会惯性再吐 `tool_calls`，
+`delivery_pending = not calls and …` 直接变假 ⇒ 补齐被跳过；接着 `finalize` 的
+「已完成的工具查询结果：…」兜底把工具清单当成交付，还记 SUCCEEDED。
+- 补齐轮：`allow_tools=False`、丢弃幻觉 tool_calls、补纯文本 assistant 消息（防孤儿
+  tool_calls 导致上游 400）、两个确定性短路都加 `not continuation`；
+- `finalize` 用 `fallback_only` 强制把兜底判红。
+
+## 110. 「如实标注未完成」不能以「补齐轮数用尽」为前提
+
+补齐可能被幻觉调用中断，此时 `delivery_retries` 可能仍是 0；旧条件
+`retries >= MAX_DELIVERY_RETRIES` 会静默放行中间态。收口只要 `not complete` 就必须标注，
+并在 `run.completed` 挂 `delivery_complete` 让「流程成功但交付未达标」可观测。

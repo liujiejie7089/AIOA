@@ -23,6 +23,7 @@
 | **H5/OA 五项交互** | `docs/77` · pitfalls 76–79 |
 | **评审 11 项/会话列表** | `docs/78`·`docs/79`·pitfalls 80–89 |
 | **越界建议/表单/同型/真链路** | `docs/81`–`85`·pitfalls 90–105 |
+| **agent loop 完成判定闭环** | `docs/86`·`graph/delivery.py`·`_verify_agent_loop_delivery.py`(20)·pitfalls 106–110 |
 
 ## 最常踩（全文见 iron-rules）
 

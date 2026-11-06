@@ -2,9 +2,13 @@
 
 拓扑（与重建前的线性循环一一对应）：
     START → prepare → (fatal ? END : agent)
-    agent → (还有工具调用且未达上限 ? tools : finalize)
-    tools → agent            # 这是「循环」在图上的表达
+    agent → (工具调用 ? tools : 澄清 ? clarify : 交付未达标 ? agent : finalize)
+    tools → agent / clarify → agent     # 「循环」在图上的表达
     finalize → END
+
+``agent → agent`` 是 2026-11-06 补的**交付补齐自环**：无工具调用但输出只是
+「我先…再…」这类中间态时，回 agent 把成稿接着写完（重试上限见 graph/delivery.py）。
+没有这个环，loop 会把一句导语当成最终答案，run 还记 SUCCEEDED。
 
 checkpointer：
   - **缺省不挂**（``build()``）——当前功能集里没有「暂停 / 续跑」需求，挂上却不用即属
@@ -40,7 +44,8 @@ def build(checkpointer=None):
     builder.add_conditional_edges("prepare", nodes.route_after_prepare,
                                   {"end": END, "agent": "agent"})
     builder.add_conditional_edges("agent", nodes.route_after_agent,
-                                  {"tools": "tools", "clarify": "clarify", "finalize": "finalize"})
+                                  {"tools": "tools", "clarify": "clarify",
+                                   "agent": "agent", "finalize": "finalize"})
     builder.add_edge("tools", "agent")
     builder.add_conditional_edges("clarify", nodes.route_after_clarify,
                                   {"tools": "tools", "agent": "agent"})

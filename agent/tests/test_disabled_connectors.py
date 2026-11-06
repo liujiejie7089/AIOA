@@ -91,7 +91,11 @@ def _run_prepare(monkeypatch, mcp_tools, disabled):
     captured: dict = {}
 
     async def fake_stream(http, provider, api_key, messages, tools, temperature=0.3):
-        captured["tools"] = list(tools)
+        # 真实流式协议是「先 delta 再 done」。只给 done 等于模拟「零正文回答」，
+        # 会被完成判定闸判成中间态并触发补齐自环（补齐轮不挂工具，tools=None），
+        # 与本用例要验的「prepare 工具清单过滤」无关。这里按真实协议发一条正常短答。
+        captured["tools"] = list(tools or [])
+        yield ("delta", "好")
         yield ("done", {"role": "assistant", "content": "好"},
                {"prompt_tokens": 3, "completion_tokens": 1})
 

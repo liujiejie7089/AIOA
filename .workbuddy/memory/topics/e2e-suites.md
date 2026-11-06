@@ -671,3 +671,15 @@ S5 转对人才出表 / S6 字段名是人话 / **S7 同时只有一张卡**（�
 **V2c'' `system=true` 的字段页面无控件** · V2c' 不再出现「假种」· V4/V5 无负责人字段 + 假种是下拉 ·
 V6/V6b 负责人环节独立弹层且是选择器 · V7 取消负责人不发提交 · V8 无 JS 异常。
 ★ 2026-11-06 判据升级过两次：先「label → 字段名+顺序」，再加「去掉 x-system 字段再比」。
+
+## `_verify_agent_loop_delivery.py`（20 项，2026-11-06 起，docs/86）
+
+验「帮我写一份周报」不再只给导语。A 段 8 项不消耗额度：判别力证明（把库里现场旧导语
+`chat_message#2966` 原文喂 `assess_delivery` 必须判红）、交付意图识别、确定性路由、
+补齐轮上下文、活体系统提示词、聚合素材块、诚实兜底。B 段 12 项走 `:8080` 真机全链路：
+SSE `message.completed` + delta 拼接同源 + **回库核 `chat_message.content`**（pymysql，
+见坑 108）+ 正文 ≥140 字 / 成稿结构 / **三要素齐全** / 无「待续」类收尾 / 周报实体内容 /
+判绿 / 引用卡与落库 / `agent_run.status`。
+★ 默认 deepseek 余额耗尽（`402 Insufficient Balance`）时用 `--model dashscope`（qwen-plus），
+只作用于本轮 run，不改全局配置；脚本会逻辑删除测试会话。
+★ 判据解析坑见 106/107；跑法 `agent/.venv/Scripts/python.exe scripts/_verify_agent_loop_delivery.py --model dashscope`。
