@@ -1987,3 +1987,25 @@ import sys
 - **通用规律**：`except Exception: pass` / `except: pass` 包住的初始化代码，
   写错名字、用未导入的名字、属性不存在 —— 全部静默失效。
   凡是「加了但看不出效果」的兜底块，先怀疑它根本没执行。
+
+## 94. 多服务部署：只 rebuild 改过的那个服务 —— agent 的代码是**烤进镜像**的
+
+2026-11-06 实测（本轮推送后自查）：`deploy/Dockerfile.agent` 是
+`COPY aios_ai ./aios_ai` + `RUN pip install .`，compose 里 agent **没有任何源码 bind mount**
+（server 也只挂了 `serveruploads:/app/uploads`，不是源码）。
+⇒ `docker compose restart agent` / `up -d agent`（不带 `--build`）**都不会换代码**，
+容器里跑的是构建时的快照；aios_ai 还被 `pip install .` 复制进 site-packages，
+连「改 cwd 下的文件」这条退路都没有。
+
+- **判据**：`docker exec aios-agent grep -c "def <新函数名>" /app/aios_ai/...` ——
+  读**容器内实际文件**（铁律 18：看运行实例不看 mtime）。旧镜像返回 0，新镜像 1。
+- **正确命令**：`docker compose up -d --build agent`（同时改了 server 就 `--build server agent`）。
+- ★ 同类陷阱在**本机**是另一副样子：`start-all.sh` 按端口探测做幂等，agent :8000 已在跑就打印
+  `[skip] agent :8000 already running` **直接跳过** ⇒ `git pull` 后只跑 start-all.sh = 代码没换。
+  必须先显式停掉 8000 进程（在 PowerShell 里用 `Get-CimInstance` 找 PID 再 `Stop-Process`），再起。
+- 记命令时别只看「改了几个模块」，要对着 Dockerfile 的 `COPY` 列表数：
+  本次 `Dockerfile.server` 里还有 `COPY user-client/index.html /out/h5/index.html`
+  ⇒ H5 改动同样只能靠重建 server 镜像生效，改完 html「重启一下就行」是错的。
+- 反例校准：本地 `agent/.venv` 的 site-packages 里**没有** `aios_ai`、没有 `__editable__` 标记，
+  是靠 `cd agent` 后 cwd 解析（`uvicorn app.main:app`）⇒ **本地改代码只需重启进程，不用重装**。
+  同一份代码，「本地怎么生效」与「生产怎么生效」是两套机制，别互相类推。
