@@ -19,11 +19,12 @@
 | **对话级开关/渐隐/连接器** | `2026-10-31.md` 第七~九轮 · pitfalls 33–48 |
 | **模型配置/热更新/回滚/目录** | `docs/72` · V106 · `model_config_snapshot` |
 | **依赖/落盘（禁 /opt）** | `docs/67` · deps(28)/reap(26)/sandbox(21) · `deploy/ops/` |
-| **知识库检索（切片/聚合/分页）** | `docs/74–76` · pitfalls 67–75 |
+| **知识库检索** | `docs/74–76` · pitfalls 67–75 |
 | **H5/OA 五项交互** | `docs/77` · pitfalls 76–79 |
-| **评审 11 项 / 会话列表（标题·置顶·长按）** | `docs/78` · `docs/79` · pitfalls 80–89 |
+| **评审 11 项/会话列表** | `docs/78`·`docs/79`·pitfalls 80–89 |
+| **越界建议/挑人卡（表单分离）** | `docs/81`·`docs/82`·pitfalls 90–97 |
 
-## 最常踩五条（全文见 iron-rules）
+## 最常踩（全文见 iron-rules）
 
 - **7 / 12**：不为转绿放宽断言；「界面展示了 X」须回接口/库再取（不得同源）。
 - **14 / 26**：`nohup &` 起的服务会被回收；shell 工具可能恒返空。
@@ -31,7 +32,7 @@
 - **34**：curl 走系统代理，探活加 `--noproxy '*'`。
 - **30**：agent pytest/哨兵用 `agent/.venv/Scripts/python.exe`。
 
-## 新增坑（见 pitfalls，只报编号）
+## 新增坑（见 pitfalls）
 
 - **29 / 30**：校验失败 **≠ 400** ⇒ 200 + 信封 `code=400`，断言查 `body.code`；Java 用 `BizException.badRequest`。
 - **31 / 32**：起后端加 `-Dspring.flyway.validate-on-migrate=false`；e2e 期望值按真实 uid 动态算。

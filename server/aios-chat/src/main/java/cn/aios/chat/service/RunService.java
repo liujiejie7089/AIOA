@@ -109,6 +109,8 @@ public class RunService {
      * 注意这是**通知帧**、不是暂停帧——流不被打断、不置 WAITING_INPUT、不要求用户重述。
      */
     private static final String EVENT_WORKER_HANDOFF = "worker.handoff";
+    /** 越界建议帧：当前数字人干不了、建议转给某个数字人（**只是建议**，不改绑会话）。 */
+    private static final String EVENT_SUGGEST_WORKER = "suggest.worker";
     private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
             new ParameterizedTypeReference<>() {
             };
@@ -632,7 +634,8 @@ public class RunService {
                             () -> {
                                 try {
                                     completeRun(run, emitter, lastId, assistant, usageRef,
-                                            citationsRef, toolCallsRef, failureRef, clarificationRef);
+                                            citationsRef, toolCallsRef, failureRef, clarificationRef,
+                                            originWorkerId);
                                 } catch (Exception e) {
                                     log.error("finish run {} failed", run.getRunId(), e);
                                 }
@@ -1752,6 +1755,88 @@ public class RunService {
     }
 
     /**
+     * 越界建议：当前数字人干不了、但库里有个更合适的数字人 ⇒ 给前端一张可点的跳转卡。
+     *
+     * <p>与 {@link HandoffDecision} 的区别：那是**已经**改绑了会话（run 开始前按用户原话判定）；
+     * 本 record 只是**建议**，不改任何状态 —— 用户点了才跳。之所以要分开：
+     * 越界是模型读完上下文才知道的（用户原话里未必有任务名），不能在 run 开始前判定。</p>
+     */
+    public record WorkerSuggestion(Long workerId, String workerName, String taskName) {
+    }
+
+    /**
+     * 「这活我干不了，建议换个数字人」的判定（**唯一判定点**，纯函数、可单测）。
+     *
+     * <p>为什么用**回答正文**而不是用户原话：越界是模型读完知识库、发现答非本职责后才承认的
+     * （2026-11-06 实测截图：请假助手读了《策划书.docx》正文，最后说「超出我的请假办理职责范围；
+     * 请改问文档解读数字员工」）。那一刻用户原话（「策划书里面说了什么」）里没有任何数字人任务名，
+     * {@link #matchHandoff} 的 Tier A/B 都匹配不上 —— 这正是不该复用它的原因。</p>
+     *
+     * <p>规则：
+     * <ol>
+     *   <li>answer 空 / 候选空 / 当前数字人为 null ⇒ null（无建议）；</li>
+     *   <li>正文未出现**越界话术**（超出职责 / 不负责 / 请改问…）⇒ null
+     *       —— 正常回答里也可能提到别的数字人，不能一提到就给跳转；</li>
+     *   <li>正文里点名了某个数字人（workerName 或 taskName）⇒ 取**名字最长**的那个
+     *       （越具体越可能是它）；</li>
+     *   <li>一个都没点名 ⇒ null。宁可不给按钮，也不要瞎猜一个人把用户送错。</li>
+     * </ol>
+     */
+    /**
+     * 正文是否明确「这事不归我管」（越界话术）。**纯函数**，独立出来是因为它有两个用处：
+     * ① {@link #suggestWorker} 的前置闸；② 越界但没点名（或点名的人库里不存在）时，
+     * 仍要给一张「去挑一位能办的数字人」的卡 —— 不能只剩一句办不了的话。
+     */
+    public static boolean isOutOfScope(String answer) {
+        return answer != null && !answer.isBlank() && OUT_OF_SCOPE.matcher(answer).find();
+    }
+
+    public static WorkerSuggestion suggestWorker(String answer, Long currentWorkerId,
+                                                 List<HandoffCandidate> candidates) {
+        if (answer == null || answer.isBlank() || candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        // 与 matchHandoff 同一道硬闸：没有「当前数字人」就无所谓「转给谁」。
+        // 典型是用户直接选了专家 AI 或走默认通用助手 —— 那时给跳转等于把会话劫持给某个数字人。
+        if (currentWorkerId == null) {
+            return null;
+        }
+        if (!isOutOfScope(answer)) {
+            return null;
+        }
+        WorkerSuggestion best = null;
+        int bestLen = 0;
+        for (HandoffCandidate c : candidates) {
+            if (c.workerId() == null || Objects.equals(c.workerId(), currentWorkerId)) {
+                continue;   // 自己永不作为"转给谁"的目标
+            }
+            int len = 0;
+            if (c.workerName() != null && c.workerName().length() >= 2
+                    && answer.contains(c.workerName())) {
+                len = c.workerName().length();
+            } else if (c.taskName() != null && c.taskName().length() >= 2
+                    && answer.contains(c.taskName())) {
+                len = c.taskName().length();
+            }
+            if (len > bestLen) {
+                bestLen = len;
+                best = new WorkerSuggestion(c.workerId(), c.workerName(), c.taskName());
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 越界话术（只认「明确拒绝 + 指向别处」，避免把正常回答里的客气话误判）：
+     * 超出/不属于/不在…职责(范围/权限)、不负责这件事、请改问/建议咨询、职责范围之外。
+     */
+    private static final java.util.regex.Pattern OUT_OF_SCOPE = java.util.regex.Pattern.compile(
+            "(超出|不属于|不在)[^。；;\\n]{0,12}(职责|范围|权限)"
+                    + "|不负责[^。；;\\n]{0,10}(这|该|此)"
+                    + "|(请|建议|可以)(改问|咨询|联系|找)[^。；;\\n]{0,16}"
+                    + "|职责范围之外|不在我的职责");
+
+    /**
      * 会话内跨数字人转交判据（**唯一判定点**，纯函数、无 Spring 依赖、可单测）。
      *
      * <p><b>为什么有两级匹配</b>：库里任务名是**书面语**（如「费用报销申请」），用户说的是
@@ -1959,34 +2044,44 @@ public class RunService {
             return null;
         }
         try {
-            Long tenantId = conversation.getTenantId();
-            List<AgentWorker> workers = workerMapper.selectList(new LambdaQueryWrapper<AgentWorker>()
-                    .eq(AgentWorker::getTenantId, tenantId)
-                    .ne(AgentWorker::getEnabled, 0));
-            List<Long> ids = new ArrayList<>();
-            java.util.Map<Long, AgentWorker> workerById = new java.util.LinkedHashMap<>();
-            for (AgentWorker w : workers) {
-                ids.add(w.getId());
-                workerById.put(w.getId(), w);
-            }
-            if (ids.isEmpty()) {
-                return null;
-            }
-            List<WorkerCapability> caps = workerCapabilityService.listByWorkers(ids);
-            List<HandoffCandidate> candidates = new ArrayList<>();
-            for (WorkerCapability cap : caps) {
-                AgentWorker w = workerById.get(cap.getWorkerId());
-                if (w == null) {
-                    continue;
-                }
-                candidates.add(new HandoffCandidate(cap.getWorkerId(), w.getName(),
-                        cap.getTaskName(), cap.getTaskCode()));
-            }
-            return matchHandoff(text, conversation.getWorkerId(), candidates);
+            return matchHandoff(text, conversation.getWorkerId(), candidatesOf(conversation.getTenantId()));
         } catch (Exception e) {
             log.warn("resolve handoff failed (no effect on conversation): {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 本租户「可承接任务」的数字人候选（任务名/编码来自 worker_capability）。
+     *
+     * <p>抽出来是因为两个判定点都要用它：run 前的转交（{@link #matchHandoff}）与
+     * 流末的越界建议（{@link #suggestWorker}）。两边口径必须一致，否则会出现
+     * 「能转过去的」和「建议你转过去的」是两批人。</p>
+     */
+    private List<HandoffCandidate> candidatesOf(Long tenantId) {
+        List<AgentWorker> workers = workerMapper.selectList(new LambdaQueryWrapper<AgentWorker>()
+                .eq(AgentWorker::getTenantId, tenantId)
+                .ne(AgentWorker::getEnabled, 0));
+        List<Long> ids = new ArrayList<>();
+        java.util.Map<Long, AgentWorker> workerById = new java.util.LinkedHashMap<>();
+        for (AgentWorker w : workers) {
+            ids.add(w.getId());
+            workerById.put(w.getId(), w);
+        }
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<WorkerCapability> caps = workerCapabilityService.listByWorkers(ids);
+        List<HandoffCandidate> candidates = new ArrayList<>();
+        for (WorkerCapability cap : caps) {
+            AgentWorker w = workerById.get(cap.getWorkerId());
+            if (w == null) {
+                continue;
+            }
+            candidates.add(new HandoffCandidate(cap.getWorkerId(), w.getName(),
+                    cap.getTaskName(), cap.getTaskCode()));
+        }
+        return candidates;
     }
 
     /**
@@ -1999,7 +2094,8 @@ public class RunService {
                              AtomicReference<List<Object>> citationsRef,
                              AtomicReference<List<Object>> toolCallsRef,
                              AtomicReference<String> failureRef,
-                             AtomicReference<String> clarificationRef) {
+                             AtomicReference<String> clarificationRef,
+                             Long currentWorkerId) {
         // ask_user 暂停：本轮没有回答、没花词元、run 未终结——挂起等 /resume 回填。
         // 不落 assistant 消息、不发 run.completed、不计费（多轮澄清同理）。
         if (clarificationRef != null && clarificationRef.get() != null) {
@@ -2022,7 +2118,46 @@ public class RunService {
             finishBlocked(run, tip);
             return;
         }
+        // 越界建议（2026-11-06）：模型在正文里承认「超出我的职责、请改问 XX 数字员工」时，
+        // 把这句话变成一个**可点的跳转**。放在落库之前发，是为了让卡片随本轮回答一起出现；
+        // 帧只是建议、不改绑会话（用户点了才跳，见 ConversationController#handoff）。
+        suggestWorkerIfOutOfScope(run, emitter, lastId, content, currentWorkerId);
         finish(run, content, citationsRef.get(), toolCallsRef.get(), usageRef.get());
+    }
+
+    /**
+     * 越界建议：判定见 {@link #suggestWorker}（纯函数）。任何异常都只记 warn ——
+     * 建议是锦上添花，绝不能因为它让一条正常回答落不了库。
+     */
+    private void suggestWorkerIfOutOfScope(AgentRun run, SseEmitter emitter,
+                                           AtomicReference<String> lastId,
+                                           String content, Long currentWorkerId) {
+        if (currentWorkerId == null || content == null || content.isBlank()) {
+            return;
+        }
+        try {
+            if (!isOutOfScope(content)) {
+                return;   // 正常回答（哪怕顺嘴提到别的数字人）一律不加卡
+            }
+            WorkerSuggestion s = suggestWorker(content, currentWorkerId, candidatesOf(run.getTenantId()));
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("out_of_scope", true);
+            if (s != null) {
+                payload.put("to_worker_id", s.workerId());
+                payload.put("to_worker_name", s.workerName());
+                payload.put("task_name", s.taskName());
+            }
+            /* s == null 也发帧：正文说了「请改问 XX 数字员工」但那个名字在库里不存在
+               （模型自己编的名字，2026-11-06 截图即此情形）或压根没点名 —— 那时给**挑人入口**，
+               也不能只剩一句办不了的话。指错人比不给更糟，所以不猜。 */
+            // 不带 question：前端就是这条消息的发起方，原话在它手里（多传一份反而可能不同步）。
+            log.info("run {} 越界建议：worker {} → {}", run.getRunId(), currentWorkerId,
+                    s == null ? "(未点名，给挑人入口)" : s.workerId() + "（" + s.taskName() + "）");
+            safeSend(emitter, EVENT_SUGGEST_WORKER, lastId.get(),
+                    objectMapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            log.warn("suggest worker failed (no effect on answer): {}", e.getMessage());
+        }
     }
 
     /** 输出命中：落合规提示 assistant 消息 + run 置 FAILED。 */

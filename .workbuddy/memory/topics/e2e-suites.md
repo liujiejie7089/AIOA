@@ -617,3 +617,19 @@ Element Plus 的下拉选项要 `querySelectorAll('.el-select-dropdown__item')` 
 截图落 `docs/assets/regression-2026-11-06/30~34`。
 ★ 造数据必须用 `quotaDaysPerYear=0` 的假种（CASUAL），否则每跑一次压 1 天 `pending_days` 把额度跑满 ⇒ 见 pitfalls 91。
 ★ 请假提交路径是 `/v1/leave/requests`（**不在** `workflow` 前缀下）⇒ 见 pitfalls 90。
+
+## `_verify_worker_suggest.py`（16 项，2026-11-06 起，docs/82）
+
+越界建议：当前数字人说「超出我的职责」时，把一句话变成**可点跳转**（不是只剩文案）。
+前置：后端 :8080 带 `--aios.web.h5-dir=D:/aios/user-client`；`agent/.venv` 的 python（有 playwright）；agent **不必在线**（SSE 打桩）。
+分段：**P** 前置（523 请假助手 / 1314 文档管理数字人都在位）· **A** 越界+点名真人 ⇒ 直达卡
+（A1 卡片点名 / A2 只一张不叠关键词推荐 / A2b 会话已建 / A2c 改绑前库里是 523 / A3 真发 `POST …/handoff` /
+**A4 回库核 `worker_id` 123→1314** / A4b 没新建会话 / A5 原问题原样重发且同一会话 / A6 顶部已切人）·
+**B** 越界但名字库里不存在（截图原文「文档解读数字员工」是模型编的）⇒ 挑人卡
+（B0 新对话清旧卡 / B1 卡文案 / B2 点「去看看」进 `#v-workers` / B3 选人后原问句自动回填）· **C1** 无 JS 异常。
+截图落 `docs/assets/regression-2026-11-06/40~43`。
+★ **两层证据分工**：判定逻辑（该不该给卡、给谁）在 `RunServiceSuggestWorkerTest` **11 例纯函数**里；
+本套件只验**前端契约 + 真改绑**（handoff 请求、库里的 `worker_id`、原问题重发全走真后端）。
+★ 会话 id 取自**请求 URL**（`oaState` 虽挂在 window，但被测状态不要拿来当判据 —— 见铁律 14）。
+★ 等待必须用 `pg.wait_for_timeout` 轮询，**不能用 `time.sleep`** ⇒ 见 pitfalls 97（本次差点误判成「重发没触发」）。
+

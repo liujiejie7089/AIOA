@@ -2039,3 +2039,22 @@ import sys
 - **绕开锁**：用不带 `clean` 的 `package`（只重编变化源文件，25s 完成）；
   真要 `clean` 就先关掉 IDE 的 Java 语言服务。
 - 收口判据不看退出码、看产物：`stat -c '%y' aios-boot/target/*.jar` 必须晚于源码改动时间。
+
+## 97. Playwright 同步 API 里用 `time.sleep` 轮询 —— 会把**桩回调与 request 监听**一起堵住
+
+2026-11-06 实测（写 `_verify_worker_suggest.py` 时踩到，**差点误判成产品缺陷**）：
+
+现象：点击「换他重答」后，`run_bodies` 一直只有 1 条，`wait_until(len(run_bodies)>=2, 10s)`
+判定「原问题没被重发」⇒ 报红。但**紧接着**一次 `pg.evaluate(...)` 之后，同一变量变成 2 条。
+
+- **根因**：`playwright.sync_api` 的所有浏览器事件（`page.route` 的桩回调、`page.on("request")`）
+  都由 Python 主线程在**调用 Playwright API 时**抽空分发。`time.sleep()` 期间主线程睡死，
+  队列里已经到达的事件**一个都不处理** ⇒ 浏览器早把请求发出去了，桩却还没回，记录也没写。
+- **表现极具误导性**：页面看起来「没动作」，日志看起来「请求没发」，而实际上全发了。
+- **正确写法**：轮询里用 `pg.wait_for_timeout(150)`（它是 Playwright 调用，会推进事件循环），
+  绝不用 `time.sleep`。
+- 同型注意：`subprocess.run(mysql ...)` 这类**同步阻塞**调用在轮询循环里也应按「少量次数」使用；
+  本次 A2c/A4 的 SQL 判据没出问题，但把 `wait_until` 里的判据换成 SQL 就会重新引入阻塞。
+- **判据自检**：任何「等待某事件发生」的断言，若超时后又在你下一次任何 Playwright 调用时
+  立刻成立，就该先怀疑是被自己的 sleep 堵住了，而不是被测代码慢。
+

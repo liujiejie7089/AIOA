@@ -98,6 +98,31 @@ public class ConversationController {
         return ApiResponse.ok(conversationService.messages(id, beforeSeq, size));
     }
 
+    @Operation(summary = "会话内切换数字人（越界建议卡「转过去处理」）")
+    @PostMapping("/{id}/handoff")
+    public ApiResponse<java.util.Map<String, Object>> handoff(
+            @PathVariable Long id,
+            @RequestBody(required = false) java.util.Map<String, Object> body) {
+        // 与 run 前的自动转交共用 rebindWorker（同租户 / 未停用 / 项目可分配 三重校验在 bindWorker 里）。
+        // **只改绑、不新建会话**：换会话会丢历史，新数字人接不住同一句原话（见 rebindWorker 注释）。
+        Object v = body == null ? null : body.get("workerId");
+        if (v == null || String.valueOf(v).isBlank()) {
+            throw cn.aios.common.exception.BizException.badRequest("workerId 不能为空");
+        }
+        Long workerId;
+        try {
+            workerId = Long.valueOf(String.valueOf(v).trim());
+        } catch (NumberFormatException e) {
+            throw cn.aios.common.exception.BizException.badRequest("workerId 非法：" + v);
+        }
+        ChatConversation conversation = conversationService.getOwned(id);
+        conversationService.rebindWorker(conversation, workerId);
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("conversationId", id);
+        out.put("workerId", workerId);
+        return ApiResponse.ok(out);
+    }
+
     @Operation(summary = "发起一轮对话（返回 runId，随后用 SSE 订阅事件）")
     @PostMapping("/{id}/runs")
     public ApiResponse<RunCreatedResponse> createRun(@PathVariable Long id,
