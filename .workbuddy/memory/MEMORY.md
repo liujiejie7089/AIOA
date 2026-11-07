@@ -24,6 +24,7 @@
 | **评审 11 项/会话列表** | `docs/78`·`docs/79`·pitfalls 80–89 |
 | **越界建议/表单/同型/真链路** | `docs/81`–`85`·pitfalls 90–105 |
 | **agent loop 完成判定闭环** | `docs/86`·`graph/delivery.py`·`_verify_agent_loop_delivery.py`(20)·pitfalls 106–110 |
+| **错误上报/模型校验/回答排版** | `docs/87`·`errors.py`·`_verify_error_reporting.py`(22)·pitfalls 111–116 |
 
 ## 最常踩（全文见 iron-rules）
 

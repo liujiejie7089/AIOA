@@ -683,3 +683,17 @@ SSE `message.completed` + delta 拼接同源 + **回库核 `chat_message.content
 ★ 默认 deepseek 余额耗尽（`402 Insufficient Balance`）时用 `--model dashscope`（qwen-plus），
 只作用于本轮 run，不改全局配置；脚本会逻辑删除测试会话。
 ★ 判据解析坑见 106/107；跑法 `agent/.venv/Scripts/python.exe scripts/_verify_agent_loop_delivery.py --model dashscope`。
+
+## `_verify_error_reporting.py`（22 项，2026-11-07 起，docs/87）
+
+验「错误编号 / 分类 / 不外发原文 / 暂停帧排版」。A 段 17 项不消耗额度：码表、
+402→余额不足、404 双措辞→模型下线（判别力，坑 112）、401/429/408/503 零回归、
+所有兜底载荷带编号、suggestion 与 errorId 同值、默认文案不空口承诺编号、
+异常按类型分类、`_describe_upstream` 不外发 request_id、facade 不再用 `getattr(exc,"trace_id")`,
+resume 段不再引用未定义 `req`、check 端点不拼 `resp.text`、H5 三个新码 /
+AGENT_STREAM_ERROR 屏蔽原文 / 两形态暂停帧即时排版 / formatAnswer 仍在。
+B 段 5 项真机：agent 健康、resume 非空 SSE 且带编号、管理端三通道校验、
+「请假」暂停帧与 `WAITING_INPUT` 回库一致、「安康的汉水长歌怎么样？」成稿且
+delta / 完成帧 / 落库三者同源（含真实换行）。
+★ 跑法 `agent/.venv/Scripts/python.exe scripts/_verify_error_reporting.py`；
+`--static-only` 只跑 A 段。额度耗尽时 B4/B5 如实 SKIP（坑 108 回库须用 pymysql）。

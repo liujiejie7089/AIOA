@@ -2182,3 +2182,44 @@ SSE 响应不带 charset ⇒ `requests` 按 latin-1 解 `resp.text`，中文成 
 补齐可能被幻觉调用中断，此时 `delivery_retries` 可能仍是 0；旧条件
 `retries >= MAX_DELIVERY_RETRIES` 会静默放行中间态。收口只要 `not complete` 就必须标注，
 并在 `run.completed` 挂 `delivery_complete` 让「流程成功但交付未达标」可观测。
+
+## 111. 文案承诺「错误编号」就必须真有 `errorId`（docs/87）
+
+`facade` 旧兜底 `error_payload(..., error_id=getattr(exc,"trace_id",None))` ——
+普通 Python 异常没有 `trace_id` 属性，`error_payload` 的 `if error_id` 又把字段**整个丢掉**，
+用户看到「请把错误编号发给管理员」却一个编号都没有。默认 suggestion 不许提编号，
+需要编号的场景走 `stream_payload()` / `internal_payload()` 动态拼，且日志里也要带同一编号。
+
+## 112. 同一上游响应体可能同时是「余额不足」和「模型下线」
+
+MiniMax 404 实测：`{"type":"insufficient_balance","message":"The model 'MiniMax-M1' is no longer available"}`。
+余额判断写在 `MODEL_NOT_FOUND` 前面就会把「换个有效模型名」误报成「去充值」。
+**分类顺序：401/403 → 404/no longer available → 402/余额 → 429 → 408/504 → >=500**。
+
+## 113. `try` 之前抛异常 + `except` 引用未赋值局部变量 = HTTP 200 空 body
+
+`app/main.py` 的 `resume_run(run_id, body, request)` 里写 `trace_id = req.user_context...`，
+`req` 根本不存在（参数叫 body），且该行在 try 之前 ⇒ NameError 冒泡；
+`except` 里 `internal_payload(trace_id)` 再抛 UnboundLocalError。
+现象是所有 HITL 卡片提交/取消都返回空 200，Java 收不到任何帧，比 500 更难查。
+修法：`trace_id = request.headers.get("X-Trace-Id") or run_id`。
+
+## 114. 连通性校验的 `resp.text` 是上游原文，只进日志
+
+`_describe_upstream()` 曾把 body 前 160 字拼进管理端 toast，`request_id` / 供应商措辞全上屏。
+统一走 `errors.upstream_payload()`，原文用 `mask_secrets` 写日志；`except` 也别 `f"连接失败：{exc}"`。
+
+## 115. 暂停帧提前 return ⇒ 收口渲染器不跑（Markdown 裸符号）
+
+`need_form / need_clarification / need_confirm` 在 `API._sse` 直接 return，
+而 `formatAnswer()` 只在最终收口调用 ⇒ 等用户填表时正文还停在 `tx.textContent`，
+`white-space:normal` 把换行折成空格，`##` / `|` 全裸露。
+**库里有换行、界面挤成一段时先查显示层，别查传输层**。
+修法：三个暂停回调里立刻 `bubble.classList.add('ans'); tx.innerHTML = formatAnswer(text)`，
+两形态各一份；流式阶段仍用 textContent（逐字重排会卡）。
+
+## 116. 浏览器休眠残留 DOM 会让「截图时间」和「库里 run 时间」对不上
+
+2026-11-07 截图 21:08，库里 12:00 后却无任何 run（最新 00:27）；
+同期 Java 日志 `HikariPool clock leap delta=18h36m7s` 是机器休眠旁证。
+别把「复现截图原现场」当完成标准 ⇒ 改为复现**同一条代码路径**并修掉确定缺陷。

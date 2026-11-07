@@ -14,10 +14,12 @@ HITL 澄清（`ask_user`）
 checkpointer 落盘，等 ``resume(run_id, answer)`` 取回后继续。
 （事件在 facade 统一发、而不是在节点里发，是为了避免 ``interrupt`` 恢复重跑节点时重复发事件。）
 
-错误语义（与重建前一致）：
+错误语义（2026-11-07 debug 后）：
   - `GuardError`：**向上抛**，由 `app/main.py` 的 event_stream 统一转成 error + run.failed；
-  - 上游模型非 200：产出 error(MODEL_UPSTREAM_ERROR) + run.failed；
-  - 其他异常：产出 error(MODEL_STREAM_ERROR) + run.failed。
+  - 上游模型非 200：产出 error(MODEL_*) + run.failed（402 余额不足单独成码）；
+  - **已经吐过正文后**断流：error(MODEL_STREAM_ERROR)，「内容可能不完整」才名副其实；
+  - 其余异常（超时 / 连接失败 / 代码 bug）：由 `errors.exception_payload()` 按类型分类，
+    不再一律伪装成「生成过程中断」，且每条载荷都带可报障的错误编号。
 """
 from __future__ import annotations
 
@@ -110,11 +112,14 @@ async def _stream(compiled, stream_input, config: dict | None, seq_start: int,
         seq += 1
         yield SseEvent(seq=seq, type="run.failed",
                        data={"reason": "upstream error", "error_code": payload["code"]})
-    except Exception as exc:  # 网络/解析等：流内异常按 error + run.failed 上报，不中断服务
-        # 完整堆栈进日志；对外只用统一载荷（不含异常类名/路径/原始 message）。
-        logger.exception("graph run %s failed", run_id)
-        payload = errors.error_payload("MODEL_STREAM_ERROR", None, None, retryable=True,
-                                       error_id=getattr(exc, "trace_id", None))
+    except Exception as exc:  # 流内异常按 error + run.failed 上报，不中断服务
+        # 只对「已经吐过正文」的断流说「内容可能不完整」；其余按异常类型给准确的码。
+        # 日志里带上编号本身：用户报「错误编号 xxx」时可直接 grep 到这次 run 的堆栈。
+        emitted = seq > seq_start
+        logger.exception("graph run %s failed (error_id=%s, emitted=%s, exc=%s)",
+                         run_id, run_id, emitted, type(exc).__name__)
+        payload = (errors.stream_payload(run_id) if emitted
+                   else errors.exception_payload(exc, run_id))
         yield SseEvent(seq=seq, type="error", data=payload)
         seq += 1
         yield SseEvent(seq=seq, type="run.failed",

@@ -3524,6 +3524,9 @@ var ERR_FALLBACK = {
   MODEL_RATE_LIMITED:'模型调用过于频繁',
   MODEL_TIMEOUT:'模型响应超时',
   MODEL_UPSTREAM_ERROR:'模型服务本次没有返回结果',
+  MODEL_BALANCE_INSUFFICIENT:'模型账号余额不足，本次没有生成结果',
+  MODEL_STREAM_ERROR:'生成过程中断，内容可能不完整',
+  AGENT_STREAM_ERROR:'生成连接中断，内容可能不完整',
   CONNECTOR_ERROR:'连接的外部应用调用失败',
   INTERNAL_ERROR:'服务内部出错了，本次操作没有完成'
 };
@@ -3569,7 +3572,10 @@ function sseError(raw){
     return new Error(msg || '生成失败，请稍后重试。');
   }
   var code = p.code || p.error_code || '';
-  var err = new Error(p.message || ERR_FALLBACK[code] || (p.reason ? '生成失败，请稍后重试。' : ''));
+  /* AGENT_STREAM_ERROR 是 Java 在 agent 流异常时的兜底帧，message 直接取了
+     原始异常文本（可能含 URL / 类名 / 连接细节）。界面只显示人话，原文不外发。 */
+  var msg = (code === 'AGENT_STREAM_ERROR' ? '' : p.message);
+  var err = new Error(msg || ERR_FALLBACK[code] || (p.reason ? '生成失败，请稍后重试。' : ''));
   err.code = code; err.errorCode = code;
   err.category = p.category || null;
   err.suggestion = p.suggestion || null;
@@ -7338,6 +7344,16 @@ async function send(){
      所以只在这里记账，由收口处按「有正文 / 无正文」两种位置补出去。 */
   let errored = false;
   let errMsg = '';
+  /* 暂停帧（need_form / need_clarification / need_confirm）在 SSE 里直接 return，
+     最终收口的 formatAnswer() 根本来不及跑：卡片已挂载、正文却还停在流式的
+     tx.textContent —— 换行被 CSS 折叠，## / 表格管道 / 加粗全变成一堆裸符号。
+     2026-11-07 用户截图「写一份周报」+「工作周报」表单卡同屏就是这个状态。
+     收到暂停帧立刻把已有正文排版一次，等用户填表时看到的就是成稿。 */
+  function renderAnsNow(){
+    if(!text) return;
+    bubble.classList.add('ans');
+    tx.innerHTML = formatAnswer(text);
+  }
   const h = {
     onDelta: t => {
       const tp = bubble.querySelector('.typing'); if(tp) tp.remove();
@@ -7364,9 +7380,9 @@ async function send(){
       errMsg = errText(err, {withId:true}) || '未知错误';
       bubble.style.color = 'var(--red)';
     },
-    onClarification: p => { clar = p; },
-    onForm: p => { form = p; },
-    onConfirm: p => { cfm = p; }
+    onClarification: p => { clar = p; renderAnsNow(); },
+    onForm: p => { form = p; renderAnsNow(); },
+    onConfirm: p => { cfm = p; renderAnsNow(); }
   };
   try{
     const convId = await API.ensureConversation();
@@ -13714,6 +13730,15 @@ async function oaSend(){
   var suggestWorker = null;   // suggest.worker 帧：越界建议（本次回答说「这事不归我管」）
   var resendAfter = false;    // 表单归属不对 ⇒ 已换人，收口后用同一句话自动重发一次
   var cancelledForm = false;  // 用户取消/停止了表单 ⇒ 收口阶段不许再补发请假卡
+  /* 与经典形态同口径：暂停帧提前 return 时先把已有正文排版，别让用户对着
+     一坨裸 ## / | 填表。块 1 的 formatAnswer 是顶层函数声明（跨块可见），
+     这里仍保留 typeof 守卫，与收口处 13860 行写法一致。 */
+  function oaRenderAnsNow(){
+    if(!text) return;
+    bubble.classList.add('ans');
+    var fmt = (typeof formatAnswer === 'function' ? formatAnswer : null);
+    tx.innerHTML = fmt ? fmt(text) : txt(text);
+  }
   var h = {
     onDelta: function(t){ text += t; tx.textContent = text; oaScrollDock(); oaLayoutTails(); },
     onCompleted: function(p){
@@ -13734,9 +13759,9 @@ async function oaSend(){
       errMsg = oaHumanRunError(errText(err, {withId:true})) || '未知错误';
       tx.style.color = 'var(--red)';
     },
-    onClarification: function(p){ clar = p; },
-    onForm: function(p){ form = p; },
-    onConfirm: function(p){ cfm = p; },
+    onClarification: function(p){ clar = p; oaRenderAnsNow(); },
+    onForm: function(p){ form = p; oaRenderAnsNow(); },
+    onConfirm: function(p){ cfm = p; oaRenderAnsNow(); },
     // 会话内数字人自动转交：每收到一帧即时应用（后续 message.delta 要显示在新数字人名下）。
     // 不回退到 while 收口处重放——幂等已保证安全。
     onHandoff: function(p){ handoff = p; oaApplyHandoff(p); },

@@ -170,7 +170,7 @@ async def create_run(req: RunRequest, request: Request) -> StreamingResponse:
                 yield to_frame(event)
         except GuardError as exc:
             yield to_frame(SseEvent(seq=seq, type="error", data=errors.error_payload(
-                exc.code, exc.message, retryable=exc.retryable)))
+                exc.code, exc.message, retryable=exc.retryable, error_id=trace_id)))
             yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
                                     data={"reason": "guard rejected", "error_code": exc.code}))
         except Exception as exc:  # 兜底：流内异常按 error + run.failed 上报
@@ -208,7 +208,7 @@ async def create_task_plan(req: TaskPlanRequest, request: Request) -> StreamingR
                 yield to_frame(event)
         except GuardError as exc:
             yield to_frame(SseEvent(seq=seq, type="error", data=errors.error_payload(
-                exc.code, exc.message, retryable=exc.retryable)))
+                exc.code, exc.message, retryable=exc.retryable, error_id=trace_id)))
             yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
                                     data={"reason": "guard rejected", "error_code": exc.code}))
         except Exception as exc:
@@ -240,14 +240,18 @@ async def resume_run(run_id: str, body: ResumeRequest, request: Request) -> Stre
 
     async def event_stream():
         seq = 1
-        trace_id = req.user_context.trace_id
+        # 2026-11-07 debug：这里原先误写 `req.user_context` —— 本端点参数名是 body，
+        # 且 ResumeRequest 不含 user_context，模块里也没有全局 req。NameError 在 try
+        # **之前**抛出，连一帧都发不出（真机实测 HTTP 200 + 空 body），Java 侧收不到
+        # 任何事件，界面表现为「生成过程中断 / AI 不再回话」。编号退回请求头或 run_id。
+        trace_id = request.headers.get("X-Trace-Id") or run_id
         try:
             async for event in runtime.resume(run_id, answer):
                 seq = event.seq + 1
                 yield to_frame(event)
         except GuardError as exc:
             yield to_frame(SseEvent(seq=seq, type="error", data=errors.error_payload(
-                exc.code, exc.message, retryable=exc.retryable)))
+                exc.code, exc.message, retryable=exc.retryable, error_id=trace_id)))
             yield to_frame(SseEvent(seq=seq + 1, type="run.failed",
                                     data={"reason": "guard rejected", "error_code": exc.code}))
         except Exception as exc:
@@ -313,20 +317,27 @@ async def check_model(payload: dict) -> dict:
         cost = int((time.time() - started) * 1000)
         if resp.status_code == 200:
             return {"ok": True, "message": "连通性校验通过（HTTP 200）", "latency_ms": cost}
-        return {"ok": False, "message": _describe_upstream(resp.status_code, resp.text or ""), "latency_ms": cost}
+        return {"ok": False, "latency_ms": cost,
+                "message": _describe_upstream(resp.status_code, resp.text or "", provider.model)}
     except Exception as exc:  # noqa: BLE001
         cost = int((time.time() - started) * 1000)
-        return {"ok": False, "message": f"连接失败：{exc}", "latency_ms": cost}
+        logger.warning("model check transport failed: model=%s exc=%s", provider.model, exc)
+        return {"ok": False, "latency_ms": cost,
+                "message": "连接失败：请检查接入地址与网络是否正常，或稍后重试"}
 
 
-def _describe_upstream(status: int, body: str) -> str:
-    detail = " ".join((body or "").split())
-    if len(detail) > 160:
-        detail = detail[:160] + "…"
-    hint = {401: "API Key 无效或无权限", 403: "API Key 无效或无权限",
-            404: "接口地址或模型名不存在（请检查接入地址与模型名）",
-            429: "被供应商限流，请稍后重试"}.get(status, "供应商服务异常" if status >= 500 else "上游拒绝请求")
-    return f"{hint}（HTTP {status}）" + (f"：{detail}" if detail else "")
+def _describe_upstream(status: int, body: str, model: str | None = None) -> str:
+    """连通性校验失败原因：**只给人话 + 下一步**，上游原始 JSON 只进日志。
+
+    2026-11-07 管理端截图：旧版把 `resp.text` 前 160 字直接拼进 message，
+    `request_id`、供应商内部措辞、甚至模型下线提示整段抖到 toast 上；
+    而且「404 模型已下线」被同一段 body 里的 `insufficient_balance` 带偏成余额问题。
+    统一走 `errors.upstream_payload()`，和对话链路用同一套码与文案。
+    """
+    logger.warning("model check upstream failed: status=%s model=%s body=%s",
+                   status, model, errors.mask_secrets(body[:500]))
+    payload = errors.upstream_payload(status, body, model)
+    return f"{payload['message']}（HTTP {status}）：{payload['suggestion']}"
 
 
 @app.post("/internal/v1/models/apply")
