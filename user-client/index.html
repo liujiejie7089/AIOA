@@ -3731,17 +3731,17 @@ const API = {
     if(attachments && attachments.length) body.attachments = attachments;
     /* 本轮模型账号（docs/71）：显式选号时覆盖后端 autoResolve；空 ⇒ 后端按本人→公司→平台默认自动解析。 */
     if(state.credentialId != null && Number(state.credentialId) > 0) body.credential_id = Number(state.credentialId);
-    return this.req('/v1/conversations/'+convId+'/runs',{method:'POST',body:JSON.stringify(body)});
+    return this.req('/v1/conversations/'+encodeURIComponent(convId)+'/runs',{method:'POST',body:JSON.stringify(body)});
   },
   /* onlyAsked=true：只要提过问的会话（V109）。用户端「最近」用 —— 点进数字人但一句没问的空壳会话
      没有用户问题、标题无从总结，留在列表里只把真会话挤下去。 */
   listConversations(onlyAsked){ return this.req('/v1/conversations'+(onlyAsked?'?onlyAsked=true':'')); },
-  renameConversation(id,title){ return this.req('/v1/conversations/'+id,{method:'PUT',body:JSON.stringify({title})}); },
+  renameConversation(id,title){ return this.req('/v1/conversations/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({title})}); },
   /* 置顶（V108）：pinned=true/false。后端幂等，重复置顶只刷新置顶时刻。 */
-  pinConversation(id,pinned){ return this.req('/v1/conversations/'+id+'/pin',{method:'PUT',body:JSON.stringify({pinned:!!pinned})}); },
+  pinConversation(id,pinned){ return this.req('/v1/conversations/'+encodeURIComponent(id)+'/pin',{method:'PUT',body:JSON.stringify({pinned:!!pinned})}); },
   /* 删除会话：后端是逻辑删除（deleted_at），列表与检索都不会再出现。 */
-  deleteConversation(id){ return this.req('/v1/conversations/'+id,{method:'DELETE'}); },
-  listMessages(convId){ return this.req('/v1/conversations/'+convId+'/messages'); },
+  deleteConversation(id){ return this.req('/v1/conversations/'+encodeURIComponent(id),{method:'DELETE'}); },
+  listMessages(convId){ return this.req('/v1/conversations/'+encodeURIComponent(convId)+'/messages'); },
   cancel(runId){ return this.req('/v1/runs/'+runId+'/cancel',{method:'POST'}); },
 
   /* 语音输入：录音在浏览器（MediaRecorder），识别在后端（离线 ASR）。
@@ -3951,7 +3951,12 @@ const API = {
     if(state.token) headers['Authorization'] = 'Bearer ' + state.token;
     if(opts.method === 'POST') headers['Content-Type'] = 'application/json';
     const res = await fetch(this.base+url, {method:opts.method||'GET', headers, body:opts.body, signal:ctrl.signal});
-    if(!res.ok) throw new Error('SSE HTTP ' + res.status);
+    if(!res.ok){
+      /* M7：非 200 时响应体里是统一错误信封，直接抛 status 会把「余额不足/无权限」吞掉。 */
+      var reason = 'SSE HTTP ' + res.status;
+      try{ var eb = await res.json(); if(eb){ reason = envelopeError(eb).message || reason; } }catch(_){}
+      throw new Error(reason);
+    }
     const reader = res.body.getReader();
     const dec = new TextDecoder('utf-8');
     let buf = '';
@@ -4109,6 +4114,11 @@ function pickUsage(p){
    ============================================================================ */
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* H3：拼进内联 onclick="fn('…')" 的值必须先做 HTML 转义、"再"转义 JS 单引号/反斜杠。
+   注意不能用 &#39;：HTML 属性解析会把它还原成 '，照样闭合 JS 字符串（5894 行既有正确口径）。 */
+const escJs = s => esc(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+/* 链接另需拒绝 javascript: 伪协议（esc 只管 HTML 转义，不管 URL scheme）。 */
+const safeUrl = s => { var u = String(s==null?'':s).trim(); return (/^(https?:\/\/|\/)/i.test(u) ? u : '#'); };
 const fmt = n => Number(n||0).toLocaleString('en-US');
 const icon = (k, cls) => '<svg class="ic '+(cls||'')+'"><use href="#i-'+k+'"/></svg>';
 const emptyBox = t => '<div class="empty">'+icon('inbox')+'<div>'+esc(t)+'</div></div>';
@@ -4275,7 +4285,9 @@ async function doLogin(){
     state.token = d.accessToken;
     state.user = d.user || {username:u, nickname:d.nickname || u};
     applyRoles((state.user && state.user.roles) || []);
-    try{ localStorage.setItem('aios_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
+    /* L4：token 只存 sessionStorage——关闭标签即失效，缩小 XSS 盗号的窗口。
+       HttpOnly Cookie 是更彻底的方案，但需后端登录改造，此处先做最小收紧。 */
+    try{ sessionStorage.setItem('aios_session', JSON.stringify({token:state.token, user:state.user})); }catch(e){}
     resetUserState();   // 换账号登录前清掉旧账号的会话/消息残留，防止串号
     document.body.classList.add('auth');
     go('page-home'); setTitle('page-home');
@@ -4327,7 +4339,7 @@ function resetUserState(){
   if(recent) recent.innerHTML = '';
 }
 function doLogout(){
-  try{ localStorage.removeItem('aios_session'); }catch(e){}
+  try{ localStorage.removeItem('aios_session'); sessionStorage.removeItem('aios_session'); }catch(e){}
   resetUserState();
   state.token = null; state.user = null;
   document.body.classList.remove('auth');
@@ -4663,7 +4675,7 @@ function renderSkills(){
   if(!list.length){ box.innerHTML = ''; return; }
   const icons = ['doc','scale','chart','bank'];
   box.innerHTML = list.map((s,i)=>
-    '<div class="grid-item" onclick="openSkill(\''+esc(s.name||s.title||'技能')+'\')">'+
+    '<div class="grid-item" onclick="openSkill(\''+escJs(s.name||s.title||'技能')+'\')">'+
       icon(icons[i%4])+'<div class="name">'+esc(s.name||s.title||'技能')+'</div></div>').join('');
 }
 function renderExperts(){
@@ -6353,7 +6365,7 @@ function renderPermission(){
         }else if(it.pending){
           right = '<span class="badge wait">审批中</span>';
         }else{
-          right = '<button class="btn small" onclick="applyPermission(\''+esc(it.permissionCode)+'\')">申请</button>';
+          right = '<button class="btn small" onclick="applyPermission(\''+escJs(it.permissionCode)+'\')">申请</button>';
         }
         return '<div class="row">'+
           '<span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">'+
@@ -7271,6 +7283,8 @@ var CHAT_ATTACH_EXTS = ['pdf','docx','doc','xlsx','xls','txt','md','csv','json',
 function onAttachFiles(input){
   var files = input.files ? Array.prototype.slice.call(input.files) : [];
   files.forEach(function(file){
+    /* M6：后端 FileController 上限 50MB，前端先拦，避免白传一遍再失败。 */
+    if(file.size > 50*1024*1024){ toast('文件超过 50MB 上限：'+file.name); return; }
     var ext = (file.name.split('.').pop() || '').toLowerCase();
     if(CHAT_ATTACH_EXTS.indexOf(ext) < 0){
       toast('暂不支持 ' + (ext ? '.' + ext : '该类型') + ' 文件，AI 可读取：' + CHAT_ATTACH_EXTS.join(' / ') +
@@ -7357,7 +7371,16 @@ async function send(){
   const h = {
     onDelta: t => {
       const tp = bubble.querySelector('.typing'); if(tp) tp.remove();
-      text += t; tx.textContent = text; m.scrollTop = m.scrollHeight;
+      text += t;
+      /* L6：合并同一帧内的多次 delta，避免逐字强制同步布局（读 scrollHeight 触发重排）。 */
+      if(!bubble._raf){
+        bubble._raf = requestAnimationFrame(function(){
+          bubble._raf = null;
+          /* 暂停帧可能已用 formatAnswer 排版过；rAF 排队晚到时不能回退成纯文本。 */
+          if(bubble.classList.contains('ans')) return;
+          tx.textContent = text; m.scrollTop = m.scrollHeight;
+        });
+      }
     },
     onUsage: u => { if(!u) return; state.lastUsage = u; },
     onCompleted: p => {
@@ -9543,7 +9566,7 @@ function renderLeaveFiles(){
   const box = $('lfFiles'); if(!box) return;
   if(!leaveAttachments.length){ box.innerHTML = ''; return; }
   box.innerHTML = leaveAttachments.map((a,i)=>
-    '<span class="lf-file" onclick="window.open(\''+esc(a.url)+'\',\'_blank\')">'+icon('doc')+esc(a.name)+
+    '<span class="lf-file" onclick="window.open(\''+escJs(safeUrl(a.url))+'\',\'_blank\')">'+icon('doc')+esc(a.name)+
     '<i onclick="event.stopPropagation();leaveRemoveFile('+i+')">×</i></span>').join('');
 }
 function leaveRemoveFile(i){ leaveAttachments.splice(i,1); renderLeaveFiles(); }
@@ -9664,7 +9687,7 @@ function renderApprovalDetailExtra(a){
       const arr = typeof a.attachment === 'string' ? JSON.parse(a.attachment) : a.attachment;
       if(Array.isArray(arr) && arr.length){
         html += '<div class="td-attach"><span class="tda-label">附件</span>'+
-          arr.map(x=>'<a class="tda-item" href="'+esc(x.url)+'" target="_blank">'+icon('doc')+esc(x.name)+'</a>').join('')+'</div>';
+          arr.map(x=>'<a class="tda-item" href="'+esc(safeUrl(x.url))+'" target="_blank" rel="noopener">'+icon('doc')+esc(x.name)+'</a>').join('')+'</div>';
       }
     }catch(_){}
   }
@@ -9782,8 +9805,10 @@ function tickClock(){
 (async function init(){
   tickClock(); setInterval(tickClock, 30000);
   try{
-    const saved = JSON.parse(localStorage.getItem('aios_session') || 'null');
+    const saved = JSON.parse(localStorage.getItem('aios_session') || sessionStorage.getItem('aios_session') || 'null');
     if(saved && saved.token){
+      // L4：命中的是旧 localStorage 会话 ⇒ 迁移到 sessionStorage 并清掉长期副本
+      try{ sessionStorage.setItem('aios_session', JSON.stringify(saved)); localStorage.removeItem('aios_session'); }catch(_){}
       state.token = saved.token; state.user = saved.user;
       // 用 /auth/me 判断角色
       try{
@@ -9797,7 +9822,7 @@ function tickClock(){
       startNotifPolling();
     }
   }catch(e){
-    try{ localStorage.removeItem('aios_session'); }catch(_){}
+    try{ localStorage.removeItem('aios_session'); sessionStorage.removeItem('aios_session'); }catch(_){}
     state.token = null;
     go('page-login');
   }

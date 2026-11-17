@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -73,8 +74,9 @@ public class SqlQueryToolService {
             List<String> columns = rows.isEmpty() ? List.of() : new ArrayList<>(rows.get(0).keySet());
             return new SqlResult(columns, rows, rows.size());
         } catch (Exception e) {
+            // M1：SQLException 原文含真实 SQL / 表结构 / 驱动细节，只进日志，不外发。
             log.warn("sql_query 执行失败: {} (sql={})", e.getMessage(), scoped);
-            throw BizException.badRequest("SQL 执行失败：" + e.getMessage());
+            throw BizException.badRequest("SQL 查询失败，请检查语句后重试");
         }
     }
 
@@ -121,10 +123,9 @@ public class SqlQueryToolService {
         String alias = mainTableAlias(sql);
         String tenantCond = (alias == null ? "" : alias + ".") + "tenant_id = " + tenantId;
         if (lower.contains("where")) {
-            // 已显式带 tenant_id 条件则保持原样（避免重复）
-            if (lower.contains("tenant_id")) {
-                return sql;
-            }
+            // H1：无论 SQL 自身是否提到 tenant_id，都必须追加当前租户条件。
+            // 旧逻辑「含 tenant_id 就原样放行」可被 `WHERE tenant_id>0` 绕过，跨租户拖库。
+            // 追加 AND 条件后，用户自带的 tenant_id 限制只会让结果更窄，不会扩大可见范围。
             int whereIdx = lower.indexOf("where") + "where".length();
             String tail = sql.substring(whereIdx);
             int endIdx = tail.length();
@@ -153,7 +154,15 @@ public class SqlQueryToolService {
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(
                 "(?i)from\\s+([a-z_][a-z0-9_]*)\\s+(?:as\\s+)?([a-z_][a-z0-9_]*)\\s").matcher(sql);
         if (m.find()) {
-            return m.group(2);
+            String alias = m.group(2);
+            // WHERE / GROUP / ORDER / LIMIT 等是子句关键字，不是别名：
+            // `FROM biz_customer WHERE ...` 旧版把 WHERE 当别名，拼出 WHERE.tenant_id 直接语法错。
+            String up = alias.toUpperCase(Locale.ROOT);
+            if (Set.of("WHERE", "GROUP", "ORDER", "LIMIT", "HAVING", "UNION", "JOIN", "LEFT",
+                    "RIGHT", "INNER", "OUTER", "ON", "AS").contains(up)) {
+                return null;
+            }
+            return alias;
         }
         return null;
     }

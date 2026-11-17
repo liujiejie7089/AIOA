@@ -25,6 +25,7 @@
 | **越界建议/表单/同型/真链路** | `docs/81`–`85`·pitfalls 90–105 |
 | **agent loop 完成判定闭环** | `docs/86`·`graph/delivery.py`·`_verify_agent_loop_delivery.py`(20)·pitfalls 106–110 |
 | **错误上报/模型校验/回答排版** | `docs/87`·`errors.py`·`_verify_error_reporting.py`(22)·pitfalls 111–116 |
+| **spec-kit/全项目审查** | `specify-cli`+bug 扩展·`.codebuddy/commands/speckit.bug.*`·`.workbuddy/skills/speckit-bugfix`·报告 `.specify/bugs/full-audit-2026-11-17/`（18 项，fix+test 全 verified；C1 沙箱绕过实跑确认）·`2026-11-17` |
 
 ## 最常踩（全文见 iron-rules）
 

@@ -563,6 +563,29 @@ public interface OrgStatMapper {
             + "AND institution_id = #{institutionId} AND status = #{status}")
     long countLeaveByStatus(@Param("institutionId") Long institutionId, @Param("status") String status);
 
+    /**
+     * M2：一次查回多个机构的看板计数，消除 tenantOverview 里每机构 4 次查询的 N+1。
+     * 返回值按 institutionId 归并；四类计数各自 LEFT JOIN 聚合，机构无数据时计数为 0。
+     */
+    @Select("<script>SELECT i.id AS institutionId, "
+            + "COALESCE(d.c, 0) AS deptCount, COALESCE(m.c, 0) AS memberCount, "
+            + "COALESCE(k.c, 0) AS kbCount, COALESCE(l.c, 0) AS pendingLeave "
+            + "FROM org_institution i "
+            + "LEFT JOIN (SELECT institution_id, COUNT(*) c FROM org_department "
+            + "  WHERE deleted_at IS NULL AND status='ACTIVE' GROUP BY institution_id) d ON d.institution_id=i.id "
+            + "LEFT JOIN (SELECT institution_id, COUNT(*) c FROM org_member "
+            + "  WHERE deleted_at IS NULL AND status='ACTIVE' GROUP BY institution_id) m ON m.institution_id=i.id "
+            + "LEFT JOIN (SELECT institution_id, COUNT(*) c FROM kb_document "
+            + "  WHERE deleted_at IS NULL GROUP BY institution_id) k ON k.institution_id=i.id "
+            + "LEFT JOIN (SELECT institution_id, COUNT(*) c FROM leave_request "
+            + "  WHERE deleted_at IS NULL AND status='PENDING' GROUP BY institution_id) l ON l.institution_id=i.id "
+            + "WHERE i.deleted_at IS NULL AND i.tenant_id = #{tenantId} "
+            + "<if test='ids != null and ids.size() > 0'> AND i.id IN "
+            + "  <foreach collection='ids' item='x' open='(' separator=',' close=')'>#{x}</foreach></if>"
+            + "</script>")
+    List<Map<String, Object>> countOverviewByInstitutions(@Param("tenantId") Long tenantId,
+                                                           @Param("ids") List<Long> ids);
+
     @Select("SELECT COUNT(*) FROM org_department WHERE deleted_at IS NULL "
             + "AND institution_id = #{institutionId} AND status = 'ACTIVE'")
     long countActiveDepts(@Param("institutionId") Long institutionId);

@@ -38,6 +38,9 @@ BLOCKED_MODULES = {"os", "sys", "subprocess", "socket", "shutil", "pathlib",
 BLOCKED_NAMES = {"open", "eval", "exec", "compile", "__import__", "globals", "locals",
                  "vars", "setattr", "delattr", "input", "memoryview",
                  "breakpoint", "exit", "quit", "help",
+                 # 反射原语：obj.__class__ 被拦后，getattr(obj, "__class__") 曾可绕过（C1）。
+                 # 必须连调用名一起禁，光靠拦 ast.Attribute 挡不住字符串参数形态。
+                 "getattr", "hasattr",
                  # 补齐：对象方法 / 属性形态的危险名
                  "read_pickle", "to_pickle", "pickle", "popen", "system", "spawn",
                  "importlib", "os", "sys", "subprocess", "socket", "ctypes"}
@@ -84,6 +87,13 @@ def _validate_ast(source: str) -> str | None:
         return f"脚本语法错误：{e.msg}（第 {e.lineno} 行）"
 
     for node in ast.walk(tree):
+        # 字符串常量形态的 dunder 绕过：getattr((), "__class__") / n="__globals__"。
+        # 写在属性上的 dunder 由 ast.Attribute 拦，但作为字符串参数时它只是 Constant，
+        # 必须按内容扫描，否则 BLOCKED_DUNDERS 对反射调用完全失效（C1）。
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            for dunder in BLOCKED_DUNDERS:
+                if dunder in node.value:
+                    return f"禁止字符串中出现危险属性名：{dunder}"
         if isinstance(node, ast.Import):
             for alias in node.names:
                 name = alias.name.split(".")[0]

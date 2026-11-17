@@ -145,7 +145,7 @@ public class FileController {
             w.like(SysFile::getOriginalName, keyword);
         }
         Page<SysFile> p = fileMapper.selectPage(
-                new Page<>(Math.max(page, 1), Math.max(size, 1)), w);
+                new Page<>(Math.max(page, 1), Math.min(Math.max(size, 1), 200)), w);
         List<Map<String, Object>> list = new ArrayList<>(p.getRecords().size());
         for (SysFile f : p.getRecords()) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -200,7 +200,13 @@ public class FileController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Resource> download(@PathVariable Long id) {
-        SysFile rec = fileMapper.selectById(id);
+        // H2：与 list 同口径——只能下载本人的文件。旧版 selectById 裸查，
+        // 任何登录用户遍历自增 id 即可拖走他人附件（含请假证明）。
+        AuthUser user = AuthUserContext.require();
+        SysFile rec = fileMapper.selectOne(new LambdaQueryWrapper<SysFile>()
+                .eq(SysFile::getId, id)
+                .eq(SysFile::getUserId, user.getUserId())
+                .eq(SysFile::getTenantId, user.getTenantId()));
         if (rec == null || rec.getStoredName() == null) {
             throw BizException.notFound("文件不存在：" + id);
         }

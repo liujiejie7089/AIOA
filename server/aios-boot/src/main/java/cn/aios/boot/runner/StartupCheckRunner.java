@@ -95,8 +95,10 @@ public class StartupCheckRunner implements ApplicationRunner {
                 return;
             }
             boolean matched = passwordEncoder.matches(SEED_PASSWORD, admin.getPasswordHash());
-            log.info("seed user '{}' password '{}' matches = {} (status={})",
-                    SEED_USERNAME, SEED_PASSWORD, matched, admin.getStatus());
+            // M3：种子口令是硬编码开发凭据，写进 INFO 日志等于把口令交给任何读日志的人。
+            // 只记校验结果与账号状态，不记口令本身。
+            log.info("seed user '{}' password check matches = {} (status={})",
+                    SEED_USERNAME, matched, admin.getStatus());
             if (!matched) {
                 log.warn("seed password mismatch, please regenerate the bcrypt hash in V2__seed.sql");
             }

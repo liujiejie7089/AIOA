@@ -72,7 +72,9 @@ async function onSubmit() {
     await auth.login({ username: form.username, password: form.password, tenantName })
     localStorage.setItem(LAST_TENANT_KEY, tenantName)
     ElMessage.success(`欢迎回来，${auth.displayName}`)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
+    // M5：redirect 只接受站内相对路径；//evil.com、http(s):// 外链一律回落 /home
+    const raw = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
+    const redirect = (/^\/(?![\/\\])/.test(raw) ? raw : '/home')
     try {
       await router.replace(redirect)
     } catch {

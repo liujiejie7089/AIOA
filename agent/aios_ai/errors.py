@@ -173,9 +173,10 @@ def upstream_payload(status: int, raw: str | None, model: str | None = None) -> 
 
 
 def internal_payload(trace_id: str | None = None) -> dict:
-    """兜底 5xx：对外零信息，只给错误编号。原始异常由调用方写日志。"""
-    return error_payload("INTERNAL_ERROR", None,
-                         f"稍后重试；仍失败请把错误编号 {trace_id or '（见服务日志）'} 发给管理员",
+    """兜底 5xx：对外零信息。有编号才在文案里提编号，没编号绝不空口承诺（L2）。"""
+    suggestion = (f"稍后重试；仍失败请把错误编号 {trace_id} 发给管理员" if trace_id
+                  else "稍后重试；连续失败请联系管理员")
+    return error_payload("INTERNAL_ERROR", None, suggestion,
                          retryable=True, error_id=trace_id)
 
 

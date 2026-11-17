@@ -82,6 +82,16 @@ def test_default_catalog_suggestion_never_promises_a_missing_id():
         assert "errorId" not in p, p
 
 
+def test_internal_payload_without_trace_never_promises_a_number():
+    """L2：internal_payload(None) 曾在文案里写「错误编号」却不带 errorId。"""
+    p = errors.internal_payload(None)
+    assert "错误编号" not in p["suggestion"], p
+    assert "errorId" not in p, p
+    # 有编号时仍必须给出、且文案点名该编号
+    p2 = errors.internal_payload("run-42")
+    assert p2["errorId"] == "run-42" and "run-42" in p2["suggestion"]
+
+
 def test_exception_payload_classifies_by_type_not_one_size_fits_all():
     assert errors.exception_payload(TimeoutError(), "r")["code"] == "MODEL_TIMEOUT"
     assert errors.exception_payload(ConnectionError("ConnectError"), "r")["code"] == "MODEL_UPSTREAM_ERROR"

@@ -149,8 +149,9 @@ public class ToolGatewayService {
             out.put("data", data);
             return out;
         } catch (Exception e) {
+            // M1：工具内部异常原文可能含 SQL / 表结构 / 密钥，只进日志，对外给固定文案。
             log.warn("tool {} invoke failed: {}", name, e.getMessage());
-            return Map.of("ok", false, "error", String.valueOf(e.getMessage()));
+            return Map.of("ok", false, "error", "工具调用失败，请稍后重试");
         }
     }
 

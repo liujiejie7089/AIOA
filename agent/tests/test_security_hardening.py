@@ -56,6 +56,24 @@ def test_sandbox_blocks_os_popen_and_eval():
     assert not _run("__RESULT__ = eval('1+1')").ok
 
 
+def test_sandbox_blocks_getattr_and_string_dunder():
+    """C1：属性写成 getattr(obj,"__class__") 或字符串变量时也必须拦。"""
+    assert not _run("__RESULT__ = getattr((), '__class__')").ok
+    assert not _run("d = '__globals__'\n__RESULT__ = d").ok
+    assert not _run("__RESULT__ = hasattr((), '__bases__')").ok
+    assert not _run("g = getattr\n__RESULT__ = g((), '__class__')").ok
+
+
+def test_web_fetch_rejects_private_and_metadata_hosts():
+    """H4：web_fetch 的地址校验必须挡住回环/私网/元数据/非 http(s)。"""
+    from aios_ai.tools.web_search import _assert_public_url
+    for bad in ("http://127.0.0.1/x", "http://169.254.169.254/latest/meta-data/",
+                "http://10.0.0.5/", "http://[::1]/", "file:///etc/passwd"):
+        with pytest.raises(RuntimeError):
+            _assert_public_url(bad)
+    _assert_public_url("https://example.com/a")  # 公网正常放行
+
+
 # ---------- H-4：系统提示注入中和 ----------
 
 def test_wrap_field_strips_control_chars_and_wraps():

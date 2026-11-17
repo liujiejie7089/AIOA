@@ -25,10 +25,12 @@
 from __future__ import annotations
 
 import html as _html
+import ipaddress
 import logging
 import re
+import socket
 import time
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse
 
 import httpx
 
@@ -131,8 +133,27 @@ def _parse_bing(page: str, limit: int) -> list[dict]:
     return out
 
 
-async def _get(url: str, timeout: float) -> str:
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True,
+def _assert_public_url(url: str) -> None:
+    """拒绝非公网地址（SSRF 防护）：回环 / 私网 / 链路本地 / 元数据 / 非 http(s)。"""
+    p = urlparse(url)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        raise RuntimeError("只支持 http/https 公网地址")
+    host = p.hostname
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # 域名：显式挡掉常见本地名；DNS 解析在 trust_env=False 下由系统完成，
+        # 这里只做字面量判定，避免把 DNS 解析变成新的攻击面。
+        if host.lower() in ("localhost", "localhost.localdomain") or host.lower().endswith(".localhost"):
+            raise RuntimeError("不允许访问本地主机")
+        return
+    if (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved
+            or ip.is_multicast or ip.is_unspecified):
+        raise RuntimeError("不允许访问内网 / 本地 / 云元数据地址")
+
+
+async def _get(url: str, timeout: float, *, follow_redirects: bool = True) -> str:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=follow_redirects,
                                  trust_env=False, headers=_HEADERS) as client:
         resp = await client.get(url)
         if resp.status_code != 200:
@@ -166,11 +187,10 @@ async def run_search(query: str, count: int = 6) -> dict:
 async def run_fetch(url: str, max_chars: int = 3000) -> dict:
     """抓网页正文纯文本。"""
     u = (url or "").strip()
-    if not u.startswith(("http://", "https://")):
-        raise RuntimeError("只支持 http/https 地址")
+    _assert_public_url(u)  # SSRF：先校验，禁用跟随重定向（见下方 _get 调用）
     cap = max(300, min(int(max_chars or 3000), 8000))
     started = time.monotonic()
-    page = await _get(u, timeout=10.0)
+    page = await _get(u, timeout=10.0, follow_redirects=False)
     text = _SCRIPT_STYLE.sub(" ", page)
     text = re.sub(r"(?is)<head[^>]*>.*?</head>", " ", text)
     text = _clean(text)
