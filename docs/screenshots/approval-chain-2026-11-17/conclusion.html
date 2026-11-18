@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>费用报销审批全链路测试 · 最终结论</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;width:1100px;background:#f5f7fa;color:#1f2937;font-family:"Microsoft YaHei","PingFang SC",sans-serif;padding:32px}
+  .card{background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+  h1{margin:0 0 6px;font-size:24px}
+  .sub{color:#6b7280;font-size:13px;margin-bottom:22px}
+  .verdict{background:#fef2f2;border:1px solid #fecaca;border-left:5px solid #dc2626;border-radius:8px;padding:16px 20px;margin-bottom:22px}
+  .verdict b{color:#b91c1c;font-size:17px}
+  .verdict p{margin:8px 0 0;font-size:14px;line-height:1.7}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:22px}
+  th,td{border:1px solid #e5e7eb;padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#f9fafb;font-weight:600}
+  .ok{color:#15803d;font-weight:600}
+  .bad{color:#b91c1c;font-weight:600}
+  .warn{color:#b45309;font-weight:600}
+  .chain{display:flex;align-items:stretch;gap:10px;margin:8px 0 22px}
+  .node{flex:1;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:12px;line-height:1.6}
+  .node b{display:block;margin-bottom:4px;font-size:13px}
+  .node.red{background:#fef2f2;border-color:#fecaca}
+  .node.green{background:#f0fdf4;border-color:#bbf7d0}
+  .arrow{align-self:center;color:#9ca3af;font-size:20px}
+  h2{font-size:16px;margin:0 0 10px;padding-left:10px;border-left:3px solid #2563eb}
+  .foot{font-size:12px;color:#6b7280;margin-top:18px;border-top:1px solid #e5e7eb;padding-top:12px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>费用报销审批全链路测试 · 最终结论</h1>
+  <div class="sub">2026-11-17 · 用户端 5181 / 管理端 5173 / 后端 8080 · 标记 UISHOT-1117202635</div>
+
+  <div class="verdict">
+    <b>❌ 用户报障属实 —— 费用报销是「假审批」，已定位确定根因</b>
+    <p>提交回执说「提交成功 / 已完成」，实际只往表单台账写了一行 <code>DONE</code>，<b>没有创建任何审批单</b>。
+       用户端「我的申请」与管理端「待我审批」都以审批单为数据源，因此两端都看不到本次申请，也不存在状态流转与通知。</p>
+  </div>
+
+  <h2>九项覆盖点逐项判定</h2>
+  <table>
+    <tr><th style="width:28%">覆盖点</th><th style="width:12%">判定</th><th>实际结果</th></tr>
+    <tr><td>登录用户端</td><td class="ok">PASS</td><td>zhangsan 登录成功</td></tr>
+    <tr><td>填写并提交审批</td><td class="ok">PASS</td><td>submissionId=56，接口 code=0</td></tr>
+    <tr><td>提交结果提示</td><td class="warn">误导</td><td>「费用报销提交成功 / 已完成」，无审批单号与处理人</td></tr>
+    <tr><td>用户端记录列表</td><td class="bad">FAIL</td><td>「我的申请」提交前后均为空，标记命中 0</td></tr>
+    <tr><td>用户端记录详情</td><td class="bad">FAIL</td><td>无列表行 ⇒ 无详情入口</td></tr>
+    <tr><td>管理端待审批列表</td><td class="bad">FAIL</td><td>「待我审批（71）」中标记命中 0</td></tr>
+    <tr><td>管理端通知/红点</td><td class="bad">FAIL</td><td>红点 71 条，无本次提交增量</td></tr>
+    <tr><td>审批状态流转</td><td class="bad">FAIL</td><td>无 approval_order / approval_task，无从流转</td></tr>
+    <tr><td>数据一致性</td><td class="bad">FAIL</td><td>仅 form_submission 落 1 行，审批两表与通知表均无</td></tr>
+  </table>
+
+  <h2>根因链路（三套数据源互不相通）</h2>
+  <div class="chain">
+    <div class="node"><b>① 表单配置</b>expense_form<br>submit_policy=<b>LEDGER</b><br>biz_type=NULL<br>（平台行 + 11 个租户副本）</div>
+    <div class="arrow">→</div>
+    <div class="node red"><b>② 提交分流</b>FormSubmissionService<br>LEDGER 分支只置 status=DONE<br><b>不调 invokeApproval()</b></div>
+    <div class="arrow">→</div>
+    <div class="node red"><b>③ 落库</b>form_submission ✅<br>approval_order ❌<br>approval_task ❌</div>
+    <div class="arrow">→</div>
+    <div class="node red"><b>④ 读取口径</b>用户端读 workflow/mine<br>管理端读 /workflow/tasks<br><b>都不含表单台账</b></div>
+  </div>
+
+  <h2>对照实验与修复方向</h2>
+  <table>
+    <tr><td style="width:16%"><b>对照</b></td><td>数字人审批卡 <code>POST /approvals</code> 提交的两笔申请，在用户端和管理端<b>都能立刻看到</b> ⇒ 前端列表本身无问题。</td></tr>
+    <tr><td><b>关键点</b></td><td>tenant≥1 已有 EXPENSE 审批流（部门负责人→企业管理员），但 <b>tenant=0 没有</b>；修复时须一并补齐。</td></tr>
+    <tr><td><b>推荐方案</b></td><td>新增 Flyway 迁移：平台行与全部租户副本改为 <code>APPROVAL</code> + <code>biz_type=EXPENSE</code>，补 tenant=0 流程定义，前端刷新改用 workflowMine 同源。</td></tr>
+  </table>
+
+  <div class="foot">测试仅做取证与定位，未修改任何生产配置或代码。详细报告：docs/88-费用报销审批全链路测试-2026-11-17.md</div>
+</div>
+</body>
+</html>

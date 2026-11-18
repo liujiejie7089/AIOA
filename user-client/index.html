@@ -4352,7 +4352,8 @@ function doLogout(){
 /* 审批记录统一视图：多级审批引擎的行带 source='workflow' + taskId + timeline；
    历史单级审批（成果 / 公文）带 source='legacy'，没有流程节点。 */
 function tagSource(list, source){
-  return asArray(list).map(function(o){ return Object.assign({}, o, {source:source}); });
+  // 后端 mine() 会把历史台账行标成 source='ledger'，前端别覆盖它 —— 详情据此区分真审批单与台账留痕。
+  return asArray(list).map(function(o){ return Object.assign({}, o, {source: (o && o.source) || source}); });
 }
 /* 待我审批 = 多级审批引擎的节点待办 ∪ 租户管理员的单级待办。
    机构管理员只有前一份（节点指派人），租户管理员两份都有 —— 前者此前完全没有入口。
@@ -5084,7 +5085,8 @@ function renderTodo(){
     : '';
   const mineRows = mineList.length
     ? mineList.slice(0,5).map(a=>{
-        const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
+        const st = a.source==='ledger' ? ['info','台账留痕']
+          : (a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']));
         const ic = approvalIcon(a);
         const tail = a.decisionNote ? ('意见：'+esc(a.decisionNote)) : esc(approvalBrief(a));
         return todoRow(ic[0], esc(approvalTitle(a))+' <span class="badge '+st[0]+'">'+st[1]+'</span>',
@@ -5225,7 +5227,8 @@ function openAllMine(){
     '<div class="notif-modal perm-modal all-mine" role="dialog" aria-modal="true">'+
       '<div class="notif-head">我的申请 · 共 '+list.length+' 条</div>'+
       '<div class="notif-body"><div class="all-mine-list">'+list.map(a=>{
-        const st = a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
+        const st = a.source==='ledger' ? ['info','台账留痕']
+          : (a.status==='PENDING' ? ['wait','审批中'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']));
         const ic = approvalIcon(a);
         return '<div class="todo-item" data-mine="'+a.id+'">'+
           '<div class="tico '+ic[1]+'">'+icon(ic[0])+'</div>'+
@@ -5342,8 +5345,10 @@ function openTodoDetail(id, scope){
   state.todoDetail = {id:id, scope:scope};
   // 三期 C-07：点开「知会详情」即自动置已读（降噪优先），未读数减 1；条目仍可回查。
   if(scope==='cc' && a.read !== true && a.taskId){ markCcReadLocal(a); }
-  const st = a.status==='PENDING' ? ['wait','待审批'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']);
-  $('tdTitle').textContent = a.title || '审批详情';
+  const isLedger = a.source === 'ledger';
+  const st = isLedger ? ['info','台账留痕']
+    : (a.status==='PENDING' ? ['wait','待审批'] : (a.status==='APPROVED' ? ['ok','已通过'] : ['danger','已驳回']));
+  $('tdTitle').textContent = a.title || (isLedger ? '历史提交' : '审批详情');
   const badge = $('tdBadge');
   badge.textContent = st[1]; badge.className = 'badge '+st[0];
   $('tdType').textContent = '类型：' + (a.bizType==='RESULT' ? '成果审批' : (a.bizType==='DOC' ? '文稿审批' : (a.bizType||'—')));
@@ -9470,7 +9475,10 @@ async function submitApproval(btn){
     await API.approvalSubmit('DOC', title, (state.lastAnswer||'').slice(0,1000), state.runId, state.conversationId);
     if(btn){ btn.textContent = '已提交 · 审批中'; btn.className = 'btn ghost small'; }
     toast('已提交审批，进入工作流（留痕）');
-    state.approvals = await API.approvalList('mine') || [];
+    // 与「我的申请」列表同源（docs/88 方案 A）：此前用 approvalList('mine') 单级旧接口，
+    // 多级审批单提交后刷新不出来，用户以为没提交成功。
+    try{ state.approvals = tagSource(await API.workflowMine(), 'workflow'); }
+    catch(e){ state.approvals = await API.approvalList('mine') || []; }
     renderTodo(); renderToday();
   }catch(e){
     if(btn){ btn.textContent = '提交审批'; btn.disabled = false; }

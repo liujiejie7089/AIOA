@@ -1,0 +1,151 @@
+{
+  "mark": "UISHOT-1117202635",
+  "steps": [
+    {
+      "step": "登录页",
+      "detail": {
+        "title": "AIOS 智能工作台 · 客户端 V1.2",
+        "lgBtn": 1
+      }
+    },
+    {
+      "step": "登录用户端",
+      "detail": {
+        "bodyClass": "auth"
+      }
+    },
+    {
+      "step": "我的申请（提交前）",
+      "detail": {
+        "tab": "我的申请",
+        "rows": [],
+        "text": "\n      待办\n      审批、审核、确认事项实时汇聚 · 点击即可处理\n\n      \n        待我处理（4）\n        数字员工产出\n        我的申请\n        抄送我的（0）未读 0\n      \n\n      \n        数字员工执行失败：周报员 知会「周报员」执行失败：模型服务本次没有返回结果数字员工执行失败：定时员工 知会「定时员工」执行失败：模型服务本次没有返回结果数字员工已完成：回归-到点执行-170124 知会「回归-到点执行-170124」已完成定时任务，产出：今日完成：完成回归到点执行任务170124的例数字员工已完成：回归-定时执行-170122 知会「回归-定时执行-170122」已完成定时任务，产出：今日完成：对回归测试用例集执行了定时回归任务并\n      \n      \n        定时员工 · [11-06 17:47] 执行失败：模型服务本次没有返回结果 已执行运行计划：每日9:00,13:30运行周报员 · [11-06 18:00] 执行失败：模型服务本次没有返回结果 已执行运行计划：周五\n      "
+      }
+    },
+    {
+      "step": "提交费用报销",
+      "detail": {
+        "ok": true,
+        "resp": {
+          "submissionId": 56,
+          "status": "DONE",
+          "resume": false,
+          "receipt": {
+            "title": "费用报销提交成功",
+            "lines": [
+              {
+                "label": "费用类型",
+                "value": "TRAVEL"
+              },
+              {
+                "label": "金额",
+                "value": "100"
+              },
+              {
+                "label": "发生日期",
+                "value": "2026-11-17"
+              },
+              {
+                "label": "费用说明",
+                "value": "UISHOT-1117202635 费用报销全链路 UI 验收"
+              }
+            ],
+            "submissionId": 56,
+            "status": "DONE",
+            "statusLabel": "已完成"
+          }
+        }
+      }
+    },
+    {
+      "step": "我的申请（提交后）",
+      "detail": {
+        "tab": "我的申请",
+        "rows": [],
+        "text": "\n      待办\n      审批、审核、确认事项实时汇聚 · 点击即可处理\n\n      \n        待我处理（4）\n        数字员工产出\n        我的申请\n        抄送我的（0）未读 0\n      \n\n      \n        数字员工执行失败：周报员 知会「周报员」执行失败：模型服务本次没有返回结果数字员工执行失败：定时员工 知会「定时员工」执行失败：模型服务本次没有返回结果数字员工已完成：回归-到点执行-170124 知会「回归-到点执行-170124」已完成定时任务，产出：今日完成：完成回归到点执行任务170124的例数字员工已完成：回归-定时执行-170122 知会「回归-定时执行-170122」已完成定时任务，产出：今日完成：对回归测试用例集执行了定时回归任务并\n      \n      \n        定时员工 · [11-06 17:47] 执行失败：模型服务本次没有返回结果 已执行运行计划：每日9:00,13:30运行周报员 · [11-06 18:00] 执行失败：模型服务本次没有返回结果 已执行运行计划：周五\n      "
+      }
+    },
+    {
+      "step": "我的申请是否出现本次费用报销",
+      "detail": {
+        "appeared": false,
+        "mark": "UISHOT-1117202635"
+      }
+    },
+    {
+      "step": "管理端登录页 DOM",
+      "detail": {
+        "inputs": [
+          {
+            "id": "el-id-3871-3",
+            "ph": "",
+            "type": "text"
+          },
+          {
+            "id": "el-id-3871-4",
+            "ph": "",
+            "type": "text"
+          },
+          {
+            "id": "el-id-3871-5",
+            "ph": "",
+            "type": "password"
+          }
+        ],
+        "buttons": [
+          {
+            "txt": "登 录"
+          }
+        ]
+      }
+    },
+    {
+      "step": "管理端登录尝试 dsj_admin@默认租户",
+      "detail": {
+        "done": true,
+        "state": "/login | AIOS 智能办公基座\n统一身份登录\n租户 / 机构名称\n用户名\n密码\n登 录\n\n租户名称与账号不匹配。该账号属于租户「某某市某某区大数据管理局」，填该租户名称、租户编码或其下属机构名称均可（建议：稍后重试；仍失败请把「错误编号」发给管理员，他能凭它定位到这次请求）"
+      }
+    },
+    {
+      "step": "管理端登录尝试 dsj_admin@某某市某某区大数据管理局",
+      "detail": {
+        "done": true,
+        "state": "/home | AIOS 智能办公基座\n某某区发展和改革局（ORG-FAGAI）\n92\nAI 助手\nD\ndsj_admin\n首页\n审批中心\n知识库\n主动缓存\n消息中心\n智能服务\n成果与项目\n运营管理\n租户与机构\n组织与员工\n权限与安全\n系统配置\n你好，dsj_admin\n欢迎使用 AIOS 智能办公基座 · 企业智能办公一体化平台\n唤起 AI 助手\n待我审批\n71\n实时统计\nAI 会话\n68\n实时统计\nAI 运行\n38\n实时统计\n已接入应用\n0\n实时统"
+      }
+    },
+    {
+      "step": "管理端菜单",
+      "detail": {
+        "links": [],
+        "text": "AIOS 智能办公基座\n某某区发展和改革局（ORG-FAGAI）\n92\nAI 助手\nD\ndsj_admin\n首页\n审批中心\n知识库\n主动缓存\n消息中心\n智能服务\n成果与项目\n运营管理\n租户与机构\n组织与员工\n权限与安全\n系统配置\n你好，dsj_admin\n欢迎使用 AIOS 智能办公基座 · 企业智能办公一体化平台\n唤起 AI 助手\n待我审批\n71\n实时统计\nAI 会话\n68\n实时统计\nAI 运行\n38\n实时统计\n已接入应用\n0\n实时统计\n最新信息(92)\n更多信息\n数字员工执行失败：政策快讯员\n数字员工\n10-11 09:00\n数字员工执行失败：政策快讯员\n数字员工\n10-11 09:00\n数字员工执行失败：政策快讯员\n数字员工\n10-11 09:00\n数字员工已完成：晨报员\n数字员工\n10-11 08:00\n数字员工已完成：晨报员\n数字员工\n10-11 08:00\n数字员工已完成：晨报员\n数字员工\n10-11 08:00\n我的会议\n会议邀请\n更多会议\n近期没有会议\n「会议助手」数字人提交的会议会显示在这里\n2026年11月\n今日\n日\n一\n二\n三\n四\n五\n六\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n1\n2\n3\n4\n5\n待办(0)\n待阅(0)\n已办(10)\n已阅(0)\n拟稿(0)\n草稿(0)\n发起流程\n暂时没有工作\n知识库文件\n更多文件\nCRM-重点企业联系台账（截至10月）\nfile\n627.7 KB\n10-22 09:15\n解析失败\n项目周报-审批助手-W41\nfile\n170.8 KB\n10-20 18:03\n会议纪要-季度运营分析会-1015\nfile\n110.2 KB\n10-16 08:40\n项目周报-政务问答平台-W40\nfile\n181.8 KB\n10-13 18:00\n合同范本-运维服务年度框架\nfile\n512.5 KB\n10-12 14:18\n合同范本-信息化服务采购（2026修订）\nfile\n720.9 KB\n10-12 14:"
+      }
+    },
+    {
+      "step": "管理端审批页 /workflow/tasks",
+      "detail": {
+        "text": "AIOS 智能办公基座\n某某区发展和改革局（ORG-FAGAI）\n92\nAI 助手\nD\ndsj_admin\n首页\n审批中心\n知识库\n主动缓存\n消息中心\n智能服务\n成果与项目\n运营管理\n租户与机构\n组织与员工\n权限与安全\n系统配置\n你好，dsj_admin\n欢迎使用 AIOS 智能办公基座 · 企业智能办公一体化平台\n唤起 AI 助手\n待我审批\n71\n实时统计\nAI 会话\n68\n实时统计\nAI 运行\n38\n实时统计\n已接入应用\n0\n实时统计\n最新信息(92)\n更多信息\n数字员工执行失败：政策快讯员\n数字员工\n10-11 09:00\n数字员工执行失败：政策快讯员\n数字员工\n10-11 09:00\n数字员工执行失败：政策快讯员\n数字员工\n10-11 09:00\n数字员工已完成：晨报员\n数字员工\n10-11 08:00\n数字员工已完成：晨报员\n数字员工\n10-11 08:00\n数字员工已完成：晨报"
+      }
+    },
+    {
+      "step": "管理端是否看到本次申请",
+      "detail": {
+        "appeared": false
+      }
+    }
+  ],
+  "shots": [
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\01-h5-login.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\02-h5-home.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\03-h5-mine-before.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\04-h5-submit-receipt.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\05-h5-mine-after.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\06-admin-login.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\07-admin-home.png",
+    "D:\\aios\\docs\\screenshots\\approval-chain-2026-11-17\\08-admin-todo.png"
+  ],
+  "errors": [
+    "H5 console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "H5 console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "H5 console.error: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

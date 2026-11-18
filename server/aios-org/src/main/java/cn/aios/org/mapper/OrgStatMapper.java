@@ -297,6 +297,33 @@ public interface OrgStatMapper {
                                                          @Param("userId") Long userId);
 
     /**
+     * 历史台账兼容（docs/88 方案 B）：取「按当前配置本该走审批、但提交时还是 LEDGER」
+     * 而只落了 form_submission 的 DONE 行，用于在「我的申请」里补展示。
+     *
+     * <p>口径要点：
+     * <ul>
+     *   <li>{@code approval_order_id IS NULL} —— 已进审批流的（含 V112 之后新提交的）
+     *       一定有审批单，排除它们避免同一单出现两次；</li>
+     *   <li>{@code t.submit_policy = 'APPROVAL'} —— 只补「配置已修好但历史漏掉」的表单
+     *       （expense_form / notice_publish），工作日志这类纯 LEDGER 表单不塞进审批列表；</li>
+     *   <li>{@code s.status = 'DONE'} —— 只有 LEDGER 的归档终态；FAILED / SUBMITTED 不展示。</li>
+     * </ul>
+     * 与 selection 的审批单查询同样是跨域只读（form_* 属 aios-resource），
+     * 沿用本 mapper「不引入模块依赖」的既有边界。</p>
+     */
+    @Select("SELECT s.id, s.tenant_id AS tenantId, s.code, s.biz_type AS bizType, "
+            + "s.data_json AS dataJson, s.status, s.submitted_at AS submittedAt, "
+            + "(SELECT t2.name FROM form_template t2 WHERE t2.id = s.template_id) AS templateName "
+            + "FROM form_submission s "
+            + "WHERE s.deleted_at IS NULL AND s.tenant_id = #{tenantId} AND s.applicant_id = #{userId} "
+            + "AND s.approval_order_id IS NULL AND s.status = 'DONE' "
+            + "AND EXISTS (SELECT 1 FROM form_template t WHERE t.id = s.template_id "
+            + "            AND t.submit_policy = 'APPROVAL') "
+            + "ORDER BY s.id DESC LIMIT 100")
+    List<Map<String, Object>> selectUnlinkedLedgerSubmissions(@Param("tenantId") Long tenantId,
+                                                              @Param("userId") Long userId);
+
+    /**
      * 「本部门名义发起的申请」（E-10）—— 部门成员对本部门主体单据的只读可见性。
      *
      * <p>二期让部门能以自己的名义发起审批，但可见范围只到提交人（部门正职）与审批人，

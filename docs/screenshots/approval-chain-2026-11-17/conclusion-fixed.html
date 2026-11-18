@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>费用报销审批链路 · 方案 C 修复结论</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;width:1100px;background:#f5f7fa;color:#1f2937;font-family:"Microsoft YaHei","PingFang SC",sans-serif;padding:32px}
+  .card{background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+  h1{margin:0 0 6px;font-size:24px}
+  .sub{color:#6b7280;font-size:13px;margin-bottom:22px}
+  .verdict{background:#f0fdf4;border:1px solid #bbf7d0;border-left:5px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:22px}
+  .verdict b{color:#15803d;font-size:17px}
+  .verdict p{margin:8px 0 0;font-size:14px;line-height:1.7}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px}
+  th,td{border:1px solid #e5e7eb;padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#f9fafb;font-weight:600}
+  .ok{color:#15803d;font-weight:600}
+  .bad{color:#b91c1c;font-weight:600}
+  .tag{display:inline-block;background:#eff6ff;color:#1d4ed8;border-radius:4px;padding:1px 7px;font-size:12px;margin-right:5px}
+  h2{font-size:16px;margin:20px 0 10px;padding-left:10px;border-left:3px solid #16a34a}
+  .foot{font-size:12px;color:#6b7280;margin-top:18px;border-top:1px solid #e5e7eb;padding-top:12px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>费用报销审批链路 · 方案 C 修复结论</h1>
+  <div class="sub">2026-11-17 · 用户选定 C = A 改源头 + B 兼容展示 · 15/15 真机回归 PASS</div>
+
+  <div class="verdict">
+    <b>✅ 已修复并验证 —— 费用报销从「假审批」变成真正走两级审批流</b>
+    <p>新提交会创建 <code>approval_order</code> + 两级 <code>approval_task</code> + 通知，用户端「我的申请」与管理端待办都能看到，
+       并可逐级审批到终态。历史台账提交以「台账留痕」并入展示，不再凭空消失、也不与真审批单混淆。</p>
+  </div>
+
+  <h2>做了什么</h2>
+  <table>
+    <tr><th style="width:70px">方案</th><th>改动</th><th style="width:120px">落点</th></tr>
+    <tr><td><b>A 主</b></td><td>V112 迁移：11 个租户 expense_form 改 <code>APPROVAL</code>+<code>biz_type=EXPENSE</code>；
+        给每个有该模板的租户补种 EXPENSE 两级审批流（<b>tenant=0 之前没有，本次补种 id=622</b>）。
+        前端 <code>submitApproval()</code> 提交后刷新改用 <code>workflowMine()</code> 同源。</td>
+        <td>DB 迁移 + H5</td></tr>
+    <tr><td><b>B 兼容</b></td><td><code>ApprovalFlowService.mine()</code> 合并历史台账 DONE 行（id 负数偏移防撞号、state 映射 APPROVED、标 <code>source='ledger'</code>）；
+        用户端与管理端共用此方法，一处改动两端生效。列表/全量/详情三处显示「台账留痕」徽标。</td>
+        <td>Java 后端 + H5</td></tr>
+  </table>
+
+  <h2>15 项回归逐项判定（每步回库核对）</h2>
+  <table>
+    <tr><td><span class="tag">①</span>模板改 APPROVAL+EXPENSE</td><td class="ok">PASS</td>
+        <td><span class="tag">②</span>tenant=0 补种 EXPENSE 流</td><td class="ok">PASS</td></tr>
+    <tr><td><span class="tag">③</span>历史台账并入我的申请</td><td class="ok">PASS</td>
+        <td><span class="tag">④</span>新提交返回审批单号</td><td class="ok">PASS</td></tr>
+    <tr><td><span class="tag">⑤</span>台账回写审批单、状态 APPROVING</td><td class="ok">PASS</td>
+        <td><span class="tag">⑥</span>approval_order bizType=EXPENSE</td><td class="ok">PASS</td></tr>
+    <tr><td><span class="tag">⑦</span>两级 approval_task 生成</td><td class="ok">PASS</td>
+        <td><span class="tag">⑧</span>用户端出现新单</td><td class="ok">PASS</td></tr>
+    <tr><td><span class="tag">⑨</span>台账不撞号</td><td class="ok">PASS</td>
+        <td><span class="tag">⑩</span>管理端待办出现新单</td><td class="ok">PASS</td></tr>
+    <tr><td><span class="tag">⑪</span>有权限账号审批通过</td><td class="ok">PASS</td>
+        <td><span class="tag">⑫</span>流转到终态 APPROVED</td><td class="ok">PASS</td></tr>
+    <tr><td><span class="tag">⑬</span>台账终态回写一致</td><td class="ok">PASS</td>
+        <td>通知表落「新审批待处理」</td><td class="ok">PASS</td></tr>
+  </table>
+
+  <h2>完成依据</h2>
+  <table>
+    <tr><td><b>真机回归</b></td><td><code>scripts/_verify_approval_fix_c.py</code>：15/15 PASS（含两级审批一路批到 APPROVED）</td></tr>
+    <tr><td><b>全量单测</b></td><td><code>mvn -o -pl aios-org,aios-resource -am test -q</code> → EXIT=0</td></tr>
+    <tr><td><b>静态校验</b></td><td>H5 两块 script 均 <code>node --check</code> OK；Flyway V112 success=1</td></tr>
+    <tr><td><b>部署</b></td><td>fat jar 106.3MB 重打包，8080 已用新 jar 重启，HEALTH 200</td></tr>
+    <tr><td><b>可视对照</b></td><td>修复前 <code>03/05/10</code>（空列表/71 条无关待办）→ 修复后 <code>12/13/14</code>（审批单+台账留痕并存）</td></tr>
+  </table>
+
+  <div class="foot">详细报告：docs/88-费用报销审批全链路测试-2026-11-17.md（第八节） · 截图目录：docs/screenshots/approval-chain-2026-11-17/</div>
+</div>
+</body>
+</html>

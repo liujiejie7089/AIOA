@@ -1330,7 +1330,67 @@ public class ApprovalFlowService {
             }
             out.add(m);
         }
+        // ---- docs/88 方案 B：合并历史台账行 ----------------------------------
+        // 费用报销/通知公告在改成 APPROVAL 之前，历史提交只落了 form_submission（DONE），
+        // 没有审批单。不合并的话，用户翻「我的申请」会以为那些单子丢了。
+        // 只取「当前配置已是 APPROVAL 但历史没进审批流」的 DONE 行（见 mapper 口径），
+        // 工作日志这类本来就是纯台账的表单不会被误塞进审批列表。
+        for (Map<String, Object> lr : statMapper.selectUnlinkedLedgerSubmissions(tenantId, actor.getUserId())) {
+            Map<String, Object> m = new LinkedHashMap<>(lr);
+            Object lidObj = lr.get("id");
+            long ledgerId = lidObj instanceof Number ln ? ln.longValue() : 0L;
+            if (ledgerId == 0L) {
+                continue;
+            }
+            // id 冲突：form_submission.id 与 approval_order.id 是两套独立自增序列，
+            // 直接用会撞号，导致 openTodoDetail(a.id) 打开错误的单。用负数偏移隔离，
+            // 并保留 submissionId 原值供追溯（前端详情据此显示「历史台账」标记）。
+            m.put("id", -ledgerId);
+            m.put("submissionId", ledgerId);
+            m.put("source", "ledger");
+            m.put("mine", true);
+            Object tn = lr.get("templateName");
+            m.put("title", (tn == null ? "表单" : tn) + " · 历史提交 #" + ledgerId);
+            m.put("creatorName", actor.getNickname() != null ? actor.getNickname() : actor.getUsername());
+            // 前端状态口径：PENDING=审批中 / APPROVED=已通过 / 其余=已驳回。
+            // 台账 DONE 若原样下发会被渲染成「已驳回」（danger），必须映射为 APPROVED。
+            m.put("status", "APPROVED");
+            m.put("ledgerStatus", String.valueOf(lr.get("status")));
+            Object dj = lr.get("dataJson");
+            if (dj != null) {
+                m.put("formData", dj);          // 详情里的表单回显（renderApprovalDetailExtra 读 formData）
+                m.put("content", ledgerBrief(lr, String.valueOf(dj)));
+            } else {
+                m.put("content", ledgerBrief(lr, null));
+            }
+            if (lr.get("submittedAt") != null) {
+                m.put("createdAt", lr.get("submittedAt"));
+            }
+            out.add(m);
+        }
         return out;
+    }
+
+    /**
+     * 台账行的列表副标题：从 data_json 里挑人话字段（费用说明 / 事由 / 标题），
+     * 取不到就回落成表单名，避免列表里出现一长串 JSON。
+     */
+    private static String ledgerBrief(Map<String, Object> row, String dataJson) {
+        if (dataJson != null && !dataJson.isBlank()) {
+            try {
+                JsonNode n = new ObjectMapper().readTree(dataJson);
+                for (String k : new String[]{"reason", "title", "subject", "description", "费用说明", "事由"}) {
+                    JsonNode v = n.get(k);
+                    if (v != null && v.isValueNode() && !v.asText().isBlank()) {
+                        return v.asText();
+                    }
+                }
+            } catch (Exception ignore) {
+                // JSON 脏数据不阻断列表，回落表单名
+            }
+        }
+        Object name = row.get("templateName");
+        return name == null ? "历史台账提交" : (name + "（历史台账）");
     }
 
     /**
