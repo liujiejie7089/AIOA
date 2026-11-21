@@ -1,0 +1,29 @@
+PASS B1 平台管理员登录 tenant=0
+PASS B2 第二租户管理员登录 tenant=2
+PASS B3 接入清单端点可用且含 scfy [{'code': 'scfy', 'requiresTenantAccess': True, 'status': 'ENABLED', 'enabled': True, 'scopeInstitutions': [], 'config': {}, 'enabledAt': '2026-11-21T12:27:11.793545', 'enabledBy': 1}]
+PASS B4 /connectors 下发 accessMode=TENANT TENANT
+PASS B5 基线 configReady=true（存量平移已启用） True
+PASS A3-1 基线 manifest 含 scfy ['scfy']
+PASS A3-2 hub 直调返回真实数据 {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'level_name': '联合国教科文组织', 'num': 6}, {'level_name': '国家级', 'num': 25}, {'
+PASS A11 既有连接器工具数不变（wecom_cli=25 / qq_mail=6 / scfy=69） {'wecom_cli': 25, 'scfy': 69, 'qq_mail': 6}
+PASS A10-0 停用后状态=DISABLED DISABLED
+PASS A10-1 停用后 manifest 不含 scfy（判别力） []
+PASS A1-1 停用后 hub 直调被拒 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：本租户已停用「scfy」，请联系租户管理员重新启用'}
+PASS A1-2 拒绝文案可执行（指租户接入） 接入受控：本租户已停用「scfy」，请联系租户管理员重新启用
+PASS A2-1 启用后 manifest 立即含 scfy ['scfy']
+PASS A2-2 启用后 hub 直调立即恢复 {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'level_name': '联合国教科文组织', 'num': 6}, {'level_name': '国家级', 'num': 25}, {'
+PASS A5-1 机构白名单外用户不可见 scfy []
+PASS A5-2 机构白名单外用户直调被拒 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：当前用户所属机构不在「scfy」的允许范围内，请联系租户管理员调整机构白名单'}
+PASS A5-3 清空白名单后恢复可见 
+PASS A6-1 用户白名单外不可见 scfy 
+PASS A6-2 清空用户白名单后恢复可见 
+PASS A7 scfy 调用审计按 tenant=0 归属落库 rows=8
+PASS A4-1 未接入租户 B 的 manifest 不含 scfy []
+PASS A4-2 未接入租户 B 直调 hub 被拒 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：本租户尚未接入「scfy」，请联系租户管理员在「连接器接入」中完成配置并启用'}
+PASS A7b 租户 B 被拒的调用也按 tenant=2 留痕 rows=1
+PASS A4-3 同一时刻租户 A 仍可见（隔离成立） 
+PASS A4-4 租户 B 自行启用后立即可见 (200, "{'code': 0, 'message': 'ok', 'data': {'code': 'scfy', 'requiresTenantAccess': True, 'status': 'ENABLED', 'enabled': True, 'scopeInstitutions': [], 'config': {},")
+PASS S1 check 端点拒绝匿名调用 401
+PASS R1 现场恢复：tenant0 已启用 
+PASS R2 现场恢复：tenant2 已启用 
+RESULT: ALL PASS

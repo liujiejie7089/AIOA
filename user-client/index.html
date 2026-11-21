@@ -410,6 +410,17 @@
   .ans .ans-table th{background:var(--blue-soft);font-weight:800;color:var(--text)}
   .ans .ans-table td{color:var(--text-2)}
   .ans .ans-table tbody tr:nth-child(even) td{background:rgba(0,0,0,.015)}
+  /* 查询结果自动图表：统计表格（分类+数值）就地渲染为 SVG 图，原始表格折叠保留供核对 */
+  .ans .ans-chart{margin:8px 0;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);padding:10px 12px 7px}
+  .ans .ans-chart-title{font-size:12.5px;font-weight:800;color:var(--text);line-height:1.5}
+  .ans .ans-chart-sub{font-size:10.5px;color:var(--text-3);margin:2px 0 6px}
+  .ans .ans-chart svg{display:block;width:100%;height:auto;max-height:320px}
+  .ans .ans-chart details{margin-top:5px}
+  .ans .ans-chart summary{cursor:pointer;font-size:11px;color:var(--blue);padding:3px 0;list-style:none;user-select:none}
+  .ans .ans-chart summary::-webkit-details-marker{display:none}
+  .ans .ans-chart summary:before{content:'▸ ';display:inline-block;transition:transform var(--dur-fast)}
+  .ans .ans-chart details[open] summary:before{transform:rotate(90deg)}
+  .ans .ans-chart-empty{font-size:11.5px;color:var(--text-3);padding:6px 0}
 
   /* ---------- 8. 会话 ---------- */
   .chat{display:flex;flex-direction:column;height:100%}
@@ -2214,6 +2225,10 @@ body.kb-on .tabbar{display:none !important}
 .oa .conn-sub{font-size:11.5px;color:var(--text-2);line-height:1.5;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .oa .conn-err{color:var(--red)}
+/* 按租户接入（docs/92）：未接入的 hint 是长句，必须允许换行，别被 nowrap 截成省略号；
+   已接入时没有动作按钮，用一行说明替代，避免用户以为还要自己「连接」。 */
+.oa .conn-sub.conn-tenant-hint{white-space:normal;overflow:visible;text-overflow:clip}
+.oa .conn-tenant-note{font-size:11px;color:var(--text-3);max-width:130px;text-align:right;line-height:1.4}
 .oa .conn-act{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;gap:8px;flex-shrink:0}
 .oa .conn-act .btn{min-height:30px;padding:0 14px;border-radius:var(--r-full);font-size:12px;font-weight:600}
 .oa .conn-act .btn[disabled]{opacity:.5;cursor:not-allowed}
@@ -7573,9 +7588,13 @@ async function toggleHistoryDetail(id, el){
     const msgs = asArray(await API.listMessages(id));
     box.dataset.loaded = '1';
     box.innerHTML = (msgs.length
-        ? msgs.map(m=>'<div class="hist-msg'+(m.role==='user'?' me':'')+'">'+
-            '<span class="who">'+(m.role==='user'?'我':'AI')+'</span>'+
-            '<div class="txt">'+esc(m.content||'')+'</div>'+ attachMetaLine(m.attachments) +'</div>').join('')
+        ? msgs.map(m=>{
+            /* 历史回放与当场回答同版式：AI 侧走 formatAnswer（表格/图表/加粗），用户侧保持纯文本 */
+            const aiBody = m.role==='user' ? esc(m.content||'') : formatAnswer(m.content||'');
+            return '<div class="hist-msg'+(m.role==='user'?' me':'')+'">'+
+              '<span class="who">'+(m.role==='user'?'我':'AI')+'</span>'+
+              '<div class="txt">'+aiBody+'</div>'+ attachMetaLine(m.attachments) +'</div>';
+          }).join('')
         : '<div class="perm-tip">该会话暂无消息</div>')
       + '<div style="margin-top:6px"><button class="btn ghost small" '
       + 'onclick="event.stopPropagation();resumeConversation('+id+')">继续此会话</button></div>';
@@ -7615,6 +7634,231 @@ function ansInline(s){
     .replace(/([0-9]+(?:\.[0-9]+)?\s*(?:个工作日|工作日|小时|天|日|%|％|元|次|人|份))/g,
              '<span class="ans-key">$1</span>');
 }
+/* ---------------------------------------------------------------------------
+   查询结果图表引擎（零外部依赖，纯 SVG）
+   判定：agent 把统计类结果整理成规范三列表 `维度层级 | 数量 | 数据来源·备注`
+        （见 prompt/answer.py 规则 5）。这里识别「首列分类 + 某列纯数值」的表格，
+        自动映射 标题 / 分类轴 / 数值列 / 图例，渲染成柱状图或饼图。
+   原则：
+     - 数字只取表格单元格原文（来源即工具返回），不二次换算、不编造；
+     - 非绘图表格（无数值列 / 只有一行表头 / 数值解析失败）原样返回，不做图；
+     - 原始表格折叠保留在图表下方，便于核对数据来源；
+     - 所有文本先 esc 再进 SVG，无注入面。
+   --------------------------------------------------------------------------- */
+var CHART_PALETTE = ['#2f6fed','#f59e0b','#0f9d63','#d93a3f','#7c5cff','#0e9aa7','#b7791f','#8a5a12'];
+
+/* 从单元格取数值：剥离千分位/单位/加粗符号，纯数字才认；失败返回 null */
+function chartNum(s){
+  if(s == null) return null;
+  var t = String(s).replace(/\*/g,'').replace(/,/g,'').replace(/[（(].*?[)）]/g,'').trim();
+  var m = t.match(/^([+-]?\d+(?:\.\d+)?)\s*(人|个|家|条|件|次|项|部|场|%|％|万元|亿元|元|万)?$/);
+  if(!m) return null;
+  var n = parseFloat(m[1]);
+  if(!isFinite(n)) return null;
+  return n;
+}
+
+/* 判断表格是否可视化：返回 {type,cats,vals,catHead,valHead,title} 或 null。
+   rows = 该表格所有 pipe 行；sep = 分隔行下标；ctxBefore = 表格上方的文本（取标题）。 */
+function chartDetect(rows, sep, splitRow, ctxBefore, fullText){
+  if(sep < 1 || rows.length - sep - 1 < 2) return null; // 至少 2 行数据
+  var head = splitRow(rows[0]).map(function(x){ return String(x).replace(/\*\*/g,'').trim(); });
+  var dataRows = [];
+  for(var r = sep + 1; r < rows.length; r++){
+    var cells = splitRow(rows[r]);
+    if(cells.length >= 2) dataRows.push(cells);
+  }
+  if(dataRows.length < 2 || dataRows.length > 24) return null; // 过多分类不适合图，退回表格
+  var ncol = Math.min.apply(null, [head.length].concat(dataRows.map(function(c){ return c.length; })));
+  if(ncol < 2) return null;
+
+  // 数值列：除首列外，找一列「每一数据行都能解析成数字」的
+  var valCol = -1;
+  for(var c = 1; c < ncol; c++){
+    var allNum = true;
+    for(var i = 0; i < dataRows.length; i++){
+      if(chartNum(dataRows[i][c]) === null){ allNum = false; break; }
+    }
+    if(allNum){ valCol = c; break; }
+  }
+  if(valCol < 0) return null; // 非绘图表格（如「字段 | 说明」）原样保留
+
+  var cats = [], vals = [];
+  for(var k = 0; k < dataRows.length; k++){
+    var label = String(dataRows[k][0] || '').replace(/\*\*/g,'').trim();
+    if(!label) continue;
+    if(/^(合计|总计|小计|总和|total)$/i.test(label)) continue; // 合计行不入图
+    cats.push(label.length > 12 ? label.slice(0,12) + '…' : label);
+    vals.push(chartNum(dataRows[k][valCol]));
+  }
+  if(cats.length < 2) return null;
+
+  /* 图表类型：显式图名优先，且按首次出现位置取——用户「XX柱状图」常出现在标题/问题里，
+     正文里的「占比最高」只是描述，不能反过来把柱状图改成饼图（截图实测踩过）。
+     只有完全没有显式图名时，才用「占比/构成」「数值皆在 0~100」这类弱信号推断。 */
+  var ft = String(fullText || '');
+  var hits = [];
+  function first(re, t){ var m = ft.match(re); if(m) hits.push({ at: m.index, t: t }); }
+  first(/饼状图|饼图|环形图|pie\s*chart/i, 'pie');
+  first(/柱状图|柱形图|条形图|bar\s*chart/i, 'bar');
+  first(/折线图|趋势图|line\s*chart/i, 'line');
+  var type = 'bar';
+  if(hits.length){
+    hits.sort(function(a, b){ return a.at - b.at; });
+    type = hits[0].t;
+  } else if(/占比|构成|百分比/i.test(ft)) type = 'pie';
+  else if(vals.every(function(v){ return v >= 0 && v <= 100; }) && cats.length <= 8) type = 'pie';
+
+  // 标题：优先表格上方最近的小节标题 / 描述行
+  var title = '';
+  var up = String(ctxBefore || '').split('\n').map(function(x){ return x.trim(); }).filter(Boolean);
+  for(var u = up.length - 1; u >= 0 && u >= up.length - 4; u--){
+    // 去掉末尾的（工具名/路径）括注与冒号——真实回答如「XX柱状图数据（shop_bar_chart，/show/...）：」
+    var t = up[u].replace(/^#{1,4}\s*/, '').replace(/^\*\*|\*\*$/g, '')
+              .replace(/[：:]\s*$/, '').replace(/[（(][^）)]*[）)]\s*$/, '')
+              .replace(/[：:]\s*$/, '').trim();
+    if(t && !/^\|/.test(t) && t.length <= 40 && !/^(说明|注|备注)/.test(t)){ title = t; break; }
+  }
+  if(!title) title = (head[0] || '分类') + ' · ' + (head[valCol] || '数值');
+
+  return {
+    type: type, cats: cats, vals: vals,
+    catHead: head[0] || '类别', valHead: head[valCol] || '数值', title: title.slice(0,44)
+  };
+}
+
+/* SVG 柱状图：横向排布，底部类目标签（过多或过长时旋转），左侧数值刻度 + 网格线 */
+function chartBarSvg(spec){
+  var cats = spec.cats, vals = spec.vals, n = cats.length;
+  var W = 560, H = 250, L = 46, R = 12, T = 26, B = 46;
+  var pw = W - L - R, ph = H - T - B;
+  var max = Math.max.apply(null, vals.concat([0]));
+  var min = Math.min.apply(null, vals.concat([0]));
+  if(min < 0) min = Math.min(min, 0);
+  var span = (max - min) || 1;
+  var nice = Math.ceil(span / 4 / Math.pow(10, Math.floor(Math.log10(span/4||1)))) * Math.pow(10, Math.floor(Math.log10(span/4||1))) || 1;
+  var top = Math.ceil(max / nice) * nice, bot = min < 0 ? Math.floor(min / nice) * nice : 0;
+  var scale = (top - bot) || 1;
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="' + esc(spec.title) + ' 柱状图">';
+  // 网格线与刻度
+  for(var g = 0; g <= 4; g++){
+    var gv = bot + scale * g / 4;
+    var gy = (T + ph - ph * (gv - bot) / scale).toFixed(1);
+    svg += '<line x1="' + L + '" y1="' + gy + '" x2="' + (W - R) + '" y2="' + gy + '" stroke="var(--border)" stroke-width="1"/>';
+    svg += '<text x="' + (L - 6) + '" y="' + (parseFloat(gy) + 3.5).toFixed(1) + '" text-anchor="end" font-size="10" fill="var(--text-3)">' + esc(fmtTick(gv)) + '</text>';
+  }
+  var slot = pw / n, bw = Math.min(38, slot * 0.58);
+  for(var i = 0; i < n; i++){
+    var v = vals[i];
+    var bh = Math.abs(v) / scale * ph;
+    var bx = (L + slot * i + (slot - bw) / 2).toFixed(1);
+    var by = (v >= 0 ? T + ph - bh : T + ph).toFixed(1);
+    var color = CHART_PALETTE[i % CHART_PALETTE.length];
+    svg += '<rect x="' + bx + '" y="' + by + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, bh).toFixed(1) + '" rx="3" fill="' + color + '"><title>' + esc(cats[i]) + '：' + esc(String(v)) + '</title></rect>';
+    var lblY = v >= 0 ? (parseFloat(by) - 4).toFixed(1) : (parseFloat(by) + bh + 11).toFixed(1);
+    svg += '<text x="' + (parseFloat(bx) + bw / 2).toFixed(1) + '" y="' + lblY + '" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text-2)">' + esc(fmtTick(v)) + '</text>';
+    var cx = (L + slot * i + slot / 2).toFixed(1);
+    var lab = cats[i];
+    if(lab.length > 5){
+      svg += '<text x="' + cx + '" y="' + (T + ph + 14) + '" text-anchor="end" font-size="10" fill="var(--text-2)" transform="rotate(-32 ' + cx + ' ' + (T + ph + 14) + ')">' + esc(lab) + '</text>';
+    } else {
+      svg += '<text x="' + cx + '" y="' + (T + ph + 16) + '" text-anchor="middle" font-size="10.5" fill="var(--text-2)">' + esc(lab) + '</text>';
+    }
+  }
+  svg += '<line x1="' + L + '" y1="' + (T + ph) + '" x2="' + (W - R) + '" y2="' + (T + ph) + '" stroke="var(--border-strong)" stroke-width="1"/>';
+  svg += '</svg>';
+  return svg;
+}
+
+/* SVG 饼图：按数值占比切扇形，右侧图例（色块 + 类目 + 数值） */
+function chartPieSvg(spec){
+  var cats = spec.cats, vals = spec.vals, n = cats.length;
+  var W = 560, H = 250, cx = 148, cy = 125, r = 92;
+  var total = vals.reduce(function(a, b){ return a + Math.max(0, b); }, 0);
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="' + esc(spec.title) + ' 饼图">';
+  if(total <= 0){ svg += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" font-size="12" fill="var(--text-3)">无有效数值</text>'; return svg + '</svg>'; }
+  var ang = -Math.PI / 2;
+  for(var i = 0; i < n; i++){
+    var frac = Math.max(0, vals[i]) / total;
+    var a2 = ang + frac * Math.PI * 2;
+    var color = CHART_PALETTE[i % CHART_PALETTE.length];
+    var x1 = (cx + r * Math.cos(ang)).toFixed(2), y1 = (cy + r * Math.sin(ang)).toFixed(2);
+    var x2 = (cx + r * Math.cos(a2)).toFixed(2), y2 = (cy + r * Math.sin(a2)).toFixed(2);
+    var large = frac > 0.5 ? 1 : 0;
+    var pct = (frac * 100).toFixed(1);
+    if(frac >= 0.9999){
+      svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '"><title>' + esc(cats[i]) + '：' + pct + '%</title></circle>';
+    } else {
+      svg += '<path d="M ' + cx + ' ' + cy + ' L ' + x1 + ' ' + y1 + ' A ' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x2 + ' ' + y2 + ' Z" fill="' + color + '"><title>' + esc(cats[i]) + '：' + pct + '%</title></path>';
+    }
+    ang = a2;
+  }
+  // 图例：两列
+  var lx = 270, ly = 40, step = 25;
+  for(var j = 0; j < n; j++){
+    var col = Math.floor(j / 8), row = j % 8;
+    var px = lx + col * 145, py = ly + row * step;
+    var pc = (Math.max(0, vals[j]) / total * 100).toFixed(1);
+    svg += '<rect x="' + px + '" y="' + (py - 9) + '" width="10" height="10" rx="2" fill="' + CHART_PALETTE[j % CHART_PALETTE.length] + '"/>';
+    var nm = cats[j].length > 8 ? cats[j].slice(0, 8) + '…' : cats[j];
+    svg += '<text x="' + (px + 15) + '" y="' + py + '" font-size="10.5" fill="var(--text-2)">' + esc(nm) + '</text>';
+    svg += '<text x="' + (px + 132) + '" y="' + py + '" text-anchor="end" font-size="10" font-weight="600" fill="var(--text)">' + esc(pc) + '%</text>';
+  }
+  svg += '</svg>';
+  return svg;
+}
+
+/* SVG 折线图：复用柱状坐标网格，连线 + 数据点 */
+function chartLineSvg(spec){
+  var cats = spec.cats, vals = spec.vals, n = cats.length;
+  var W = 560, H = 250, L = 46, R = 12, T = 26, B = 46;
+  var pw = W - L - R, ph = H - T - B;
+  var max = Math.max.apply(null, vals.concat([0]));
+  var min = Math.min.apply(null, vals.concat([0]));
+  var span = (max - min) || 1;
+  var top = max + span * 0.15, bot = min < 0 ? min - span * 0.15 : 0;
+  var scale = (top - bot) || 1;
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="' + esc(spec.title) + ' 折线图">';
+  for(var g = 0; g <= 4; g++){
+    var gv = bot + scale * g / 4;
+    var gy = (T + ph - ph * (gv - bot) / scale).toFixed(1);
+    svg += '<line x1="' + L + '" y1="' + gy + '" x2="' + (W - R) + '" y2="' + gy + '" stroke="var(--border)" stroke-width="1"/>';
+    svg += '<text x="' + (L - 6) + '" y="' + (parseFloat(gy) + 3.5).toFixed(1) + '" text-anchor="end" font-size="10" fill="var(--text-3)">' + esc(fmtTick(gv)) + '</text>';
+  }
+  var pts = [], slot = pw / Math.max(1, n - 1);
+  for(var i = 0; i < n; i++){
+    var px = (L + slot * i).toFixed(1), py = (T + ph - (vals[i] - bot) / scale * ph).toFixed(1);
+    pts.push(px + ',' + py);
+  }
+  svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + CHART_PALETTE[0] + '" stroke-width="2.5" stroke-linejoin="round"/>';
+  for(var k = 0; k < n; k++){
+    var p = pts[k].split(',');
+    svg += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.5" fill="var(--surface)" stroke="' + CHART_PALETTE[0] + '" stroke-width="2"><title>' + esc(cats[k]) + '：' + esc(String(vals[k])) + '</title></circle>';
+    svg += '<text x="' + p[0] + '" y="' + (parseFloat(p[1]) - 9).toFixed(1) + '" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text-2)">' + esc(fmtTick(vals[k])) + '</text>';
+    var lab = cats[k];
+    svg += '<text x="' + p[0] + '" y="' + (T + ph + 16) + '" text-anchor="middle" font-size="10" fill="var(--text-2)">' + esc(lab.length > 5 ? lab.slice(0,5) + '…' : lab) + '</text>';
+  }
+  svg += '</svg>';
+  return svg;
+}
+
+function fmtTick(v){
+  var n = Number(v) || 0;
+  if(Math.abs(n) >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + '万';
+  return Math.abs(n % 1) < 0.0001 ? String(Math.round(n)) : String(Math.round(n * 100) / 100);
+}
+
+/* 把识别结果包成卡片：标题 + 坐标轴说明 + SVG + 折叠的原始表格 */
+function chartWrap(spec, tableHtml){
+  var svg = spec.type === 'pie' ? chartPieSvg(spec) : (spec.type === 'line' ? chartLineSvg(spec) : chartBarSvg(spec));
+  var axis = spec.type === 'pie'
+    ? esc(spec.valHead) + ' 构成 · 共 ' + spec.cats.length + ' 类'
+    : '横轴：' + esc(spec.catHead) + '　纵轴：' + esc(spec.valHead);
+  return '<div class="ans-chart"><div class="ans-chart-title">' + esc(spec.title) + '</div>' +
+    '<div class="ans-chart-sub">' + axis + '</div>' + svg +
+    '<details><summary>查看原始数据</summary>' + tableHtml + '</details></div>';
+}
+
 /* 逐行判定层级：代码块 / 分隔线 / 标题 / 列表（含缩进与序号）/ 引用 / 缩进段落 / 普通段落 */
 function formatAnswer(raw){
   const lines = String(raw == null ? '' : raw).replace(/\r/g, '').split('\n');
@@ -7673,7 +7917,17 @@ function formatAnswer(raw){
           html += '</tr>';
         }
         html += '</tbody></table></div>';
-        out.push(html);
+        /* 统计表（分类 + 数值）就地转图表：数字仍取表格原文，图类型由正文意图词决定。
+           识别失败/格式异常一律回退成上面的原始表格，绝不让用户看到空白。 */
+        var ctxBefore = lines.slice(Math.max(0, i - 5), i).join('\n');
+        var spec = null;
+        try { spec = chartDetect(rows, sep, splitRow, ctxBefore, String(raw || '')); } catch (e) { spec = null; }
+        if (spec) {
+          try { out.push(chartWrap(spec, html)); }
+          catch (e2) { out.push(html); } // 渲染异常兜底回退表格
+        } else {
+          out.push(html);
+        }
         i = j - 1; // 整块已消费，跳过后续行
         continue;
       }
@@ -12782,8 +13036,13 @@ function mcpToggleTools(code){
   }
 }
 
-/* 状态 chip 唯一映射（严格按 docs/58 §2.3，前端只做字典，不二次推断） */
+/* 状态 chip 唯一映射（严格按 docs/58 §2.3，前端只做字典，不二次推断）
+   TENANT 型（docs/92）没有「个人连接」概念：就绪 = 租户已接入并启用，
+   未就绪 = 租户未接入/已停用，文案要指向租户管理员而不是让用户自己去连接。 */
 function connStatusChip(c){
+  if(c.accessMode === 'TENANT'){
+    return c.configReady === false ? chip('wait','租户未接入') : chip('due','租户已接入');
+  }
   if(c.configReady === false) return chip('wait','待管理员配置');
   if(c.status === 'CONNECTED') return chip('due','已连接');
   /* 已关闭 ≠ 未连接：授权还在，只是暂时不给 AI 用（2026-10-31） */
@@ -12794,8 +13053,15 @@ function connStatusChip(c){
 
 function connCardHtml(c){
   var icKey = (c.icon === 'mail') ? 'mail' : 'people';
+  var tenantMode = (c.accessMode === 'TENANT');
   var sub = '';
-  if(c.configReady === false){
+  if(tenantMode){
+    /* 按租户接入：hint 由后端 configReady 给出，是可执行提示（找谁、做什么），
+       不能像凭据型那样让用户点「连接」去弹认证层（docs/92 §2.1）。 */
+    sub = c.configReady === false
+      ? '<div class="conn-sub conn-tenant-hint">'+txt(c.configHint || '本租户尚未接入该能力，请联系租户管理员启用')+'</div>'
+      : '<div class="conn-sub">本租户已完成接入配置，可直接在对话中使用</div>';
+  } else if(c.configReady === false){
     sub = '<div class="conn-sub">'+txt(c.configHint || '管理员尚未完成配置')+'</div>';
   } else if(c.status === 'CONNECTED'){
     var line = '已连接';
@@ -12811,7 +13077,13 @@ function connCardHtml(c){
     sub = '<div class="conn-sub conn-err">未通过校验：'+txt(c.lastError || '未知错误')+'</div>';
   }
   var act = '';
-  if(c.configReady === false){
+  if(tenantMode){
+    /* 已接入 ⇒ 不给「连接」按钮（没有个人授权动作），只说明由谁统一启用；
+       未接入 ⇒ 按钮禁用并显示原因，避免点了必然失败。 */
+    act = c.configReady === false
+      ? '<button class="btn small" disabled>未接入</button>'
+      : '<span class="conn-tenant-note">由租户管理员统一启用</span>';
+  } else if(c.configReady === false){
     act = '<button class="btn small" disabled>连接</button>';
   } else if(c.status === 'CONNECTED'){
     /* 三个动作语义各不相同，必须分开（2026-10-31 用户口径修正）：
@@ -14092,23 +14364,27 @@ function oaLoadPlusConns(){
     if(!items.length){ box.innerHTML = '<div class="pm-empty">暂无可用的连接器</div>'; return; }
     box.innerHTML = items.map(function(c){
       var st = c.status;
+      var tenantMode = (c.accessMode === 'TENANT');
       var connected = st === 'CONNECTED';
       var disabled = st === 'DISABLED';               // 持久关闭（授权仍在）
       /* 开关态 = 授权有效 且 本次对话未禁用它；持久关闭的即使未 mute 也必须是 off */
       var muted = oaConnectorMuted(c.code);
-      var on = connected && !muted;
-      /* configReady=false 是「管理员还没填凭据」，不是「用户没连」：
-         这种卡片在连接器面板里也是禁用连接按钮的，这里同样不给开关，免得点了必然失败。 */
+      /* configReady=false 是「管理员还没填凭据 / 租户未接入」，不是「用户没连」：
+         这种卡片在连接器面板里也是禁用连接按钮的，这里同样不给开关，免得点了必然失败。
+         TENANT 型没有个人连接态，开关只表达「本轮是否调用」，由 configReady 决定可用。 */
       var ready = (c.configReady !== false);
+      var on = tenantMode ? (ready && !muted) : (connected && !muted);
       var sub = !ready
-        ? '管理员尚未完成配置'
-        : (muted
-            ? '本次对话不调用（授权仍保留）'
-            : (on
-            ? ('已连接' + (c.accountLabel ? ' · ' + c.accountLabel : ''))
-            : (disabled
-                ? '已关闭（授权保留），打开即恢复'
-                : (st === 'UNVERIFIED' ? '检测未通过，需重新授权' : '未连接，开启后去授权'))));
+        ? (tenantMode ? (c.configHint || '本租户未接入，请联系租户管理员启用') : '管理员尚未完成配置')
+        : (tenantMode
+            ? (muted ? '本次对话不调用（租户已接入）' : '租户已接入，本轮可调用')
+            : (muted
+                ? '本次对话不调用（授权仍保留）'
+                : (on
+                ? ('已连接' + (c.accountLabel ? ' · ' + c.accountLabel : ''))
+                : (disabled
+                    ? '已关闭（授权保留），打开即恢复'
+                    : (st === 'UNVERIFIED' ? '检测未通过，需重新授权' : '未连接，开启后去授权')))));
       return '<div class="pm-conn" data-code="'+txt(c.code)+'">'+
         '<span class="pm-ico"><svg class="ic"><use href="#i-link"/></svg></span>'+
         '<div class="pm-main"><b>'+txt(c.name || c.code)+'</b>'+
@@ -15196,7 +15472,12 @@ async function oaResumeConversation(id, restored){
     if(!msgs.length) oaPushBub('ai', '这条会话还没有消息，直接输入即可继续。');
     msgs.forEach(function(m){
       var isUser = m.role === 'user';
-      var histHtml = txt(m.content || m.text || '');
+      /* 历史回放与当场回答同版式：AI 侧走 formatAnswer（表格/图表/加粗），
+         用户侧保持纯文本。formatAnswer 在脚本 1 顶层（全局），此处防御式调用。 */
+      var raw = String(m.content || m.text || '');
+      var histHtml = isUser
+        ? txt(raw)
+        : (typeof formatAnswer === 'function' ? formatAnswer(raw) : txt(raw));
       if(isUser && m.attachments && m.attachments.length) histHtml += attachMetaLine(m.attachments);
       oaPushBub(isUser ? 'user' : 'ai', histHtml, {ans:!isUser});
     });
@@ -15435,7 +15716,7 @@ function oaConvMemoMatch(){
     if(m.uid && uid && String(m.uid) !== String(uid)) return null;   // 换账号不恢复
     if(Number(m.pid || 0) !== Number(oaConvKey().pid || 0)) return null;  // 换项目不恢复
     return m;
-  }catch(e){ return null; }
+  }catch(e){ console.warn('[oa] conv memo match error:', e); return null; }
 }
 
 /* 恢复上次会话：只在「刚进页面、还没绑会话」时做一次。
@@ -15468,7 +15749,18 @@ function oaBoot(){
   oaHandleConnectorCallback();   // 解析授权回跳参数并清理 URL（防刷新重放），须在重绘前完成
   applyMode();
   if(S.mode !== 'oa') return;
-  loadOaExtras().then(function(){ fillSheet(); oaRender(); return oaRestoreLastConv(); }).catch(function(){});
+  loadOaExtras().then(function(){ fillSheet(); oaRender(); })
+    .catch(function(e){ console.warn('[oa] loadOaExtras/fillSheet failed:', e); });
+  /* 恢复上次会话**独立执行**，不挂在 loadOaExtras 的 then 里（2026-11-21 结构修复）：
+     原先「extras → fillSheet → oaRender → restore」串成一条链，fillSheet/oaRender 任一
+     同步抛错都会跳进空 catch，恢复被静默吞掉（真机实测：memo 在、恢复永不执行、无任何
+     可见错误）。恢复本身不依赖 extras（worker/expert 回选仅在记忆里有时才需要）。 */
+  try {
+    var restoring = oaRestoreLastConv();
+    if (restoring && typeof restoring.catch === 'function') {
+      restoring.catch(function(e){ console.warn('[oa] restore last conv failed:', e); });
+    }
+  } catch (e) { console.warn('[oa] restore last conv failed:', e); }
   fillSheet();
 }
 window.oaBoot = oaBoot;
@@ -15550,6 +15842,14 @@ try{
 
   bind();
   applyMode();
+  /* 自启动（2026-11-21）：oaBoot 此前只定义、只暴露，全文件无调用点 ——「刷新接上上次对话」
+     从未生效。自启动必须放在这里（S.mode 已按记忆/默认定稿、bind() 已执行），
+     放在 IIFE 中部会在 S.mode 仍为初始 classic 时被「非 OA」分支提前跳过
+     （真机实测：boot 时 mode-pre=classic ⇒ restore 永不执行）。幂等 guard 防 double-boot。 */
+  if (!window.__oaBooted) {
+    window.__oaBooted = true;
+    try { oaBoot(); } catch (e) { console.warn('[oa] boot failed:', e); }
+  }
 })();
 </script>
 </body>

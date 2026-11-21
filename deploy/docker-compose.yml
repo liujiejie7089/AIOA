@@ -436,6 +436,14 @@ services:
       WECOM_CONNECTOR_KEY: ${WECOM_CONNECTOR_KEY:-}
       # hub → server 的内部回写令牌（连接态同步），必须与 server 的 aios.service-jwt.secret 一致
       AIOS_SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:-change-me-service-secret-at-least-32-bytes}
+      # ---- 四川非遗（scfy）只读连接器 ----
+      # 工具逻辑在 hub 的 scfy/ 原生连接器，直连非遗 /show/*（免登录）；
+      # 容器内能访问的地址按需覆盖（生产西昌 https://szbhpt.tsichuan.com/scfy）。
+      AIOS_SCFY_BASE_URL: ${AIOS_SCFY_BASE_URL:-https://szbhpt.tsichuan.com/scfy}
+      # 按租户接入准入校验（docs/92 阶段 4）：1=开启（默认）——hub 每次 tools/call 前回调
+      # server:8080/api/v1/mcp/access/scfy/check 判租户是否接入；0=回滚到平台级统一接入。
+      # 回滚只需把这里设 0 并重启 hub，无需改代码或 DB（对应 V115 的 access_mode 开关）。
+      AIOS_SCFY_ACCESS_CHECK: ${AIOS_SCFY_ACCESS_CHECK:-1}
     volumes:
       # 宿主目录不存在时 Docker 会**静默建空目录** ⇒ 表现为「wecom-cli 未安装」，不会报错。
       # 默认落在**仓库内** ../data/wecom-cli-bin（不放 /opt，见仓库 .gitignore 第 60 行）。

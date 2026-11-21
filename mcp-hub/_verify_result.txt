@@ -1,0 +1,15 @@
+PASS scfy registered ['wecom_cli', 'scfy', 'qq_mail']
+PASS tool count == catalog manifest=69 catalog=69
+PASS server built 
+PASS list_tools == catalog 69
+PASS new public tools present ['travel_road_distribute', 'travel_road_type_count', 'travel_route_top_list', 'travel_tourist_county_data', 'travel_tourist_county_list']
+PASS required schema carried ['area']
+PASS call project_type_data ok {'ok': True, 'serverCode': 'scfy', 'tool': 'project_type_data', 'endpoint': '/show/project/getProjectTypeData', 'source': 'scfy', 'data': {'total': 153, 'data':
+PASS call returns real data {'total': 153, 'data': [{'name': '民间文学', 'value': 7}, {'name': '传统音乐', 'value': 23}, {'name': '传统舞蹈', 'value': 20}, {'na
+PASS call inheritor_type_data ok {'ok': True, 'serverCode': 'scfy', 'tool': 'inheritor_type_data', 'endpoint': '/show/inheritor/getInheritorTypeData', 'source': 'scfy', 'data': {'total': 153, '
+PASS call area short name ok {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'level_name':
+PASS call new public tool ok {'ok': True, 'serverCode': 'scfy', 'tool': 'heritage_activity_years', 'endpoint': '/show/acivity/getHeritageYearList', 'source': 'scfy', 'data': {'year': ['2023
+PASS new public tool real data {'year': ['2023', '2022', '2021', '2020']}
+PASS all calls carry source 
+
+RESULT: ALL PASS

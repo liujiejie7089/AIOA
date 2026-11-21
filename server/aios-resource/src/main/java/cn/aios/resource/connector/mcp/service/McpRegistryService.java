@@ -11,6 +11,7 @@ import cn.aios.resource.connector.mcp.mapper.McpServerMapper;
 import cn.aios.resource.connector.mcp.mapper.McpServerToolMapper;
 import cn.aios.resource.connector.service.ConnectorCatalogService;
 import cn.aios.resource.connector.service.ConnectorConnectionService;
+import cn.aios.resource.connector.service.ConnectorTenantAccessService;
 import cn.aios.security.AuthUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -46,6 +47,7 @@ public class McpRegistryService {
     private final McpServerToolMapper toolMapper;
     private final ConnectorConnectionService connectionService;
     private final ConnectorCatalogService catalogService;
+    private final ConnectorTenantAccessService tenantAccessService;
     private final McpProbeClient probeClient;
     private final McpProperties props;
     private final SecretCodec secretCodec;
@@ -81,6 +83,16 @@ public class McpRegistryService {
                 .orderByAsc(McpServer::getSort));
         List<ManifestItem> out = new ArrayList<>();
         for (McpServer s : servers) {
+            /* ★ TENANT 主闸门（docs/92 阶段 3）：平台行 tenant_id=0 只是「目录 + 探测快照」，
+               不再等于授权。V115 之前 manifest 查 {0, 本租户} & trusted=1 就把 scfy 发给
+               所有租户；现在声明为 TENANT 的连接器必须先过完整三层判定（租户启用 →
+               机构白名单 → 用户范围），否则该租户根本拿不到工具。
+               放在 usableForAgent 之前、且不挑 source：EXTERNAL 行也同样受约束，
+               避免「换个 source 就绕过」。 */
+            if (tenantAccessService.requiresTenantAccess(s.getConnectorCode())
+                    && !tenantAccessService.decide(user, s.getConnectorCode(), null).ok()) {
+                continue;
+            }
             if (McpServer.SOURCE_BUILTIN.equals(s.getSource()) && !usableForAgent(user, s)) {
                 continue; // 判据 2
             }
@@ -126,6 +138,12 @@ public class McpRegistryService {
         String code = s.getConnectorCode();
         if (code == null || code.isBlank()) {
             return false;
+        }
+        /* 按租户接入的连接器：不再走「用户 CONNECTED / API_KEY configReady」这两条历史短路，
+           统一以 ConnectorTenantAccessService 的三层判定为准（docs/92 阶段 3）。
+           与 manifest 主闸门、hub 回调校验共用同一套判据，保证「看得到」=「调得动」。 */
+        if (tenantAccessService.requiresTenantAccess(code)) {
+            return tenantAccessService.decide(user, code, null).ok();
         }
         Long tenantId = tenantId(user);
         if (ConnectorConnection.STATUS_CONNECTED.equals(

@@ -47,6 +47,9 @@ class RunState(TypedDict, total=False):
     pending_calls: list[dict]    # 本轮模型给出的 tool_calls
     content_parts: list[str]     # 正文分片（累计）
     tool_calls_log: list[dict]   # 工具调用日志（回传前端）
+    mcp_breakers: dict           # MCP 连接器熔断态：{server: {consecutive_failures, tripped}}
+                                 # 一次 run 内跨轮累计；连续失败达阈值后同 server 调用直接短路
+                                 # （docs/89 §8.2）。只放原始类型，checkpointer 可序列化。
     usage: dict                  # token 用量（多轮累加）
     # 完成判定（docs/86）：交付未达标时回 agent 补齐成稿，避免「只说计划就收尾」。
     delivery_pending: bool       # 本轮是否要回到 agent（由 agent 节点置位、每轮都写回）

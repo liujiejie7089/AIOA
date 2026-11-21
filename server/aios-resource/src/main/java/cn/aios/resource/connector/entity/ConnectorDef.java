@@ -39,6 +39,17 @@ public class ConnectorDef {
     public static final String AUTH_MODE_QR = "QR";
     public static final String STATUS_ACTIVE = "ACTIVE";
 
+    /**
+     * 接入模式：平台统一接入（历史行为，一次 trust 全员可用）。V115 起新增列，
+     * 未声明的连接器默认此值，判权链保持原样（docs/92 A11 不误伤既有能力）。
+     */
+    public static final String ACCESS_MODE_OPEN = "OPEN";
+    /**
+     * 接入模式：需租户完成接入配置并启用后，该租户下机构与用户才可见/可调。
+     * 判据集中在 {@code ConnectorTenantAccessService}（docs/92 阶段 1~4）。
+     */
+    public static final String ACCESS_MODE_TENANT = "TENANT";
+
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long tenantId;
@@ -48,6 +59,11 @@ public class ConnectorDef {
     private String icon;
     private String summary;
     private String authMode;
+    /**
+     * 接入模式（V115）：{@link #ACCESS_MODE_OPEN} / {@link #ACCESS_MODE_TENANT}。
+     * TENANT 表示该连接器的可见性与调用权按租户接入配置收口，见 docs/92。
+     */
+    private String accessMode;
     /** 应用配置键（JSON 数组文本，如 ["corpId","agentId","corpSecret"]）；读时按需要解析。 */
     private String configKeys;
     private String helpText;

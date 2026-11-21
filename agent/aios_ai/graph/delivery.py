@@ -74,9 +74,14 @@ MAX_PLAN_ONLY_CHARS = 90
 
 
 def is_delivery_request(text: str | None, aggregated: bool = False) -> bool:
-    """这一轮是不是「要一份成稿」的任务。聚合任务一律算（代码已代拉素材，本就该成文）。"""
-    if aggregated:
-        return True
+    """这一轮是不是「要一份成稿」的任务。
+
+    2026-11-20 真机纠正：**多源聚合 ≠ 成文交付**。用户只问「四川非遗」时，
+    工具结果可能来自知识库 + scfy 两个源，旧实现看到 ``aggregated=True`` 就
+    一律按周报口径要求成稿三要素，补齐两轮后只回一段「本轮未完成」模板，
+    真正的数据一个字都没有。现在只认用户原话里的成文意图；查询类只要求
+    「给出答案」，不要求写成稿。
+    """
     return bool(DELIVERY_RE.search(text or ""))
 
 
@@ -90,7 +95,13 @@ def assess_delivery(content: str | None, delivery: bool) -> tuple[bool, str]:
         return False, "本轮没有正文"
     if UNFINISHED_RE.search(t):
         return False, "命中「待续 / 稍后补充 / 剩余部分自行处理」类未完收尾"
-    if len(t) < MAX_PLAN_ONLY_CHARS and PLAN_ONLY_RE.search(t) and not SECTION_RE.search(t):
+    # 2026-11-20 真机纠正：assess 收到的是**累计文本**（导语 + 后续正文）。
+    # 补齐轮已经给出数据后，开头的「我先把…调出来。」仍留在累计文本里；
+    # 旧条件「短 + 命中计划句」会一直判红，把模型逼去写「未完成说明」。
+    # 只有整段基本就是一句计划话（至多一个句末标点）才算中间态。
+    sentence_count = len(re.findall(r"[。！？!?]", t))
+    if (len(t) < MAX_PLAN_ONLY_CHARS and sentence_count <= 1
+            and PLAN_ONLY_RE.search(t) and not SECTION_RE.search(t)):
         return False, "只有计划或承诺句，没有交付正文"
     if delivery:
         if len(t) < MIN_DELIVERY_CHARS:
@@ -103,13 +114,30 @@ def assess_delivery(content: str | None, delivery: bool) -> tuple[bool, str]:
     return True, ""
 
 
-def continuation_prompt(reason: str, user_text: str | None) -> str:
-    """回注给模型的「把话说完」指令。
+def continuation_prompt(reason: str, user_text: str | None, delivery: bool = True) -> str:
+    """回注入「把话说完」指令：交付类要求成稿，查询类只要求直接给答案。
 
     刻意写成 user 轮而不是 system 轮：模型对紧邻的 user 指令响应最稳定，
     且不会污染后面轮次的系统身份。
+
+    ``delivery=False`` 分支来自 2026-11-20 真机缺陷：用户问「四川非遗」，
+    工具已返回项目/传承人数据，模型却只回「我先把整体数据调出来」。
+    此时若继续要求「成稿三要素」，模型会改成输出「未完成说明」，离答案更远。
     """
     goal = (user_text or "").strip()[:120]
+    if not delivery:
+        return (
+            "【继续回答 · 不得结束】\n"
+            f"你上一条只给到了中间态，未达标原因：{reason}。\n"
+            f"用户本轮的问题是：{goal}\n"
+            "数据已经在上文的工具结果/引用卡里。现在**直接给出答案**，要求：\n"
+            "1. 先给结论和具体数据，不要再说「我先…再…」「正在查询」「我先把数据调出来」；\n"
+            "2. 每个数字/事实都要能对上工具结果；查不到就如实说查不到，不得编造；\n"
+            "3. 末尾只需列出实际用到的数据来源，不要写完成状态、覆盖清单、依据清单"
+            "这类成文模板，也不要输出任何「未完成说明」模板；\n"
+            "4. 禁止用「待续」「稍后补充」「剩余部分自行处理」收尾。\n"
+            "这一轮就是最终回答，系统不会再替你补后半段。"
+        )
     return (
         "【继续完成 · 不得结束】\n"
         f"你上一条只给到了中间态，未达标原因：{reason}。\n"
@@ -126,13 +154,35 @@ def continuation_prompt(reason: str, user_text: str | None) -> str:
     )
 
 
-def exhausted_note(reason: str, retries: int, aggregated: bool) -> str:
+def exhausted_note(reason: str, retries: int, aggregated: bool,
+                   delivery: bool = True) -> str:
     """收口时仍不达标的**诚实**兜底：不伪装成功，也不把半成品说成周报。
 
     ``retries`` 只用于说明已经尝试过几轮，**不是触发条件**：真机实测存在
     「补齐轮模型又吐 tool_calls ⇒ delivery_pending 被跳过 ⇒ 直接 finalize」的路径，
     此时 retries 可能远小于上限，若只在上限用尽时才标注，中间态照样会被记成 SUCCEEDED。
     """
+    if not delivery:
+        # 查询类兜底：如实说没给出答案，但绝不套用「成稿/未决项」周报模板。
+        # reason 里的「交付正文」是判定内部术语，不能泄漏给用户。
+        reason = reason.replace("交付正文", "可用答案")
+        attempt = (f"（已连续补齐 {retries} 轮仍未给出答案）"
+                   if retries else "（本轮未给出可用答案）")
+        lines = [
+            "",
+            "",
+            "---",
+            "【本轮回答不完整 · 如实说明】",
+            f"- 当前状态：没有给出可直接使用的答案{attempt}；上面的文字不得当作结果使用。",
+            f"- 原因：{reason}。",
+        ]
+        if aggregated:
+            lines.append("- 已获取的数据：见本条消息下方「数据来源」引用卡，可直接据其核对。")
+        lines.append(
+            "- 下一步：把问题写具体（对象 / 时间范围 / 想要的数字），或再问一次，"
+            "本系统会重新组织已有数据回答。")
+        return "\n".join(lines)
+
     attempt = (f"（已连续补齐 {retries} 轮仍未成稿）" if retries else "（本轮未产出成稿正文）")
     lines = [
         "",

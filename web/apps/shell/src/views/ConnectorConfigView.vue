@@ -1,157 +1,281 @@
 <template>
   <div class="connector-config">
-    <el-card>
+    <el-card v-loading="loading">
       <template #header>
         <div class="card-header">
-          <span>连接器配置（租户级）</span>
-          <el-tag v-if="view" :type="view.configReady ? 'success' : 'warning'" effect="plain">
-            {{ view.configReady ? '已就绪' : '待配置' }}
-          </el-tag>
+          <div class="card-head-text">
+            <span class="card-title">连接器接入（按租户）</span>
+            <span class="card-sub">
+              外部能力按租户授权启用：启用后本租户用户才可见并调用；停用或改配置立即生效，无需重新登录
+            </span>
+          </div>
+          <el-button size="small" :loading="loading" @click="reload">刷新</el-button>
         </div>
       </template>
 
       <el-alert
-        v-if="view && view.hubAvailable === false"
+        v-if="loadError"
         type="error"
         :closable="false"
         show-icon
-        title="连接器运行时（mcp-hub）不可达：当前只读的是数据库影子记录，保存会失败。请先启动 mcp-hub 并确认 AIOS_MCP_HUB=true。"
-        style="margin-bottom: 16px"
-      />
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        title="字段由连接器自身声明（connector_def.config_keys），新增第三方应用无需改前端。凭据加密存库、保存后不再回显明文；留空的字段表示保留旧值。"
+        :title="loadError"
         style="margin-bottom: 16px"
       />
 
-      <el-form label-width="150px" style="max-width: 600px" v-if="loaded">
-        <el-form-item label="连接器">
-          <el-select v-model="code" style="width: 300px" @change="load">
-            <el-option
-              v-for="item in options"
-              :key="item.code"
-              :label="`${item.name}（${item.code}）`"
-              :value="item.code"
+      <div v-for="a in accessList" :key="a.code" class="access-item">
+        <div class="access-head">
+          <div class="access-name">
+            <strong>{{ nameOf(a.code) }}</strong>
+            <span class="access-code">{{ a.code }}</span>
+          </div>
+          <el-tag :type="statusTag(a.status)" effect="plain">{{ statusText(a.status) }}</el-tag>
+          <span class="access-switch">
+            <span>启用</span>
+            <el-switch
+              :model-value="a.enabled"
+              :loading="!!busy[a.code]"
+              @change="(v: boolean) => toggleAccess(a, v)"
             />
-          </el-select>
-          <span v-if="current?.authMode" class="mode-tag">{{ current.authMode }}</span>
-        </el-form-item>
+          </span>
+        </div>
 
-        <el-form-item v-for="key in keys" :key="key" :label="labelOf(key)">
-          <el-input
-            v-model="form[key]"
-            :type="isSensitive(key) ? 'password' : 'text'"
-            :show-password="isSensitive(key)"
-            :placeholder="placeholderOf(key)"
-          />
-        </el-form-item>
+        <div v-if="summaryOf(a.code)" class="access-desc">{{ summaryOf(a.code) }}</div>
 
-        <el-form-item label="启用">
-          <el-switch v-model="form.enabled" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="saving" @click="save">保存</el-button>
-          <el-button :disabled="!view?.configured" :loading="clearing" @click="clear">清除配置</el-button>
-        </el-form-item>
-      </el-form>
+        <el-form label-width="110px" class="access-form">
+          <el-form-item label="机构白名单">
+            <el-select
+              v-model="accessForm[a.code].scope"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="留空 = 全租户可用"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="i in institutions"
+                :key="i.id"
+                :label="instLabel(i)"
+                :value="i.id"
+              />
+            </el-select>
+            <div class="field-hint">可搜索选择本租户机构（来自机构管理）；按用户主机构判定，留空 = 全租户可用</div>
+          </el-form-item>
 
-      <el-alert
-        v-if="view && !view.configReady"
-        type="warning"
-        :closable="false"
-        show-icon
-        :title="'当前就绪状态：' + (view.configHint || '未就绪')"
-        style="margin-top: 12px; max-width: 600px"
-      />
+          <el-form-item label="允许调用用户">
+            <el-select
+              v-model="accessForm[a.code].users"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="留空 = 不限制"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="u in accounts"
+                :key="u.userId"
+                :label="userLabel(u)"
+                :value="u.userId"
+              />
+            </el-select>
+            <div class="field-hint">可搜索选择本租户账号（来自组织成员账号）；留空 = 不限制</div>
+          </el-form-item>
+
+          <el-form-item label="数据源地址">
+            <el-input
+              v-model="accessForm[a.code].baseUrl"
+              placeholder="留空 = 使用平台默认地址（如 https://szbhpt.tsichuan.com/scfy）"
+            />
+            <div class="field-hint">租户自建部署时填写本租户的数据源地址；留空使用平台默认</div>
+          </el-form-item>
+
+          <el-form-item>
+            <el-button
+              type="primary"
+              size="small"
+              :loading="!!busy[a.code]"
+              @click="saveAccess(a)"
+            >保存配置</el-button>
+            <span class="access-hint">
+              最近启用：{{ fmtTime(a.enabledAt) }}<template v-if="a.enabledBy"> · 操作人 {{ operatorName(a.enabledBy) }}</template>
+            </span>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <el-empty v-if="!loading && !accessList.length" description="当前没有按租户接入的连接器" />
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  deleteConnectorTenantConfig,
-  getConnectorTenantConfig,
-  listConnectorTenantConfigs,
-  putConnectorTenantConfig,
-  type ConnectorConfigItem,
-  type ConnectorTenantConfigView
+  configureConnectorAccess,
+  disableConnectorAccess,
+  enableConnectorAccess,
+  listConnectorAccess,
+  listConnectorCatalog,
+  type ConnectorAccessStatus,
+  type ConnectorAccessView,
+  type ConnectorCatalogEntry
 } from '@/api/connectorAdmin'
+import { listInstitutions, listAccountCandidates, type Institution } from '@/api/org'
 
-/** 键名 → 中文标签（仅影响展示；未登记的新连接器直接显示键名，不影响保存）。 */
-const LABELS: Record<string, string> = {
-  corpId: '企业ID（CorpID）',
-  agentId: '应用 AgentId',
-  corpSecret: '应用 Secret',
-  redirectUri: 'OAuth 回调地址',
-  apiKey: 'API Key',
-  endpoint: '接口地址'
+/** 机构（id 必有才进选择器）。 */
+type InstitutionRow = Institution & { id: number }
+/** 本租户账号候选（userId 必有才进选择器）。 */
+type AccountRow = {
+  userId: number
+  username?: string
+  nickname?: string
+  boundMemberName?: string
+  virtual?: boolean
 }
 
-const code = ref('')
-const options = ref<ConnectorConfigItem[]>([])
-const view = ref<ConnectorTenantConfigView | null>(null)
-const loaded = ref(false)
-const saving = ref(false)
-const clearing = ref(false)
-const keys = ref<string[]>([])
-const form = reactive<Record<string, any>>({ enabled: true })
+const accessList = ref<ConnectorAccessView[]>([])
+const catalog = ref<ConnectorCatalogEntry[]>([])
+const institutions = ref<InstitutionRow[]>([])
+const accounts = ref<AccountRow[]>([])
+const loading = ref(false)
+const loadError = ref('')
+const busy = reactive<Record<string, boolean>>({})
+const accessForm = reactive<Record<string, { scope: Array<number | string>; users: Array<number | string>; baseUrl: string }>>({})
 
-const current = computed(() => options.value.find((o) => o.code === code.value))
-const labelOf = (k: string) => LABELS[k] || k
-const isSensitive = (k: string) => view.value?.values?.[`${k}Set`] !== undefined
-const placeholderOf = (k: string) => {
-  const v = view.value?.values?.[k]
-  if (isSensitive(k) && view.value?.values?.[`${k}Set`] === true) return '••••••（已配置，留空保留旧值）'
-  return typeof v === 'string' && v ? `当前：${v}` : `填写 ${labelOf(k)}`
+const STATUS_TEXT: Record<ConnectorAccessStatus, string> = {
+  NOT_CONNECTED: '未接入',
+  CONFIGURED_DISABLED: '已配置待启用',
+  ENABLED: '已启用',
+  DISABLED: '已停用'
+}
+const statusText = (s: ConnectorAccessStatus) => STATUS_TEXT[s] || s
+const statusTag = (s: ConnectorAccessStatus) =>
+  s === 'ENABLED' ? 'success' : s === 'DISABLED' ? 'danger' : 'warning'
+
+const nameOf = (code: string) => catalog.value.find((c) => c.code === code)?.name || code
+const summaryOf = (code: string) => catalog.value.find((c) => c.code === code)?.summary || ''
+
+const instLabel = (i: InstitutionRow) => (i.name ? `${i.name}（${i.code || i.id}）` : `机构 ${i.id}`)
+
+function userLabel(u: AccountRow): string {
+  const name = u.nickname || u.boundMemberName || ''
+  const login = u.username || `#${u.userId}`
+  const base = name ? `${name} · ${login}` : login
+  return u.virtual ? `${base}（虚拟）` : base
 }
 
-async function loadList() {
-  options.value = await listConnectorTenantConfigs()
-  if (!code.value && options.value.length) code.value = options.value[0].code
+function operatorName(id: number): string {
+  const u = accounts.value.find((x) => x.userId === id)
+  return u ? userLabel(u) : `#${id}`
 }
 
-async function load() {
-  if (!code.value) return
-  view.value = await getConnectorTenantConfig(code.value)
-  keys.value = view.value.configKeys || []
-  for (const k of keys.value) form[k] = ''
-  form.enabled = view.value.enabled
-  loaded.value = true
+/** ISO 时间 → 「YYYY-MM-DD HH:mm:ss」；空 = 从未。 */
+function fmtTime(iso: string | null): string {
+  if (!iso) return '从未'
+  return iso.replace('T', ' ').slice(0, 19)
 }
 
-async function save() {
-  saving.value = true
-  try {
-    const values: Record<string, string> = {}
-    for (const k of keys.value) values[k] = String(form[k] ?? '')
-    view.value = await putConnectorTenantConfig(code.value, { values, enabled: form.enabled })
-    ElMessage.success('已保存（凭据已加密落库）')
-    for (const k of keys.value) form[k] = ''
-    await loadList()
-  } finally {
-    saving.value = false
+/** 选择器值 → number[]：allow-create 手输的字符串统一转数字，脏值丢弃不写坏配置。 */
+function toIds(arr: Array<number | string> | undefined): number[] {
+  return (arr || [])
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n > 0)
+}
+
+function errText(reason: unknown): string {
+  const msg = (reason as { message?: string })?.message
+  return String(msg || reason || '未知错误')
+}
+
+function syncAccessForm(a: ConnectorAccessView) {
+  accessForm[a.code] = {
+    scope: (a.scopeInstitutions || []).slice(),
+    users: (a.config?.allowedUserIds || []).slice(),
+    baseUrl: String(a.config?.baseUrl ?? '')
   }
 }
 
-async function clear() {
-  clearing.value = true
+async function loadAccess() {
+  const list = await listConnectorAccess()
+  list.forEach(syncAccessForm)   // 先填 form，再赋 list，避免模板渲染时取到 undefined
+  accessList.value = list
+}
+
+async function reload() {
+  loading.value = true
   try {
-    await deleteConnectorTenantConfig(code.value)
-    ElMessage.success('已清除，用户端回到「待管理员配置」')
-    await load()
-    await loadList()
+    await loadAccess()
   } finally {
-    clearing.value = false
+    loading.value = false
   }
+}
+
+async function toggleAccess(a: ConnectorAccessView, on: boolean) {
+  busy[a.code] = true
+  try {
+    const updated = on ? await enableConnectorAccess(a.code) : await disableConnectorAccess(a.code)
+    replaceAccess(updated)
+    ElMessage.success(on ? '已启用，本租户用户立即可见' : '已停用，工具立即从本租户清单移除')
+  } finally {
+    busy[a.code] = false
+  }
+}
+
+async function saveAccess(a: ConnectorAccessView) {
+  busy[a.code] = true
+  try {
+    const f = accessForm[a.code]
+    const config: Record<string, unknown> = {}
+    const baseUrl = String(f.baseUrl || '').trim()
+    if (baseUrl) config.baseUrl = baseUrl
+    const users = toIds(f.users)
+    if (users.length) config.allowedUserIds = users
+    // config 传空对象 = 清空租户级配置；scope 传空数组 = 清空白名单（全租户）
+    const updated = await configureConnectorAccess(a.code, {
+      scopeInstitutions: toIds(f.scope),
+      config
+    })
+    replaceAccess(updated)
+    ElMessage.success('接入配置已保存')
+  } finally {
+    busy[a.code] = false
+  }
+}
+
+function replaceAccess(updated: ConnectorAccessView) {
+  const i = accessList.value.findIndex((x) => x.code === updated.code)
+  if (i >= 0) accessList.value.splice(i, 1, updated)
+  else accessList.value.push(updated)
+  syncAccessForm(updated)
 }
 
 onMounted(async () => {
-  await loadList()
-  await load()
+  loading.value = true
+  // 四路真实数据并行加载；接入清单失败要显式报错，其余失败只降级（选择器退化为手输 ID）
+  const [access, cat, inst, acs] = await Promise.allSettled([
+    listConnectorAccess(),
+    listConnectorCatalog(),
+    listInstitutions(),
+    listAccountCandidates()
+  ])
+  if (access.status === 'fulfilled') {
+    access.value.forEach(syncAccessForm)
+    accessList.value = access.value
+  } else {
+    loadError.value = '接入清单加载失败：' + errText(access.reason)
+  }
+  if (cat.status === 'fulfilled') catalog.value = cat.value
+  if (inst.status === 'fulfilled') {
+    institutions.value = inst.value.filter((i): i is InstitutionRow => i.id != null)
+  }
+  if (acs.status === 'fulfilled') {
+    accounts.value = (acs.value as Array<AccountRow & { userId?: number }>).filter(
+      (u): u is AccountRow => u.userId != null
+    )
+  }
+  loading.value = false
 })
 </script>
 
@@ -161,11 +285,70 @@ onMounted(async () => {
 }
 .card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
 }
-.mode-tag {
-  margin-left: 10px;
+.card-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.card-sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+}
+.access-item {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 14px 16px 4px;
+  margin-bottom: 14px;
+}
+.access-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.access-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.access-code {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.access-desc {
+  margin: 6px 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.access-form {
+  max-width: 680px;
+}
+.field-hint {
+  width: 100%;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.access-switch {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.access-hint {
+  margin-left: 12px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }

@@ -15,7 +15,8 @@ import java.util.List;
  * @param path    接口路径，如 {@code /getInheritorListByArea}
  * @param summary 一句话说明「这个接口回答什么问题」——供模型判断何时调用，不是接口名直译
  * @param params  参数契约（实测校正后）
- * @param status  可用性：{@link Status#AVAILABLE} / {@link Status#DEPRECATED}
+ * @param status  可用性：{@link Status#AVAILABLE}（Java 工具 + MCP）/
+ *                {@link Status#MCP_ONLY}（仅 MCP 工具） / {@link Status#DEPRECATED}
  * @param note    实测说明或废弃原因；AVAILABLE 且无异常时为空
  */
 public record ScfyEndpoint(String id,
@@ -28,8 +29,15 @@ public record ScfyEndpoint(String id,
                            String note) {
 
     public enum Status {
-        /** 生产实测可用（HTTP 200 且 code=0）。 */
+        /** 生产实测可用（HTTP 200 且 code=0），且已绑定 Java @AiosTool。 */
         AVAILABLE,
+        /**
+         * 生产实测可用，但只在 MCP hub 侧包装为工具，Java agent 没有对应 @AiosTool。
+         * <p>存在意义：MCP 工具目录可以比 Java agent 工具集更宽 ——
+         * 新增公网只读接口时不必为它补 Java 注解与返回结构采集，
+         * 但不能因此放宽「每个 AVAILABLE 契约都必须有 Java 工具」的原有约束。</p>
+         */
+        MCP_ONLY,
         /**
          * 已废弃，不注册为工具。
          * <p>废弃不是「暂不接入」：登记在此是为了让下一个人知道
@@ -43,8 +51,14 @@ public record ScfyEndpoint(String id,
         return prefix + path;
     }
 
+    /** 已绑定 Java 工具、参与 agent 匹配与矩阵的可用接口。 */
     public boolean available() {
         return status == Status.AVAILABLE;
+    }
+
+    /** 可以在 MCP hub 暴露的可用接口（含仅 MCP 的接口）。 */
+    public boolean mcpAvailable() {
+        return status == Status.AVAILABLE || status == Status.MCP_ONLY;
     }
 
     /** 必填参数名列表，供缺参追问话术使用。 */
@@ -63,7 +77,19 @@ public record ScfyEndpoint(String id,
 
     public static ScfyEndpoint available(String id, String group, String prefix, String path,
                                          String summary, List<ScfyParam> params) {
-        return new ScfyEndpoint(id, group, prefix, path, summary, params, Status.AVAILABLE, null);
+        return available(id, group, prefix, path, summary, params, null);
+    }
+
+    /** 带实测说明的可用接口：note 会同时进 MCP 工具描述与契约测试报告。 */
+    public static ScfyEndpoint available(String id, String group, String prefix, String path,
+                                         String summary, List<ScfyParam> params, String note) {
+        return new ScfyEndpoint(id, group, prefix, path, summary, params, Status.AVAILABLE, note);
+    }
+
+    /** 仅通过 MCP 暴露的可用接口：不要求 Java @AiosTool，也不进 agent 匹配/矩阵。 */
+    public static ScfyEndpoint mcpOnly(String id, String group, String prefix, String path,
+                                       String summary, List<ScfyParam> params, String note) {
+        return new ScfyEndpoint(id, group, prefix, path, summary, params, Status.MCP_ONLY, note);
     }
 
     public static ScfyEndpoint deprecated(String id, String group, String prefix, String path,

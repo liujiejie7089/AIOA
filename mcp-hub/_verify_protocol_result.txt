@@ -1,0 +1,13 @@
+PASS initialize http 200 200
+PASS initialize has result ['jsonrpc', 'id', 'result']
+PASS session id issued 1a64180ae39d464da0a3e8269961c2d9
+PASS tools/list http 200 200
+PASS tools/list == catalog protocol=69 catalog=69
+PASS scfy tools present ['travel_road_data', 'travel_road_detail', 'travel_road_distribute', 'travel_road_type_count', 'travel_route_top_list', 'travel_tourist_county_data', 'travel_tourist_county_list']
+PASS required schema via protocol ['area']
+PASS tools read-only hint {'title': '项目', 'read_only_hint': True}
+PASS tools/call http 200 200
+PASS tools/call ok=true {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'level_name': '联合国教科文组织', 'num': 6}, {'level_name': '
+PASS tools/call real data [{'level_name': '联合国教科文组织', 'num': 6}, {'level_name': '国家级', 'num': 25}, {'level_name': '省级', 'num': 148}]
+PASS tools/call not error 
+RESULT: ALL PASS

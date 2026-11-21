@@ -91,6 +91,19 @@ def _wecom_cli_catalog():
     return wecom_cli_catalog_mod.TOOLS
 
 
+def _build_scfy_server():
+    """四川非遗（scfy）：原生实装，工具目录由 Java 契约导出（catalog.json）。"""
+    from ..scfy import server as scfy_server
+
+    return scfy_server.build_server()
+
+
+def _scfy_catalog():
+    from ..scfy import catalog as scfy_catalog
+
+    return scfy_catalog.TOOLS
+
+
 def _register_builtin() -> None:
     # ⚠️ 2026-10-30：`wechat_work`（自建应用 + OAuth）与 `wecom_group`（群机器人 webhook）
     # 两个连接器已下线并**物理删除**（V103 停用 + docs/64 §9.7 删码）。企业微信只剩下面一个
@@ -125,6 +138,23 @@ def _register_builtin() -> None:
             tool_count=len(_wecom_cli_catalog()),
             server_factory=_build_wecom_cli_server,
             tool_catalog=_wecom_cli_catalog,
+        )
+    )
+    # 四川非遗（scfy）：只读查询 69 个接口（传承人/项目/工坊/保护区/旅游/影像展/品牌活动/舆情）。
+    # 工具目录由 server/aios-integration-scfy 的 ScfyCatalog 导出，不手抄；
+    # 连接地址由 AIOS_SCFY_BASE_URL 注入，无需用户凭据（/show/* 免登录）。
+    register(
+        ConnectorManifest(
+            code="scfy",
+            name="四川非遗（scfy）",
+            group="数据与知识",
+            auth_mode=AUTH_CREDENTIAL,
+            provider="none",
+            summary="查四川非遗的传承人、项目、工坊、文化生态保护区、旅游线路、影像展与舆情（69 个只读接口，免登录）",
+            help_url="",
+            tool_count=len(_scfy_catalog()),
+            server_factory=_build_scfy_server,
+            tool_catalog=_scfy_catalog,
         )
     )
 

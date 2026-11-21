@@ -697,3 +697,31 @@ B 段 5 项真机：agent 健康、resume 非空 SSE 且带编号、管理端三
 delta / 完成帧 / 落库三者同源（含真实换行）。
 ★ 跑法 `agent/.venv/Scripts/python.exe scripts/_verify_error_reporting.py`；
 `--static-only` 只跑 A 段。额度耗尽时 B4/B5 如实 SKIP（坑 108 回库须用 pymysql）。
+
+## 2026-11-21 新增验证件（非遗按租户接入，docs/93）
+
+- **`mcp-hub/_verify_scfy_access_gate.py`（hub 自包含，28 项 PASS，`RESULT: ALL PASS`，日志 `_result.txt`）** ——
+  本地起 HTTP stub 同时扮 Java 接入校验端点与非遗 `/show/*` 上游，不需要真 Java/hub/外网，
+  直接调 `scfy.server` 工具函数。T1 回滚开关关闭无 token 也放行 · T2 无 token 被拒且未发非遗 GET ·
+  T3 未接入租户被拒且回带 reason · T4 已接入 + 租户 baseUrl 覆盖放行 · T5 Java 不可达 fail-closed
+  且文案明确「接入授权环节异常，不是上游接口返回错误」（不误报数据源故障）· T6 两次调用各自实时回源 ·
+  T7 69 工具注册完整且 `ctx` 不进 `inputSchema` · T8 校验响应异常也 fail-closed ·
+  T9 deny 未缓存（启用后立即放行）· T10 allow 未缓存（停用后立即被拒）。
+  ★ 首版假红两条都是**测试自身缺陷**：stub 判 `startswith("/show/")`，真实 URL 是 `/scfy/show/...`
+  或 `/tenant/show/...` ⇒ 改 `"/show/" in self.path`；hub 文案含「这不代表非遗数据源故障」，
+  断言抓「数据源故障」四字误判 ⇒ 文案改写为明确指向授权环节。
+- **`scripts/_verify_scfy_tenant_access.py`（真机端到端，28 项 PASS，`RESULT: ALL PASS`，日志 `_result.txt`）** ——
+  真 Java（Flyway V115 + MySQL）+ 真 hub :8099 + 真登录 JWT + 真 MCP Streamable HTTP + 真非遗公网接口。
+  覆盖 docs/92：A1 停用后 manifest/直调双通道被拒 · A2 启用后立即恢复 · A3 基线可见且能调真数据 ·
+  A4 未接入租户 B 被拒而同刻租户 A 仍可见（隔离）+ B 自行启用后立即可见 · A5 机构白名单 ·
+  A6 用户白名单 · A7 审计按 tenant=0 落库（rows=8）且 B 被拒也按 tenant=2 留痕（rows=1）·
+  A10 判别力（停用即原 A3 转 FAIL）· A11 既有连接器工具数不变 · S1 check 端点匿名 401 ·
+  R1/R2 现场恢复。
+  ★ 两条口径坑：`dsj_admin` 本机口令是 **`Admin@123`**（500 用户名或密码错误时先查库确认，别照抄文档）；
+  A11 判据要用 **hub `/health` 工具数对照**（`wecom_cli=25 / qq_mail=6 / scfy=69`），
+  不能去 manifest 里找 `qq_mail`/`wecom_cli` —— 那两个本就要求用户 CONNECTED，admin 从未连接。
+  ★ A7 原断言 `"scfy" not in audit` 几乎恒真 ⇒ 新增 `_count_sql()` 精确查
+  `mcp_tool_audit WHERE server_code='scfy' AND tenant_id=...` 行数，判别力才成立。
+- 回归面：agent 全量 **414 passed** · `scripts/_check_answer_table_render.js` `[STATUS] PASS` ·
+  管理端 `pnpm typecheck` `TSC_EXIT=0` + `vite build` `BUILD_EXIT=0`（产物同步 webroot `REF_OK=True`）·
+  用户端内联 JS `scripts=2 ok=2 bad=0`。

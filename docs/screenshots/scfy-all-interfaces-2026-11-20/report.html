@@ -1,0 +1,123 @@
+<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><title>非遗 MCP 全量接口测试</title><style>
+      body{margin:0;padding:28px 32px 48px;background:#f6f8fa;color:#1f2328;
+           font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+      h1{font-size:24px;margin:0 0 6px} h2{font-size:18px;margin:30px 0 12px;
+        padding-bottom:8px;border-bottom:1px solid #d0d7de}
+      .meta{color:#57606a;margin-bottom:20px}
+      .cards{display:flex;gap:12px;margin:18px 0 8px}
+      .card{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:12px 18px;min-width:130px}
+      .card b{display:block;font-size:26px;line-height:1.2}
+      .card span{color:#57606a;font-size:12px}
+      table{width:100%;border-collapse:collapse;background:#fff;font-size:12px}
+      th,td{border:1px solid #d8dee4;padding:6px 8px;text-align:left;vertical-align:top}
+      th{background:#eaeef2;color:#1f2328;white-space:nowrap}
+      tr:nth-child(even) td{background:#fafbfc}
+      .b{display:inline-block;padding:1px 8px;border-radius:10px;color:#fff;font-weight:600}
+      .id{font-family:Consolas,monospace;white-space:nowrap}
+      .args{color:#57606a;font-family:Consolas,monospace;word-break:break-all}
+      .detail{max-width:520px;word-break:break-all}
+      section{break-inside:avoid}
+      footer{margin-top:30px;color:#57606a;font-size:12px}
+    </style></head><body>
+<h1>四川非遗 MCP · 全量工具真机测试</h1>
+<div class='meta'>数据源 https://szbhpt.tsichuan.com/scfy · 时间 2026-11-20 20:56:47 · 共 69 个工具 · 总耗时 52.4s</div>
+<div class='cards'>
+<div class='card'><b style='color:#0a7f43'>69</b><span>PASS 有数据</span></div>
+<div class='card'><b style='color:#a86b00'>0</b><span>EMPTY 空结果</span></div>
+<div class='card'><b style='color:#c02626'>0</b><span>FAIL 调用失败</span></div>
+</div>
+<section data-group='传承人'><h2>传承人（9）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>inheritor_list_by_area<br><span style='color:#57606a'>/show/inheritor/getInheritorListByArea</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>509ms</td><td class='args'>area=成都市 level=country pageNum=1 pageSize=10</td><td class='detail'>pageCount=15；pageNumber=1；dataList:10条；pageSize=10；totalCount=143</td></tr>
+<tr><td class='id'>inheritor_detail<br><span style='color:#57606a'>/show/inheritor/getInheritorDetail</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>198ms</td><td class='args'>id=6df60302-f201-4fee-8758-e93d0e4c3112_country</td><td class='detail'>id=6df60302-f201-4fee-8758-；name=樊德然；inheritor_level=国家级；unit=成都市锦江区文化馆；resume=现年84岁，四川简阳县平武乡人，特级糖画师、成都；image_url=</td></tr>
+<tr><td class='id'>inheritor_type_data<br><span style='color:#57606a'>/show/inheritor/getInheritorTypeData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>78ms</td><td class='args'>level=country</td><td class='detail'>total=153；data:10条；projectTypeMap:10键；name=类别</td></tr>
+<tr><td class='id'>inheritor_gender_data<br><span style='color:#57606a'>/show/inheritor/getGenderNumDataByLevel</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>137ms</td><td class='args'>level=country</td><td class='detail'>manCount=119；womanCount=34；totalCount=153</td></tr>
+<tr><td class='id'>inheritor_birthday_data<br><span style='color:#57606a'>/show/inheritor/getInheritorBirthday</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>74ms</td><td class='args'>level=country</td><td class='detail'>total=152；data:6条</td></tr>
+<tr><td class='id'>inheritor_education_data<br><span style='color:#57606a'>/show/inheritor/getInheritorWhcd</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>59ms</td><td class='args'>level=country</td><td class='detail'>country:5条；province:5条</td></tr>
+<tr><td class='id'>inheritor_count_by_area<br><span style='color:#57606a'>/show/inheritor/getAreaInheritorData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>443ms</td><td class='args'>name=四川省</td><td class='detail'>列表 23 条</td></tr>
+<tr><td class='id'>inheritor_yhwd_data<br><span style='color:#57606a'>/show/inheritor/getYhwdInheritorData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>109ms</td><td class='args'></td><td class='detail'>列表 6 条</td></tr>
+<tr><td class='id'>inheritor_video<br><span style='color:#57606a'>/show/inheritor/viewVideo</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>143ms</td><td class='args'>inheritorId=6df60302-f201-4fee-8758-e93d0e4c3112_country</td><td class='detail'>exist=False；viewUrl=</td></tr>
+</tbody></table></section>
+<section data-group='项目'><h2>项目（9）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>project_list_by_area<br><span style='color:#57606a'>/show/project/getProjectListByArea</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>147ms</td><td class='args'>area=成都市 level=country pageNum=1 pageSize=10</td><td class='detail'>pageCount=15；pageNumber=1；dataList:10条；pageSize=10；totalCount=146</td></tr>
+<tr><td class='id'>project_detail<br><span style='color:#57606a'>/show/project/getProjectDetail</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>713ms</td><td class='args'>id=2-UN-1</td><td class='detail'>project_base_id=2-UN-1；project_name=格萨（斯）尔；protection_unit=甘孜州藏画研究所；project_level=联合国级；pedigree=一般来说，格萨尔王故事说唱艺人分为七类：一是神授；description=</td></tr>
+<tr><td class='id'>project_type_data<br><span style='color:#57606a'>/show/project/getProjectTypeData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>91ms</td><td class='args'>level=country</td><td class='detail'>total=153；data:10条；projectTypeMap:10键；name=非遗名录项目分析</td></tr>
+<tr><td class='id'>project_batch_data<br><span style='color:#57606a'>/show/project/getProjectBatchData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>188ms</td><td class='args'>area=成都市</td><td class='detail'>line_province:8条；bar_country:8条；bar_province:8条；line_country:8条</td></tr>
+<tr><td class='id'>project_count_by_area<br><span style='color:#57606a'>/show/project/getProjectCountByArea</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>70ms</td><td class='args'>area=成都市</td><td class='detail'>列表 3 条</td></tr>
+<tr><td class='id'>project_area_summary<br><span style='color:#57606a'>/show/project/getAreaProjectData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>144ms</td><td class='args'>name=四川省</td><td class='detail'>列表 23 条</td></tr>
+<tr><td class='id'>project_yhwd_data<br><span style='color:#57606a'>/show/project/getYhwdProjectData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>54ms</td><td class='args'></td><td class='detail'>列表 6 条</td></tr>
+<tr><td class='id'>project_video<br><span style='color:#57606a'>/show/project/viewVideo</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>140ms</td><td class='args'>projectBaseId=2-UN-1</td><td class='detail'>exist=False；viewUrl=</td></tr>
+<tr><td class='id'>project_inheritor_count_by_area<br><span style='color:#57606a'>/show/project/getProjectInhreirotCountByArea</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>127ms</td><td class='args'>name=泸州市</td><td class='detail'>country_inheritor=8；county_inheritor=0；province_inheritor=79；province_project=77；country_project=6；city_project=369</td></tr>
+</tbody></table></section>
+<section data-group='工坊'><h2>工坊（14）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>shop_table<br><span style='color:#57606a'>/show/shop/shopTable</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>54ms</td><td class='args'>cityName=成都市</td><td class='detail'>list:52条</td></tr>
+<tr><td class='id'>shop_pie_and_stores<br><span style='color:#57606a'>/show/shop/pieChartAndStores</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>57ms</td><td class='args'>cityName=成都市</td><td class='detail'>stores=58；pieChartList:4条</td></tr>
+<tr><td class='id'>shop_category_sum<br><span style='color:#57606a'>/show/shop/categorySum</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>130ms</td><td class='args'>cityName=成都市</td><td class='detail'>offlineSales=0.0；onlineSales=0.0；laozihaoZh=1；projectLevelCity=7；onlineEntrust=1；laozihaoSc=0</td></tr>
+<tr><td class='id'>shop_bar_chart<br><span style='color:#57606a'>/show/shop/barChart</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>49ms</td><td class='args'>cityName=成都市</td><td class='detail'>list:8条</td></tr>
+<tr><td class='id'>shop_map_chart<br><span style='color:#57606a'>/show/shop/mapChart</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>78ms</td><td class='args'>cityName=成都市 areaName=锦江区</td><td class='detail'>type3:4条；type2:1条；type1:4条</td></tr>
+<tr><td class='id'>shop_area_map_chart<br><span style='color:#57606a'>/show/shop/areaMapChart</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>56ms</td><td class='args'>cityName=成都市</td><td class='detail'>type3:28条；type2:19条；type1:23条</td></tr>
+<tr><td class='id'>shop_sales_and_amount<br><span style='color:#57606a'>/show/shop/salesAndSalesAmount</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>58ms</td><td class='args'>cityName=成都市 areaName=锦江区</td><td class='detail'>salesNum=0；sales=0</td></tr>
+<tr><td class='id'>shop_detail<br><span style='color:#57606a'>/show/shop/shopDetail</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>78ms</td><td class='args'>cityName=成都市 id=140</td><td class='detail'>online:1条；introduction:7键</td></tr>
+<tr><td class='id'>shop_inheritor<br><span style='color:#57606a'>/show/shop/shopInheritor</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>46ms</td><td class='args'>cityName=成都市 id=140</td><td class='detail'>list:2条</td></tr>
+<tr><td class='id'>shop_sales<br><span style='color:#57606a'>/show/shop/shopSales</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>71ms</td><td class='args'>cityName=成都市 id=140</td><td class='detail'>online_sales_num=0；sales_num=0；offline_sales=0.0；offline_sales_num=0；online_sales=0.0；sales=0.0</td></tr>
+<tr><td class='id'>shop_project_type_pie<br><span style='color:#57606a'>/show/shop/shopProjectTypePieChart</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>52ms</td><td class='args'>cityName=成都市 id=140</td><td class='detail'>list:1条</td></tr>
+<tr><td class='id'>shop_sales_num_pie<br><span style='color:#57606a'>/show/shop/shopSalesAndNumPieChart</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>69ms</td><td class='args'>cityName=成都市 id=140</td><td class='detail'>salesNum:1条；sales:1条</td></tr>
+<tr><td class='id'>shop_address_distribution<br><span style='color:#57606a'>/show/shop/addrDistribution</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>61ms</td><td class='args'>cityName=成都市</td><td class='detail'>total:5键；type2:10条；type1:35条</td></tr>
+<tr><td class='id'>health_base_list<br><span style='color:#57606a'>/show/shop/healthDemonstrationBaseList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>64ms</td><td class='args'>pageNum=1 pageSize=10</td><td class='detail'>pageCount=1；pageNumber=1；dataList:10条；pageSize=10；totalCount=10</td></tr>
+</tbody></table></section>
+<section data-group='保护区'><h2>保护区（11）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>eco_area_count<br><span style='color:#57606a'>/show/ecologicalArea/getAreasNum</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>53ms</td><td class='args'></td><td class='detail'>country=1；province=6</td></tr>
+<tr><td class='id'>eco_area_top_list<br><span style='color:#57606a'>/show/ecologicalArea/getAreasTopFewList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>72ms</td><td class='args'>topNum=10</td><td class='detail'>areasTopFewList:7条</td></tr>
+<tr><td class='id'>eco_city_round<br><span style='color:#57606a'>/show/ecologicalArea/getCityRoundByAreaId</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>80ms</td><td class='args'>ecologicalAreaId=5f199a336e2e44efab9c5541f4138fe9</td><td class='detail'>cityPointData:7条</td></tr>
+<tr><td class='id'>eco_road_data<br><span style='color:#57606a'>/show/ecologicalArea/getEcologicalAreaRoadData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>8878ms</td><td class='args'>ecologicalAreaId=5f199a336e2e44efab9c5541f4138fe9 areaId=510100000000 pageNum=1 pageSize=10</td><td class='detail'>projectData:5键；agglomerationAreaData:5键；projectLevelData:3键；nmchBaseData:5键</td></tr>
+<tr><td class='id'>eco_road_distribute<br><span style='color:#57606a'>/show/ecologicalArea/getRoadDistributeData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>94ms</td><td class='args'>ecologicalAreaId=5f199a336e2e44efab9c5541f4138fe9 areaId=510100000000</td><td class='detail'>projectData:0条；agglomerationAreaData:1条；nmchBaseData:0条</td></tr>
+<tr><td class='id'>eco_all_image<br><span style='color:#57606a'>/show/ecologicalArea/getAllTravelImageUrl</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>1819ms</td><td class='args'>ecologicalAreaId=5f199a336e2e44efab9c5541f4138fe9</td><td class='detail'>imageList:7条</td></tr>
+<tr><td class='id'>eco_details<br><span style='color:#57606a'>/show/ecologicalArea/getDetailsData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>123ms</td><td class='args'>type=1 dataId=1</td><td class='detail'>id=1；area_name=青城山--都江堰旅游景区；area_type=5A；address=青城镇/城西；introduction=；image_url=</td></tr>
+<tr><td class='id'>eco_nmch_base<br><span style='color:#57606a'>/show/ecologicalArea/getNmchBaseData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>64ms</td><td class='args'></td><td class='detail'>nmchBaseDataList:0条</td></tr>
+<tr><td class='id'>eco_nmch_popup<br><span style='color:#57606a'>/show/ecologicalArea/getNmchBasePopupData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>65ms</td><td class='args'>cityCode=510100000000</td><td class='detail'>popupDataList:30条</td></tr>
+<tr><td class='id'>eco_tourist_county_list<br><span style='color:#57606a'>/show/ecologicalArea/getTouristCountyList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>47ms</td><td class='args'></td><td class='detail'>touristCounty:28条</td></tr>
+<tr><td class='id'>eco_tourist_county_data<br><span style='color:#57606a'>/show/ecologicalArea/getTouristCountyData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>144ms</td><td class='args'>area=510525000000</td><td class='detail'>typicalInheritors:3键；touristUnProject:2键；touristDirectoryProject:3键</td></tr>
+</tbody></table></section>
+<section data-group='旅游'><h2>旅游（14）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>travel_route_top_list<br><span style='color:#57606a'>/show/travel/getRoutesTopFewList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>48ms</td><td class='args'>topNum=10</td><td class='detail'>routesTopFewList:10条</td></tr>
+<tr><td class='id'>travel_city_round<br><span style='color:#57606a'>/show/travel/getCityRoundByTravelId</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>253ms</td><td class='args'>travelId=43c4f5188de54c46b2b03094ff1e5da0</td><td class='detail'>cityPointData:8条；centerLatitude=31.963084；coordinateSet={	"coord":[		[104.065857；centerLongitude=104.361586</td></tr>
+<tr><td class='id'>travel_road_type_count<br><span style='color:#57606a'>/show/travel/getTravelRoadTypeCount</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>118ms</td><td class='args'>travelId=43c4f5188de54c46b2b03094ff1e5da0</td><td class='detail'>project=239；travelArea=12；base=41</td></tr>
+<tr><td class='id'>travel_road_by_type<br><span style='color:#57606a'>/show/travel/getTravelRoadDataByType</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>49ms</td><td class='args'>type=1 travelId=43c4f5188de54c46b2b03094ff1e5da0</td><td class='detail'>pageCount=14；pageNumber=1；dataList:10条；pageSize=10；totalCount=136</td></tr>
+<tr><td class='id'>travel_road_data<br><span style='color:#57606a'>/show/travel/getTravelRoadData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>3378ms</td><td class='args'>travelId=43c4f5188de54c46b2b03094ff1e5da0 areaId=510100000000 pageNum=1 pageSize=10</td><td class='detail'>projectData:5键；agglomerationAreaData:5键；nmchBaseData:5键</td></tr>
+<tr><td class='id'>travel_road_detail<br><span style='color:#57606a'>/show/travel/getTravelRoadDataDetail</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>514ms</td><td class='args'>dataId=05760cdf947f4f32968cf79d3c695b2b type=1</td><td class='detail'>project_base_id=05760cdf947f4f32968cf79d；project_name=羌医骨科手法；protection_unit=；project_level=省级；pedigree=1、第一代羌医传承人：天祖格日巴·姆玉虎□（17；description=祚穆羌医骨科手法诊疗技法，是指以格日巴·姆玉虎□</td></tr>
+<tr><td class='id'>travel_road_distribute<br><span style='color:#57606a'>/show/travel/getTravelRoadDistributeData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>197ms</td><td class='args'>travelId=43c4f5188de54c46b2b03094ff1e5da0</td><td class='detail'>projectData:239条；agglomerationAreaData:12条；nmchBaseData:41条</td></tr>
+<tr><td class='id'>travel_image<br><span style='color:#57606a'>/show/travel/getTravelImageUrl</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>126ms</td><td class='args'>travelId=43c4f5188de54c46b2b03094ff1e5da0 type=1</td><td class='detail'>imageList:0条</td></tr>
+<tr><td class='id'>travel_all_image<br><span style='color:#57606a'>/show/travel/getAllTravelImageUrl</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>6016ms</td><td class='args'>travelId=43c4f5188de54c46b2b03094ff1e5da0</td><td class='detail'>imageList:8条</td></tr>
+<tr><td class='id'>travel_details<br><span style='color:#57606a'>/show/travel/getDetailsData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>144ms</td><td class='args'>type=1 dataId=1</td><td class='detail'>id=1；area_name=青城山--都江堰旅游景区；area_type=5A；address=青城镇/城西；introduction=；image_url=</td></tr>
+<tr><td class='id'>travel_nmch_base<br><span style='color:#57606a'>/show/travel/getNmchBaseData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>96ms</td><td class='args'></td><td class='detail'>nmchBaseDataList:21条</td></tr>
+<tr><td class='id'>travel_nmch_popup<br><span style='color:#57606a'>/show/travel/getNmchBasePopupData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>51ms</td><td class='args'>cityCode=510100000000</td><td class='detail'>popupDataList:30条</td></tr>
+<tr><td class='id'>travel_tourist_county_list<br><span style='color:#57606a'>/show/travel/getTouristCountyList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>45ms</td><td class='args'></td><td class='detail'>touristCounty:28条</td></tr>
+<tr><td class='id'>travel_tourist_county_data<br><span style='color:#57606a'>/show/travel/getTouristCountyData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>354ms</td><td class='args'>area=510525000000</td><td class='detail'>typicalInheritors:3键；touristUnProject:2键；touristDirectoryProject:3键</td></tr>
+</tbody></table></section>
+<section data-group='影像展'><h2>影像展（8）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>image_category_stats<br><span style='color:#57606a'>/show/image/categoryPieChart</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>52ms</td><td class='args'>cityName=成都市 imageType=1</td><td class='detail'>pieChartDataList:3条；imagesNumber=12</td></tr>
+<tr><td class='id'>image_city_collect_stats<br><span style='color:#57606a'>/show/image/cityCollectStatistics</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>49ms</td><td class='args'>imageType=1 limitNum=5</td><td class='detail'>dataList:5条</td></tr>
+<tr><td class='id'>image_inheritor_project_stats<br><span style='color:#57606a'>/show/image/inheritorAndProject</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>54ms</td><td class='args'>cityName=成都市 imageType=1</td><td class='detail'>projectLevelDataList:4条；showVideoNumber=12；showVideoDataList:3条；platformPlay=30721；showVideoTimeTotal=157.83；inheritorLevelDataList:5条</td></tr>
+<tr><td class='id'>image_net_platform_stats<br><span style='color:#57606a'>/show/image/netPlatformStatistics</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>56ms</td><td class='args'>cityName=成都市 imageType=1</td><td class='detail'>dataList:8条</td></tr>
+<tr><td class='id'>image_tv_platform_stats<br><span style='color:#57606a'>/show/image/tvPlatformStatistics</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>69ms</td><td class='args'>cityName=成都市 imageType=1</td><td class='detail'>dataList:2条</td></tr>
+<tr><td class='id'>image_platform_play<br><span style='color:#57606a'>/show/image/platformPlay</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>46ms</td><td class='args'>cityName=成都市 imageType=1</td><td class='detail'>platformPlay=30721</td></tr>
+<tr><td class='id'>image_report_unit_stats<br><span style='color:#57606a'>/show/image/reportUnitStatistics</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>42ms</td><td class='args'>imageType=1 limitNum=5</td><td class='detail'>dataList:5条</td></tr>
+<tr><td class='id'>image_stat_list<br><span style='color:#57606a'>/show/image/statisticalList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>51ms</td><td class='args'>cityName=成都市 imageType=1</td><td class='detail'>dataList:12条</td></tr>
+</tbody></table></section>
+<section data-group='品牌活动'><h2>品牌活动（2）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>heritage_activity_by_year<br><span style='color:#57606a'>/show/acivity/getHeritageData</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>50ms</td><td class='args'>year=2023</td><td class='detail'>id=112a38be9b3e4d009ac14d12；year=2023；activity_num=500；sales_volume=；sales_unit=；inheritor_num=</td></tr>
+<tr><td class='id'>heritage_activity_years<br><span style='color:#57606a'>/show/acivity/getHeritageYearList</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>81ms</td><td class='args'>topNum=5</td><td class='detail'>year:4条</td></tr>
+</tbody></table></section>
+<section data-group='舆情'><h2>舆情（2）</h2>
+<table><thead><tr><th>工具</th><th>状态</th><th>耗时</th><th>参数</th><th>返回摘要</th></tr></thead><tbody>
+<tr><td class='id'>opinion_top_keywords<br><span style='color:#57606a'>/show/opinion/getTopKey</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>54ms</td><td class='args'>showUser=false topNum=5</td><td class='detail'>keyList:5条</td></tr>
+<tr><td class='id'>opinion_top_cities<br><span style='color:#57606a'>/show/opinion/getTopNumCity</span></td><td><span class='b' style='background:#0a7f43'>PASS</span></td><td>50ms</td><td class='args'>topNum=5</td><td class='detail'>dataList:5条</td></tr>
+</tbody></table></section>
+<footer>判定口径：PASS=上游 code=0 且 data 非空；EMPTY=code=0 但 data 为空（参数或上游无数据）；FAIL=HTTP/业务错误。所有请求均为 GET 只读。</footer>
+</body></html>

@@ -188,6 +188,16 @@ public final class PermissionCatalog {
      */
     public static final String ORG_CONFIG_MANAGE = "org:config:manage";
 
+    /**
+     * 连接器按租户接入配置（docs/92）：启用/停用/配置机构范围与租户级数据源。
+     *
+     * <p>只授予 {@link #TENANT_ADMINS}：接入开关决定的是「整个租户能不能用某个外部能力」，
+     * 属治理动作，不能下放给机构管理员或普通成员。调用侧粗闸仍用 {@link #CHAT_BASIC}
+     * （全体登录用户天然持有），细粒度范围由 {@code connector_tenant_access} 的
+     * 机构白名单 / 用户白名单承担 —— 首期不因新增稀缺权限码而把现网用户全拦掉。</p>
+     */
+    public static final String CONNECTOR_ACCESS_MANAGE = "connector:access:manage";
+
     // ---- 平台全部内置角色 ----
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
     public static final String ROLE_USER = "ROLE_USER";
@@ -258,7 +268,9 @@ public final class PermissionCatalog {
             Map.entry(PM_CONTRACT_MANAGE, ORG_ADMINS),
             Map.entry(PM_AI_MANAGE, ORG_ADMINS),
             // 机构作用域参数（需求二 B 案）：机构管理员可覆盖本机构参数，平台/租户管理员可配本租户任意机构
-            Map.entry(ORG_CONFIG_MANAGE, ORG_ADMINS));
+            Map.entry(ORG_CONFIG_MANAGE, ORG_ADMINS),
+            // 连接器按租户接入配置：治理动作，仅系统/租户管理员
+            Map.entry(CONNECTOR_ACCESS_MANAGE, TENANT_ADMINS));
 
     /** 角色 → 中文名（用于提示，避免把英文角色码裸露给用户）。 */
     private static final Map<String, String> ROLE_NAMES = Map.of(
@@ -298,7 +310,8 @@ public final class PermissionCatalog {
             Map.entry(PM_BUDGET_MANAGE, "项目管理（经费流水维护）"),
             Map.entry(PM_CONTRACT_MANAGE, "项目管理（合同与收付款）"),
             Map.entry(PM_AI_MANAGE, "项目管理（数字人与上下文）"),
-            Map.entry(ORG_CONFIG_MANAGE, "机构参数配置"));
+            Map.entry(ORG_CONFIG_MANAGE, "机构参数配置"),
+            Map.entry(CONNECTOR_ACCESS_MANAGE, "连接器接入配置"));
 
     /**
      * 权限码 → 对应数字员工类型（申请单「目的」展示用）。

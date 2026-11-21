@@ -8,6 +8,7 @@ import cn.aios.resource.connector.mcp.mapper.McpServerMapper;
 import cn.aios.resource.connector.mcp.mapper.McpServerToolMapper;
 import cn.aios.resource.connector.service.ConnectorCatalogService;
 import cn.aios.resource.connector.service.ConnectorConnectionService;
+import cn.aios.resource.connector.service.ConnectorTenantAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,7 @@ class McpRegistrySyncToolsTest {
         toolMapper = mock(McpServerToolMapper.class);
         service = new McpRegistryService(serverMapper, toolMapper,
                 mock(ConnectorConnectionService.class), mock(ConnectorCatalogService.class),
+                mock(ConnectorTenantAccessService.class),
                 mock(McpProbeClient.class), mock(McpProperties.class), mock(SecretCodec.class));
     }
 

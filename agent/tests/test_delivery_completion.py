@@ -105,9 +105,16 @@ def test_delivery_requires_all_three_elements(missing):
     assert not ok and missing in reason, f"缺 {missing} 却判绿：{reason}"
 
 
-def test_aggregated_request_is_always_delivery():
-    assert delivery.is_delivery_request("你好", aggregated=True) is True
+def test_aggregated_request_is_not_automatically_delivery():
+    """2026-11-20 真机纠正：多源命中不等于「要写周报」。
+
+    「四川非遗」同时命中知识库 + scfy 两个源，但用户要的是数据答案，不是成稿。
+    旧实现 aggregated=True 就强制成稿，补齐两轮后只输出「本轮未完成」模板。
+    """
+    assert delivery.is_delivery_request("你好", aggregated=True) is False
+    assert delivery.is_delivery_request("四川非遗", aggregated=True) is False
     assert delivery.is_delivery_request("你好", aggregated=False) is False
+    assert delivery.is_delivery_request("帮我写一份周报", aggregated=True) is True
 
 
 # ---------------------------------------------------------------- 2. 图级补齐
@@ -291,3 +298,56 @@ def test_graph_normal_chat_has_no_extra_round(monkeypatch):
     assert calls["n"] == 1
     completed = next(d for _, t, d in events if t == "message.completed")
     assert completed["content"] == "你好"
+
+
+def test_query_continuation_prompt_has_no_writing_template():
+    """查询类补齐只要求直接答，不套周报成稿模板（2026-11-20 截图缺陷）。"""
+    prompt = delivery.continuation_prompt("只有计划或承诺句，没有交付正文", "四川非遗", False)
+    assert "直接给出答案" in prompt
+    for bad in ("成稿", "完成依据", "未决项", "本轮未完成"):
+        assert bad not in prompt, f"查询类补齐指令不该出现「{bad}」"
+
+
+def test_query_exhausted_note_has_no_writing_template():
+    note = delivery.exhausted_note("只有计划或承诺句，没有交付正文", 2, False, False)
+    assert "本轮回答不完整" in note
+    for bad in ("成稿", "交付正文", "未决项"):
+        assert bad not in note, f"查询类兜底不该出现「{bad}」"
+
+
+def test_graph_query_completes_without_delivery_template(monkeypatch):
+    """用户问「四川非遗」：第一轮计划句 ⇒ 补齐成数据答案，不得输出成稿模板。"""
+    monkeypatch.setenv("AIOS_TEST_FAKE_KEY", "k")
+    calls = {"n": 0, "messages": []}
+    query_lead = "我先把四川非遗的整体数据调出来。"
+    answer = "四川非遗省级项目 6 个、国家级 2 个，数据来自 scfy 县域汇总接口。"
+
+    async def fake_stream(http, provider, api_key, messages, tools, temperature=0.3):
+        calls["n"] += 1
+        calls["messages"].append([dict(m) for m in messages])
+        text = query_lead if calls["n"] == 1 else answer
+        yield ("delta", text)
+        yield ("done", {"role": "assistant", "content": text},
+               {"prompt_tokens": 3, "completion_tokens": 12})
+
+    ctx = _stub(fake_stream)
+    for c in ctx:
+        c.start()
+    try:
+        events = asyncio.run(_collect(_req("四川非遗")))
+    finally:
+        for c in ctx:
+            c.stop()
+
+    assert calls["n"] == 2, "查询类中间态也应补齐一轮"
+    completed = next(d for _, t, d in events if t == "message.completed")
+    assert answer in completed["content"]
+    assert "本轮未完成" not in completed["content"]
+    run_done = next(d for _, t, d in events if t == "run.completed")
+    assert run_done.get("delivery_complete") is True
+    # 只检查注入的补齐指令；系统提示里保留「交付类要成稿」是另一回事。
+    continuation = next(
+        str(m.get("content") or "") for m in reversed(calls["messages"][1])
+        if m.get("role") == "user" and "【继续回答" in str(m.get("content") or ""))
+    assert "直接给出答案" in continuation
+    assert "末尾交代三点" not in continuation and "成稿" not in continuation

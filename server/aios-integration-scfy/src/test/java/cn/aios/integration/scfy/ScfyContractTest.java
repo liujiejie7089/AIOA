@@ -47,7 +47,7 @@ class ScfyContractTest {
             assertTrue(ids.add(ep.id()), "接口 id 重复：" + ep.id());
             assertNotNull(ep.summary(), ep.id() + " 缺少 summary");
             assertFalse(ep.summary().isBlank(), ep.id() + " 的 summary 为空");
-            if (ep.available()) {
+            if (ep.mcpAvailable()) {
                 for (ScfyParam p : ep.params()) {
                     assertNotNull(p.description(), ep.id() + "." + p.name() + " 缺少 description");
                     assertFalse(p.description().isBlank(), ep.id() + "." + p.name() + " 说明为空");
@@ -63,12 +63,16 @@ class ScfyContractTest {
                 assertTrue(ep.params().isEmpty(), "废弃接口不应携带参数契约：" + ep.id());
             }
         }
-        // 数字与实测报告一一对应：55 可用 + 12 废弃 = 67（全量探测数）
+        // 2026-11-20：原 67 个（55 可用 + 12 废弃）来自首轮全量探测；
+        // 公网 swagger 复核后新增 14 个确有数据的只读接口（docs/90）。
+        // 新增接口只入 MCP 目录（MCP_ONLY），Java 工具集/矩阵仍只覆盖原来的 55 个。
         // 覆盖率以端到端矩阵（ScfyMatrixTest）为准：它断言「探到的接口数 == 可用接口数」。
         assertEquals(55, ScfyCatalog.availableCount(),
-                "可用接口数应与端到端矩阵实测通过的接口数一致");
+                "Java 可用接口数应与端到端矩阵实测通过的接口数一致");
+        assertEquals(69, ScfyCatalog.mcpAvailableCount(), "MCP 目录应含 55 + 14 个只读接口");
+        assertEquals(14, ScfyCatalog.mcpOnly().size(), "仅 MCP 暴露的新增接口数应为 14");
         assertEquals(12, ScfyCatalog.deprecated().size(), "废弃接口数应与实测废弃清单一致");
-        assertEquals(67, ScfyCatalog.all().size(), "契约总数应等于全量探测的 67 个接口");
+        assertEquals(81, ScfyCatalog.all().size(), "契约总数应等于登记的接口总数");
     }
 
     @Test

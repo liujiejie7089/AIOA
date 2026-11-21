@@ -1,0 +1,29 @@
+PASS T7 工具数 == catalog tools=69 catalog=69
+PASS T7 ctx 不在任何 inputSchema 
+PASS T1 开关关闭时无 token 也放行 {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'area': '甘孜州', 'count': 12}]}
+PASS T1 确实发了非遗 GET 1
+PASS T2 无 token 被拒 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：缺少调用身份：该能力需租户完成接入配置后方可调用，请通过正常对话发起查询'}
+PASS T2 拒绝文案可区分 接入受控：缺少调用身份：该能力需租户完成接入配置后方可调用，请通过正常对话发起查询
+PASS T2 未发非遗 GET 0
+PASS T3 未接入租户被拒 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：本租户尚未接入 scfy'}
+PASS T3 回带 Java reason 接入受控：本租户尚未接入 scfy
+PASS T3 未发非遗 GET 0
+PASS T4 已接入租户放行 {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'area': '甘孜州', 'count': 12}]}
+PASS T4 确实发了非遗 GET 1
+PASS T4 返回 stub 数据 [{'area': '甘孜州', 'count': 12}]
+PASS T5 Java 异常时拒绝（fail-closed） {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：接入校验服务暂不可用，本轮未执行非遗查询（这是接入授权环节异常，不是上游接口返回错误）'}
+PASS T5 文案指接入校验 接入受控：接入校验服务暂不可用，本轮未执行非遗查询（这是接入授权环节异常，不是上游接口返回错误）
+PASS T5 未误报数据源故障 接入受控：接入校验服务暂不可用，本轮未执行非遗查询（这是接入授权环节异常，不是上游接口返回错误）
+PASS T5 明确指向授权环节 接入受控：接入校验服务暂不可用，本轮未执行非遗查询（这是接入授权环节异常，不是上游接口返回错误）
+PASS T5 未发非遗 GET 0
+PASS T6 两次调用都成功 
+PASS T6 每次调用都实时回调 Java 2
+PASS T8 校验响应异常时拒绝 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：本租户未接入该能力'}
+PASS T8 未发非遗 GET 0
+PASS T9 首次被拒 {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：本租户尚未接入 scfy'}
+PASS T9 启用后立即放行（deny 未缓存） {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'area': '甘孜州', 'count': 12}]}
+PASS T9 确实重新回调 Java 1
+PASS T10 首次放行 {'ok': True, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'endpoint': '/show/project/getProjectCountByArea', 'source': 'scfy', 'data': [{'area': '甘孜州', 'count': 12}]}
+PASS T10 停用后立即被拒（allow 未缓存） {'ok': False, 'serverCode': 'scfy', 'tool': 'project_count_by_area', 'accessDenied': True, 'errors': '接入受控：本租户尚未接入 scfy'}
+PASS T10 未发非遗 GET 0
+RESULT: ALL PASS

@@ -1,0 +1,1148 @@
+{
+  "timestamp": "2026-11-20 20:56:47",
+  "baseUrl": "https://szbhpt.tsichuan.com/scfy",
+  "toolCount": 69,
+  "elapsedMs": 52446,
+  "discovered": {
+    "INH_ID": "6df60302-f201-4fee-8758-e93d0e4c3112_country",
+    "PROJ_ID": "2-UN-1",
+    "SHOP_ID": "140",
+    "TRAVEL_ID": "43c4f5188de54c46b2b03094ff1e5da0",
+    "ECO_ID": "5f199a336e2e44efab9c5541f4138fe9",
+    "CITY_CODE": "510100000000",
+    "COUNTY_CODE": "510105000000",
+    "ROAD_DATA_ID": "05760cdf947f4f32968cf79d3c695b2b"
+  },
+  "summary": {
+    "PASS": 69,
+    "EMPTY": 0,
+    "FAIL": 0
+  },
+  "rows": [
+    {
+      "id": "inheritor_list_by_area",
+      "group": "传承人",
+      "path": "/show/inheritor/getInheritorListByArea",
+      "summary": "按市州查非遗传承人列表，回答「某地有哪些传承人」。",
+      "args": {
+        "area": "成都市",
+        "level": "country",
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 509,
+      "size": 5,
+      "detail": "pageCount=15；pageNumber=1；dataList:10条；pageSize=10；totalCount=143"
+    },
+    {
+      "id": "inheritor_detail",
+      "group": "传承人",
+      "path": "/show/inheritor/getInheritorDetail",
+      "summary": "查单个传承人的详情（简介、级别、出生、视频等）。需先由列表接口拿到 id。",
+      "args": {
+        "id": "6df60302-f201-4fee-8758-e93d0e4c3112_country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 198,
+      "size": 6,
+      "detail": "id=6df60302-f201-4fee-8758-；name=樊德然；inheritor_level=国家级；unit=成都市锦江区文化馆；resume=现年84岁，四川简阳县平武乡人，特级糖画师、成都；image_url="
+    },
+    {
+      "id": "inheritor_type_data",
+      "group": "传承人",
+      "path": "/show/inheritor/getInheritorTypeData",
+      "summary": "查传承人按项目门类的数量分布，回答「哪些门类的传承人多」。",
+      "args": {
+        "level": "country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 78,
+      "size": 4,
+      "detail": "total=153；data:10条；projectTypeMap:10键；name=类别"
+    },
+    {
+      "id": "inheritor_gender_data",
+      "group": "传承人",
+      "path": "/show/inheritor/getGenderNumDataByLevel",
+      "summary": "查传承人男女性别数量，回答「男女比例」「女性传承人有多少」。",
+      "args": {
+        "level": "country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 137,
+      "size": 3,
+      "detail": "manCount=119；womanCount=34；totalCount=153"
+    },
+    {
+      "id": "inheritor_birthday_data",
+      "group": "传承人",
+      "path": "/show/inheritor/getInheritorBirthday",
+      "summary": "查传承人年龄段/出生年代分布，回答「传承人年龄结构」。",
+      "args": {
+        "level": "country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 74,
+      "size": 2,
+      "detail": "total=152；data:6条"
+    },
+    {
+      "id": "inheritor_education_data",
+      "group": "传承人",
+      "path": "/show/inheritor/getInheritorWhcd",
+      "summary": "查传承人学历（文化程度）分布，按国家级/省级两组返回。",
+      "args": {
+        "level": "country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 59,
+      "size": 2,
+      "detail": "country:5条；province:5条"
+    },
+    {
+      "id": "inheritor_count_by_area",
+      "group": "传承人",
+      "path": "/show/inheritor/getAreaInheritorData",
+      "summary": "查全省各市州传承人数量对比，回答「哪个市州传承人最多」。返回 21 个市州 × 五档级别计数。",
+      "args": {
+        "name": "四川省"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 443,
+      "size": 23,
+      "detail": "列表 23 条"
+    },
+    {
+      "id": "inheritor_yhwd_data",
+      "group": "传承人",
+      "path": "/show/inheritor/getYhwdInheritorData",
+      "summary": "查「云上非遗」/非遗工坊相关的传承人分布（按市州，含联合国级到县级五档）。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 109,
+      "size": 6,
+      "detail": "列表 6 条"
+    },
+    {
+      "id": "inheritor_video",
+      "group": "传承人",
+      "path": "/show/inheritor/viewVideo",
+      "summary": "查传承人视频播放地址。exist=false 表示该传承人暂无视频，不是错误。",
+      "args": {
+        "inheritorId": "6df60302-f201-4fee-8758-e93d0e4c3112_country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 143,
+      "size": 2,
+      "detail": "exist=False；viewUrl="
+    },
+    {
+      "id": "project_list_by_area",
+      "group": "项目",
+      "path": "/show/project/getProjectListByArea",
+      "summary": "按条件查非遗项目列表，回答「有哪些非遗项目」。不传 area 返回全省 1411 条。",
+      "args": {
+        "area": "成都市",
+        "level": "country",
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 147,
+      "size": 5,
+      "detail": "pageCount=15；pageNumber=1；dataList:10条；pageSize=10；totalCount=146"
+    },
+    {
+      "id": "project_detail",
+      "group": "项目",
+      "path": "/show/project/getProjectDetail",
+      "summary": "查单个非遗项目详情（保护单位、传承人、简介）。需先由列表拿到 project_base_id。",
+      "args": {
+        "id": "2-UN-1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 713,
+      "size": 7,
+      "detail": "project_base_id=2-UN-1；project_name=格萨（斯）尔；protection_unit=甘孜州藏画研究所；project_level=联合国级；pedigree=一般来说，格萨尔王故事说唱艺人分为七类：一是神授；description="
+    },
+    {
+      "id": "project_type_data",
+      "group": "项目",
+      "path": "/show/project/getProjectTypeData",
+      "summary": "查非遗项目按十大类（传统技艺/传统戏剧/民俗…）的数量分布。level 必填。",
+      "args": {
+        "level": "country"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 91,
+      "size": 4,
+      "detail": "total=153；data:10条；projectTypeMap:10键；name=非遗名录项目分析"
+    },
+    {
+      "id": "project_batch_data",
+      "group": "项目",
+      "path": "/show/project/getProjectBatchData",
+      "summary": "查非遗项目按批次的分布，返回国家级/省级 × 折线/柱状四组数据。",
+      "args": {
+        "area": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 188,
+      "size": 4,
+      "detail": "line_province:8条；bar_country:8条；bar_province:8条；line_country:8条"
+    },
+    {
+      "id": "project_count_by_area",
+      "group": "项目",
+      "path": "/show/project/getProjectCountByArea",
+      "summary": "查指定市州各等级项目数量 —— 这是查看「联合国级」等档位数量的正确入口。",
+      "args": {
+        "area": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 70,
+      "size": 3,
+      "detail": "列表 3 条"
+    },
+    {
+      "id": "project_area_summary",
+      "group": "项目",
+      "path": "/show/project/getAreaProjectData",
+      "summary": "查全省各市州项目数量汇总（含联合国级 un_project / 国家级 / 省级 / 市级 / 县级 / all 六档）。",
+      "args": {
+        "name": "四川省"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 144,
+      "size": 23,
+      "detail": "列表 23 条"
+    },
+    {
+      "id": "project_yhwd_data",
+      "group": "项目",
+      "path": "/show/project/getYhwdProjectData",
+      "summary": "查「云上非遗」/非遗工坊相关项目分布（按市州，六档：联合国/国家/省/市/县/区）。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 54,
+      "size": 6,
+      "detail": "列表 6 条"
+    },
+    {
+      "id": "project_video",
+      "group": "项目",
+      "path": "/show/project/viewVideo",
+      "summary": "查非遗项目视频播放地址。exist=false 表示暂无视频。",
+      "args": {
+        "projectBaseId": "2-UN-1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 140,
+      "size": 2,
+      "detail": "exist=False；viewUrl="
+    },
+    {
+      "id": "shop_table",
+      "group": "工坊",
+      "path": "/show/shop/shopTable",
+      "summary": "查非遗工坊/店铺列表（含销量、平台、项目名），回答「成都有哪些非遗工坊」。",
+      "args": {
+        "cityName": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 54,
+      "size": 1,
+      "detail": "list:52条"
+    },
+    {
+      "id": "shop_pie_and_stores",
+      "group": "工坊",
+      "path": "/show/shop/pieChartAndStores",
+      "summary": "查工坊数量 + 按项目类型的饼图分布。",
+      "args": {
+        "cityName": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 57,
+      "size": 2,
+      "detail": "stores=58；pieChartList:4条"
+    },
+    {
+      "id": "shop_category_sum",
+      "group": "工坊",
+      "path": "/show/shop/categorySum",
+      "summary": "查工坊经营类别汇总（线上线下销售额、老字号数量、各档传承人数量）。",
+      "args": {
+        "cityName": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 130,
+      "size": 23,
+      "detail": "offlineSales=0.0；onlineSales=0.0；laozihaoZh=1；projectLevelCity=7；onlineEntrust=1；laozihaoSc=0"
+    },
+    {
+      "id": "shop_bar_chart",
+      "group": "工坊",
+      "path": "/show/shop/barChart",
+      "summary": "查工坊在各电商平台的销量柱状图。",
+      "args": {
+        "cityName": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 49,
+      "size": 1,
+      "detail": "list:8条"
+    },
+    {
+      "id": "shop_map_chart",
+      "group": "工坊",
+      "path": "/show/shop/mapChart",
+      "summary": "查工坊按市州/区县的地图分布。",
+      "args": {
+        "cityName": "成都市",
+        "areaName": "锦江区"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 78,
+      "size": 3,
+      "detail": "type3:4条；type2:1条；type1:4条"
+    },
+    {
+      "id": "shop_area_map_chart",
+      "group": "工坊",
+      "path": "/show/shop/areaMapChart",
+      "summary": "查工坊在区域维度（type1/2/3 三档）的地图分布。",
+      "args": {
+        "cityName": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 56,
+      "size": 3,
+      "detail": "type3:28条；type2:19条；type1:23条"
+    },
+    {
+      "id": "shop_sales_and_amount",
+      "group": "工坊",
+      "path": "/show/shop/salesAndSalesAmount",
+      "summary": "查指定市州工坊的总销售额与销售量。",
+      "args": {
+        "cityName": "成都市",
+        "areaName": "锦江区"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 58,
+      "size": 2,
+      "detail": "salesNum=0；sales=0"
+    },
+    {
+      "id": "shop_detail",
+      "group": "工坊",
+      "path": "/show/shop/shopDetail",
+      "summary": "查单个工坊/店铺详情（线上店铺、简介、传承人）。",
+      "args": {
+        "cityName": "成都市",
+        "id": "140"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 78,
+      "size": 2,
+      "detail": "online:1条；introduction:7键"
+    },
+    {
+      "id": "shop_inheritor",
+      "group": "工坊",
+      "path": "/show/shop/shopInheritor",
+      "summary": "查某个工坊关联的传承人。",
+      "args": {
+        "cityName": "成都市",
+        "id": "140"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 46,
+      "size": 1,
+      "detail": "list:2条"
+    },
+    {
+      "id": "shop_sales",
+      "group": "工坊",
+      "path": "/show/shop/shopSales",
+      "summary": "查某个工坊的销量（线上/线下销售额与数量）。",
+      "args": {
+        "cityName": "成都市",
+        "id": "140"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 71,
+      "size": 6,
+      "detail": "online_sales_num=0；sales_num=0；offline_sales=0.0；offline_sales_num=0；online_sales=0.0；sales=0.0"
+    },
+    {
+      "id": "shop_project_type_pie",
+      "group": "工坊",
+      "path": "/show/shop/shopProjectTypePieChart",
+      "summary": "查某工坊的项目类型饼图。",
+      "args": {
+        "cityName": "成都市",
+        "id": "140"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 52,
+      "size": 1,
+      "detail": "list:1条"
+    },
+    {
+      "id": "shop_sales_num_pie",
+      "group": "工坊",
+      "path": "/show/shop/shopSalesAndNumPieChart",
+      "summary": "查某工坊按平台的销售数量与销售额饼图。",
+      "args": {
+        "cityName": "成都市",
+        "id": "140"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 69,
+      "size": 2,
+      "detail": "salesNum:1条；sales:1条"
+    },
+    {
+      "id": "shop_address_distribution",
+      "group": "工坊",
+      "path": "/show/shop/addrDistribution",
+      "summary": "查工坊地址分布（含经纬度、行政区划层级）与账号层级统计。",
+      "args": {
+        "cityName": "成都市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 61,
+      "size": 3,
+      "detail": "total:5键；type2:10条；type1:35条"
+    },
+    {
+      "id": "eco_area_count",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getAreasNum",
+      "summary": "查文化生态保护区数量（按国家级/省级返回）。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 53,
+      "size": 2,
+      "detail": "country=1；province=6"
+    },
+    {
+      "id": "eco_area_top_list",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getAreasTopFewList",
+      "summary": "查文化生态保护区列表（含名称、级别、经纬度、简介），回答「有哪些保护区」。",
+      "args": {
+        "topNum": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 72,
+      "size": 1,
+      "detail": "areasTopFewList:7条"
+    },
+    {
+      "id": "eco_city_round",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getCityRoundByAreaId",
+      "summary": "查某个保护区的地理边界坐标（用于地图描边）。",
+      "args": {
+        "ecologicalAreaId": "5f199a336e2e44efab9c5541f4138fe9"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 80,
+      "size": 1,
+      "detail": "cityPointData:7条"
+    },
+    {
+      "id": "eco_road_data",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getEcologicalAreaRoadData",
+      "summary": "查保护区内项目/集聚区/体验基地的分页数据。",
+      "args": {
+        "ecologicalAreaId": "5f199a336e2e44efab9c5541f4138fe9",
+        "areaId": "510100000000",
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 8878,
+      "size": 4,
+      "detail": "projectData:5键；agglomerationAreaData:5键；projectLevelData:3键；nmchBaseData:5键"
+    },
+    {
+      "id": "eco_road_distribute",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getRoadDistributeData",
+      "summary": "查保护区内资源的分布统计（项目/集聚区/体验基地三组）。",
+      "args": {
+        "ecologicalAreaId": "5f199a336e2e44efab9c5541f4138fe9",
+        "areaId": "510100000000"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 94,
+      "size": 3,
+      "detail": "projectData:0条；agglomerationAreaData:1条；nmchBaseData:0条"
+    },
+    {
+      "id": "eco_all_image",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getAllTravelImageUrl",
+      "summary": "查保护区的全部图片（实测用真实 id 可返回非空 imageList）。",
+      "args": {
+        "ecologicalAreaId": "5f199a336e2e44efab9c5541f4138fe9"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 1819,
+      "size": 1,
+      "detail": "imageList:7条"
+    },
+    {
+      "id": "eco_details",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getDetailsData",
+      "summary": "查保护区某条数据的详情（名称、类型、地址、简介、图片）。",
+      "args": {
+        "type": "1",
+        "dataId": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 123,
+      "size": 6,
+      "detail": "id=1；area_name=青城山--都江堰旅游景区；area_type=5A；address=青城镇/城西；introduction=；image_url="
+    },
+    {
+      "id": "eco_nmch_base",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getNmchBaseData",
+      "summary": "查非遗体验基地列表（保护区口径）。实测本前缀下恒为空列表（调用成功、code=0、无数据），体验基地数据请改用 travel_nmch_base（实测 21 个城市、约 405 个字段值）。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 64,
+      "size": 1,
+      "detail": "nmchBaseDataList:0条"
+    },
+    {
+      "id": "eco_nmch_popup",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getNmchBasePopupData",
+      "summary": "查非遗体验基地弹窗详情（简介、产品）。",
+      "args": {
+        "cityCode": "510100000000"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 65,
+      "size": 1,
+      "detail": "popupDataList:30条"
+    },
+    {
+      "id": "eco_tourist_county_list",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getTouristCountyList",
+      "summary": "查非遗旅游重点县列表（含名称、经纬度），这是获取合法 areaId 的入口。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 47,
+      "size": 1,
+      "detail": "touristCounty:28条"
+    },
+    {
+      "id": "eco_tourist_county_data",
+      "group": "保护区",
+      "path": "/show/ecologicalArea/getTouristCountyData",
+      "summary": "查某个县/市州的非遗资源汇总（代表性传承人、非遗项目、名录项目）。area 收行政区划编码，编码可由 eco_tourist_county_list 取得。",
+      "args": {
+        "area": "510525000000"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 144,
+      "size": 3,
+      "detail": "typicalInheritors:3键；touristUnProject:2键；touristDirectoryProject:3键"
+    },
+    {
+      "id": "travel_route_top_list",
+      "group": "旅游",
+      "path": "/show/travel/getRoutesTopFewList",
+      "summary": "查非遗旅游线路列表（含名称、封面图），回答「有哪些非遗旅游线路」。",
+      "args": {
+        "topNum": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 48,
+      "size": 1,
+      "detail": "routesTopFewList:10条"
+    },
+    {
+      "id": "travel_city_round",
+      "group": "旅游",
+      "path": "/show/travel/getCityRoundByTravelId",
+      "summary": "查某条旅游线路的地理边界坐标与中心点。",
+      "args": {
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 253,
+      "size": 4,
+      "detail": "cityPointData:8条；centerLatitude=31.963084；coordinateSet={\t\"coord\":[\t\t[104.065857；centerLongitude=104.361586"
+    },
+    {
+      "id": "travel_road_type_count",
+      "group": "旅游",
+      "path": "/show/travel/getTravelRoadTypeCount",
+      "summary": "查旅游线路沿线的资源类型数量统计（项目/区域/基地）。",
+      "args": {
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 118,
+      "size": 3,
+      "detail": "project=239；travelArea=12；base=41"
+    },
+    {
+      "id": "travel_road_by_type",
+      "group": "旅游",
+      "path": "/show/travel/getTravelRoadDataByType",
+      "summary": "查某条线路下指定类型的资源分页列表。",
+      "args": {
+        "type": "1",
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 49,
+      "size": 5,
+      "detail": "pageCount=14；pageNumber=1；dataList:10条；pageSize=10；totalCount=136"
+    },
+    {
+      "id": "travel_road_data",
+      "group": "旅游",
+      "path": "/show/travel/getTravelRoadData",
+      "summary": "查某条线路的完整资源分页数据（项目/集聚区/体验基地三组）。",
+      "args": {
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0",
+        "areaId": "510100000000",
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 3378,
+      "size": 3,
+      "detail": "projectData:5键；agglomerationAreaData:5键；nmchBaseData:5键"
+    },
+    {
+      "id": "travel_road_detail",
+      "group": "旅游",
+      "path": "/show/travel/getTravelRoadDataDetail",
+      "summary": "查线路中某条资源的详情（简介、图片、路线）。",
+      "args": {
+        "dataId": "05760cdf947f4f32968cf79d3c695b2b",
+        "type": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 514,
+      "size": 7,
+      "detail": "project_base_id=05760cdf947f4f32968cf79d；project_name=羌医骨科手法；protection_unit=；project_level=省级；pedigree=1、第一代羌医传承人：天祖格日巴·姆玉虎□（17；description=祚穆羌医骨科手法诊疗技法，是指以格日巴·姆玉虎□"
+    },
+    {
+      "id": "travel_road_distribute",
+      "group": "旅游",
+      "path": "/show/travel/getTravelRoadDistributeData",
+      "summary": "查某条线路的资源分布统计。",
+      "args": {
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 197,
+      "size": 3,
+      "detail": "projectData:239条；agglomerationAreaData:12条；nmchBaseData:41条"
+    },
+    {
+      "id": "travel_image",
+      "group": "旅游",
+      "path": "/show/travel/getTravelImageUrl",
+      "summary": "查某条线路下某一类对象的图片地址（含图片名）。",
+      "args": {
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0",
+        "type": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 126,
+      "size": 1,
+      "detail": "imageList:0条"
+    },
+    {
+      "id": "travel_all_image",
+      "group": "旅游",
+      "path": "/show/travel/getAllTravelImageUrl",
+      "summary": "查某条线路的全部图片（实测可返回非空 imageList）。",
+      "args": {
+        "travelId": "43c4f5188de54c46b2b03094ff1e5da0"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 6016,
+      "size": 1,
+      "detail": "imageList:8条"
+    },
+    {
+      "id": "travel_details",
+      "group": "旅游",
+      "path": "/show/travel/getDetailsData",
+      "summary": "查线路中某条数据的详情。",
+      "args": {
+        "type": "1",
+        "dataId": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 144,
+      "size": 6,
+      "detail": "id=1；area_name=青城山--都江堰旅游景区；area_type=5A；address=青城镇/城西；introduction=；image_url="
+    },
+    {
+      "id": "travel_nmch_base",
+      "group": "旅游",
+      "path": "/show/travel/getNmchBaseData",
+      "summary": "查非遗体验基地列表（旅游口径，实测 21 条，比保护区口径更全）。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 96,
+      "size": 1,
+      "detail": "nmchBaseDataList:21条"
+    },
+    {
+      "id": "travel_nmch_popup",
+      "group": "旅游",
+      "path": "/show/travel/getNmchBasePopupData",
+      "summary": "查非遗体验基地弹窗详情（旅游口径）。",
+      "args": {
+        "cityCode": "510100000000"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 51,
+      "size": 1,
+      "detail": "popupDataList:30条"
+    },
+    {
+      "id": "travel_tourist_county_list",
+      "group": "旅游",
+      "path": "/show/travel/getTouristCountyList",
+      "summary": "查非遗旅游重点县列表（旅游口径）。",
+      "args": {},
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 45,
+      "size": 1,
+      "detail": "touristCounty:28条"
+    },
+    {
+      "id": "travel_tourist_county_data",
+      "group": "旅游",
+      "path": "/show/travel/getTouristCountyData",
+      "summary": "查某个县/市州的非遗资源汇总（旅游口径）。area 收行政区划编码，编码可由 travel_tourist_county_list 取得。",
+      "args": {
+        "area": "510525000000"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 354,
+      "size": 3,
+      "detail": "typicalInheritors:3键；touristUnProject:2键；touristDirectoryProject:3键"
+    },
+    {
+      "id": "project_inheritor_count_by_area",
+      "group": "项目",
+      "path": "/show/project/getProjectInhreirotCountByArea",
+      "summary": "按市州查非遗项目与传承人的分等级数量（国家级/省级/市级/县级）。",
+      "args": {
+        "name": "泸州市"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 127,
+      "size": 9,
+      "detail": "country_inheritor=8；county_inheritor=0；province_inheritor=79；province_project=77；country_project=6；city_project=369"
+    },
+    {
+      "id": "image_category_stats",
+      "group": "影像展",
+      "path": "/show/image/categoryPieChart",
+      "summary": "查影像展影像总数与项目门类分布（饼图），可限定市州。",
+      "args": {
+        "cityName": "成都市",
+        "imageType": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 52,
+      "size": 2,
+      "detail": "pieChartDataList:3条；imagesNumber=12"
+    },
+    {
+      "id": "image_city_collect_stats",
+      "group": "影像展",
+      "path": "/show/image/cityCollectStatistics",
+      "summary": "查影像展各市州征集影像数量排行。",
+      "args": {
+        "imageType": "1",
+        "limitNum": "5"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 49,
+      "size": 1,
+      "detail": "dataList:5条"
+    },
+    {
+      "id": "image_inheritor_project_stats",
+      "group": "影像展",
+      "path": "/show/image/inheritorAndProject",
+      "summary": "查影像展涉及的传承人/项目数量、展播播放量与影像总时长，可限定市州。",
+      "args": {
+        "cityName": "成都市",
+        "imageType": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 54,
+      "size": 8,
+      "detail": "projectLevelDataList:4条；showVideoNumber=12；showVideoDataList:3条；platformPlay=30721；showVideoTimeTotal=157.83；inheritorLevelDataList:5条"
+    },
+    {
+      "id": "image_net_platform_stats",
+      "group": "影像展",
+      "path": "/show/image/netPlatformStatistics",
+      "summary": "查影像展网络平台播放量排行。",
+      "args": {
+        "cityName": "成都市",
+        "imageType": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 56,
+      "size": 1,
+      "detail": "dataList:8条"
+    },
+    {
+      "id": "image_tv_platform_stats",
+      "group": "影像展",
+      "path": "/show/image/tvPlatformStatistics",
+      "summary": "查影像展 TV 平台播放量排行。",
+      "args": {
+        "cityName": "成都市",
+        "imageType": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 69,
+      "size": 1,
+      "detail": "dataList:2条"
+    },
+    {
+      "id": "image_platform_play",
+      "group": "影像展",
+      "path": "/show/image/platformPlay",
+      "summary": "查影像展总播放量（单个数值）。",
+      "args": {
+        "cityName": "成都市",
+        "imageType": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 46,
+      "size": 1,
+      "detail": "platformPlay=30721"
+    },
+    {
+      "id": "image_report_unit_stats",
+      "group": "影像展",
+      "path": "/show/image/reportUnitStatistics",
+      "summary": "查影像展影像报送单位排行。",
+      "args": {
+        "imageType": "1",
+        "limitNum": "5"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 42,
+      "size": 1,
+      "detail": "dataList:5条"
+    },
+    {
+      "id": "image_stat_list",
+      "group": "影像展",
+      "path": "/show/image/statisticalList",
+      "summary": "查影像展统计列表（按市州），可限定市州。",
+      "args": {
+        "cityName": "成都市",
+        "imageType": "1"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 51,
+      "size": 1,
+      "detail": "dataList:12条"
+    },
+    {
+      "id": "heritage_activity_by_year",
+      "group": "品牌活动",
+      "path": "/show/acivity/getHeritageData",
+      "summary": "查某年文化遗产日活动的活动数、参与项目/传承人数、销售额等。",
+      "args": {
+        "year": "2023"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 50,
+      "size": 23,
+      "detail": "id=112a38be9b3e4d009ac14d12；year=2023；activity_num=500；sales_volume=；sales_unit=；inheritor_num="
+    },
+    {
+      "id": "heritage_activity_years",
+      "group": "品牌活动",
+      "path": "/show/acivity/getHeritageYearList",
+      "summary": "查已有文化遗产日数据的年份列表，作为按年查询的入口。",
+      "args": {
+        "topNum": "5"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 81,
+      "size": 1,
+      "detail": "year:4条"
+    },
+    {
+      "id": "opinion_top_keywords",
+      "group": "舆情",
+      "path": "/show/opinion/getTopKey",
+      "summary": "查非遗网络舆情热门关键词排行。",
+      "args": {
+        "showUser": "false",
+        "topNum": "5"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 54,
+      "size": 1,
+      "detail": "keyList:5条"
+    },
+    {
+      "id": "opinion_top_cities",
+      "group": "舆情",
+      "path": "/show/opinion/getTopNumCity",
+      "summary": "查非遗网络舆情数量最多的市州排行。",
+      "args": {
+        "topNum": "5"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 50,
+      "size": 1,
+      "detail": "dataList:5条"
+    },
+    {
+      "id": "health_base_list",
+      "group": "工坊",
+      "path": "/show/shop/healthDemonstrationBaseList",
+      "summary": "查中医药健康旅游示范基地列表（名称、地址、所在市州）。",
+      "args": {
+        "pageNum": "1",
+        "pageSize": "10"
+      },
+      "status": "PASS",
+      "httpStatus": null,
+      "upstreamCode": null,
+      "errors": null,
+      "elapsedMs": 64,
+      "size": 5,
+      "detail": "pageCount=1；pageNumber=1；dataList:10条；pageSize=10；totalCount=10"
+    }
+  ]
+}

@@ -1,0 +1,1321 @@
+[
+  {
+    "path": "/show/acivity/getHeritageData",
+    "summary": "获取指定年份的文化遗产日数据",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 23
+  },
+  {
+    "path": "/show/acivity/getHeritageYearList",
+    "summary": "获取前几名旅游线路列表",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/data/leftBarScale",
+    "summary": "左侧线上占比柱状图",
+    "args": {
+      "cityName": "泸州市"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "StatementCallback; bad SQL grammar [ SELECT o.TYPE plat,COUNT(1) num FROM t_shop s, t_onli",
+    "size": 0
+  },
+  {
+    "path": "/show/data/leftRectScale",
+    "summary": "左侧矩形方块 非遗等级、网销开设方式、贫困级别占比",
+    "args": {
+      "cityName": "泸州市"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "PreparedStatementCallback; bad SQL grammar [SELECT FY_LEVEL AS name,COUNT(*) AS value FROM",
+    "size": 0
+  },
+  {
+    "path": "/show/data/platSaleStat",
+    "summary": "平台销量、营业额统计",
+    "args": {
+      "shopId": "古蔺县"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Failed to convert value of type 'java.lang.String' to required type 'java.lang.Integer'; n",
+    "size": 0
+  },
+  {
+    "path": "/show/data/rightMapDistribution",
+    "summary": "市州分布图",
+    "args": {},
+    "status": "FAIL",
+    "code": 500,
+    "msg": "StatementCallback; bad SQL grammar [ SELECT CITY AS city,FY_LEVEL AS level,count(1) num FR",
+    "size": 0
+  },
+  {
+    "path": "/show/data/saleStat",
+    "summary": "单个（所有）店铺 销量、营业额统计 以及非遗类型销量统计",
+    "args": {
+      "cityName": "泸州市"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "PreparedStatementCallback; bad SQL grammar [ SELECT SUM(o.TOTAL_MONEY) \"accountMoney\",SUM(",
+    "size": 0
+  },
+  {
+    "path": "/show/data/shopDetail/{id}",
+    "summary": "简介 - 平台 - 传承人",
+    "args": {
+      "id": "1"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Failed to convert value of type 'java.lang.String' to required type 'java.lang.Integer'; n",
+    "size": 0
+  },
+  {
+    "path": "/show/data/shopInfos",
+    "summary": "店铺信息列表",
+    "args": {
+      "cityName": "泸州市"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "PreparedStatementCallback; bad SQL grammar [ SELECT ss.ID AS \"shopId\",ss.SHOP_NAME AS \"sho",
+    "size": 0
+  },
+  {
+    "path": "/show/data/shopTypeScale",
+    "summary": "左侧饼图 所有店铺的类型占比",
+    "args": {
+      "cityName": "泸州市"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "StatementCallback; bad SQL grammar [ SELECT FY_TYPE AS type,COUNT(*) AS num FROM t_shop  W",
+    "size": 0
+  },
+  {
+    "path": "/show/ecologicalArea/getAllTravelImageUrl",
+    "summary": "根据线路id获取所有类型的生态区图片",
+    "args": {
+      "ecologicalAreaId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getAreasNum",
+    "summary": "获取生态区数量",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/ecologicalArea/getAreasTopFewList",
+    "summary": "获取前几名生态区列表",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getCacheValue",
+    "summary": "getCacheValue",
+    "args": {
+      "key": "test"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "",
+    "size": 0
+  },
+  {
+    "path": "/show/ecologicalArea/getCityRoundByAreaId",
+    "summary": "获取生态区的城市的数据（打点数据和边界数据）",
+    "args": {
+      "ecologicalAreaId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getDetailsData",
+    "summary": "获取生态区弹窗-详情数据",
+    "args": {
+      "dataId": "1",
+      "type": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 6
+  },
+  {
+    "path": "/show/ecologicalArea/getEcologicalAreaImageUrl",
+    "summary": "获取生态区图片",
+    "args": {
+      "areaId": "510525000000",
+      "dataId": "1",
+      "ecologicalAreaId": "1",
+      "type": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getEcologicalAreaRoadData",
+    "summary": "生态区线路数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "areaId": "510525000000",
+      "ecologicalAreaId": "1",
+      "pageNum": "1",
+      "pageSize": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 4
+  },
+  {
+    "path": "/show/ecologicalArea/getNmchBaseData",
+    "summary": "获取非遗体验基地数据",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getNmchBasePopupData",
+    "summary": "获取非遗体验基地弹窗数据",
+    "args": {
+      "cityCode": "510525"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getPagerTravelImageUrl",
+    "summary": "根据线路id获取所有类型的生态区图片（分页）",
+    "args": {
+      "ecologicalAreaId": "1",
+      "noPage": "false",
+      "pageNum": "1",
+      "pageSize": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/ecologicalArea/getRoadDistributeData",
+    "summary": "生态区线路-分布情况数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "areaId": "510525000000",
+      "ecologicalAreaId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/ecologicalArea/getTouristCountyData",
+    "summary": "获取旅游名县联合国教科文组织、名录项目、代表性传承人数据",
+    "args": {
+      "area": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/ecologicalArea/getTouristCountyList",
+    "summary": "获取旅游名县数据",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/categoryPieChart",
+    "summary": "影像展总览页面-影像总数、饼状图",
+    "args": {
+      "cityName": "泸州市",
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/image/cityCollectStatistics",
+    "summary": "影像展总览页面-市州征集统计图",
+    "args": {
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/getShowImageList",
+    "summary": "影像展-列表数据",
+    "args": {
+      "imageType": "1",
+      "pageNum": "1",
+      "pageSize": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 5
+  },
+  {
+    "path": "/show/image/inheritorAndProject",
+    "summary": "影像展总览页面-传承人、名录项目、展播播放量、展播影像总时长、征集影像总时长、展播影像数量",
+    "args": {
+      "cityName": "泸州市",
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 8
+  },
+  {
+    "path": "/show/image/inheritorInfo",
+    "summary": "影像展影像明细-非遗名录基本信息",
+    "args": {
+      "videoId": "1"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Incorrect result size: expected 1, actual 0",
+    "size": 0
+  },
+  {
+    "path": "/show/image/netPlatformStatistics",
+    "summary": "影像展总览页面-网络平台统计",
+    "args": {
+      "cityName": "泸州市",
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/platformList",
+    "summary": "影像展影像明细-展播平台、平台上线状态、平台类型、展播链接",
+    "args": {
+      "videoId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/platformPlay",
+    "summary": "影像展总览页面-展播播放量",
+    "args": {
+      "cityName": "泸州市",
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/platformStatistical",
+    "summary": "影像展影像明细-总播放量、网络平台统计、TV平台统计",
+    "args": {
+      "videoId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/image/reportUnitStatistics",
+    "summary": "影像展总览页面-影像报送单位统计",
+    "args": {
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/statisticalList",
+    "summary": "影像展总览页面-统计列表",
+    "args": {
+      "cityName": "泸州市",
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/image/tvPlatformStatistics",
+    "summary": "影像展总览页面-TV平台统计",
+    "args": {
+      "cityName": "泸州市",
+      "imageType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/inheritor/getAreaInheritorData",
+    "summary": "getAreaProjectData",
+    "args": {
+      "name": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/inheritor/getGenderNumDataByLevel",
+    "summary": "获取传承人性别统计数据",
+    "args": {
+      "level": "省级"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/inheritor/getInheritorBirthday",
+    "summary": "获取传承人年龄统计数据",
+    "args": {
+      "level": "省级"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/inheritor/getInheritorDetail",
+    "summary": "获取传承人详细数据",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/inheritor/getInheritorListByArea",
+    "summary": "获取传承人列表数据",
+    "args": {
+      "area": "古蔺县",
+      "pageNum": "1",
+      "pageSize": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 5
+  },
+  {
+    "path": "/show/inheritor/getInheritorTypeData",
+    "summary": "获取项目分类统计数据",
+    "args": {
+      "area": "古蔺县",
+      "level": "省级"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 4
+  },
+  {
+    "path": "/show/inheritor/getInheritorWhcd",
+    "summary": "获取传承人文化程度统计数据",
+    "args": {
+      "level": "省级"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/inheritor/getYhwdInheritorData",
+    "summary": "getYhwdInheritorData",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 6
+  },
+  {
+    "path": "/show/inheritor/test1.dhtml",
+    "summary": "test1",
+    "args": {},
+    "status": "ERR",
+    "code": null,
+    "msg": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
+    "size": 0
+  },
+  {
+    "path": "/show/inheritor/viewVideo",
+    "summary": "viewVideo",
+    "args": {
+      "inheritorId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/learningFacilities/getLearningFacilitiesAreaCountList",
+    "summary": "getLearningFacilitiesAreaCountList",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/learningFacilities/getLearningFacilitiesNum",
+    "summary": "获取全省传承设施数量",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Incorrect result size: expected 1, actual 0",
+    "size": 0
+  },
+  {
+    "path": "/show/opinion/deleteAllCache",
+    "summary": "deleteAllCache",
+    "args": {
+      "key": "test"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/opinion/deleteCache",
+    "summary": "deleteCache",
+    "args": {
+      "key": "test"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/opinion/getCacheValue",
+    "summary": "getCacheValue",
+    "args": {
+      "key": "test"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "",
+    "size": 0
+  },
+  {
+    "path": "/show/opinion/getTopKey",
+    "summary": "getTopKey",
+    "args": {
+      "showUser": "1",
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/opinion/getTopNumCity",
+    "summary": "getTopNumCity",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/opinion/opinionData",
+    "summary": "opinionData",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 4
+  },
+  {
+    "path": "/show/opinion/opinionIndex",
+    "summary": "opinionIndex",
+    "args": {
+      "provinceName": "四川省"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/opinion/opinionVolumeTrend",
+    "summary": "opinionVolumeTrend",
+    "args": {
+      "endDate": "2024-12-31",
+      "nearDays": "30",
+      "startDate": "2024-01-01",
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/opinion/opinionWarnData",
+    "summary": "opinionWarnData",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/opinion/originMap",
+    "summary": "originMap",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/opinion/proportionMedia",
+    "summary": "proportionMedia",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/project/getAreaProjectData",
+    "summary": "getAreaProjectData",
+    "args": {
+      "name": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/project/getProjectBatchData",
+    "summary": "获取项目分批次统计数据",
+    "args": {
+      "area": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 4
+  },
+  {
+    "path": "/show/project/getProjectCountByArea",
+    "summary": "获取项目数据量",
+    "args": {
+      "area": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/project/getProjectDetail",
+    "summary": "获取项目列表数据",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/project/getProjectInhreirotCountByArea",
+    "summary": "getProjectInhreirotCountByArea",
+    "args": {
+      "name": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 9
+  },
+  {
+    "path": "/show/project/getProjectListByArea",
+    "summary": "获取项目列表数据",
+    "args": {
+      "area": "古蔺县",
+      "pageNum": "1",
+      "pageSize": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 5
+  },
+  {
+    "path": "/show/project/getProjectTypeData",
+    "summary": "获取项目分类统计数据",
+    "args": {
+      "area": "古蔺县",
+      "level": "省级"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 4
+  },
+  {
+    "path": "/show/project/getYhwdProjectData",
+    "summary": "getYhwdProjectData",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 6
+  },
+  {
+    "path": "/show/project/viewVideo",
+    "summary": "viewVideo",
+    "args": {
+      "projectBaseId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/rescue/getOutComeList",
+    "summary": "获取抢救性成果列表",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/rescue/getRecordObjectData",
+    "summary": "获取记录工程对象分析数据",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/rescue/getRecordPeopleAndFundList",
+    "summary": "获取记录工程地方分析和经费情况",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/rescue/getRecordTypeList",
+    "summary": "获取记录工程分类统计",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/rescue/getRescueNum",
+    "summary": "获取抢救性记录数量",
+    "args": {
+      "reportPeriod": "2024"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Incorrect result size: expected 1, actual 0",
+    "size": 0
+  },
+  {
+    "path": "/show/shop/addrDistribution",
+    "summary": "传承医药界面-地区分布",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/shop/areaMapChart",
+    "summary": "电商页面（区县地图）",
+    "args": {
+      "cityName": "泸州市",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/shop/barChart",
+    "summary": "电商页面（平台柱状图）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shop/categorySum",
+    "summary": "电商页面--项目级别(国家级、省级、州级、区县级)、网店销售形式(独立开设、委托代销、联合开设、其它）、贫困县级别（国评贫困县、省评贫困县、非贫困县）、老字号类型（中华老字号、四川老字号）、销售额/销售数量（线上销售额、线下销售额、线上销售数量、线下销售数量）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 23
+  },
+  {
+    "path": "/show/shop/healthDemonstrationBaseDetail",
+    "summary": "传承医药基地详情",
+    "args": {},
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Required String parameter 'addrId' is not present",
+    "size": 0
+  },
+  {
+    "path": "/show/shop/healthDemonstrationBaseList",
+    "summary": "传承医药列表",
+    "args": {
+      "pageNum": "1",
+      "pageSize": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 5
+  },
+  {
+    "path": "/show/shop/mapChart",
+    "summary": "电商页面（地图）",
+    "args": {
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/shop/pieChartAndStores",
+    "summary": "电商页面（店铺总数、饼状图）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shop/salesAndSalesAmount",
+    "summary": "电商页面（销售额、销售数量）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shop/shopDetail",
+    "summary": "店铺界面（简介）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shop/shopInheritor",
+    "summary": "店铺界面（传承人）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shop/shopProjectTypePieChart",
+    "summary": "店铺界面（项目类型统计柱状图）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shop/shopSales",
+    "summary": "店铺界面（销售情况）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 6
+  },
+  {
+    "path": "/show/shop/shopSalesAndNumPieChart",
+    "summary": "店铺界面（销售额统计柱状图、销售数量统计柱状图）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shop/shopTable",
+    "summary": "市州界面（主体表格）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shopv2/addrDistribution",
+    "summary": "传承医药界面-地区分布",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/shopv2/areaMapChart",
+    "summary": "电商页面（区县地图）",
+    "args": {
+      "cityName": "泸州市",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/shopv2/barChart",
+    "summary": "电商页面（平台柱状图）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shopv2/categorySum",
+    "summary": "电商页面--项目级别(国家级、省级、州级、区县级)、网店销售形式(独立开设、委托代销、联合开设、其它）、贫困县级别（国评贫困县、省评贫困县、非贫困县）、老字号类型（中华老字号、四川老字号）、销售额/销售数量（线上销售额、线下销售额、线上销售数量、线下销售数量）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 23
+  },
+  {
+    "path": "/show/shopv2/mapChart",
+    "summary": "电商页面（地图）",
+    "args": {
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/shopv2/pieChartAndStores",
+    "summary": "电商页面（店铺总数、饼状图）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shopv2/salesAndSalesAmount",
+    "summary": "电商页面（销售额、销售数量）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shopv2/shopDetail",
+    "summary": "店铺界面（简介）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 2
+  },
+  {
+    "path": "/show/shopv2/shopInheritor",
+    "summary": "店铺界面（传承人）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shopv2/shopProjectTypePieChart",
+    "summary": "店铺界面（项目类型统计柱状图）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/shopv2/shopSales",
+    "summary": "店铺界面（销售情况）",
+    "args": {
+      "id": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 6
+  },
+  {
+    "path": "/show/shopv2/shopSalesAndNumPieChart",
+    "summary": "店铺界面（销售额统计柱状图、销售数量统计柱状图）",
+    "args": {
+      "id": "1"
+    },
+    "status": "FAIL",
+    "code": 3,
+    "msg": "业务错误",
+    "size": 0
+  },
+  {
+    "path": "/show/shopv2/shopTable",
+    "summary": "市州界面（主体表格）",
+    "args": {
+      "areaName": "古蔺县",
+      "cityName": "泸州市",
+      "onlyECircle": "false",
+      "subjectType": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getAllTravelImageUrl",
+    "summary": "根据线路id获取所有类型的非遗旅游图片",
+    "args": {
+      "travelId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getCityRoundByTravelId",
+    "summary": "获取旅游线路的城市的数据（打点数据和边界数据）",
+    "args": {
+      "travelId": "1"
+    },
+    "status": "FAIL",
+    "code": 500,
+    "msg": "Incorrect result size: expected 1, actual 0",
+    "size": 0
+  },
+  {
+    "path": "/show/travel/getDetailsData",
+    "summary": "获取非遗旅游弹窗-详情数据",
+    "args": {
+      "dataId": "1",
+      "type": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 6
+  },
+  {
+    "path": "/show/travel/getNmchBaseData",
+    "summary": "获取非遗体验基地数据",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getNmchBasePopupData",
+    "summary": "获取非遗体验基地弹窗数据",
+    "args": {
+      "cityCode": "510525"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getRoutesTopFewList",
+    "summary": "获取前几名旅游线路列表",
+    "args": {
+      "topNum": "5"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getTouristCountyData",
+    "summary": "获取旅游名县联合国教科文组织、名录项目、代表性传承人数据",
+    "args": {
+      "area": "古蔺县"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/travel/getTouristCountyList",
+    "summary": "获取旅游名县数据",
+    "args": {},
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getTravelImageUrl",
+    "summary": "获取非遗旅游图片",
+    "args": {
+      "areaId": "510525000000",
+      "dataId": "1",
+      "travelId": "1",
+      "type": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 1
+  },
+  {
+    "path": "/show/travel/getTravelRoadData",
+    "summary": "旅游线路数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "areaId": "510525000000",
+      "pageNum": "1",
+      "pageSize": "5",
+      "travelId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/travel/getTravelRoadDataByType",
+    "summary": "旅游线路数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "areaId": "510525000000",
+      "pageNum": "1",
+      "pageSize": "5",
+      "travelId": "1",
+      "type": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 5
+  },
+  {
+    "path": "/show/travel/getTravelRoadDataDetail",
+    "summary": "旅游线路数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "dataId": "1",
+      "type": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 0
+  },
+  {
+    "path": "/show/travel/getTravelRoadDistributeData",
+    "summary": "非遗旅游线路-分布情况数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "areaId": "510525000000",
+      "travelId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  },
+  {
+    "path": "/show/travel/getTravelRoadTypeCount",
+    "summary": "获取旅游线路分类别统计数据（非遗集聚区域、非遗名录项目、非遗体验基地）",
+    "args": {
+      "areaId": "510525000000",
+      "travelId": "1"
+    },
+    "status": "OK",
+    "code": 0,
+    "msg": "请求成功",
+    "size": 3
+  }
+]

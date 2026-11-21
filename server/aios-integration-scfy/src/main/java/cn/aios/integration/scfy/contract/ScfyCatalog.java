@@ -10,7 +10,10 @@ import java.util.stream.Collectors;
 /**
  * scfy 接口清单的<b>唯一事实源</b>。
  *
- * <p>内容来源：接口文档（833 行）+ 2026-09-23 生产西昌环境全量实测（67 个 {@code /show/*} 接口）。
+ * <p>内容来源：接口文档（833 行）+ 2026-09-23 生产西昌环境全量实测（67 个 {@code /show/*} 接口）；
+ * 2026-11-20 公网 swagger（964 条定义 / 115 个 GET {@code /show/*}）复核后，
+ * 新增 14 个公网确有数据的只读接口（影像展 / 品牌活动 / 舆情热词与城市榜 / 中医药基地 /
+ * 项目传承人分等级计数），排除缓存写操作、重复 shopv2 与公网无数据的接口。
  * 合并规则见 {@link ScfyEndpoint}。探测脚本可重跑：
  * {@code scripts/_probe_fy_show.py}（全量）、{@code scripts/_probe_fy_show2.py}（真实 ID 复测）。</p>
  *
@@ -78,6 +81,25 @@ public final class ScfyCatalog {
                         + "12 位编码返回真实数据；不传返回全省（省级项目 35 项）");
     }
 
+    /** 影像类型：0=影像征集（默认），1=影像展播；两套统计口径不同。 */
+    private static ScfyParam imageType() {
+        return new ScfyParam("imageType", false, "string",
+                "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理",
+                List.of("0", "1"), "1", null);
+    }
+
+    /** 排行类接口的取前 N 条。 */
+    private static ScfyParam topNum() {
+        return new ScfyParam("topNum", false, "integer",
+                "返回条数，不传由服务端决定", null, "5", null);
+    }
+
+    /** 排行/统计类的取前 N 条（文档类型是 string，不能传 integer）。 */
+    private static ScfyParam limitNum() {
+        return new ScfyParam("limitNum", false, "string",
+                "取前多少条数据，不传即不限制", null, "5", null);
+    }
+
     // ==================== 废弃原因 ====================
     // 必须声明在 ALL 之前：ALL 的条目引用了这两个常量。
     // 虽然纯字面量拼接属编译期常量、当前不会踩静态初始化顺序陷阱，
@@ -91,6 +113,12 @@ public final class ScfyCatalog {
     private static final String DEPRECATED_SHOPS_V2 =
             "文档仅称「与 /show/shop 结构相同，作为 v2 版本」，但未说明 v1 是否下线、新接入应用哪个。"
                     + "在差异与生命周期明确之前，按「不确定即废弃」处理 —— 只接入 /show/shop 一套，避免同一数据两条工具路径。";
+
+    private static final String PUBLIC_IMAGE_NOTE =
+            "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。";
+
+    private static final String PUBLIC_OPINION_NOTE =
+            "舆情统计不是非遗名录统计，回答时须注明口径；2026-11-20 公网域名抽样 code=0 且有真实数据。";
 
     // ==================== 清单 ====================
 
@@ -346,6 +374,69 @@ public final class ScfyCatalog {
                             + "area 收行政区划编码，编码可由 travel_tourist_county_list 取得。",
                     List.of(areaCode())),
 
+            // ---------- 2026-11-20 新增：公网域名 + /show/* 抽样可用（docs/90）----------
+            // 只接入「code=0 且确有数据」的只读接口；缓存读写、重复 shopv2、
+            // 公网上无数据的影像明细/抢救性记录一律不接（理由见 docs/90）。
+            ScfyEndpoint.mcpOnly("project_inheritor_count_by_area", "项目", "/show/project",
+                    "/getProjectInhreirotCountByArea",
+                    "按市州查非遗项目与传承人的分等级数量（国家级/省级/市级/县级）。",
+                    List.of(new ScfyParam("name", false, "string",
+                            "市州名（如 泸州市）；不传返回全省汇总", null, "泸州市",
+                            "公网实测传区县名（古蔺县）返回 code=3 业务错误；"
+                                    + "查县域名额请用 travel_tourist_county_data / eco_tourist_county_data")),
+                    "2026-11-20 公网抽样：name=泸州市 返回 9 档真实计数；不传返回全省计数。"),
+
+            // 影像展（/show/image）—— 统计类接口公网有真实数据
+            ScfyEndpoint.mcpOnly("image_category_stats", "影像展", "/show/image", "/categoryPieChart",
+                    "查影像展影像总数与项目门类分布（饼图），可限定市州。",
+                    List.of(cityName(false), imageType()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_city_collect_stats", "影像展", "/show/image", "/cityCollectStatistics",
+                    "查影像展各市州征集影像数量排行。",
+                    List.of(imageType(), limitNum()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_inheritor_project_stats", "影像展", "/show/image", "/inheritorAndProject",
+                    "查影像展涉及的传承人/项目数量、展播播放量与影像总时长，可限定市州。",
+                    List.of(cityName(false), imageType()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_net_platform_stats", "影像展", "/show/image", "/netPlatformStatistics",
+                    "查影像展网络平台播放量排行。",
+                    List.of(cityName(false), imageType()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_tv_platform_stats", "影像展", "/show/image", "/tvPlatformStatistics",
+                    "查影像展 TV 平台播放量排行。",
+                    List.of(cityName(false), imageType()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_platform_play", "影像展", "/show/image", "/platformPlay",
+                    "查影像展总播放量（单个数值）。",
+                    List.of(cityName(false), imageType()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_report_unit_stats", "影像展", "/show/image", "/reportUnitStatistics",
+                    "查影像展影像报送单位排行。",
+                    List.of(imageType(), limitNum()), PUBLIC_IMAGE_NOTE),
+            ScfyEndpoint.mcpOnly("image_stat_list", "影像展", "/show/image", "/statisticalList",
+                    "查影像展统计列表（按市州），可限定市州。",
+                    List.of(cityName(false), imageType()), PUBLIC_IMAGE_NOTE),
+
+            // 品牌活动（/show/acivity）
+            ScfyEndpoint.mcpOnly("heritage_activity_by_year", "品牌活动", "/show/acivity", "/getHeritageData",
+                    "查某年文化遗产日活动的活动数、参与项目/传承人数、销售额等。",
+                    List.of(new ScfyParam("year", false, "string",
+                            "年份（如 2023）；不传返回当前已发布年度", null, "2023", null)),
+                    "返回 description 是 HTML 富文本，回答时应提取纯文本要点，不要原样输出标签。"),
+            ScfyEndpoint.mcpOnly("heritage_activity_years", "品牌活动", "/show/acivity", "/getHeritageYearList",
+                    "查已有文化遗产日数据的年份列表，作为按年查询的入口。",
+                    List.of(topNum()), "2026-11-20 公网抽样返回 2023/2022/2021/2020。"),
+
+            // 舆情（/show/opinion）—— 只接公网确有数据的两项，缓存类接口不接
+            ScfyEndpoint.mcpOnly("opinion_top_keywords", "舆情", "/show/opinion", "/getTopKey",
+                    "查非遗网络舆情热门关键词排行。",
+                    List.of(new ScfyParam("showUser", false, "boolean",
+                            "是否展示用户维度，缺省 false", null, "false", null), topNum()),
+                    PUBLIC_OPINION_NOTE),
+            ScfyEndpoint.mcpOnly("opinion_top_cities", "舆情", "/show/opinion", "/getTopNumCity",
+                    "查非遗网络舆情数量最多的市州排行。",
+                    List.of(topNum()), PUBLIC_OPINION_NOTE),
+
+            // 工坊补充（/show/shop）
+            ScfyEndpoint.mcpOnly("health_base_list", "工坊", "/show/shop", "/healthDemonstrationBaseList",
+                    "查中医药健康旅游示范基地列表（名称、地址、所在市州）。",
+                    List.of(pageNum(), pageSize()), "2026-11-20 公网抽样 totalCount=10，非空。"),
+
             // ==================== 废弃项（登记原因，不注册为工具）====================
 
             ScfyEndpoint.deprecated("deprecated_shop_data_type_scale", "工坊(废弃)", "/show/data", "/shopTypeScale",
@@ -394,9 +485,19 @@ public final class ScfyCatalog {
         return ALL.stream().filter(ScfyEndpoint::available).toList();
     }
 
+    /** 可在 MCP hub 暴露的可用接口（含仅 MCP 的 14 个新增接口）。 */
+    public static List<ScfyEndpoint> mcpAvailable() {
+        return ALL.stream().filter(ScfyEndpoint::mcpAvailable).toList();
+    }
+
+    /** 仅 MCP 暴露、没有 Java @AiosTool 的接口。 */
+    public static List<ScfyEndpoint> mcpOnly() {
+        return ALL.stream().filter(e -> e.status() == ScfyEndpoint.Status.MCP_ONLY).toList();
+    }
+
     /** 废弃接口（含原因），用于生成「为什么没接入」清单。 */
     public static List<ScfyEndpoint> deprecated() {
-        return ALL.stream().filter(e -> !e.available()).toList();
+        return ALL.stream().filter(e -> e.status() == ScfyEndpoint.Status.DEPRECATED).toList();
     }
 
     public static ScfyEndpoint byId(String id) {
@@ -405,5 +506,10 @@ public final class ScfyCatalog {
 
     public static long availableCount() {
         return available().size();
+    }
+
+    /** MCP 工具目录数量：55 个 Java+ MCP 接口 + 14 个仅 MCP 接口。 */
+    public static long mcpAvailableCount() {
+        return mcpAvailable().size();
     }
 }

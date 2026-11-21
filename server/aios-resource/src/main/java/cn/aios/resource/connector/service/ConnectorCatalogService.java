@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
  *
  * <p><b>配置就绪度（configReady）判定只在这一处</b>：</p>
  * <ul>
+ *   <li><b>TENANT（按租户接入，V115 / docs/92）</b>：最先判，读
+ *       {@code connector_tenant_access} 的启用态 —— 未接入 / 已停用都 false，并给出可执行的
+ *       configHint。scfy 属此类；它的 config_keys='[]' 绝不能落到下面的「空即恒真」分支。</li>
  *   <li>CREDENTIAL（QQ 邮箱）：恒 true —— 用户用自己的授权码，不需要应用级凭据；</li>
  *   <li>QR（企业微信扫码）：config_keys 为空 ⇒ 恒 true —— 每个用户自己扫码，管理员无事可做；</li>
  *   <li>其余：读租户级 {@code connector_tenant_config.secret_json}（enabled=1），
@@ -45,16 +48,19 @@ public class ConnectorCatalogService {
     private final ConnectorDefMapper defMapper;
     private final ConnectorTenantConfigMapper tenantConfigMapper;
     private final ConnectorConnectionMapper connectionMapper;
+    private final ConnectorTenantAccessService tenantAccessService;
     private final SecretCodec secretCodec;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ConnectorCatalogService(ConnectorDefMapper defMapper,
                                    ConnectorTenantConfigMapper tenantConfigMapper,
                                    ConnectorConnectionMapper connectionMapper,
+                                   ConnectorTenantAccessService tenantAccessService,
                                    SecretCodec secretCodec) {
         this.defMapper = defMapper;
         this.tenantConfigMapper = tenantConfigMapper;
         this.connectionMapper = connectionMapper;
+        this.tenantAccessService = tenantAccessService;
         this.secretCodec = secretCodec;
     }
 
@@ -86,7 +92,8 @@ public class ConnectorCatalogService {
                     conn == null ? null : conn.getAccountLabel(),
                     conn == null ? null : conn.getConnectedAt(),
                     conn == null ? null : conn.getLastCheckedAt(),
-                    conn == null ? null : conn.getLastError()));
+                    conn == null ? null : conn.getLastError(),
+                    def.getAccessMode()));
         }
         return items;
     }
@@ -192,6 +199,15 @@ public class ConnectorCatalogService {
     }
 
     private ConfigReady configReadyInternal(ConnectorDef def, Long tenantId) {
+        /* ★ 按租户接入的连接器优先走「租户接入配置」判据（docs/92 阶段 3）。
+           这一条必须放在最前面：scfy 的 config_keys='[]'，若落到下面的 keys.isEmpty()
+           分支就会恒返回 ready=true —— 那正是「平台 trust 一次、全员可用」的技术根因
+           （V115 之前 ConnectorCatalogService.java:199-201）。判据集中在
+           ConnectorTenantAccessService，避免 manifest / configReady / hub 各写一份而漂移。 */
+        if (tenantAccessService.requiresTenantAccess(def.getCode())) {
+            var r = tenantAccessService.tenantReady(def.getCode(), tenantId);
+            return new ConfigReady(r.ready(), r.hint());
+        }
         if (ConnectorDef.AUTH_MODE_CREDENTIAL.equals(def.getAuthMode())) {
             return new ConfigReady(true, null);
         }
@@ -224,11 +240,13 @@ public class ConnectorCatalogService {
 
     // ---------------- 响应 / 内部 DTO ----------------
 
-    /** GET /connectors 单条。configHint = 应用配置未就绪时缺什么（就绪则为 null）。 */
+    /** GET /connectors 单条。configHint = 应用配置未就绪时缺什么（就绪则为 null）。
+     *  accessMode = 接入模式（OPEN / TENANT），用户端据此区分「个人连接」与「租户接入」。 */
     public record ConnectorItem(String code, String name, String group, String icon, String summary,
                                String authMode, boolean configReady, String configHint, String status,
                                String accountLabel, java.time.LocalDateTime connectedAt,
-                               java.time.LocalDateTime lastCheckedAt, String lastError) {
+                               java.time.LocalDateTime lastCheckedAt, String lastError,
+                               String accessMode) {
     }
 
     /** GET /connectors/{code} 详情。 */

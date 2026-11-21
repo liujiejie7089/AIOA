@@ -1,0 +1,1199 @@
+{
+  "source" : "ScfyCatalog (server/aios-integration-scfy)",
+  "generatedBy" : "ScfyMcpCatalogExportTest -Dscfy.mcp.export=true",
+  "count" : 69,
+  "tools" : [ {
+    "id" : "inheritor_list_by_area",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getInheritorListByArea",
+    "summary" : "按市州查非遗传承人列表，回答「某地有哪些传承人」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "area" : {
+          "type" : "string",
+          "description" : "传承人所属市州；不传返回全省。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档示例为全称「甘孜藏族自治州」，实测返回 0 条（不报错）；正确值「甘孜州」返回 291 条",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测只有 country 生效；un/province/city/county 返回未过滤结果",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        },
+        "pageNum" : {
+          "type" : "integer",
+          "description" : "页码，缺省 1（示例：1）"
+        },
+        "pageSize" : {
+          "type" : "integer",
+          "description" : "每页条数，缺省 10，上限 100（示例：10）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "inheritor_detail",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getInheritorDetail",
+    "summary" : "查单个传承人的详情（简介、级别、出生、视频等）。需先由列表接口拿到 id。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "id" : {
+          "type" : "string",
+          "description" : "传承人 id，取自 inheritor_list_by_area 返回的 dataList[].id。注意该 id 形如 UUID_级别后缀，不是纯数字（示例：6df60302-f201-4fee-8758-e93d0e4c3112_country）"
+        }
+      },
+      "required" : [ "id" ]
+    }
+  }, {
+    "id" : "inheritor_type_data",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getInheritorTypeData",
+    "summary" : "查传承人按项目门类的数量分布，回答「哪些门类的传承人多」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测只有 country 生效；un/province/city/county 返回未过滤结果",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        }
+      },
+      "required" : [ "level" ]
+    }
+  }, {
+    "id" : "inheritor_gender_data",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getGenderNumDataByLevel",
+    "summary" : "查传承人男女性别数量，回答「男女比例」「女性传承人有多少」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测只有 country 生效；un/province/city/county 返回未过滤结果",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        }
+      },
+      "required" : [ "level" ]
+    }
+  }, {
+    "id" : "inheritor_birthday_data",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getInheritorBirthday",
+    "summary" : "查传承人年龄段/出生年代分布，回答「传承人年龄结构」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测只有 country 生效；un/province/city/county 返回未过滤结果",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        }
+      },
+      "required" : [ "level" ]
+    }
+  }, {
+    "id" : "inheritor_education_data",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getInheritorWhcd",
+    "summary" : "查传承人学历（文化程度）分布，按国家级/省级两组返回。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测只有 country 生效；un/province/city/county 返回未过滤结果",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        }
+      },
+      "required" : [ "level" ]
+    }
+  }, {
+    "id" : "inheritor_count_by_area",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getAreaInheritorData",
+    "summary" : "查全省各市州传承人数量对比，回答「哪个市州传承人最多」。返回 21 个市州 × 五档级别计数。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "name" : {
+          "type" : "string",
+          "description" : "固定传「四川省」表示全省汇总；通常无需传（示例：四川省）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "inheritor_yhwd_data",
+    "group" : "传承人",
+    "path" : "/show/inheritor/getYhwdInheritorData",
+    "summary" : "查「云上非遗」/非遗工坊相关的传承人分布（按市州，含联合国级到县级五档）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "inheritor_video",
+    "group" : "传承人",
+    "path" : "/show/inheritor/viewVideo",
+    "summary" : "查传承人视频播放地址。exist=false 表示该传承人暂无视频，不是错误。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "inheritorId" : {
+          "type" : "string",
+          "description" : "传承人 id，取自 inheritor_list_by_area（示例：6df60302-..._country）"
+        }
+      },
+      "required" : [ "inheritorId" ]
+    }
+  }, {
+    "id" : "project_list_by_area",
+    "group" : "项目",
+    "path" : "/show/project/getProjectListByArea",
+    "summary" : "按条件查非遗项目列表，回答「有哪些非遗项目」。不传 area 返回全省 1411 条。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "area" : {
+          "type" : "string",
+          "description" : "项目所属市州；不传返回全省。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档示例为全称「甘孜藏族自治州」，实测返回 0 条（不报错）；正确值「甘孜州」返回 291 条",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测本接口完全忽略 level：传 country 与不传同为全省 1411 条。按等级统计请改用 scfy_project_count_by_area",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        },
+        "pageNum" : {
+          "type" : "integer",
+          "description" : "页码，缺省 1（示例：1）"
+        },
+        "pageSize" : {
+          "type" : "integer",
+          "description" : "每页条数，缺省 10，上限 100（示例：10）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "project_detail",
+    "group" : "项目",
+    "path" : "/show/project/getProjectDetail",
+    "summary" : "查单个非遗项目详情（保护单位、传承人、简介）。需先由列表拿到 project_base_id。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "id" : {
+          "type" : "string",
+          "description" : "项目 id（project_base_id），取自 project_list_by_area 返回的 dataList[].project_base_id，形如 2-UN-1 / 2-GJ-92（示例：2-UN-1）"
+        }
+      },
+      "required" : [ "id" ]
+    }
+  }, {
+    "id" : "project_type_data",
+    "group" : "项目",
+    "path" : "/show/project/getProjectTypeData",
+    "summary" : "查非遗项目按十大类（传统技艺/传统戏剧/民俗…）的数量分布。level 必填。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "level" : {
+          "type" : "string",
+          "description" : "等级筛选。实测警示：level 参数目前只有 country（国家级）真正生效；un/province/city/county 会被后端静默忽略并返回未过滤结果（不报错）。若用户想精确筛选联合国级，请改用 project_count_by_area 查看各档位数量，不要依赖 level。（示例：country）。注意：实测只有 country 生效；un/province/city/county 返回未过滤结果",
+          "enum" : [ "un", "country", "province", "city", "county" ]
+        }
+      },
+      "required" : [ "level" ]
+    }
+  }, {
+    "id" : "project_batch_data",
+    "group" : "项目",
+    "path" : "/show/project/getProjectBatchData",
+    "summary" : "查非遗项目按批次的分布，返回国家级/省级 × 折线/柱状四组数据。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "area" : {
+          "type" : "string",
+          "description" : "限定市州；不传为全省。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档示例为全称「甘孜藏族自治州」，实测返回 0 条（不报错）；正确值「甘孜州」返回 291 条",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "project_count_by_area",
+    "group" : "项目",
+    "path" : "/show/project/getProjectCountByArea",
+    "summary" : "查指定市州各等级项目数量 —— 这是查看「联合国级」等档位数量的正确入口。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "area" : {
+          "type" : "string",
+          "description" : "市州。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档示例为全称「甘孜藏族自治州」，实测返回 0 条（不报错）；正确值「甘孜州」返回 291 条",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "area" ]
+    }
+  }, {
+    "id" : "project_area_summary",
+    "group" : "项目",
+    "path" : "/show/project/getAreaProjectData",
+    "summary" : "查全省各市州项目数量汇总（含联合国级 un_project / 国家级 / 省级 / 市级 / 县级 / all 六档）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "name" : {
+          "type" : "string",
+          "description" : "固定传「四川省」表示全省汇总；通常无需传（示例：四川省）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "project_yhwd_data",
+    "group" : "项目",
+    "path" : "/show/project/getYhwdProjectData",
+    "summary" : "查「云上非遗」/非遗工坊相关项目分布（按市州，六档：联合国/国家/省/市/县/区）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "project_video",
+    "group" : "项目",
+    "path" : "/show/project/viewVideo",
+    "summary" : "查非遗项目视频播放地址。exist=false 表示暂无视频。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "projectBaseId" : {
+          "type" : "string",
+          "description" : "项目 id（project_base_id）（示例：2-UN-1）"
+        }
+      },
+      "required" : [ "projectBaseId" ]
+    }
+  }, {
+    "id" : "shop_table",
+    "group" : "工坊",
+    "path" : "/show/shop/shopTable",
+    "summary" : "查非遗工坊/店铺列表（含销量、平台、项目名），回答「成都有哪些非遗工坊」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_pie_and_stores",
+    "group" : "工坊",
+    "path" : "/show/shop/pieChartAndStores",
+    "summary" : "查工坊数量 + 按项目类型的饼图分布。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_category_sum",
+    "group" : "工坊",
+    "path" : "/show/shop/categorySum",
+    "summary" : "查工坊经营类别汇总（线上线下销售额、老字号数量、各档传承人数量）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_bar_chart",
+    "group" : "工坊",
+    "path" : "/show/shop/barChart",
+    "summary" : "查工坊在各电商平台的销量柱状图。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_map_chart",
+    "group" : "工坊",
+    "path" : "/show/shop/mapChart",
+    "summary" : "查工坊按市州/区县的地图分布。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "areaName" : {
+          "type" : "string",
+          "description" : "区县名，用于下钻到区县（如 锦江区）（示例：锦江区）"
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_area_map_chart",
+    "group" : "工坊",
+    "path" : "/show/shop/areaMapChart",
+    "summary" : "查工坊在区域维度（type1/2/3 三档）的地图分布。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_sales_and_amount",
+    "group" : "工坊",
+    "path" : "/show/shop/salesAndSalesAmount",
+    "summary" : "查指定市州工坊的总销售额与销售量。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "areaName" : {
+          "type" : "string",
+          "description" : "区县名，可选（示例：锦江区）"
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "shop_detail",
+    "group" : "工坊",
+    "path" : "/show/shop/shopDetail",
+    "summary" : "查单个工坊/店铺详情（线上店铺、简介、传承人）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "id" : {
+          "type" : "string",
+          "description" : "工坊 id，取自 shop_table 返回的 list[].id（示例：140）。注意：文档写参数名为 shopId，实测必填参数名是 id —— 传 shopId 会报 Required String parameter 'id' is not present"
+        }
+      },
+      "required" : [ "cityName", "id" ]
+    }
+  }, {
+    "id" : "shop_inheritor",
+    "group" : "工坊",
+    "path" : "/show/shop/shopInheritor",
+    "summary" : "查某个工坊关联的传承人。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "id" : {
+          "type" : "string",
+          "description" : "工坊 id（示例：140）。注意：文档写 shopId，实测必填 id"
+        }
+      },
+      "required" : [ "cityName", "id" ]
+    }
+  }, {
+    "id" : "shop_sales",
+    "group" : "工坊",
+    "path" : "/show/shop/shopSales",
+    "summary" : "查某个工坊的销量（线上/线下销售额与数量）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "id" : {
+          "type" : "string",
+          "description" : "工坊 id（示例：140）。注意：文档写 shopId，实测必填 id"
+        }
+      },
+      "required" : [ "cityName", "id" ]
+    }
+  }, {
+    "id" : "shop_project_type_pie",
+    "group" : "工坊",
+    "path" : "/show/shop/shopProjectTypePieChart",
+    "summary" : "查某工坊的项目类型饼图。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "id" : {
+          "type" : "string",
+          "description" : "工坊 id（示例：140）。注意：文档只说必填 cityName，实测还必填 id（漏标）"
+        }
+      },
+      "required" : [ "cityName", "id" ]
+    }
+  }, {
+    "id" : "shop_sales_num_pie",
+    "group" : "工坊",
+    "path" : "/show/shop/shopSalesAndNumPieChart",
+    "summary" : "查某工坊按平台的销售数量与销售额饼图。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "id" : {
+          "type" : "string",
+          "description" : "工坊 id（示例：140）。注意：文档只说必填 cityName，实测还必填 id（漏标）"
+        }
+      },
+      "required" : [ "cityName", "id" ]
+    }
+  }, {
+    "id" : "shop_address_distribution",
+    "group" : "工坊",
+    "path" : "/show/shop/addrDistribution",
+    "summary" : "查工坊地址分布（含经纬度、行政区划层级）与账号层级统计。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        }
+      },
+      "required" : [ "cityName" ]
+    }
+  }, {
+    "id" : "eco_area_count",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getAreasNum",
+    "summary" : "查文化生态保护区数量（按国家级/省级返回）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "eco_area_top_list",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getAreasTopFewList",
+    "summary" : "查文化生态保护区列表（含名称、级别、经纬度、简介），回答「有哪些保护区」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "topNum" : {
+          "type" : "integer",
+          "description" : "返回条数，缺省返回全部（示例：10）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "eco_city_round",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getCityRoundByAreaId",
+    "summary" : "查某个保护区的地理边界坐标（用于地图描边）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "ecologicalAreaId" : {
+          "type" : "string",
+          "description" : "保护区 id，取自 eco_area_top_list 的 areasTopFewList[].ecologicalarea_id（示例：5f199a336e2e44efab9c5541f4138fe9）"
+        }
+      },
+      "required" : [ "ecologicalAreaId" ]
+    }
+  }, {
+    "id" : "eco_road_data",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getEcologicalAreaRoadData",
+    "summary" : "查保护区内项目/集聚区/体验基地的分页数据。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "ecologicalAreaId" : {
+          "type" : "string",
+          "description" : "保护区 id"
+        },
+        "areaId" : {
+          "type" : "string",
+          "description" : "区域编码（city_code，形如 510100000000）（示例：510100000000）"
+        },
+        "pageNum" : {
+          "type" : "integer",
+          "description" : "页码，缺省 1（示例：1）"
+        },
+        "pageSize" : {
+          "type" : "integer",
+          "description" : "每页条数，缺省 10，上限 100（示例：10）"
+        }
+      },
+      "required" : [ "ecologicalAreaId", "areaId" ]
+    }
+  }, {
+    "id" : "eco_road_distribute",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getRoadDistributeData",
+    "summary" : "查保护区内资源的分布统计（项目/集聚区/体验基地三组）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "ecologicalAreaId" : {
+          "type" : "string",
+          "description" : "保护区 id"
+        },
+        "areaId" : {
+          "type" : "string",
+          "description" : "区域编码 city_code（示例：510100000000）"
+        }
+      },
+      "required" : [ "ecologicalAreaId", "areaId" ]
+    }
+  }, {
+    "id" : "eco_all_image",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getAllTravelImageUrl",
+    "summary" : "查保护区的全部图片（实测用真实 id 可返回非空 imageList）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "ecologicalAreaId" : {
+          "type" : "string",
+          "description" : "保护区 id"
+        }
+      },
+      "required" : [ "ecologicalAreaId" ]
+    }
+  }, {
+    "id" : "eco_details",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getDetailsData",
+    "summary" : "查保护区某条数据的详情（名称、类型、地址、简介、图片）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "type" : {
+          "type" : "string",
+          "description" : "对象类型编码（示例：1）。注意：实测 type=1 与 5 返回同一条真实数据（青城山--都江堰旅游景区，area_type=5A），type=2/3/4 返回空对象 {} 且 code=0。文档未说明取值含义，故不臆造枚举，只把实测可用值写入说明"
+        },
+        "dataId" : {
+          "type" : "string",
+          "description" : "对象 id（示例：1）。注意：实测传不存在的 id 同样返回空对象 {} 且 code=0"
+        }
+      },
+      "required" : [ "type", "dataId" ]
+    }
+  }, {
+    "id" : "eco_nmch_base",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getNmchBaseData",
+    "summary" : "查非遗体验基地列表（保护区口径）。实测本前缀下恒为空列表（调用成功、code=0、无数据），体验基地数据请改用 travel_nmch_base（实测 21 个城市、约 405 个字段值）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "eco_nmch_popup",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getNmchBasePopupData",
+    "summary" : "查非遗体验基地弹窗详情（简介、产品）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityCode" : {
+          "type" : "string",
+          "description" : "城市编码（city_code，形如 510100000000）（示例：510100000000）"
+        }
+      },
+      "required" : [ "cityCode" ]
+    }
+  }, {
+    "id" : "eco_tourist_county_list",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getTouristCountyList",
+    "summary" : "查非遗旅游重点县列表（含名称、经纬度），这是获取合法 areaId 的入口。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "eco_tourist_county_data",
+    "group" : "保护区",
+    "path" : "/show/ecologicalArea/getTouristCountyData",
+    "summary" : "查某个县/市州的非遗资源汇总（代表性传承人、非遗项目、名录项目）。area 收行政区划编码，编码可由 eco_tourist_county_list 取得。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "area" : {
+          "type" : "string",
+          "description" : "行政区划编码（12 位，如 510105000000=青羊区、510100000000=成都市）。不是市州简称 —— 传「青羊区」「成都市」这类简称实测返回全零且不报错；编码可由 tourist_county_list 接口取得（返回 id=编码、short_name=名称）（示例：510105000000）。注意：文档只写参数名 area、未说取值形态。实测：简称全零 / 6 位编码（510100）也全零 / 12 位编码返回真实数据；不传返回全省（省级项目 35 项）。必须是 12 位数字行政区划编码"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "travel_route_top_list",
+    "group" : "旅游",
+    "path" : "/show/travel/getRoutesTopFewList",
+    "summary" : "查非遗旅游线路列表（含名称、封面图），回答「有哪些非遗旅游线路」。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "topNum" : {
+          "type" : "integer",
+          "description" : "返回条数，缺省返回全部（示例：10）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "travel_city_round",
+    "group" : "旅游",
+    "path" : "/show/travel/getCityRoundByTravelId",
+    "summary" : "查某条旅游线路的地理边界坐标与中心点。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id，取自 travel_route_top_list 的 routesTopFewList[].travel_id（示例：43c4f5188de54c46b2b03094ff1e5da0）"
+        }
+      },
+      "required" : [ "travelId" ]
+    }
+  }, {
+    "id" : "travel_road_type_count",
+    "group" : "旅游",
+    "path" : "/show/travel/getTravelRoadTypeCount",
+    "summary" : "查旅游线路沿线的资源类型数量统计（项目/区域/基地）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id。注意：文档标注「必填参数：—」，实测必填 travelId（漏标）"
+        }
+      },
+      "required" : [ "travelId" ]
+    }
+  }, {
+    "id" : "travel_road_by_type",
+    "group" : "旅游",
+    "path" : "/show/travel/getTravelRoadDataByType",
+    "summary" : "查某条线路下指定类型的资源分页列表。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "type" : {
+          "type" : "string",
+          "description" : "资源类型编码（示例：1）"
+        },
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id。注意：文档只标了 type，实测还必填 travelId（漏标）"
+        }
+      },
+      "required" : [ "type", "travelId" ]
+    }
+  }, {
+    "id" : "travel_road_data",
+    "group" : "旅游",
+    "path" : "/show/travel/getTravelRoadData",
+    "summary" : "查某条线路的完整资源分页数据（项目/集聚区/体验基地三组）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id"
+        },
+        "areaId" : {
+          "type" : "string",
+          "description" : "区域编码，可选（示例：510100000000）"
+        },
+        "pageNum" : {
+          "type" : "integer",
+          "description" : "页码，缺省 1（示例：1）"
+        },
+        "pageSize" : {
+          "type" : "integer",
+          "description" : "每页条数，缺省 10，上限 100（示例：10）"
+        }
+      },
+      "required" : [ "travelId" ]
+    }
+  }, {
+    "id" : "travel_road_detail",
+    "group" : "旅游",
+    "path" : "/show/travel/getTravelRoadDataDetail",
+    "summary" : "查线路中某条资源的详情（简介、图片、路线）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "dataId" : {
+          "type" : "string",
+          "description" : "资源 id，取自 travel_road_by_type 返回的 dataList[].project_base_id（形如 05760cdf947f4f32968cf79d3c695b2b）（示例：05760cdf947f4f32968cf79d3c695b2b）。注意：实测传不存在的 id（如 1）返回空对象 {} 且 code=0 —— 空结果不等于「资源没有详情」"
+        },
+        "type" : {
+          "type" : "string",
+          "description" : "资源类型编码（示例：1）。注意：实测 type 被忽略：1/2/3/4 返回同一份详情"
+        }
+      },
+      "required" : [ "dataId", "type" ]
+    }
+  }, {
+    "id" : "travel_road_distribute",
+    "group" : "旅游",
+    "path" : "/show/travel/getTravelRoadDistributeData",
+    "summary" : "查某条线路的资源分布统计。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id。注意：文档标注「必填参数：—」，实测必填 travelId（漏标）"
+        }
+      },
+      "required" : [ "travelId" ]
+    }
+  }, {
+    "id" : "travel_image",
+    "group" : "旅游",
+    "path" : "/show/travel/getTravelImageUrl",
+    "summary" : "查某条线路下某一类对象的图片地址（含图片名）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id"
+        },
+        "type" : {
+          "type" : "string",
+          "description" : "图片对象类型：2=项目图片、3=体验基地图片（示例：2）。注意：文档未给取值。实测 type 实质必填：不传、或传 1/4/5 都返回空 imageList （不报错）；type=2 返回该线路的项目图片（实测 155 条）、type=3 返回体验基地图片（实测 9 条），且不同 travelId 返回不同结果",
+          "enum" : [ "2", "3" ]
+        }
+      },
+      "required" : [ "travelId", "type" ]
+    }
+  }, {
+    "id" : "travel_all_image",
+    "group" : "旅游",
+    "path" : "/show/travel/getAllTravelImageUrl",
+    "summary" : "查某条线路的全部图片（实测可返回非空 imageList）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "travelId" : {
+          "type" : "string",
+          "description" : "线路 id"
+        }
+      },
+      "required" : [ "travelId" ]
+    }
+  }, {
+    "id" : "travel_details",
+    "group" : "旅游",
+    "path" : "/show/travel/getDetailsData",
+    "summary" : "查线路中某条数据的详情。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "type" : {
+          "type" : "string",
+          "description" : "对象类型编码（示例：1）。注意：与保护区同名的 getDetailsData 返回结构完全一致；实测 type=1/5 有数据、2/3/4 返回空对象 {} 且 code=0，取值含义文档未说明"
+        },
+        "dataId" : {
+          "type" : "string",
+          "description" : "对象 id（示例：1）"
+        }
+      },
+      "required" : [ "type", "dataId" ]
+    }
+  }, {
+    "id" : "travel_nmch_base",
+    "group" : "旅游",
+    "path" : "/show/travel/getNmchBaseData",
+    "summary" : "查非遗体验基地列表（旅游口径，实测 21 条，比保护区口径更全）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "travel_nmch_popup",
+    "group" : "旅游",
+    "path" : "/show/travel/getNmchBasePopupData",
+    "summary" : "查非遗体验基地弹窗详情（旅游口径）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityCode" : {
+          "type" : "string",
+          "description" : "城市编码 city_code（示例：510100000000）"
+        }
+      },
+      "required" : [ "cityCode" ]
+    }
+  }, {
+    "id" : "travel_tourist_county_list",
+    "group" : "旅游",
+    "path" : "/show/travel/getTouristCountyList",
+    "summary" : "查非遗旅游重点县列表（旅游口径）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : { },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "travel_tourist_county_data",
+    "group" : "旅游",
+    "path" : "/show/travel/getTouristCountyData",
+    "summary" : "查某个县/市州的非遗资源汇总（旅游口径）。area 收行政区划编码，编码可由 travel_tourist_county_list 取得。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "area" : {
+          "type" : "string",
+          "description" : "行政区划编码（12 位，如 510105000000=青羊区、510100000000=成都市）。不是市州简称 —— 传「青羊区」「成都市」这类简称实测返回全零且不报错；编码可由 tourist_county_list 接口取得（返回 id=编码、short_name=名称）（示例：510105000000）。注意：文档只写参数名 area、未说取值形态。实测：简称全零 / 6 位编码（510100）也全零 / 12 位编码返回真实数据；不传返回全省（省级项目 35 项）。必须是 12 位数字行政区划编码"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "project_inheritor_count_by_area",
+    "group" : "项目",
+    "path" : "/show/project/getProjectInhreirotCountByArea",
+    "summary" : "按市州查非遗项目与传承人的分等级数量（国家级/省级/市级/县级）。",
+    "note" : "2026-11-20 公网抽样：name=泸州市 返回 9 档真实计数；不传返回全省计数。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "name" : {
+          "type" : "string",
+          "description" : "市州名（如 泸州市）；不传返回全省汇总（示例：泸州市）。注意：公网实测传区县名（古蔺县）返回 code=3 业务错误；查县域名额请用 travel_tourist_county_data / eco_tourist_county_data"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_category_stats",
+    "group" : "影像展",
+    "path" : "/show/image/categoryPieChart",
+    "summary" : "查影像展影像总数与项目门类分布（饼图），可限定市州。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_city_collect_stats",
+    "group" : "影像展",
+    "path" : "/show/image/cityCollectStatistics",
+    "summary" : "查影像展各市州征集影像数量排行。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        },
+        "limitNum" : {
+          "type" : "string",
+          "description" : "取前多少条数据，不传即不限制（示例：5）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_inheritor_project_stats",
+    "group" : "影像展",
+    "path" : "/show/image/inheritorAndProject",
+    "summary" : "查影像展涉及的传承人/项目数量、展播播放量与影像总时长，可限定市州。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_net_platform_stats",
+    "group" : "影像展",
+    "path" : "/show/image/netPlatformStatistics",
+    "summary" : "查影像展网络平台播放量排行。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_tv_platform_stats",
+    "group" : "影像展",
+    "path" : "/show/image/tvPlatformStatistics",
+    "summary" : "查影像展 TV 平台播放量排行。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_platform_play",
+    "group" : "影像展",
+    "path" : "/show/image/platformPlay",
+    "summary" : "查影像展总播放量（单个数值）。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_report_unit_stats",
+    "group" : "影像展",
+    "path" : "/show/image/reportUnitStatistics",
+    "summary" : "查影像展影像报送单位排行。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        },
+        "limitNum" : {
+          "type" : "string",
+          "description" : "取前多少条数据，不传即不限制（示例：5）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "image_stat_list",
+    "group" : "影像展",
+    "path" : "/show/image/statisticalList",
+    "summary" : "查影像展统计列表（按市州），可限定市州。",
+    "note" : "2026-11-20 公网域名抽样 code=0；部分市州/类型组合可能返回空对象（空结果不等于错误）。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "cityName" : {
+          "type" : "string",
+          "description" : "市州名称。市州必须用简称（如 甘孜州 / 阿坝州 / 凉山州），不要用全称（甘孜藏族自治州 会返回 0 条且不报错）。不传该参数表示全省数据。（示例：成都市）。注意：文档未说明简称/全称；经同类接口实测，同样必须用简称",
+          "enum" : [ "成都市", "自贡市", "攀枝花市", "泸州市", "德阳市", "绵阳市", "广元市", "遂宁市", "内江市", "乐山市", "南充市", "眉山市", "宜宾市", "广安市", "达州市", "雅安市", "巴中市", "资阳市", "阿坝州", "甘孜州", "凉山州" ]
+        },
+        "imageType" : {
+          "type" : "string",
+          "description" : "影像类型：0=影像征集（默认），1=影像展播。两套统计口径不同，不传按 0 处理（示例：1）",
+          "enum" : [ "0", "1" ]
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "heritage_activity_by_year",
+    "group" : "品牌活动",
+    "path" : "/show/acivity/getHeritageData",
+    "summary" : "查某年文化遗产日活动的活动数、参与项目/传承人数、销售额等。",
+    "note" : "返回 description 是 HTML 富文本，回答时应提取纯文本要点，不要原样输出标签。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "year" : {
+          "type" : "string",
+          "description" : "年份（如 2023）；不传返回当前已发布年度（示例：2023）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "heritage_activity_years",
+    "group" : "品牌活动",
+    "path" : "/show/acivity/getHeritageYearList",
+    "summary" : "查已有文化遗产日数据的年份列表，作为按年查询的入口。",
+    "note" : "2026-11-20 公网抽样返回 2023/2022/2021/2020。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "topNum" : {
+          "type" : "integer",
+          "description" : "返回条数，不传由服务端决定（示例：5）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "opinion_top_keywords",
+    "group" : "舆情",
+    "path" : "/show/opinion/getTopKey",
+    "summary" : "查非遗网络舆情热门关键词排行。",
+    "note" : "舆情统计不是非遗名录统计，回答时须注明口径；2026-11-20 公网域名抽样 code=0 且有真实数据。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "showUser" : {
+          "type" : "boolean",
+          "description" : "是否展示用户维度，缺省 false（示例：false）"
+        },
+        "topNum" : {
+          "type" : "integer",
+          "description" : "返回条数，不传由服务端决定（示例：5）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "opinion_top_cities",
+    "group" : "舆情",
+    "path" : "/show/opinion/getTopNumCity",
+    "summary" : "查非遗网络舆情数量最多的市州排行。",
+    "note" : "舆情统计不是非遗名录统计，回答时须注明口径；2026-11-20 公网域名抽样 code=0 且有真实数据。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "topNum" : {
+          "type" : "integer",
+          "description" : "返回条数，不传由服务端决定（示例：5）"
+        }
+      },
+      "required" : [ ]
+    }
+  }, {
+    "id" : "health_base_list",
+    "group" : "工坊",
+    "path" : "/show/shop/healthDemonstrationBaseList",
+    "summary" : "查中医药健康旅游示范基地列表（名称、地址、所在市州）。",
+    "note" : "2026-11-20 公网抽样 totalCount=10，非空。",
+    "inputSchema" : {
+      "type" : "object",
+      "properties" : {
+        "pageNum" : {
+          "type" : "integer",
+          "description" : "页码，缺省 1（示例：1）"
+        },
+        "pageSize" : {
+          "type" : "integer",
+          "description" : "每页条数，缺省 10，上限 100（示例：10）"
+        }
+      },
+      "required" : [ ]
+    }
+  } ]
+}

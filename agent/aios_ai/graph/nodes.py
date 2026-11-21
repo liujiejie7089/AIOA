@@ -143,6 +143,108 @@ def _blocked_connector_calls(calls: list[dict] | None,
             if _connector_of_tool_name(c.get("name")) in blocked_codes]
 
 
+# --------------------------------------------------------------------------- MCP 工具熔断（docs/89 §8.2）
+#
+# 背景（2026-11-20 现场）：非遗数据库断连时，模型一轮内并发调了 15 个 scfy 工具，
+# 每个 20s 超时、全部 ok:false，页面出现「部分接口失败…继续尝试其他接口」这类
+# 无法兑现的承诺 —— 模型并没有真的继续尝试，只是把 15 条失败结果写成了计划。
+# 两层保护：
+#   ① 单轮内同一 server 最多放行 MCP_MAX_CALLS_PER_SERVER 个真实调用，其余直接短路；
+#   ② 同一 server 连续失败 MCP_FAILURES_TO_TRIP 次即熔断本 run 后续所有调用（跨轮有效）。
+# 关键纪律（铁律 7/12）：短路的调用**仍要回注 ok=False 的 tool 消息**，否则
+# tool_call_id 找不到结果，上游判协议错误；且文案只说「数据源不可用」，不带上游原文。
+MCP_MAX_CALLS_PER_SERVER = 4
+MCP_FAILURES_TO_TRIP = 3
+
+MCP_BREAKER_ERROR = (
+    "该数据源连续调用失败，本轮已停止调用它的工具（熔断）。"
+    "请直接告诉用户「该数据源当前不可用，暂时无法查询」，"
+    "不要继续尝试同数据源的其他接口，也不要用无关资料编造结果。"
+)
+
+# 单轮调用上限触发的短路**不是**数据源故障：前几个调用很可能已经成功返回数据。
+# 2026-11-20 真机：模型一轮并发 11 个 scfy 工具，前 4 个 OK、后 7 个被限流，
+# 但限流文案说「连续调用失败/数据源不可用」，模型据此把已拿到的数据说成查不到。
+MCP_RATE_LIMIT_ERROR = (
+    "本轮该数据源的查询数量已达上限，剩余接口本次未执行（这不是数据源故障）。"
+    "请**仅**基于本轮已返回的工具结果直接回答用户；已拿到的数据要如实给出，"
+    "不要说成数据源故障、接口连续失败或查不到。"
+    "**严禁引用本轮工具未返回的任何数字、名录或所谓公开基准值，"
+    "也不得用你自己的记忆或常识补数**；"
+    "没有返回的数据就明说「本轮未取得该数据」，不要用估算值或历史印象替代。"
+    "如仍缺关键数据，等下一轮再查。"
+)
+
+
+def _breaker_of_call(name: str | None, breakers: dict) -> str | None:
+    """该调用是否命中熔断：命中返回给模型看的明确原因，否则 None。纯函数。"""
+    server = _connector_of_tool_name(name)
+    if not server:
+        return None
+    entry = (breakers or {}).get(server) or {}
+    if entry.get("tripped"):
+        return MCP_BREAKER_ERROR
+    return None
+
+
+def _plan_mcp_calls(calls: list[dict] | None, breakers: dict | None) -> tuple[list[dict], list[dict]]:
+    """把本轮调用分成「真实执行」与「熔断短路」两组（**纯函数**，便于单测）。
+
+    单轮内同一 server 最多放行 MCP_MAX_CALLS_PER_SERVER 个：超出部分**不真实执行**，
+    但仍回注 ok=False，让模型看到「已停止调用」而不是拿到一堆各自超时的失败结果。
+    非 MCP 工具（含内置工具）不受影响；已熔断 server 的全部调用都短路。
+    """
+    breakers = breakers or {}
+    executed: list[dict] = []
+    shorted: list[dict] = []
+    per_server: dict[str, int] = {}
+    for call in calls or []:
+        reason = _breaker_of_call(call.get("name"), breakers)
+        server = _connector_of_tool_name(call.get("name"))
+        if reason is None and server:
+            used = per_server.get(server, 0)
+            if used >= MCP_MAX_CALLS_PER_SERVER:
+                reason = MCP_RATE_LIMIT_ERROR
+        if reason is None:
+            if server:
+                per_server[server] = per_server.get(server, 0) + 1
+            executed.append(call)
+        else:
+            shorted.append({**call, "_breaker_reason": reason})
+    return executed, shorted
+
+
+def _update_breakers(breakers: dict | None, outcomes: list[dict]) -> dict:
+    """按本轮执行结果更新每个 server 的连续失败计数（**纯函数**）。
+
+    ``outcomes`` 形状 ``[{"name": 工具名, "ok": bool}]``；只要该 server 本轮有任一
+    成功调用就清零（真恢复），否则累加失败数、达到阈值即置 ``tripped``。
+    只由已经真实执行过的调用触发更新，短路调用不重复计数。
+    """
+    out = {k: dict(v) for k, v in (breakers or {}).items()}
+    failures: dict[str, int] = {}
+    succeeded: set[str] = set()
+    for o in outcomes:
+        server = _connector_of_tool_name(o.get("name"))
+        if not server:
+            continue
+        if o.get("ok"):
+            succeeded.add(server)
+        else:
+            failures[server] = failures.get(server, 0) + 1
+    for server, n in failures.items():
+        if server in succeeded:
+            continue
+        entry = dict(out.get(server) or {"consecutive_failures": 0, "tripped": False})
+        entry["consecutive_failures"] = int(entry.get("consecutive_failures") or 0) + n
+        if entry["consecutive_failures"] >= MCP_FAILURES_TO_TRIP:
+            entry["tripped"] = True
+        out[server] = entry
+    for server in succeeded:
+        out[server] = {"consecutive_failures": 0, "tripped": False}
+    return out
+
+
 def filter_intent_write_tools(tools: list[dict], action: str | None) -> list[dict]:
     """按动作意图收敛写工具（**纯函数**，便于单测与被测面直接引用）。
 
@@ -890,9 +992,9 @@ async def agent(state: dict) -> dict:
             messages.append({"role": "assistant",
                              "content": str(message.get("content") or round_text or "")})
         messages.append({"role": "user",
-                         "content": delivery.continuation_prompt(reason, req.text)})
-        logger.warning("run %s: 交付未达标（%s）⇒ 第 %d 次回到 agent 补齐成稿",
-                       req.run_id, reason, retries + 1)
+                         "content": delivery.continuation_prompt(reason, req.text, is_delivery)})
+        logger.warning("run %s: %s未达标（%s）⇒ 第 %d 次回到 agent 补齐",
+                       req.run_id, "交付" if is_delivery else "回答", reason, retries + 1)
 
     return {
         "agent_rounds": rounds + 1,
@@ -926,6 +1028,12 @@ async def tools(state: dict) -> dict:
     if blocked_calls:
         blocked_ids = {c.get("id") for c in blocked_calls}
         calls = [c for c in calls if c.get("id") not in blocked_ids]
+
+    # MCP 熔断（docs/89 §8.2）：先按本 run 的熔断状态 + 单轮同 server 上限分流。
+    # 短路的调用不真实执行，但回注 ok=False，模型据此直接告知用户数据源不可用，
+    # 不再「继续尝试」一堆注定失败的接口。非 MCP 工具零影响。
+    breakers_before = dict(state.get("mcp_breakers") or {})
+    calls, shorted_calls = _plan_mcp_calls(calls, breakers_before)
     clock = _clock(state)
     # 运行期对象不进状态（checkpointer 要求纯数据）：按入参重建工具客户端
     tool_client = ToolClient.from_request(_req(state).user_token)
@@ -962,6 +1070,26 @@ async def tools(state: dict) -> dict:
                                    "error": outcome.error}, ensure_ascii=False),
         })
 
+    # 更新熔断状态：只有真实执行过的调用才计数（成功清零 / 失败累加到阈值置 tripped）。
+    # 下一轮 tools() 会读到它，把该 server 的全部调用直接短路。
+    executed_summary = [{"name": o.name, "ok": o.ok} for o in outcomes]
+    mcp_breakers = _update_breakers(breakers_before, executed_summary)
+
+    # 熔断短路的调用：回注 ok=False + 明确文案。绝不丢弃 —— 每个 tool_call_id
+    # 都必须有对应 tool 消息，否则上游判「tool message missing」协议错误。
+    for call in shorted_calls:
+        reason = call.get("_breaker_reason") or MCP_BREAKER_ERROR
+        tool_calls_log.append({"name": call.get("name"), "arguments": call.get("arguments") or {},
+                                "ok": False, "digest": ""})
+        _emit("tool.result", {"name": call.get("name"), "ok": False, "summary": reason})
+        messages.append({
+            "role": "tool",
+            "tool_call_id": call["id"],
+            "content": json.dumps({"ok": False, "data": None, "error": reason}, ensure_ascii=False),
+        })
+        logger.warning("MCP 工具熔断短路：%s（server=%s）", call.get("name"),
+                       _connector_of_tool_name(call.get("name")))
+
     # 被对话级开关拦下的连接器调用：回注一条 ok=False 的结果。
     # 必须回注而不是丢弃 —— 每个 tool_call_id 都要有对应的 tool 消息，
     # 丢掉会让下一轮请求被上游判为协议错误（"tool message missing"）。
@@ -978,7 +1106,7 @@ async def tools(state: dict) -> dict:
         })
 
     return {"messages": messages, "tool_calls_log": tool_calls_log,
-            "citations": citations, "pending_calls": []}
+            "citations": citations, "pending_calls": [], "mcp_breakers": mcp_breakers}
 
 
 async def _run_tool_calls(calls: list[dict], tool_client: ToolClient, search_params: tuple,
@@ -1223,8 +1351,8 @@ async def finalize(state: dict) -> dict:
     except Exception:                       # noqa: BLE001 —— 状态缺 req 时不影响收口
         user_text = ""
     aggregated = bool((state.get("effective") or {}).get("aggregate"))
-    complete, why = delivery.assess_delivery(
-        content, delivery.is_delivery_request(user_text, aggregated))
+    is_delivery = delivery.is_delivery_request(user_text, aggregated)
+    complete, why = delivery.assess_delivery(content, is_delivery)
     if fallback_only:
         # 兜底文案再长也不是成稿：不能有「凑够 140 字就判绿」的漏网。
         complete, why = False, "模型本轮没有产出正文，上面只是工具结果/状态说明，不是交付"
@@ -1233,7 +1361,7 @@ async def finalize(state: dict) -> dict:
         # 只要收口时不达标就如实标注，不以「补齐轮数用尽」为前提 ——
         # 补齐被幻觉 tool_calls 中断时 retries 可能仍是 0，旧条件会静默放行中间态。
         note = delivery.exhausted_note(
-            why or state.get("delivery_reason") or "正文不完整", retries, aggregated)
+            why or state.get("delivery_reason") or "正文不完整", retries, aggregated, is_delivery)
         content += note
         for ch in note:
             _emit("message.delta", {"text": ch})

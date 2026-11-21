@@ -121,6 +121,15 @@ else
 fi
 
 # ---- mcp-hub :8099（MCP 网关，无状态，不落盘）----
+# 四川非遗（scfy）只读连接器默认直连官网域名（免登录只读接口）；
+# 本机 16060 的数据库会间歇性断连，仅排障时显式设置本变量覆盖。
+export AIOS_SCFY_BASE_URL="${AIOS_SCFY_BASE_URL:-https://szbhpt.tsichuan.com/scfy}"
+# 按租户接入准入校验（docs/92 阶段 4）：hub 每次 tools/call 前回调 Java
+# /api/v1/mcp/access/scfy/check 判租户是否接入。默认 1（开启）；设 0 可回滚到
+# 平台级统一接入，无需改代码或 DB。纯 hub 进程内验证脚本会自行设 0。
+export AIOS_SCFY_ACCESS_CHECK="${AIOS_SCFY_ACCESS_CHECK:-1}"
+# hub → Java 的回调地址（生产 compose 里是 http://server:8080，见 docker-compose.yml）。
+export AIOS_SERVER_BASE_URL="${AIOS_SERVER_BASE_URL:-http://127.0.0.1:8080}"
 # 用 agent/.venv 的解释器（已装 mcp==1.30.0）。可用 AIOS_SERVER_BASE_URL 指定 Java 地址（默认 :8080）。
 # 注意：不改脚本里既有的其它启动逻辑。
 # 连接器共享底座（mcp-hub/mcp_hub/wecom/：加密/身份/SQLite，见 docs/64）本地开发态：

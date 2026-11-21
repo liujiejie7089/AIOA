@@ -26,6 +26,7 @@
 | **agent loop 完成判定闭环** | `docs/86`·`graph/delivery.py`·`_verify_agent_loop_delivery.py`(20)·pitfalls 106–110 |
 | **错误上报/模型校验/回答排版** | `docs/87`·`errors.py`·`_verify_error_reporting.py`(22)·pitfalls 111–116 |
 | **spec-kit/全项目审查** | `specify-cli`+bug 扩展·`.codebuddy/commands/speckit.bug.*`·`.workbuddy/skills/speckit-bugfix`·报告 `.specify/bugs/full-audit-2026-11-17/`（18 项，fix+test 全 verified；C1 沙箱绕过实跑确认）·`2026-11-17` |
+| **非遗 MCP/按租户接入** | `docs/89–93` · V113–V115 · scfy 69 工具 · `connector_tenant_access` · `_verify_scfy_access_gate(28)` · `_verify_scfy_tenant_access(28)` · `2026-11-20/21` |
 
 ## 最常踩（全文见 iron-rules）
 
